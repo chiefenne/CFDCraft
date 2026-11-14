@@ -1,5 +1,11 @@
 //! Compute kernels of CFDCraft, written once for every target.
 //!
+//! - [`face`], [`spmv`]: the kernels of gate G1 (stage 0);
+//! - [`fv`]: the finite-volume operators on a scalar (stage 2): gradient,
+//!   limiter, face flux coefficients, row assembly;
+//! - [`blas`]: vector operations and reproducible block dot products of the
+//!   Krylov solvers.
+//!
 //! Each kernel is a *body*: a function that computes the result for one
 //! index (one face, one cell, one matrix row). A backend supplies the loop:
 //! a sequential or multi-threaded loop on the CPU (`cfdcraft-bench`), or one
@@ -20,7 +26,9 @@
 //! callers guarantee that every index lies inside its array.
 #![no_std]
 
+pub mod blas;
 pub mod face;
+pub mod fv;
 pub mod spmv;
 
 use cfdcraft_core::index::FLAG_BIT;

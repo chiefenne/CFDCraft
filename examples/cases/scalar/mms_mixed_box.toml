@@ -1,0 +1,54 @@
+# Convection–diffusion with a manufactured solution on mixed meshes
+# (hexahedra, prisms, tetrahedra and transitional polyhedra):
+# order-of-accuracy sweep over three nested refinements (stage 2).
+#
+#   cargo run --release -p cfdcraft-cli -- scalar examples/cases/scalar/mms_mixed_box.toml
+#
+# φ = 1 + sin(πx + 0.5) cos(πy + 0.3) cos(πz/2 + 0.2) on the unit box,
+# u = (1, 0.6, 0.3) m/s, ρ = 1 kg/m³, Γ = 0.2 kg/(m s) (Péclet number about
+# 6), fixed values of the exact solution on all six patches. The report
+# gives the L2 error per level and the observed order; the run fails if the
+# order on the finest pair is outside 1.8–2.2.
+
+[mesh.generate]
+type = "mixed"         # bands of hexahedra, prisms and tetrahedra along x
+cells = [4, 4, 4]      # base intervals; [verification] levels refine them
+perturb = 0.15         # random node displacement, fraction of the interval
+
+[mesh]
+renumber = "rcm"
+
+[problem]
+density = 1.0
+diffusivity = 0.2
+velocity = [1.0, 0.6, 0.3]
+manufactured = {}      # the default solution above
+
+[problem.boundary.xmin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.xmax]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.ymin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.ymax]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.zmin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.zmax]
+type = "fixed-value"
+profile = "manufactured"
+
+[solver]
+scheme = "linear-upwind"
+limiter = "none"             # smooth solution: no limiter
+nonorth_correction = true
+tolerance = 1e-10
+
+[verification]
+levels = [1, 2, 3]
+expected_order = [1.8, 2.2]

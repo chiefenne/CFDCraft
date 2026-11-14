@@ -1,0 +1,55 @@
+# Stage 2 on the GPU: the polyhedral manufactured-solution case on about
+# 0.9 million cells, solved on the CPU and twice on the GPU. The report
+# states whether each GPU run is bitwise equal to the CPU run (and so to
+# the other GPU run); the run fails if they differ by more than 1e-10.
+#
+#   gpu/ptx-kernels/build.sh sm_75
+#   cargo build --release -p cfdcraft-cli --features cuda
+#   target/release/cfdcraft scalar examples/cases/scalar/mms_poly_gpu.toml
+#
+# or on Google Colab: tools/stage2_colab.ipynb. Needs a GPU of compute
+# capability 7.0 or newer and about 1 GB of GPU memory.
+
+[mesh.generate]
+type = "poly"
+cells = [12, 12, 12]
+refine = 3             # 96 intervals per direction: 97³ = 912 673 cells
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[problem]
+diffusivity = 0.2
+velocity = [1.0, 0.6, 0.3]
+manufactured = {}
+
+[problem.boundary.xmin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.xmax]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.ymin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.ymax]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.zmin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.zmax]
+type = "fixed-value"
+profile = "manufactured"
+
+[solver]
+scheme = "linear-upwind"
+limiter = "venkatakrishnan"     # exercises the limiter kernel; K = 5 keeps
+limiter_k = 5.0                 # smooth regions unlimited
+
+[run]
+backends = ["cpu", "cuda", "cuda"]
+
+[output]
+vtkhdf = false

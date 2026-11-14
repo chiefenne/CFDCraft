@@ -1,8 +1,12 @@
-# G1 single-source GPU kernels
+# Single-source GPU kernels
 
 The kernel bodies of [`cfdcraft-kernels`](../../crates/cfdcraft-kernels),
 wrapped as PTX entry points for NVIDIA GPUs. The same bodies run in the CPU
-backends of the G1 benchmark. This crate is the "single-source Rust" half of
+backends. Entry points: `g1_*` (gate G1, stage 0; `src/lib.rs`) and `fv_*`,
+`blas_*` (the scalar operators and Krylov vector operations of stage 2,
+`src/fv.rs`, launched by `crates/cfdcraft-fv/src/backend/cuda.rs`).
+
+For G1, this crate is the "single-source Rust" half of
 gate G1 (requirements D8, D11); the other half is the hand-written CUDA C
 reference in [`crates/cfdcraft-bench/kernels/g1_reference.cu`](../../crates/cfdcraft-bench/kernels/g1_reference.cu).
 
@@ -18,4 +22,6 @@ can run the CUDA reference but not this module.
 
 Not a member of the main Cargo workspace, because it is built for another
 target with another toolchain. CI builds it on every pull request and checks
-that all four entry points are present.
+that all entry points are present; `tools/check_kernels.sh` then checks
+that the PTX has no atomic instructions and no fused or approximate f64
+arithmetic (R10).

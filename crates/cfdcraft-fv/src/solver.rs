@@ -1,0 +1,277 @@
+//! The steady scalar solver: outer iterations of deferred correction, each a
+//! gradient, a limiter, the face coefficients, the assembly and a linear
+//! solve by BiCGStab with Jacobi preconditioning (D36).
+//!
+//! The solver drives a [`Backend`] and only moves scalars (dot products,
+//! norms) to the host, so the same code runs on the CPU and on the GPU.
+
+use crate::backend::{Backend, FaceSettings, Limiter, V};
+use serde::{Deserialize, Serialize};
+use std::time::Instant;
+
+/// Convection scheme (D25).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum Scheme {
+    /// First-order upwind.
+    Upwind,
+    /// Second-order linear upwind (with the limiter of `limiter`).
+    #[default]
+    LinearUpwind,
+}
+
+/// Limiter of the case file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum LimiterKind {
+    /// No limiter.
+    #[default]
+    None,
+    /// Venkatakrishnan.
+    Venkatakrishnan,
+    /// Venkatakrishnan–Wang.
+    VenkatakrishnanWang,
+}
+
+/// `[solver]` settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct Settings {
+    /// Convection scheme.
+    pub scheme: Scheme,
+    /// Gradient limiter.
+    pub limiter: LimiterKind,
+    /// Constant K of the limiter (Venkatakrishnan: ε² = (K h)³;
+    /// Venkatakrishnan–Wang: ε = K (φ_max − φ_min)).
+    pub limiter_k: f64,
+    /// Non-orthogonal diffusion correction (D26).
+    pub nonorth_correction: bool,
+    /// Limit of the correction as a multiple of the orthogonal part
+    /// (negative: no limit).
+    pub nonorth_limit: f64,
+    /// Implicit under-relaxation factor α (0 < α ≤ 1).
+    pub relaxation: f64,
+    /// Largest number of outer iterations.
+    pub max_outer: usize,
+    /// Outer tolerance on the normalised residual ‖b − Aφ‖ / ‖b‖.
+    pub tolerance: f64,
+    /// Largest number of BiCGStab iterations per outer iteration.
+    pub linear_max_iter: usize,
+    /// Relative tolerance of each linear solve.
+    pub linear_tolerance: f64,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            scheme: Scheme::LinearUpwind,
+            limiter: LimiterKind::None,
+            limiter_k: 5.0,
+            nonorth_correction: true,
+            nonorth_limit: -1.0,
+            relaxation: 1.0,
+            max_outer: 200,
+            tolerance: 1e-10,
+            linear_max_iter: 200,
+            linear_tolerance: 1e-3,
+        }
+    }
+}
+
+impl Settings {
+    /// Checks the ranges.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.relaxation > 0.0 && self.relaxation <= 1.0,
+            "[solver] relaxation must lie in (0, 1]"
+        );
+        anyhow::ensure!(self.limiter_k >= 0.0, "[solver] limiter_k must be >= 0");
+        anyhow::ensure!(self.tolerance > 0.0, "[solver] tolerance must be > 0");
+        anyhow::ensure!(
+            self.linear_tolerance > 0.0 && self.linear_tolerance < 1.0,
+            "[solver] linear_tolerance must lie in (0, 1)"
+        );
+        Ok(())
+    }
+
+    fn limiter(&self) -> Limiter {
+        match self.limiter {
+            LimiterKind::None => Limiter::None,
+            LimiterKind::Venkatakrishnan => Limiter::Venkatakrishnan { k: self.limiter_k },
+            LimiterKind::VenkatakrishnanWang => Limiter::VenkatakrishnanWang { k: self.limiter_k },
+        }
+    }
+}
+
+/// Wall-clock seconds per phase (R6), measured with device synchronisation.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Timings {
+    /// Gradient.
+    pub gradient: f64,
+    /// Limiter.
+    pub limiter: f64,
+    /// Face coefficients.
+    pub faces: f64,
+    /// Assembly.
+    pub assemble: f64,
+    /// Linear solves.
+    pub linear: f64,
+}
+
+impl Timings {
+    /// Total seconds.
+    pub fn total(&self) -> f64 {
+        self.gradient + self.limiter + self.faces + self.assemble + self.linear
+    }
+}
+
+/// Result of a solve.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Outcome {
+    /// Outer iterations done.
+    pub outer: usize,
+    /// Normalised residual per outer iteration (before its linear solve).
+    pub residuals: Vec<f64>,
+    /// BiCGStab iterations per outer iteration.
+    pub linear_iterations: Vec<usize>,
+    /// Converged to the outer tolerance.
+    pub converged: bool,
+    /// Phase timings.
+    pub timings: Timings,
+}
+
+impl Outcome {
+    /// Figure of merit (R6): nanoseconds per cell and outer iteration.
+    pub fn ns_per_cell_iteration(&self, cells: usize) -> f64 {
+        1e9 * self.timings.total() / (cells as f64 * self.outer.max(1) as f64)
+    }
+}
+
+fn timed(
+    be: &mut dyn Backend,
+    acc: &mut f64,
+    f: impl FnOnce(&mut dyn Backend) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    let t = Instant::now();
+    f(be)?;
+    be.sync()?;
+    *acc += t.elapsed().as_secs_f64();
+    Ok(())
+}
+
+/// Gradient (and limiter) of the current `Phi`.
+pub fn gradient(be: &mut dyn Backend, s: &Settings, tm: &mut Timings) -> anyhow::Result<()> {
+    timed(be, &mut tm.gradient, |b| b.gradient())?;
+    let lim = if s.scheme == Scheme::Upwind {
+        Limiter::None
+    } else {
+        s.limiter()
+    };
+    timed(be, &mut tm.limiter, |b| b.limiter(lim))
+}
+
+/// Solves the steady problem from the `Phi` held by the backend.
+pub fn solve(
+    be: &mut dyn Backend,
+    s: &Settings,
+    mut log: impl FnMut(&str),
+) -> anyhow::Result<Outcome> {
+    s.validate()?;
+    let mut out = Outcome::default();
+    let fs = FaceSettings {
+        blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
+        nonorth: s.nonorth_correction,
+        nonorth_limit: s.nonorth_limit,
+    };
+    for it in 0..s.max_outer {
+        let mut tm = std::mem::take(&mut out.timings);
+        gradient(be, s, &mut tm)?;
+        timed(be, &mut tm.faces, |b| b.faces(fs))?;
+        timed(be, &mut tm.assemble, |b| b.assemble(s.relaxation))?;
+        // residual of the unrelaxed system at the current φ (the relaxation
+        // terms cancel there)
+        let t = Instant::now();
+        be.residual(V::Phi, V::Rhs, V::R)?;
+        let rr = be.dot(V::R, V::R)?.sqrt();
+        let bb = be.dot(V::Rhs, V::Rhs)?.sqrt();
+        let res = rr / bb.max(f64::MIN_POSITIVE);
+        out.residuals.push(res);
+        out.outer = it + 1;
+        if res < s.tolerance {
+            out.converged = true;
+            out.linear_iterations.push(0);
+            be.sync()?;
+            tm.linear += t.elapsed().as_secs_f64();
+            out.timings = tm;
+            log(&format!(
+                "outer {:4}  residual {res:.3e}  converged",
+                it + 1
+            ));
+            break;
+        }
+        let lin = bicgstab(be, s.linear_max_iter, s.linear_tolerance, rr)?;
+        be.sync()?;
+        tm.linear += t.elapsed().as_secs_f64();
+        out.timings = tm;
+        out.linear_iterations.push(lin);
+        if it % 10 == 0 || it + 1 == s.max_outer {
+            log(&format!(
+                "outer {:4}  residual {res:.3e}  bicgstab {lin}",
+                it + 1
+            ));
+        }
+        anyhow::ensure!(res.is_finite(), "the solution diverged (residual {res})");
+    }
+    Ok(out)
+}
+
+/// BiCGStab (van der Vorst 1992) with right Jacobi preconditioning on
+/// A Phi = Rhs; expects R = Rhs − A Phi with norm `r0`. Returns the
+/// iterations done.
+pub fn bicgstab(
+    be: &mut dyn Backend,
+    max_iter: usize,
+    rel_tol: f64,
+    r0: f64,
+) -> anyhow::Result<usize> {
+    let target = rel_tol * r0;
+    be.copy(V::R, V::Rh)?;
+    be.copy(V::R, V::P)?;
+    let mut rho = be.dot(V::Rh, V::R)?;
+    for it in 1..=max_iter {
+        if rho == 0.0 {
+            return Ok(it - 1);
+        }
+        be.precondition(V::P, V::Ph)?;
+        be.spmv(V::Ph, V::Vv)?;
+        let rv = be.dot(V::Rh, V::Vv)?;
+        if rv == 0.0 {
+            return Ok(it - 1);
+        }
+        let alpha = rho / rv;
+        be.sub_scaled(V::R, V::Vv, alpha, V::S)?;
+        let ss = be.dot(V::S, V::S)?.sqrt();
+        if ss <= target {
+            // Phi += α p̂
+            be.copy(V::S, V::Sh)?;
+            be.update_x(alpha, 0.0)?;
+            return Ok(it);
+        }
+        be.precondition(V::S, V::Sh)?;
+        be.spmv(V::Sh, V::T)?;
+        let ts = be.dot(V::T, V::S)?;
+        let tt = be.dot(V::T, V::T)?;
+        let omega = if tt > 0.0 { ts / tt } else { 0.0 };
+        be.update_x(alpha, omega)?;
+        be.sub_scaled(V::S, V::T, omega, V::R)?;
+        let rn = be.dot(V::R, V::R)?.sqrt();
+        if rn <= target || omega == 0.0 {
+            return Ok(it);
+        }
+        let rho_new = be.dot(V::Rh, V::R)?;
+        let beta = (rho_new / rho) * (alpha / omega);
+        rho = rho_new;
+        be.update_p(beta, omega)?;
+    }
+    Ok(max_iter)
+}

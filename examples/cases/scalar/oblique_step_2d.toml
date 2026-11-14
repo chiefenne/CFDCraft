@@ -1,0 +1,68 @@
+# Oblique step: pure convection of a discontinuity at 30° to the x axis on
+# a 2D polygonal mesh, with four convection schemes (stage 2, D25).
+#
+#   cargo run --release -p cfdcraft-cli -- scalar examples/cases/scalar/oblique_step_2d.toml
+#
+# φ = 1 enters through ymin and through xmin below y = 0.2, φ = 0 through
+# xmin above it; zero gradient at the outflow (xmax, ymax) and on the z
+# patches. The exact solution is the step along the line from (0, 0.2) at
+# 30°, so φ must stay in [0, 1]. First-order upwind is bounded but smears
+# the step; linear upwind without a limiter is sharper but over- and
+# undershoots; with the Venkatakrishnan limiters at K = 0 the solution is
+# sharp and bounded. The run fails if a limited variant leaves [0, 1].
+# Output per variant in output/oblique_step_2d/<variant>/, the profiles
+# along x = 0.8 in profile.svg.
+
+[mesh.generate]
+type = "poly"
+dimension = 2
+cells = [48, 48, 1]
+perturb = 0.1
+
+[mesh]
+renumber = "rcm"
+
+[problem]
+diffusivity = 1e-6                 # nearly pure convection
+velocity = [0.8660254037844387, 0.5, 0.0]
+
+[problem.boundary.xmin]
+type = "fixed-value"
+profile = "step"
+axis = 1
+at = 0.2
+below = 1.0
+above = 0.0
+[problem.boundary.ymin]
+type = "fixed-value"
+value = 1.0
+[problem.boundary.xmax]
+type = "zero-gradient"
+[problem.boundary.ymax]
+type = "zero-gradient"
+[problem.boundary.zmin]
+type = "zero-gradient"
+[problem.boundary.zmax]
+type = "zero-gradient"
+
+[[variants]]
+name = "upwind"
+solver = { scheme = "upwind" }
+bounds = [0.0, 1.0]
+
+[[variants]]
+name = "linear-upwind"
+solver = { scheme = "linear-upwind", limiter = "none", max_outer = 400 }
+
+[[variants]]
+name = "venkatakrishnan"
+solver = { scheme = "linear-upwind", limiter = "venkatakrishnan", limiter_k = 0.0, max_outer = 400 }
+bounds = [0.0, 1.0]
+
+[[variants]]
+name = "venkatakrishnan-wang"
+solver = { scheme = "linear-upwind", limiter = "venkatakrishnan-wang", limiter_k = 0.0, max_outer = 400 }
+bounds = [0.0, 1.0]
+
+[output]
+profile = { from = [0.8, 0.0, 0.5], to = [0.8, 1.0, 0.5], points = 400 }

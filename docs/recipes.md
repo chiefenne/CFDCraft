@@ -16,6 +16,9 @@ the [Example gallery](gallery.md).
 9. [Partition a mesh and test the halo exchange](#mesh-partition)
 10. [Rerun G1 on polyhedral and tetrahedral meshes](#g1-stage1)
 11. [Update the golden values of the mesher](#golden)
+12. [Check the order of accuracy of the scalar operators](#scalar-mms)
+13. [Compare convection schemes and limiters](#scalar-schemes)
+14. [Run the scalar operators on an NVIDIA GPU](#scalar-gpu) (also: free Colab T4)
 
 ---
 
@@ -152,14 +155,19 @@ exchange) and a reproducible sum that gives the same bits on every rank.
 ```
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo clippy --workspace --all-targets --features cfdcraft-bench/cuda -- -D warnings
+cargo clippy --workspace --all-targets --features cfdcraft-bench/cuda,cfdcraft-fv/cuda -- -D warnings
 cargo test --workspace --release
 cargo test -p cfdcraft-mesh --no-default-features      # without HDF5 and METIS
-gpu/ptx-kernels/build.sh
+cargo test -p cfdcraft-fv --no-default-features
+gpu/ptx-kernels/build.sh && tools/check_kernels.sh     # PTX, and R10: no atomics, no f32, no FMA
 for f in examples/cases/mesh/*_box.toml examples/cases/mesh/*_2d.toml; do
   target/release/cfdcraft mesh "$f" || break
 done
-pip install vtk numpy && python3 tools/check_vtkhdf.py output/*/mesh.vtkhdf
+for f in examples/cases/scalar/*.toml; do
+  case "$f" in *_gpu.toml) continue;; esac
+  target/release/cfdcraft scalar "$f" || break
+done
+pip install vtk numpy && python3 tools/check_vtkhdf.py output/*/mesh.vtkhdf output/*/fields.vtkhdf output/*/*/fields.vtkhdf
 ```
 
 The workflow is `.github/workflows/ci.yml`; it runs on every pull request on
@@ -309,5 +317,99 @@ git diff crates/cfdcraft-mesh/tests/golden/mesher.json
 ```
 
 and say in the commit message why the values changed.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="scalar-mms"></a>
+## 12. Check the order of accuracy of the scalar operators
+
+The manufactured-solution sweeps of stage 2 ([explanation](verification/stage2.md)):
+each case solves on three or four nested refinements, prints the observed
+order and fails if it is outside 1.8–2.2.
+
+```
+cargo build --release -p cfdcraft-cli
+for m in hex tet poly mixed; do
+  target/release/cfdcraft scalar examples/cases/scalar/mms_${m}_box.toml
+done
+target/release/cfdcraft scalar examples/cases/scalar/mms_poly_2d.toml
+cat output/mms_poly_box/scalar.md          # errors, orders, time per phase
+```
+
+Keys: `verification.levels` (refinement levels of `[mesh.generate]`,
+override with `--levels 1,2,3,4`), `verification.expected_order`,
+`problem.manufactured`, `problem.boundary.<patch>` with `profile =
+"manufactured"`, `mesh.generate.perturb`. The same checks as tests (one
+level finer with `--ignored`):
+
+```
+cargo test --release -p cfdcraft-fv
+cargo test --release -p cfdcraft-fv -- --ignored --nocapture   # about 1.6 M tetrahedra, minutes
+cargo run --release -p cfdcraft-fv --example sweep_table         # the table of the explanation page
+```
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="scalar-schemes"></a>
+## 13. Compare convection schemes and limiters
+
+One case, several solver settings: `[[variants]]` runs the case once per
+variant, writes the fields of each into its own directory and the profiles
+along `output.profile` into one plot.
+
+```
+target/release/cfdcraft scalar examples/cases/scalar/oblique_step_2d.toml
+cat output/oblique_step_2d/scalar.md       # φ range per scheme
+# profile plot: output/oblique_step_2d/profile.svg
+# fields: output/oblique_step_2d/<variant>/fields.vtkhdf (open in ParaView, field "phi" and "limiter")
+```
+
+Keys: `solver.scheme` (`upwind`, `linear-upwind`), `solver.limiter`
+(`none`, `venkatakrishnan`, `venkatakrishnan-wang`), `solver.limiter_k`
+(0: strictly bounded; larger: smoother, small overshoots),
+`[[variants]].bounds`, `output.profile`. To try another K, add a variant:
+
+```toml
+[[variants]]
+name = "venkatakrishnan-k03"
+solver = { scheme = "linear-upwind", limiter = "venkatakrishnan", limiter_k = 0.3, max_outer = 400 }
+```
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="scalar-gpu"></a>
+## 14. Run the scalar operators on an NVIDIA GPU
+
+Without a GPU of your own: open
+[`tools/stage2_colab.ipynb`](https://colab.research.google.com/github/chiefenne/CFDCraft/blob/main/tools/stage2_colab.ipynb)
+in Google Colab, choose a T4 runtime, set `BRANCH` if the stage-2 branch is
+not merged yet, and run all cells (about 15 minutes). On any Linux machine
+with an NVIDIA GPU of compute capability 7.0 or newer:
+
+```
+bash tools/stage2_cloud.sh
+```
+
+By hand:
+
+```
+gpu/ptx-kernels/build.sh sm_75                          # your GPU's sm_XY (nvidia-smi: compute_cap)
+cargo build --release -p cfdcraft-cli --features cuda
+target/release/cfdcraft scalar examples/cases/scalar/mms_poly_gpu.toml
+target/release/cfdcraft scalar examples/cases/scalar/oblique_step_2d.toml --backends cpu,cuda
+target/release/cfdcraft scalar examples/cases/scalar/mms_poly_box.toml --backends cuda
+```
+
+`mms_poly_gpu.toml` solves on the CPU and twice on the GPU (`run.backends =
+["cpu", "cuda", "cuda"]`); the column "vs first backend" of the report says
+"bitwise equal" when a GPU run reproduces the CPU run bit for bit, and the
+run fails if any difference exceeds 1e-10. Keys: `run.backends`,
+`run.rust_ptx` (or `--rust-ptx`).
 
 [↑ back to top](#recipes)

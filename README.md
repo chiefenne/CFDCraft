@@ -10,12 +10,16 @@
 
 ---
 
-> **Status: stage 1 done (mesh, release 0.1).** The requirements are in
-> [docs/requirements.md](docs/requirements.md). The code so far is the
-> workspace, continuous integration, the GPU kernel benchmark that decided
-> the GPU backend ([G1](docs/benchmarks/g1.md)) and the polyhedral mesh:
-> Gmsh reader, test mesher, quality report, partitioning and VTKHDF output.
-> There is no solver yet; stage 2 (operators on a scalar equation) is next.
+> **Status: stage 2 (operators on a scalar equation) in review.** The
+> requirements are in [docs/requirements.md](docs/requirements.md). The code
+> so far is the workspace, continuous integration, the GPU kernel benchmark
+> that decided the GPU backend ([G1](docs/benchmarks/g1.md)), the
+> polyhedral mesh (Gmsh reader, test mesher, quality report, partitioning,
+> VTKHDF output) and the finite-volume operators on a scalar transport
+> equation, on the CPU and the GPU: least-squares gradients, limiters,
+> convection and diffusion, reproducible assembly and BiCGStab
+> ([stage 2](docs/verification/stage2.md)). The flow solver starts with
+> stage 3 (pressure solver).
 
 [![CI](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/CFDCraft)](https://github.com/chiefenne/CFDCraft/releases)
@@ -62,6 +66,7 @@ cargo build --release -p cfdcraft-cli
 target/release/cfdcraft info
 target/release/cfdcraft bench g1 examples/cases/bench/g1_ci_small.toml
 target/release/cfdcraft mesh examples/cases/mesh/poly_partition.toml
+target/release/cfdcraft scalar examples/cases/scalar/mms_poly_box.toml
 ```
 
 ## Documentation
@@ -69,10 +74,10 @@ target/release/cfdcraft mesh examples/cases/mesh/poly_partition.toml
 | Kind | What it is for | Where |
 |---|---|---|
 | Tutorial | a first mesh, end to end, in about ten minutes | [docs/tutorial.md](docs/tutorial.md) |
-| How-to | steps for one task: build, run, check, partition, rerun G1 | [docs/recipes.md](docs/recipes.md) |
+| How-to | steps for one task: build, run, check, partition, rerun G1, order of accuracy, GPU runs | [docs/recipes.md](docs/recipes.md) |
 | Reference | every case file, its keys and defaults | [docs/cases.md](docs/cases.md) |
 | Examples | what each feature computes, with pictures and the commands | [docs/gallery.md](docs/gallery.md) |
-| Explanation | requirements, decisions, benchmark results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md) |
+| Explanation | requirements, decisions, benchmark and verification results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md), [stage 2](docs/verification/stage2.md) |
 
 The [changelog](CHANGELOG.md) lists every release.
 

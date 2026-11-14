@@ -35,7 +35,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked
       # the CUDA backends compile without a CUDA toolkit (driver and NVRTC
       # are loaded at run time)
-      - run: cargo clippy --workspace --all-targets --locked --features cfdcraft-bench/cuda
+      - run: cargo clippy --workspace --all-targets --locked --features cfdcraft-bench/cuda,cfdcraft-fv/cuda
       - run: cargo doc --workspace --no-deps --locked
 
   test:
@@ -59,6 +59,13 @@ jobs:
           for f in examples/cases/mesh/*_box.toml examples/cases/mesh/*_2d.toml examples/cases/mesh/poly_partition.toml; do
             cargo run --release --locked -p cfdcraft-cli -- mesh "$f"
           done
+      - name: Scalar cases of the gallery and the case catalogue (R5; each checks its own results)
+        shell: bash
+        run: |
+          for f in examples/cases/scalar/*.toml; do
+            case "$f" in *_gpu.toml) continue;; esac
+            cargo run --release --locked -p cfdcraft-cli -- scalar "$f"
+          done
       - uses: actions/setup-python@v5
         if: runner.os == 'Linux'
         with:
@@ -67,10 +74,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           pip install vtk numpy
-          python3 tools/check_vtkhdf.py output/*/mesh.vtkhdf
+          python3 tools/check_vtkhdf.py output/*/mesh.vtkhdf output/*/fields.vtkhdf output/*/*/fields.vtkhdf
       - name: Without HDF5 and METIS
         if: runner.os == 'Linux'
-        run: cargo test -p cfdcraft-mesh --no-default-features --locked
+        run: |
+          cargo test -p cfdcraft-mesh --no-default-features --locked
+          cargo test -p cfdcraft-fv --no-default-features --locked
       - uses: actions/upload-artifact@v4
         with:
           name: g1-ci-small-${{ matrix.os }}
@@ -79,6 +88,12 @@ jobs:
         with:
           name: mesh-reports-${{ matrix.os }}
           path: output/*/mesh_report.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scalar-reports-${{ matrix.os }}
+          path: |
+            output/*/scalar.md
+            output/*/*.svg
 
   msrv:
     name: Minimum Rust version
@@ -119,7 +134,7 @@ jobs:
           mpirun --oversubscribe -n 2 target/release/examples/mpi_halo
 
   ptx:
-    name: Single-source GPU kernels compile to PTX
+    name: Single-source GPU kernels compile to PTX (G1 and stage 2)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -129,6 +144,8 @@ jobs:
         with:
           workspaces: gpu/ptx-kernels -> ../../target
       - run: gpu/ptx-kernels/build.sh
+      - name: No atomics, no f32, no contracted f64 arithmetic in the kernels (R10)
+        run: tools/check_kernels.sh
       - run: gpu/ptx-kernels/build.sh sm_86
       - uses: actions/upload-artifact@v4
         with:

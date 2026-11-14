@@ -15,10 +15,10 @@ path = "src/main.rs"
 [features]
 default = ["hdf5", "metis"]
 # VTKHDF output (HDF5 built from source; needs CMake and a C compiler).
-hdf5 = ["cfdcraft-mesh/hdf5"]
+hdf5 = ["cfdcraft-mesh/hdf5", "cfdcraft-fv/hdf5"]
 # METIS partitioning (built from source).
 metis = ["cfdcraft-mesh/metis"]
-cuda = ["cfdcraft-bench/cuda"]
+cuda = ["cfdcraft-bench/cuda", "cfdcraft-fv/cuda"]
 mpi = ["cfdcraft-parallel/mpi"]
 checked-indexing = ["cfdcraft-bench/checked-indexing"]
 
@@ -26,6 +26,7 @@ checked-indexing = ["cfdcraft-bench/checked-indexing"]
 cfdcraft-core.workspace = true
 cfdcraft-bench.workspace = true
 cfdcraft-mesh.workspace = true
+cfdcraft-fv.workspace = true
 cfdcraft-parallel.workspace = true
 clap.workspace = true
 anyhow = "1"

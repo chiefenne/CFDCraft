@@ -18,6 +18,48 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
 
+## Unreleased – stage 2: operators on a scalar equation
+
+New crate `cfdcraft-fv` (features `hdf5`, default on, and `cuda`) and new
+kernel bodies in `cfdcraft-kernels` (`fv`, `blas`), one source for the CPU
+and the GPU:
+
+- **Least-squares gradient (D24).** Weighted least squares over the face
+  neighbours; weights per cell-face entry precomputed on the host;
+  fixed-value, fixed-gradient and symmetry boundaries keep linear fields
+  exact on every mesh type.
+- **Convection (D25).** First-order upwind and linear upwind as a deferred
+  correction; Venkatakrishnan and Venkatakrishnan–Wang limiters.
+- **Diffusion (D26).** Over-relaxed non-orthogonal correction, optionally
+  limited.
+- **Assembly (D31, D37).** Face kernel for the flux coefficients, cell
+  kernel that gathers them into a sliced-ELL row (C = 32, σ = 1), the
+  right-hand side and the Jacobi diagonal; implicit under-relaxation. No
+  atomics; results independent of the thread count.
+- **BiCGStab (D36)** with Jacobi preconditioning; dot products in fixed
+  blocks of 256, the same order on the CPU and the GPU.
+- **Backends.** CPU (rayon) and NVIDIA GPU (`cuda`: the bodies as PTX entry
+  points `fv_*`, `blas_*` in `gpu/ptx-kernels`, all fields resident on the
+  GPU).
+- **`cfdcraft scalar`.** Case file with `[problem]` (manufactured solutions,
+  boundary profiles), `[solver]`, `[run]` (backends compared with each
+  other), `[verification]` (refinement sweeps, expected order, bounds),
+  `[[variants]]` and `[output]` (VTKHDF fields, sampling line). Reports in
+  Markdown and JSON with time per phase and ns per cell and iteration (R6),
+  convergence and profile plots as SVG.
+- **Verification.** Tests for exact gradients, no new extrema, order of
+  accuracy 1.8–2.2 on hex, tet, poly and mixed meshes in 2D and 3D
+  (release builds, R7), bitwise reproducibility; seven scalar case files,
+  gallery examples 8 and 9, recipes 12–14, the explanation page
+  `docs/verification/stage2.md`.
+- **CI.** Every scalar case except the GPU one runs as a test (R5);
+  `tools/check_kernels.sh` refuses atomics, f32 and fused or approximate f64
+  arithmetic in the kernels and the PTX (R10).
+- **GPU check.** `tools/stage2_colab.ipynb` and `tools/stage2_cloud.sh`
+  (CPU against two GPU runs on 0.9 million polyhedra).
+
+---
+
 ## 0.1 (2026-11-14) – stage 1: mesh
 
 - Release workflow (`.github/workflows/release.yml`): creates the tag
