@@ -47,8 +47,8 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D9  | 2  | Foreign libraries | Linking C libraries is allowed where it costs no performance. MPI is linked as a system library | A call into a C library at solver granularity has no measurable overhead |
 | D10 | 2  | Solver ecosystem | Sparse linear algebra, Krylov solvers and algebraic multigrid are written in this project, from the published literature, provided this proves feasible | Feasibility: the methods are well published (aggregation and classical AMG, GPU variants). This is the largest single work item of the project. Proposal for a safety net: O8 |
 | D11 | 2  | Language | Rust (stable toolchain, cargo workspace), conditional on gate G1 | Alternatives considered: C++ with Kokkos, modern Fortran with OpenACC. See section 2a. **G1 passed on 2026-11-14 (GPU: T4, CPU: i9-9900K), D11 stands.** Deviation found: the single-source GPU route (`gpu/ptx-kernels`, rustc target `nvptx64-nvidia-cuda`) needs the nightly toolchain, so the "stable toolchain" holds for the host code only (O14) |
-| D12 | 3  | Turbulence models, milestone 1 | k-ω SST (Menter, Kuntz & Langtry 2003); standard k-ε (Launder & Spalding 1974); the modern k-ε variants realizable (Shih et al. 1995) and RNG (Yakhot et al. 1992) | The k-ε variants are there to reproduce literature data. All models through one generic transport-equation interface; the three k-ε variants share one implementation and differ in constants and source terms. Spalart–Allmaras: P4 |
-| D13 | 3  | Wall treatment, milestone 1 | Wall functions are required: standard (log-law) and scalable wall functions for the k-ε family; an automatic, y⁺-insensitive wall treatment for SST that blends the viscous sublayer and the log law | General purpose meshes cannot guarantee y⁺ ≈ 1. Low-Re, wall-resolved k-ε: P5 |
+| D12 | 3  | Turbulence models, milestone 1 | k-ω SST (Menter, Kuntz & Langtry 2003); standard k-ε (Launder & Spalding 1974); realizable k-ε (Shih et al. 1995); k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004), the elliptic-relaxation eddy-viscosity model, **in place of RNG k-ε** (decision of 2026-11-14, assessment `k-zeta-f-assessment.md`) | The k-ε variants are there to reproduce literature data; ζ-f is the near-wall model for separation and heat transfer (best of the linear eddy-viscosity models on the asymmetric diffuser and, with L1, on impingement and near-wall heat transfer). All models through one generic transport-equation interface, which also takes the steady elliptic-relaxation equation of ζ-f (Helmholtz operator, no time derivative, solved with the scalar path of stage 2, no AMG); the two k-ε variants share one implementation. The time and length scales are bounded as in the 2004 paper (realizability limits). Inlets carry an optional ζ (default 2/3). RNG k-ε (Yakhot et al. 1992) moves to P9. Spalart–Allmaras: P4. PANS on ζ-f: P7 |
+| D13 | 3  | Wall treatment, milestone 1 | Wall functions are required: standard (log-law) and scalable wall functions for the k-ε family; an automatic, y⁺-insensitive wall treatment for SST that blends the viscous sublayer and the log law; the compound wall treatment (Popovac & Hanjalić 2007; Popovac 2023) for ζ-f, blending the integrated and the wall-function limits, including the thermal field once L1 exists | General purpose meshes cannot guarantee y⁺ ≈ 1. The wall-treatment interface takes first-cell y⁺, wall distance of the first cell and a blending function per wall face and is not specific to SST, so that the compound treatment and the thermal wall function of L1 use the same path. Low-Re, wall-resolved k-ε: P5 |
 | D14 | 3  | Steady and transient | Both in milestone 1 | |
 | D15 | 3  | GPU vendor | NVIDIA (CUDA) only | AMD and Intel GPUs: P6. The single-source question of D8 and gate G1 is therefore NVIDIA against CPU |
 | D16 | 3  | Apple platforms | A Mac runs the float64 path on its CPU (multi-threaded, SIMD). Apple GPUs only through P2, as a declared reduced-precision mode | Follows from D7: Apple GPUs have no float64 hardware and the Metal shading language has no `double` |
@@ -149,7 +149,7 @@ needs only scalar AMG) and coupled second.
 
 ## 3. Planned for later
 
-Order of work after milestone 1: L1, L2, L12 (sprays, after energy and species because evaporation needs them), L3, L4, L5; L6 to L11 as the need arises.
+Order of work after milestone 1: L1 (with the compound wall treatment of D13 for heat transfer), L2, L12 (sprays, after energy and species because evaporation needs them), L3, L4, L5; L6 to L11 as the need arises.
 
 | ID | Feature | Notes |
 |----|---------|-------|
@@ -163,6 +163,7 @@ Order of work after milestone 1: L1, L2, L12 (sprays, after energy and species b
 | L8 | Built-in mesher | Much later; solver first |
 | L9 | Logo in the ArtCraft style | Peregrine falcon, first version in the repository (`assets/logo/cfdcraft.svg`); variants under review |
 | L11 | Coupled pressure-based solver | Second pressure–velocity algorithm on the shared discretization (D19); needs a block AMG |
+| L13 | Immersed boundary method | Bodies given as surfaces (for example STL) on a background mesh that is not fitted to them, as an alternative to body-fitted meshes: cut cells or ghost cells on the polyhedral face-based mesh (D23), no change to the solver data structures; moving and deforming bodies together with L4. Needs a wall treatment for the cut boundary that reuses the interface of D13 and boundary conditions on the immersed surface through the D29 set. Literature: Peskin 2002, Mittal & Iaccarino 2005 (survey), Cartesian cut-cell methods. Added by the maintainer 2026-11-14; scheme, accuracy targets and test cases are decided when the item starts |
 | L12 | Discrete droplet sprays (Lagrangian) | Droplets are tracked as parcels, each standing for many identical droplets (tracking every droplet is impossible at 100+ million cells). Models in this order of priority: breakup (for example KH-RT), evaporation and heat transfer (with L1 and L2), wall films and wall interaction, collision; injection models, drag and other forces, turbulent dispersion and one-way and two-way coupling to the gas phase come with the first version. Must be parallel: parcels migrate between ranks, the load is balanced when parcels cluster, kernels run on GPU (D47). Complements the Euler–Euler and VOF multiphase of L3 |
 | L10 | Fully compressible high-Mach flow (transonic, supersonic) | After low-Mach variable density (D17) |
 
@@ -176,6 +177,9 @@ Order of work after milestone 1: L1, L2, L12 (sprays, after energy and species b
 | P4 | Spalart–Allmaras | Not in milestone 1 (D12); cheap to add through the transport-equation interface |
 | P5 | Low-Re, wall-resolved k-ε variants | D13 |
 | P6 | AMD and Intel GPUs | D15 |
+| P7 | PANS on ζ-f (partially averaged Navier–Stokes) as a scale-resolving model, with the resolution parameter f_k computed dynamically | Kept for later by the maintainer (2026-11-14), second hybrid route after SST-based DES within L5. Needs ζ-f of D12 and low-dissipation convection (D25). Literature: Basara et al. 2011, Basara 2015, Basara, Pavlovic & Girimaji 2018 and 2019 |
+| P8 | Curvature and rotation correction for SST and ζ-f | Motivated by the U-bend case of D45, which neither model captures without it |
+| P9 | RNG k-ε | Dropped from milestone 1 in favour of ζ-f (D12); cheap to add through the shared k-ε implementation |
 
 
 ## 5. Not planned
@@ -215,7 +219,7 @@ NVIDIA GPUs and CPUs, with MPI. Every stage ends with:
 | **3 Pressure solver** | Aggregation AMG with CG (D35), mixed-precision hierarchy (D37), hypre reference (D20) | Poisson problem on all mesh types: iteration count nearly independent of mesh size; same converged result as hypre; GPU time per cell compared with hypre and reported |
 | **4 Laminar steady flow** | SIMPLEC, time-step-independent Rhie–Chow (D27, D19), boundary conditions with combination check and guidance (D29, D30), TOML case file and validation (D39), log and CSV output (D43) | Couette: round-off error. Poiseuille: observed order 1.8–2.2 on all mesh types. Lid-driven cavity 2D and 3D, Re 100 and 1000, against Ghia et al. |
 | **5 Transient flow, restart, control** | PISO-type algorithm, BDF2 and Crank–Nicolson (D28), adaptive time step, restart (D42), re-reading the case file and control files (D40), configurable output and probes (D43) | Taylor–Green: time order 2, space order 2. Cylinder Re 20 (C_D, C_L, Δp) and Re 100 (C_D,max, C_L,max, Strouhal number) against Schäfer & Turek. Restart continues a run bit-identically on the same decomposition |
-| **6 Turbulence and wall functions** | k-ω SST (2003), standard, realizable and RNG k-ε, wall functions and the automatic wall treatment (D12, D13); generic transport-equation interface | Flat plate: C_f and velocity profile against the NASA TMR values; channel flow against DNS; backward-facing step: reattachment length against experiment |
+| **6 Turbulence and wall functions** | k-ω SST (2003), standard and realizable k-ε, k-ε-ζ-f, wall functions, the automatic wall treatment and the compound wall treatment (D12, D13); generic transport-equation interface including the elliptic-relaxation equation | Flat plate: C_f and velocity profile against the NASA TMR values; channel flow against DNS (ζ-f: near-wall profiles of k, ε and ζ with y⁺ ≈ 1, and unchanged wall shear for y⁺ from 1 to 100 with the compound treatment); backward-facing step: reattachment length against experiment |
 | **7 Parallel performance, internal flows, milestone 1** | Multi-rank MPI with overlapped halo exchange (D38), GPU-aware MPI, strong and weak scaling measurements as far as the hardware allows, the general-purpose internal-flow cases of D45 (pipe, plane diffuser, U-bend, T-junction on a polyhedral mesh), user documentation, tag `v1.0` | Same result on 1, 2 and 4 ranks within solver tolerance; scaling report states what was measured and where, with the multi-node path labelled "designed for" until a cluster allocation exists (O12); pipe-flow wall shear and mean profile against DNS; diffuser separation and pressure recovery against Buice & Eaton; U-bend pressure and velocity profiles against Monson et al.; T-junction grid convergence on tetrahedral, polyhedral and mixed meshes; all cases of D45 in the gallery |
 
 ## References
@@ -230,6 +234,24 @@ NVIDIA GPUs and CPUs, with MPI. Every stage ends with:
 - V. Yakhot, S. A. Orszag, S. Thangam, T. B. Gatski, C. G. Speziale,
   *Development of turbulence models for shear flows by a double expansion
   technique*, Phys. Fluids A 4, 1510–1520 (1992)
+- K. Hanjalić, M. Popovac, M. Hadžiabdić, *A robust near-wall
+  elliptic-relaxation eddy-viscosity turbulence model for CFD*, Int. J. Heat
+  Fluid Flow 25, 1047–1051 (2004)
+- M. Popovac, K. Hanjalić, *Compound wall treatment for RANS computation of
+  complex turbulent flows and heat transfer*, Flow, Turbulence and
+  (FTaC) 78, 177–202 (2007)
+- M. Popovac, *Robust eddy viscosity turbulence modeling with elliptic
+  relaxation and compound wall treatment*, Energies 16(9), 3685 (2023)
+- K. Hanjalić, B. Launder, *Modelling Turbulence in Engineering and the
+  Environment*, Cambridge University Press (2011)
+- B. Basara, S. Krajnović, S. Girimaji, Z. Pavlovic, *Near-wall formulation
+  of the partially averaged Navier–Stokes turbulence model*, AIAA J. 49(12),
+  2627–2636 (2011)
+- B. Basara, *PANS method as a computational framework from an industrial
+  perspective*, in Progress in Hybrid RANS-LES Modelling, NNFM 130,
+  3–17 (2015)
+- R. Mittal, G. Iaccarino, *Immersed boundary methods*, Annu. Rev. Fluid
+  Mech. 37, 239–261 (2005)
 - C. M. Rhie, W. L. Chow, *Numerical study of the turbulent flow past an
   airfoil with trailing edge separation*, AIAA J. 21, 1525–1532 (1983)
 - R. I. Issa, *Solution of the implicitly discretised fluid flow equations
