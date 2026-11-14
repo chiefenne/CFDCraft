@@ -18,7 +18,7 @@
 
 CFDCraft aims to be a general purpose computational fluid dynamics solver of
 industry strength: the class of tool that engineers rely on every day for
-fluid flow, heat and mass transfer, species transport and combustion, on real
+fluid flow, heat and mass transfer, species transport and reacting flows, on real
 geometries and at real problem sizes. It is free and open source under the MIT
 licence.
 

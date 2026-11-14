@@ -10,13 +10,15 @@ Living document, updated after each requirement step. Form taken from the
 - **O** – open requirement step, with the current proposal
 
 Status: requirements engineering in progress. Steps 1 (scope) and 2 (language,
-hardware) answered on 2026-11-14; step 3 open. No code yet.
+hardware) answered on 2026-11-14; step 3 answered on 2026-11-14 completely. No code yet.
+
+Terminology: the project says *reacting flows*, not "combustion", everywhere.
 
 
 ## 1. Purpose and scope
 
 - General purpose CFD solver for fluid dynamics, heat and mass transfer,
-  species transport and combustion. Long-term reference class: the
+  species transport and reacting flows. Long-term reference class: the
   industry-standard general purpose CFD solvers.
 - Open source (MIT), developed in the manner of the
   [ArtCraft Crafting Apps](https://getartcraft.com/apps/craft-anything): Rust,
@@ -45,6 +47,17 @@ hardware) answered on 2026-11-14; step 3 open. No code yet.
 | D9  | 2  | Foreign libraries | Linking C libraries is allowed where it costs no performance. MPI is linked as a system library | A call into a C library at solver granularity has no measurable overhead |
 | D10 | 2  | Solver ecosystem | Sparse linear algebra, Krylov solvers and algebraic multigrid are written in this project, from the published literature, provided this proves feasible | Feasibility: the methods are well published (aggregation and classical AMG, GPU variants). This is the largest single work item of the project. Proposal for a safety net: O8 |
 | D11 | 2  | Language | Rust (stable toolchain, cargo workspace), conditional on gate G1 | Alternatives considered: C++ with Kokkos, modern Fortran with OpenACC. See section 2a |
+| D12 | 3  | Turbulence models, milestone 1 | k-ω SST (Menter, Kuntz & Langtry 2003); standard k-ε (Launder & Spalding 1974); the modern k-ε variants realizable (Shih et al. 1995) and RNG (Yakhot et al. 1992) | The k-ε variants are there to reproduce literature data. All models through one generic transport-equation interface; the three k-ε variants share one implementation and differ in constants and source terms. Spalart–Allmaras: P4 |
+| D13 | 3  | Wall treatment, milestone 1 | Wall functions are required: standard (log-law) and scalable wall functions for the k-ε family; an automatic, y⁺-insensitive wall treatment for SST that blends the viscous sublayer and the log law | General purpose meshes cannot guarantee y⁺ ≈ 1. Low-Re, wall-resolved k-ε: P5 |
+| D14 | 3  | Steady and transient | Both in milestone 1 | |
+| D15 | 3  | GPU vendor | NVIDIA (CUDA) only | AMD and Intel GPUs: P6. The single-source question of D8 and gate G1 is therefore NVIDIA against CPU |
+| D16 | 3  | Apple platforms | A Mac runs the float64 path on its CPU (multi-threaded, SIMD). Apple GPUs only through P2, as a declared reduced-precision mode | Follows from D7: Apple GPUs have no float64 hardware and the Metal shading language has no `double` |
+| D17 | 3  | Compressibility | Low-Mach variable density first, together with reacting flows (L2); fully compressible high-Mach flow later (L10) | |
+| D18 | –  | Documentation per feature | Every implemented feature ships with (1) a gallery example (`docs/gallery.md`: one picture per case with the commands that reproduce it), (2) one or more commented case files in `examples/cases/` listed in the case catalogue (`docs/cases.md`: what the case is, the mesh it needs, where it is discussed), (3) a recipe (`docs/recipes.md`: short command sequence for the task, naming the case-file keys it uses). A feature is not done without all three | Owner rule of 2026-11-14, same form as PyAeroFlow |
+| D19 | 3  | Pressure–velocity coupling | Pressure-based, collocated finite volume with Rhie–Chow interpolation, on one shared discretization (the assembly produces per-face coefficients from which scalar or block matrices are built). Segregated SIMPLE-family algorithm first (SIMPLEC steady, PISO-type transient); a coupled pressure-based solver (momentum and pressure in one block system) as the planned second algorithm (L11) | Segregated first: every later physics needs it, and it needs only scalar AMG. Assessment in section 2b |
+| D20 | 3  | Reference linear solver | hypre (open-source solver library of Lawrence Livermore National Laboratory, MIT or Apache-2.0 licence; BoomerAMG, MPI, CUDA) as an optional, linkable reference behind the same interface as the in-house solvers (D10), used to verify them and to benchmark them against the state of the art. Never required to build or run CFDCraft | |
+| D21 | 3  | Clean-room rule | Methods come from the published literature, with references. Code from other solvers is never copied. Open-source solvers may be read for understanding where their licence allows it | Keeps the project under the MIT licence (D1) |
+| D22 | 3  | Continuous integration | GitHub Actions runs the CPU tests (build, unit tests, small verification cases) on every pull request and every push to `main`, on GitHub's free hosted runners. Free for public repositories. GPU tests are run locally by the maintainer once suitable hardware is available; they are marked separately and are not part of the hosted checks | The maintainer has no GPU hardware yet (2026-11-14), so GPU verification starts when it is available |
 
 
 ## 2a. Language assessment (step 2)
@@ -72,6 +85,43 @@ fallback is two backends (D8) with CUDA kernels in CUDA C launched from Rust;
 only if that also proves unworkable is the language reopened.
 
 
+## 2b. Segregated or coupled (step 3, decided in D19)
+
+Is the segregated approach of the industry standards legacy, or an
+advantage? Both, depending on the problem:
+
+- **Memory.** A coupled solver for u, v, w, p stores a 4×4 block per matrix
+  entry, 16 times the entries of one scalar matrix, and its multigrid
+  hierarchy on top. At 100 million polyhedral cells (about 15 entries per row)
+  the coupled matrix alone is about 190 GB in float64; one scalar matrix is
+  about 12 GB and is reused for every equation. On GPUs, where memory is the
+  scarce resource, this is a real advantage of the segregated approach.
+- **Transient flow.** With small time steps (PISO type, CFL around 1) a
+  segregated step needs few outer corrections and is cheap. The coupled
+  solver's main strength, fewer outer iterations, matters little there.
+- **Further physics.** Energy, species, turbulence and volume fractions are
+  added as further scalar equations. Segregated solvers extend naturally;
+  coupled solvers usually couple only momentum and pressure and solve the rest
+  segregated anyway.
+- **Steady, stiff flows.** Here coupled wins: the SIMPLE family needs
+  under-relaxation, and its convergence degrades on high-aspect-ratio
+  boundary-layer meshes and with strong body forces. A coupled solver
+  typically converges in several times fewer iterations and less wall time,
+  at roughly 1.5–2 times the memory. This is why the industry standards offer
+  a coupled pressure-based solver next to the segregated one, and recommend
+  it for steady external aerodynamics.
+- **GPU fit.** Both fit: block-sparse products have a higher arithmetic
+  intensity than scalar ones, so the coupled solver uses a GPU better per
+  byte, but needs a block algebraic multigrid, which is harder to build
+  in-house (D10) than a scalar one.
+
+So the segregated default is not only legacy: it is the better choice for
+transient, multi-physics and memory-bound runs, and the coupled solver is the
+better choice for steady, stiff ones. The proposal is to build both on one
+discretization, segregated first (it is needed for every later physics and
+needs only scalar AMG) and coupled second.
+
+
 ## 3. Planned for later
 
 In the order given in step 1.
@@ -79,23 +129,27 @@ In the order given in step 1.
 | ID | Feature | Notes |
 |----|---------|-------|
 | L1 | Energy equation and conjugate heat transfer | Multi-region meshes (fluid and solid) must not be blocked by the mesh data structure |
-| L2 | Species transport and combustion | Needs variable density (low-Mach formulation) and stiff chemistry integration |
+| L2 | Species transport and reacting flows | Low-Mach variable density (D17) and stiff chemistry integration |
 | L3 | Multiphase: VOF and Euler–Euler | Both required |
 | L4 | Moving meshes | |
 | L5 | Scale-resolving turbulence: LES, DES | Needs low-dissipation convection schemes and second-order time integration |
 | L6 | Clusters at scale | MPI is in the design from the start (D6); tuning and scaling tests on real clusters come after milestone 1 |
 | L7 | Desktop app, in the style of the Crafting Apps | On the same engine as the CLI |
 | L8 | Built-in mesher | Much later; solver first |
-| L9 | Logo in the ArtCraft style (engraved animal) | After the requirements; animal open |
+| L9 | Logo in the ArtCraft style | Peregrine falcon, first version in the repository (`assets/logo/cfdcraft.svg`); variants under review |
+| L11 | Coupled pressure-based solver | Second pressure–velocity algorithm on the shared discretization (D19); needs a block AMG |
+| L10 | Fully compressible high-Mach flow (transonic, supersonic) | After low-Mach variable density (D17) |
 
 
 ## 4. Possible later (not decided)
 
 | ID | Feature | Notes |
 |----|---------|-------|
-| P1 | Fully compressible flow (transonic, supersonic) | Not named in step 1; to be confirmed (see O9) |
 | P2 | float32 or mixed-precision GPU mode | Enabled by D7; would let Apple GPUs take part (O6) |
 | P3 | Web build (WebAssembly), MCP server | Part of the ArtCraft form; no requirement yet |
+| P4 | Spalart–Allmaras | Not in milestone 1 (D12); cheap to add through the transport-equation interface |
+| P5 | Low-Re, wall-resolved k-ε variants | D13 |
+| P6 | AMD and Intel GPUs | D15 |
 
 
 ## 5. Not planned
@@ -105,19 +159,7 @@ None yet.
 
 ## 6. Open requirement steps
 
-| ID | Step | Topic | Current proposal |
-|----|------|-------|------------------|
-| O3 | 3 | Pressure–velocity coupling | Pressure-based, collocated finite volume with Rhie–Chow interpolation; segregated SIMPLE-family algorithm (SIMPLEC steady, PISO-type transient), assembled sparse matrices, AMG for the pressure equation. A pressure-based coupled solver later. Reason: it is the route of the industry-standard solvers, extends to energy, species, combustion and multiphase, and its cost concentrates in the linear solvers of D10. PyAeroFlow's coupled Newton–Krylov with direct LU does not reach 100 million cells |
-| O4 | 3 | Turbulence models and wall treatment, milestone 1 | k-ω SST (2003), Spalart–Allmaras (SA-neg), realizable k-ε. Wall treatment valid for any y⁺ (wall-resolved and wall functions), because general purpose meshes cannot guarantee y⁺ ≈ 1 |
-| O5 | 3 | Steady and transient | Both in milestone 1 |
-| O6 | 2 | Apple platforms | float64 on the CPU of a Mac (multi-threaded, SIMD) is the supported path. Metal GPU only through P2, as a declared reduced-precision mode, after milestone 1 |
-| O7 | 2 | GPU vendors | NVIDIA (CUDA) is the primary platform. AMD and Intel GPUs: required or not? Several large European clusters are AMD |
-| O8 | 2 | Reference linear solver | hypre as an optional, linkable reference behind the same interface as the in-house solvers (D10), to verify them and to measure them against the state of the art |
-| O9 | 1 | Compressible flow | Low-Mach variable density with L2; fully compressible as P1 |
-| O10 | – | Clean-room rule | Numerics from the published literature only; no code taken from other solvers, so the project stays MIT (as in PyAeroFlow) |
-| O11 | – | Continuous integration | CPU tests on GitHub for every pull request (unlike PyAeroFlow X5), since contributors are wanted; GPU tests run locally |
-
-Steps still to come: discretization (gradients, convection and diffusion
+No item is open at the moment. Steps still to come: discretization (gradients, convection and diffusion
 schemes, limiters, non-orthogonal correction), time integration, linear
 solvers in detail, mesh formats and partitioning, boundary conditions, case
 file format, output and restart, verification and validation cases, stage
@@ -135,4 +177,22 @@ Not yet defined (last requirement step). One item is fixed already:
 
 ## References
 
-To be filled per step.
+- F. R. Menter, M. Kuntz, R. Langtry, *Ten years of industrial experience with
+  the SST turbulence model*, Turbulence, Heat and Mass Transfer 4 (2003)
+- B. E. Launder, D. B. Spalding, *The numerical computation of turbulent
+  flows*, Comput. Methods Appl. Mech. Eng. 3, 269–289 (1974)
+- T.-H. Shih, W. W. Liou, A. Shabbir, Z. Yang, J. Zhu, *A new k-ε eddy
+  viscosity model for high Reynolds number turbulent flows*, Computers &
+  Fluids 24, 227–238 (1995)
+- V. Yakhot, S. A. Orszag, S. Thangam, T. B. Gatski, C. G. Speziale,
+  *Development of turbulence models for shear flows by a double expansion
+  technique*, Phys. Fluids A 4, 1510–1520 (1992)
+- C. M. Rhie, W. L. Chow, *Numerical study of the turbulent flow past an
+  airfoil with trailing edge separation*, AIAA J. 21, 1525–1532 (1983)
+- R. I. Issa, *Solution of the implicitly discretised fluid flow equations
+  by operator-splitting*, J. Comput. Phys. 62, 40–65 (1986)
+- J. P. Van Doormaal, G. D. Raithby, *Enhancements of the SIMPLE method for
+  predicting incompressible fluid flows*, Numer. Heat Transfer 7, 147–163
+  (1984)
+- NASA Turbulence Modeling Resource: https://tmbwg.github.io/turbmodels/
+- hypre: https://github.com/hypre-space/hypre
