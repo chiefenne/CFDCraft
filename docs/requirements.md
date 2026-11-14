@@ -10,8 +10,7 @@ Living document, updated after each requirement step. Form taken from the
 - **O** – open requirement step, with the current proposal
 
 Status: requirements engineering in progress. Steps 1 (scope) and 2 (language,
-hardware) answered on 2026-11-14; step 3 answered on 2026-11-14 except O11
-(continuous integration). No code yet.
+hardware) answered on 2026-11-14; step 3 answered on 2026-11-14 completely. No code yet.
 
 Terminology: the project says *reacting flows*, not "combustion", everywhere.
 
@@ -58,6 +57,7 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D19 | 3  | Pressure–velocity coupling | Pressure-based, collocated finite volume with Rhie–Chow interpolation, on one shared discretization (the assembly produces per-face coefficients from which scalar or block matrices are built). Segregated SIMPLE-family algorithm first (SIMPLEC steady, PISO-type transient); a coupled pressure-based solver (momentum and pressure in one block system) as the planned second algorithm (L11) | Segregated first: every later physics needs it, and it needs only scalar AMG. Assessment in section 2b |
 | D20 | 3  | Reference linear solver | hypre (open-source solver library of Lawrence Livermore National Laboratory, MIT or Apache-2.0 licence; BoomerAMG, MPI, CUDA) as an optional, linkable reference behind the same interface as the in-house solvers (D10), used to verify them and to benchmark them against the state of the art. Never required to build or run CFDCraft | |
 | D21 | 3  | Clean-room rule | Methods come from the published literature, with references. Code from other solvers is never copied. Open-source solvers may be read for understanding where their licence allows it | Keeps the project under the MIT licence (D1) |
+| D22 | 3  | Continuous integration | GitHub Actions runs the CPU tests (build, unit tests, small verification cases) on every pull request and every push to `main`, on GitHub's free hosted runners. Free for public repositories. GPU tests are run locally by the maintainer once suitable hardware is available; they are marked separately and are not part of the hosted checks | The maintainer has no GPU hardware yet (2026-11-14), so GPU verification starts when it is available |
 
 
 ## 2a. Language assessment (step 2)
@@ -159,11 +159,7 @@ None yet.
 
 ## 6. Open requirement steps
 
-| ID | Step | Topic | Current proposal |
-|----|------|-------|------------------|
-| O11 | – | Continuous integration | CPU tests on GitHub for every pull request (unlike PyAeroFlow X5), since contributors are wanted; GPU tests run locally |
-
-Steps still to come: discretization (gradients, convection and diffusion
+No item is open at the moment. Steps still to come: discretization (gradients, convection and diffusion
 schemes, limiters, non-orthogonal correction), time integration, linear
 solvers in detail, mesh formats and partitioning, boundary conditions, case
 file format, output and restart, verification and validation cases, stage
