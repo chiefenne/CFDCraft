@@ -47,7 +47,7 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D9  | 2  | Foreign libraries | Linking C libraries is allowed where it costs no performance. MPI is linked as a system library | A call into a C library at solver granularity has no measurable overhead |
 | D10 | 2  | Solver ecosystem | Sparse linear algebra, Krylov solvers and algebraic multigrid are written in this project, from the published literature, provided this proves feasible | Feasibility: the methods are well published (aggregation and classical AMG, GPU variants). This is the largest single work item of the project. Proposal for a safety net: O8 |
 | D11 | 2  | Language | Rust (stable toolchain, cargo workspace), conditional on gate G1 | Alternatives considered: C++ with Kokkos, modern Fortran with OpenACC. See section 2a. **G1 passed on 2026-11-14 (GPU: T4, CPU: i9-9900K), D11 stands.** Deviation found: the single-source GPU route (`gpu/ptx-kernels`, rustc target `nvptx64-nvidia-cuda`) needs the nightly toolchain, so the "stable toolchain" holds for the host code only (O14) |
-| D12 | 3  | Turbulence models, milestone 1 | k-ω SST (Menter, Kuntz & Langtry 2003); standard k-ε (Launder & Spalding 1974); realizable k-ε (Shih et al. 1995); k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004), the elliptic-relaxation eddy-viscosity model, **in place of RNG k-ε** (decision of 2026-11-14, assessment `k-zeta-f-assessment.md`) | The k-ε variants are there to reproduce literature data; ζ-f is the near-wall model for separation and heat transfer (best of the linear eddy-viscosity models on the asymmetric diffuser and, with L1, on impingement and near-wall heat transfer). All models through one generic transport-equation interface, which also takes the steady elliptic-relaxation equation of ζ-f (Helmholtz operator, no time derivative, solved with the scalar path of stage 2, no AMG); the two k-ε variants share one implementation. The time and length scales are bounded as in the 2004 paper (realizability limits). Inlets carry an optional ζ (default 2/3). RNG k-ε (Yakhot et al. 1992) moves to P9. Spalart–Allmaras: P4. PANS on ζ-f: P7 |
+| D12 | 3  | Turbulence models, milestone 1 | k-ω SST (Menter, Kuntz & Langtry 2003); standard k-ε (Launder & Spalding 1974); realizable k-ε (Shih et al. 1995); k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004), the elliptic-relaxation eddy-viscosity model, **in place of RNG k-ε** (decision of 2026-11-14, assessment `k-zeta-f-assessment.md`) | The k-ε variants are there to reproduce literature data; ζ-f is the near-wall model for separation and heat transfer (best of the linear eddy-viscosity models on the asymmetric diffuser and, with L1, on impingement and near-wall heat transfer). All models through one generic transport-equation interface, which also takes the steady elliptic-relaxation equation of ζ-f (Helmholtz operator, no time derivative, solved with the scalar path of stage 2, no AMG); the two k-ε variants share one implementation. The time and length scales are bounded as in the 2004 paper (realizability limits). Inlets carry an optional ζ (default 2/3). RNG k-ε is not planned (X1). Spalart–Allmaras: P4. PANS on ζ-f: P7 |
 | D13 | 3  | Wall treatment, milestone 1 | Wall functions are required: standard (log-law) and scalable wall functions for the k-ε family; an automatic, y⁺-insensitive wall treatment for SST that blends the viscous sublayer and the log law; the compound wall treatment (Popovac & Hanjalić 2007; Popovac 2023) for ζ-f, blending the integrated and the wall-function limits, including the thermal field once L1 exists | General purpose meshes cannot guarantee y⁺ ≈ 1. The wall-treatment interface takes first-cell y⁺, wall distance of the first cell and a blending function per wall face and is not specific to SST, so that the compound treatment and the thermal wall function of L1 use the same path. Low-Re, wall-resolved k-ε: P5 |
 | D14 | 3  | Steady and transient | Both in milestone 1 | |
 | D15 | 3  | GPU vendor | NVIDIA (CUDA) only | AMD and Intel GPUs: P6. The single-source question of D8 and gate G1 is therefore NVIDIA against CPU |
@@ -179,12 +179,13 @@ Order of work after milestone 1: L1 (with the compound wall treatment of D13 for
 | P6 | AMD and Intel GPUs | D15 |
 | P7 | PANS on ζ-f (partially averaged Navier–Stokes) as a scale-resolving model, with the resolution parameter f_k computed dynamically | Kept for later by the maintainer (2026-11-14), second hybrid route after SST-based DES within L5. Needs ζ-f of D12 and low-dissipation convection (D25). Literature: Basara et al. 2011, Basara 2015, Basara, Pavlovic & Girimaji 2018 and 2019 |
 | P8 | Curvature and rotation correction for SST and ζ-f | Motivated by the U-bend case of D45, which neither model captures without it |
-| P9 | RNG k-ε | Dropped from milestone 1 in favour of ζ-f (D12); cheap to add through the shared k-ε implementation |
 
 
 ## 5. Not planned
 
-None yet.
+| ID | Feature | Notes |
+|----|---------|-------|
+| X1 | RNG k-ε (Yakhot et al. 1992) | Dropped by the maintainer on 2026-11-14: replaced by k-ε-ζ-f in D12; the standard and realizable k-ε remain for literature data |
 
 
 ## 6. Open requirement steps
@@ -231,9 +232,6 @@ NVIDIA GPUs and CPUs, with MPI. Every stage ends with:
 - T.-H. Shih, W. W. Liou, A. Shabbir, Z. Yang, J. Zhu, *A new k-ε eddy
   viscosity model for high Reynolds number turbulent flows*, Computers &
   Fluids 24, 227–238 (1995)
-- V. Yakhot, S. A. Orszag, S. Thangam, T. B. Gatski, C. G. Speziale,
-  *Development of turbulence models for shear flows by a double expansion
-  technique*, Phys. Fluids A 4, 1510–1520 (1992)
 - K. Hanjalić, M. Popovac, M. Hadžiabdić, *A robust near-wall
   elliptic-relaxation eddy-viscosity turbulence model for CFD*, Int. J. Heat
   Fluid Flow 25, 1047–1051 (2004)
