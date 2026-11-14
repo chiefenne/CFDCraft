@@ -16,8 +16,8 @@ hardware) answered on 2026-11-14; step 3 open. No code yet.
 ## 1. Purpose and scope
 
 - General purpose CFD solver for fluid dynamics, heat and mass transfer,
-  species transport and combustion. Long-term reference class: STAR-CCM+,
-  Fluent, COMSOL, FIRE.
+  species transport and combustion. Long-term reference class: the
+  industry-standard general purpose CFD solvers.
 - Open source (MIT), developed in the manner of the
   [ArtCraft Crafting Apps](https://getartcraft.com/apps/craft-anything): Rust,
   one engine with thin front ends on top (first a CLI), built step by step
@@ -107,7 +107,7 @@ None yet.
 
 | ID | Step | Topic | Current proposal |
 |----|------|-------|------------------|
-| O3 | 3 | Pressure–velocity coupling | Pressure-based, collocated finite volume with Rhie–Chow interpolation; segregated SIMPLE-family algorithm (SIMPLEC steady, PISO-type transient), assembled sparse matrices, AMG for the pressure equation. A pressure-based coupled solver later. Reason: it is the route of the reference codes, extends to energy, species, combustion and multiphase, and its cost concentrates in the linear solvers of D10. PyAeroFlow's coupled Newton–Krylov with direct LU does not reach 100 million cells |
+| O3 | 3 | Pressure–velocity coupling | Pressure-based, collocated finite volume with Rhie–Chow interpolation; segregated SIMPLE-family algorithm (SIMPLEC steady, PISO-type transient), assembled sparse matrices, AMG for the pressure equation. A pressure-based coupled solver later. Reason: it is the route of the industry-standard solvers, extends to energy, species, combustion and multiphase, and its cost concentrates in the linear solvers of D10. PyAeroFlow's coupled Newton–Krylov with direct LU does not reach 100 million cells |
 | O4 | 3 | Turbulence models and wall treatment, milestone 1 | k-ω SST (2003), Spalart–Allmaras (SA-neg), realizable k-ε. Wall treatment valid for any y⁺ (wall-resolved and wall functions), because general purpose meshes cannot guarantee y⁺ ≈ 1 |
 | O5 | 3 | Steady and transient | Both in milestone 1 |
 | O6 | 2 | Apple platforms | float64 on the CPU of a Mac (multi-threaded, SIMD) is the supported path. Metal GPU only through P2, as a declared reduced-precision mode, after milestone 1 |
