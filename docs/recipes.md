@@ -7,7 +7,7 @@ the [Example gallery](gallery.md).
 
 1. [Build, test and run the G1 benchmark on your CPU](#g1-cpu)
 2. [Run G1 on Windows: CPU verdict and the CUDA reference](#g1-windows)
-3. [Run gate G1 on an NVIDIA GPU](#g1-gpu)
+3. [Run gate G1 on an NVIDIA GPU](#g1-gpu) (also: free Colab T4)
 4. [Run the MPI test with several ranks on one machine](#mpi)
 5. [Check a change the way CI does](#ci-local)
 
@@ -98,6 +98,17 @@ Send `output/g1_gpu_10m/g1.md` and `g1.json`; they go into
 
 On Windows, run the build script from Git Bash or WSL, or the two `cargo`
 commands in it by hand.
+
+**Without a GPU of your own: Google Colab (free T4).** Open
+[`tools/g1_colab.ipynb` in Colab](https://colab.research.google.com/github/chiefenne/CFDCraft/blob/main/tools/g1_colab.ipynb),
+choose *Runtime → Change runtime type → T4 GPU*, then *Runtime → Run all*.
+About 10 minutes; the last cell shows both reports. On any other Linux
+machine with a GPU (Kaggle with "GPU T4 x2", Lightning.ai):
+
+```
+git clone --depth 1 https://github.com/chiefenne/CFDCraft.git && cd CFDCraft
+bash tools/g1_cloud.sh            # installs Rust, builds, runs g1_gpu_10m.toml twice
+```
 
 [↑ back to top](#recipes)
 

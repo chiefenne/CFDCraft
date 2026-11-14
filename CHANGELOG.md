@@ -6,9 +6,9 @@
 |---|---|---|
 | Unreleased | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark (CPU measured; GPU run pending the maintainer's GPU) |
 
-The tag `v0.0` is set on the CPU verdict of gate G1 from the maintainer's
-machine; the GPU verdict stays open until a GPU of compute capability 7.0 or
-newer is available (O13).
+The tag `v0.0` is set when both verdicts of gate G1 are in: the CPU verdict
+from the maintainer's machine and the GPU verdict from a free Google Colab
+T4 (O13).
 
 ---
 
@@ -43,6 +43,10 @@ docs; tests in debug and release on Linux, macOS and Windows; minimum Rust
 version; MPI smoke test with 2 and 4 ranks on Linux and macOS (O12); PTX
 build of the single-source kernels; G1 smoke run on every platform.
 
+Cloud GPU runs: `tools/g1_cloud.sh` (installs Rust, builds PTX and CLI for
+the GPU found, runs G1 twice) and `tools/g1_colab.ipynb` (the same on a free
+Google Colab T4).
+
 Documentation: [gallery](docs/gallery.md), [case catalogue](docs/cases.md),
 [recipes](docs/recipes.md), [G1 procedure and results](docs/benchmarks/g1.md).
 
@@ -51,7 +55,8 @@ Findings:
 - The rustc NVPTX target supports compute capability 7.0 (Volta) and newer
   only; G1 needs such a GPU for the single-source route (O13). The
   maintainer's GTX 960 (compute capability 5.2) runs the CPU verdict and the
-  CUDA reference (`g1_gpu_reference_4m.toml`, recipe 2), not the GPU verdict.
+  CUDA reference (`g1_gpu_reference_4m.toml`, recipe 2); the GPU verdict is
+  taken on a free Colab T4 (recipe 3).
 - On the CPU the single-source bodies match hand-written loops once the
   parallel loop uses large enough work packets (64 Ki outputs): with 4 Ki the
   face-flux kernel was about 30 % slower on 10 million cells.
