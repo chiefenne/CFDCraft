@@ -11,6 +11,7 @@ All commands run from the repository root. Case files are in
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 1 | [Kernel benchmark G1 on the CPU](#g1-cpu) | 0 | gate G1, reproducible kernels |
+| 2 | [Kernel benchmark G1 on a Tesla T4](#g1-gpu) | 0 | gate G1, single-source Rust on the GPU |
 
 ---
 
@@ -44,5 +45,33 @@ The same run with a randomly numbered mesh (`bench/g1_cpu_10m_shuffled.toml`)
 shows what a badly ordered mesh costs: three to five times less bandwidth.
 
 ![G1 with shuffled cell numbering](figures/gallery/g1_cpu_10m_shuffled.svg)
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="g1-gpu"></a>
+## 2. Kernel benchmark G1 on a Tesla T4
+
+![G1 effective bandwidth on a Tesla T4, 10 million cells](figures/gallery/g1_gpu_t4_10m.svg)
+
+The same four kernels on a Tesla T4 (Google Colab, free tier). Blue: the
+hand-written CUDA C kernels; orange: the single-source Rust kernels compiled
+to PTX. Both reach 220–255 GB/s of the T4's 320 GB/s, the Rust kernels are
+within 1.0 % of the CUDA C kernels (gate limit: 10 %), and all results are
+bitwise equal to the CPU. The two short bars per group are the CPU backends
+of the Colab machine (2 virtual cores). Reading and limits:
+[G1](benchmarks/g1.md#gpu-verdict-tesla-t4-google-colab-2026-11-14).
+
+| | |
+|---|---|
+| Mesh | periodic box 215 × 215 × 216 = 9 984 600 cells, natural numbering |
+| Machine | Tesla T4 (sm_75, 16 GB), Intel Xeon @ 2.00 GHz, 2 threads |
+| Case file | `bench/g1_gpu_10m.toml` |
+
+```
+bash tools/g1_cloud.sh      # on any Linux machine with an NVIDIA GPU of compute capability 7.0+
+# or open tools/g1_colab.ipynb in Google Colab (recipe 3)
+```
 
 [↑ back to top](#example-gallery)

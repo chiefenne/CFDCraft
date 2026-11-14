@@ -4,11 +4,11 @@
 
 | Version | Stage | Highlights |
 |---|---|---|
-| Unreleased | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark (CPU measured; GPU run pending the maintainer's GPU) |
+| Unreleased | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; CPU verdict still to be taken on the maintainer's PC |
 
-The tag `v0.0` is set when both verdicts of gate G1 are in: the CPU verdict
-from the maintainer's machine and the GPU verdict from a free Google Colab
-T4 (O13).
+The tag `v0.0` is set when both verdicts of gate G1 are in. The GPU verdict
+is in (Tesla T4, 2026-11-14: PASS); the CPU verdict from the maintainer's
+machine is open (O13).
 
 ---
 
@@ -47,11 +47,18 @@ Cloud GPU runs: `tools/g1_cloud.sh` (installs Rust, builds PTX and CLI for
 the GPU found, runs G1 twice) and `tools/g1_colab.ipynb` (the same on a free
 Google Colab T4).
 
+CLI: `cfdcraft info` reports the communicator and the rank count.
+
 Documentation: [gallery](docs/gallery.md), [case catalogue](docs/cases.md),
 [recipes](docs/recipes.md), [G1 procedure and results](docs/benchmarks/g1.md).
 
 Findings:
 
+- **G1 GPU verdict, Tesla T4 (Google Colab), 10 million cells: PASS.** The
+  single-source Rust kernels, compiled to PTX, run within 1.0 % of the
+  hand-written CUDA C kernels on all four kernels (220–255 GB/s of 320 GB/s),
+  in two runs, with results bitwise equal to the CPU. D8: one kernel source;
+  D11 stands. The single-source GPU route needs nightly Rust (O14).
 - The rustc NVPTX target supports compute capability 7.0 (Volta) and newer
   only; G1 needs such a GPU for the single-source route (O13). The
   maintainer's GTX 960 (compute capability 5.2) runs the CPU verdict and the
