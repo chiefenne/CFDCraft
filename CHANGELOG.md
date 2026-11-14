@@ -18,6 +18,14 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
 
+## Unreleased
+
+- Release workflow (`.github/workflows/release.yml`): creates the tag
+  `v<version>` on `main` and a GitHub release with the changelog section of
+  that version as notes; dry-run by default (recipe 6).
+
+---
+
 ## 0.1 (2026-11-14) – stage 1: mesh
 
 New crate `cfdcraft-mesh` (features `hdf5` and `metis`, both on by default;
@@ -81,7 +89,7 @@ Tools: `tools/check_vtkhdf.py` (checks files with VTK's reader),
 (the Gmsh test files), `examples/meshes/tjunction.geo`.
 
 Documentation: gallery examples 3–7, mesh cases and keys in the case
-catalogue, recipes 6–10, the G1 stage-1 rerun, implementation notes in
+catalogue, recipes 7–11, the G1 stage-1 rerun, implementation notes in
 D23, D32, D38, D41 and D47, new open item O15.
 
 Findings:

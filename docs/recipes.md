@@ -10,11 +10,12 @@ the [Example gallery](gallery.md).
 3. [Run gate G1 on an NVIDIA GPU](#g1-gpu) (also: free Colab T4)
 4. [Run the MPI test with several ranks on one machine](#mpi)
 5. [Check a change the way CI does](#ci-local)
-6. [Generate a test mesh and check its quality](#mesh-generate)
-7. [Read a Gmsh mesh and convert it into polyhedra](#mesh-gmsh)
-8. [Partition a mesh and test the halo exchange](#mesh-partition)
-9. [Rerun G1 on polyhedral and tetrahedral meshes](#g1-stage1)
-10. [Update the golden values of the mesher](#golden)
+6. [Make a release (tag and GitHub release)](#release)
+7. [Generate a test mesh and check its quality](#mesh-generate)
+8. [Read a Gmsh mesh and convert it into polyhedra](#mesh-gmsh)
+9. [Partition a mesh and test the halo exchange](#mesh-partition)
+10. [Rerun G1 on polyhedral and tetrahedral meshes](#g1-stage1)
+11. [Update the golden values of the mesher](#golden)
 
 ---
 
@@ -168,8 +169,24 @@ Linux, macOS and Windows.
 
 ---
 
+<a id="release"></a>
+## 6. Make a release (tag and GitHub release)
+
+A release is a Git tag `v<stage>` (D46) plus a GitHub release. Steps:
+
+1. A pull request moves the `## Unreleased` section of `CHANGELOG.md` to
+   `## <version> (YYYY-MM-DD) – ...` and adds a row to the summary table.
+2. After the merge: GitHub, Actions, **Release**, *Run workflow*, version
+   `0.1`, first with *dry run* checked (prints the notes), then without.
+
+The workflow refuses a version without a changelog section, and creates
+only the release if the tag already exists. The assistant starts it through
+the GitHub API in the same way.
+
+---
+
 <a id="mesh-generate"></a>
-## 6. Generate a test mesh and check its quality
+## 7. Generate a test mesh and check its quality
 
 The built-in mesher (D34) makes a box of hexahedra, tetrahedra, polyhedra
 or mixed cells, in 3D or 2D (one cell thick), graded, refined and
@@ -202,7 +219,7 @@ nested meshes (every interval halved), the grading kept.
 ---
 
 <a id="mesh-gmsh"></a>
-## 7. Read a Gmsh mesh and convert it into polyhedra
+## 8. Read a Gmsh mesh and convert it into polyhedra
 
 Needs Gmsh 4.x (`pip install gmsh` or gmsh.info). The reader takes MSH 4.1,
 ASCII or binary, first-order elements (tetrahedra, hexahedra, prisms,
@@ -227,7 +244,7 @@ physical group in Gmsh; surfaces without one become `surface_<tag>`.
 ---
 
 <a id="mesh-partition"></a>
-## 8. Partition a mesh and test the halo exchange
+## 9. Partition a mesh and test the halo exchange
 
 ```
 target/release/cfdcraft mesh examples/cases/mesh/poly_partition.toml
@@ -255,7 +272,7 @@ equal the global mesh and the volume sum gives the same bits on every rank.
 ---
 
 <a id="g1-stage1"></a>
-## 9. Rerun G1 on polyhedral and tetrahedral meshes
+## 10. Rerun G1 on polyhedral and tetrahedral meshes
 
 D8 asks for G1 to be rerun on polyhedral and shuffled meshes in stage 1.
 The cloud runs (gallery 7) are on a shared machine; the verdict needs a
@@ -279,7 +296,7 @@ of compute capability 7.0 or newer (or Colab, recipe 3):
 ---
 
 <a id="golden"></a>
-## 10. Update the golden values of the mesher
+## 11. Update the golden values of the mesher
 
 `crates/cfdcraft-mesh/tests/golden/mesher.json` holds the cell, face and
 node counts, volumes, quality metrics and partition statistics of every

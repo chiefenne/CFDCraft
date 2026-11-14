@@ -225,7 +225,7 @@ single-source bodies beat the hand-written loops on cell gather (by 25 to
 40 %), tie on SpMV-CSR and lose 4 to 30 % on face flux, where one kernel
 call takes only 2 to 10 ms; the same gap appears on a 2 million periodic
 box, so it is a small-kernel effect, not a polyhedral one. The verdict
-needs a quiet machine (recipe 9); the numbers are in
+needs a quiet machine (recipe 10); the numbers are in
 [G1](benchmarks/g1.md#stage-1-rerun-polyhedral-and-tetrahedral-meshes-2026-11-14).
 
 ![G1 on 2 million polyhedra, shuffled order](figures/gallery/g1_cpu_poly_2m_shuffled.svg)
