@@ -17,6 +17,8 @@ All commands run from the repository root. Case files are in
 | 5 | [The four test-mesh types in 2D](#mesh-types-2d) | 1 | one-cell-thick 2D meshes, patch renaming |
 | 6 | [T-junction from Gmsh](#tjunction) | 1 | Gmsh reader, conversion to polyhedra, renumbering |
 | 7 | [G1 on polyhedral and tetrahedral meshes](#g1-stage1) | 1 | G1 rerun on stage-1 meshes, natural and shuffled order |
+| 8 | [Convection–diffusion, manufactured solution](#scalar-mms) | 2 | least-squares gradients, linear upwind, non-orthogonal diffusion, BiCGStab, order of accuracy |
+| 9 | [Oblique step: four convection schemes](#oblique-step) | 2 | Venkatakrishnan and Venkatakrishnan–Wang limiters, bounded solutions |
 
 ---
 
@@ -245,6 +247,81 @@ the mesh is renumbered by reverse Cuthill-McKee on input (example 6).
 target/release/cfdcraft bench g1 examples/cases/bench/g1_cpu_poly_2m.toml
 target/release/cfdcraft bench g1 examples/cases/bench/g1_cpu_poly_2m_shuffled.toml
 target/release/cfdcraft bench g1 examples/cases/bench/g1_cpu_tet_2m.toml
+```
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="scalar-mms"></a>
+## 8. Convection–diffusion, manufactured solution
+
+![Error of φ on 35 937 polyhedra, one octant cut away](figures/gallery/mms_poly_error.png)
+
+Steady convection–diffusion of a scalar with a manufactured solution
+(Roache 2002) on perturbed polyhedral meshes: φ = 1 + sin(πx + 0.5)
+cos(πy + 0.3) cos(πz/2 + 0.2), u = (1, 0.6, 0.3) m/s, Γ = 0.2 kg/(m s),
+fixed values of the exact solution on all six patches. The operators of
+stage 2 at work: weighted least-squares gradients, linear upwind as a
+deferred correction, diffusion with the over-relaxed non-orthogonal
+correction, gather-based assembly into a sliced-ELL matrix, BiCGStab with
+Jacobi. The picture is the error φ − φ_exact on the finest level; it is
+largest in the interior, where the solution has its largest curvature.
+
+![Convergence: L2 error over mesh size, observed order 1.83 and 1.98](figures/gallery/mms_poly_convergence.svg)
+
+The same case on hexahedra, tetrahedra, mixed cells and 2D polygons gives
+observed orders between 1.87 and 2.08 on the finest pair; table and
+discussion in [Stage 2 verification](verification/stage2.md#order-of-accuracy).
+On an NVIDIA GPU the operators give bitwise the CPU result: the 912 673-cell
+case `mms_poly_gpu` on a Tesla T4 runs at 311 ns per cell and iteration
+([GPU against CPU](verification/stage2.md#gpu-against-cpu-tesla-t4-2026-11-14),
+recipe 14).
+
+| | |
+|---|---|
+| Meshes | generated poly 3D, base 4³ intervals, refine 1–3: 729, 4 913, 35 937 cells, perturb 0.15 |
+| Machine | Intel Xeon @ 2.10 GHz, 4 virtual cores; 2.8 s for the three levels |
+| Case files | `scalar/mms_poly_box.toml`, `mms_hex_box.toml`, `mms_tet_box.toml`, `mms_mixed_box.toml`, `mms_poly_2d.toml` |
+
+```
+cargo build --release -p cfdcraft-cli
+target/release/cfdcraft scalar examples/cases/scalar/mms_poly_box.toml
+# report: output/mms_poly_box/scalar.md, plot: convergence.svg, fields: fields.vtkhdf
+python3 tools/render_mesh.py output/mms_poly_box/fields.vtkhdf mms_poly_error.png --field error --cut
+```
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="oblique-step"></a>
+## 9. Oblique step: four convection schemes
+
+| first-order upwind | linear upwind, no limiter | linear upwind, Venkatakrishnan (K = 0) |
+|---|---|---|
+| ![upwind](figures/gallery/oblique_step_upwind.png) | ![linear upwind](figures/gallery/oblique_step_linear-upwind.png) | ![Venkatakrishnan](figures/gallery/oblique_step_venkatakrishnan.png) |
+
+![φ along x = 0.8 for the four schemes](figures/gallery/oblique_step_profile.svg)
+
+Pure convection of a step at 30° to the x axis across 2 401 polygonal
+prisms. Upwind is bounded but smears the step over many cells. Linear
+upwind without a limiter is sharp but over- and undershoots by 7 % and
+5 %. With the Venkatakrishnan limiter (and with Venkatakrishnan–Wang) at
+K = 0 the step is as sharp as with linear upwind and φ stays in [0, 1].
+The run checks the bounds of every limited variant and fails if one leaves
+[0, 1].
+
+| | |
+|---|---|
+| Mesh | generated poly 2D, 48 × 48 intervals, perturb 0.1: 2 401 cells |
+| Case file | `scalar/oblique_step_2d.toml` (four `[[variants]]`) |
+
+```
+target/release/cfdcraft scalar examples/cases/scalar/oblique_step_2d.toml
+# report: output/oblique_step_2d/scalar.md, profiles: profile.svg,
+# fields per variant: output/oblique_step_2d/<variant>/fields.vtkhdf
+python3 tools/render_mesh.py output/oblique_step_2d/venkatakrishnan/fields.vtkhdf step.png --field phi --top --range -0.08 1.08
 ```
 
 [↑ back to top](#example-gallery)

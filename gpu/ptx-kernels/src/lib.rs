@@ -1,5 +1,7 @@
-//! G1 single-source route: the kernel bodies of `cfdcraft-kernels` wrapped
-//! as PTX entry points, one GPU thread per output.
+//! The single-source GPU route: the kernel bodies of `cfdcraft-kernels`
+//! wrapped as PTX entry points, one GPU thread per output. The `g1_*`
+//! entries are the kernels of gate G1 (stage 0); the `fv_*` and `blas_*`
+//! entries in [`fv`] are the scalar operators of stage 2.
 //!
 //! The wrappers only compute the thread index, build slices from the raw
 //! device pointers and their sizes, and call the body that the CPU backends
@@ -13,6 +15,8 @@
 #![feature(abi_ptx, stdarch_nvptx)]
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
+mod fv;
+
 use cfdcraft_kernels::{face, spmv};
 use core::arch::nvptx::{_block_dim_x, _block_idx_x, _thread_idx_x};
 use core::slice::{from_raw_parts as sl, from_raw_parts_mut as sl_mut};
@@ -24,7 +28,7 @@ fn panic(_: &core::panic::PanicInfo) -> ! {
 }
 
 #[inline(always)]
-fn tid() -> usize {
+pub(crate) fn tid() -> usize {
     // SAFETY: special registers, always readable.
     unsafe { (_block_idx_x() * _block_dim_x() + _thread_idx_x()) as usize }
 }

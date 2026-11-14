@@ -4,18 +4,18 @@ version = 4
 
 [[package]]
 name = "cfdcraft-core"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "cfdcraft-kernels"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cfdcraft-core",
 ]
 
 [[package]]
 name = "cfdcraft-ptx-kernels"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "cfdcraft-core",
  "cfdcraft-kernels",

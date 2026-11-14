@@ -1,8 +1,10 @@
 //! `cfdcraft`: the command line of CFDCraft (D4).
 //!
 //! Commands: `info` (build and platform), `mesh` (build or read a mesh,
-//! check, partition and write it; stage 1) and `bench g1` (the GPU kernel
-//! gate of stage 0). The solver commands follow with the later stages.
+//! check, partition and write it; stage 1), `scalar` (steady scalar
+//! transport, verification sweeps, CPU and GPU; stage 2) and `bench g1` (the
+//! GPU kernel gate of stage 0). The flow solver commands follow with the
+//! later stages.
 
 use anyhow::Result;
 use cfdcraft_bench::G1Case;
@@ -27,6 +29,10 @@ enum Command {
     /// Build or read a mesh, check it, partition it and write the quality
     /// report and a VTKHDF file for ParaView.
     Mesh(MeshArgs),
+    /// Solve a steady scalar convection–diffusion case (stage 2 operators):
+    /// one mesh, an order-of-accuracy sweep, or several solver variants, on
+    /// the CPU and the GPU.
+    Scalar(ScalarArgs),
     /// Benchmarks.
     Bench {
         #[command(subcommand)]
@@ -69,6 +75,29 @@ struct MeshArgs {
 }
 
 #[derive(clap::Args)]
+struct ScalarArgs {
+    /// Scalar case file (TOML).
+    case: PathBuf,
+    /// Comma-separated backends: cpu, cpu-serial, cuda (overrides
+    /// `run.backends`).
+    #[arg(long, value_delimiter = ',')]
+    backends: Option<Vec<String>>,
+    /// CPU threads (overrides `run.threads`).
+    #[arg(long)]
+    threads: Option<usize>,
+    /// PTX module of the GPU backend (overrides `run.rust_ptx`).
+    #[arg(long)]
+    rust_ptx: Option<PathBuf>,
+    /// Refinement levels of `[mesh.generate]`, comma-separated (overrides
+    /// `verification.levels`).
+    #[arg(long, value_delimiter = ',')]
+    levels: Option<Vec<u32>>,
+    /// Output directory (overrides `output.directory`).
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
+#[derive(clap::Args)]
 struct G1Args {
     /// Case file (TOML); every key is optional.
     case: Option<PathBuf>,
@@ -99,6 +128,7 @@ fn main() -> Result<()> {
     match Cli::parse().command {
         Command::Info => info(),
         Command::Mesh(a) => mesh(a),
+        Command::Scalar(a) => scalar(a),
         Command::Bench {
             bench: Bench::Backends,
         } => {
@@ -199,6 +229,37 @@ fn mesh(a: MeshArgs) -> Result<()> {
     }
     anyhow::ensure!(report.quality.ok(), "the mesh is invalid (see the report)");
     Ok(())
+}
+
+fn scalar(a: ScalarArgs) -> Result<()> {
+    use cfdcraft_fv::case::{ScalarCase, check, output_dir, run};
+    let mut case = ScalarCase::from_file(&a.case)?;
+    if let Some(b) = a.backends {
+        case.run.backends = b;
+    }
+    if a.threads.is_some() {
+        case.run.threads = a.threads;
+    }
+    if let Some(p) = a.rust_ptx {
+        case.run.rust_ptx = p;
+    }
+    if let Some(l) = a.levels {
+        case.verification.levels = l;
+    }
+    let (name, dir) = output_dir(&case, &a.case, a.out);
+    let rep = run(&case, &name, &dir, |l| println!("{l}"))?;
+    if !rep.orders.is_empty() {
+        println!(
+            "observed order: {}",
+            rep.orders
+                .iter()
+                .map(|o| format!("{o:.3}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    println!("wrote {}", dir.join("scalar.md").display());
+    check(&rep)
 }
 
 fn g1(a: G1Args) -> Result<()> {
