@@ -25,6 +25,41 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
 
+## Unreleased – stage 3: pressure solver
+
+New module `cfdcraft-fv::amg`, kernel bodies `cfdcraft-kernels::amg` (one
+source for the CPU and the GPU, float32 and float64) and the command
+`cfdcraft poisson`:
+
+- **Smoothed-aggregation multigrid (D35).** Strength of connection,
+  three-phase greedy aggregation in the cell order, filtered and
+  Jacobi-smoothed prolongator, Galerkin coarse operators, explicit
+  restriction (gather, no atomics), dense coarsest level; deterministic host
+  setup in float64. Plain aggregation as an option.
+- **Symmetric V-cycle** with a Chebyshev (default) or damped Jacobi smoother
+  in D⁻¹A, λ_max from a fixed power iteration.
+- **Mixed precision (D37).** The hierarchy (including a float32 copy of the
+  fine matrix) in float32, CG in float64; `precision = "double"` for
+  comparison. R10 allows f32 only in the multigrid kernels and rejects
+  contracted, approximate and flush-to-zero f32 arithmetic.
+- **Flexible CG** (Notay 2000). `[solver] linear_solver = "cg"` and
+  `preconditioner = "amg"` in `cfdcraft scalar` (also AMG with BiCGStab);
+  the report shows the linear iterations and the multigrid setup time.
+- **GPU.** PTX entries `amg_*_f32`, `amg_*_f64`, `blas_axpy`, `blas_xpby`;
+  the CUDA backend runs the V-cycle with all vectors resident.
+- **hypre reference (D20).** Cargo feature `hypre`: a C shim over hypre's
+  public interface (BoomerAMG with PCG), `tools/build_hypre.sh` builds hypre
+  from source (CPU or CUDA); a CI job builds it and compares.
+- **`cfdcraft poisson`.** Mesh sweeps with several solvers and backends;
+  report of iterations, setup and solve times, ns per cell and iteration,
+  hierarchy, differences to hypre, bitwise comparison across backends;
+  checks of iteration growth and agreement.
+- **Verification.** Stage-3 tests (iterations nearly independent of the
+  mesh size on all mesh types, mixed precision equals float64,
+  SPD V-cycle, bitwise reproducibility, agreement with hypre), five Poisson
+  case files and one scalar case, gallery 10–11, recipes 15–17, the
+  explanation page `docs/verification/stage3.md`, `tools/stage3_colab.ipynb`.
+
 ## 0.2 (2026-11-14) – stage 2: operators on a scalar equation
 
 New crate `cfdcraft-fv` (features `hdf5`, default on, and `cuda`) and new
