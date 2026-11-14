@@ -10,7 +10,7 @@ Living document, updated after each requirement step. Form taken from the
 - **O** – open requirement step, with the current proposal
 
 Status: requirements engineering in progress. Steps 1 (scope) and 2 (language,
-hardware) answered on 2026-11-14; step 3 and step 4 (discretization, boundary conditions, reproducibility) answered on 2026-11-14. No code yet.
+hardware) answered on 2026-11-14; steps 3, 4 (discretization, boundary conditions, reproducibility) and 5 (mesh input, linear solvers, parallel communication) answered on 2026-11-14. No code yet.
 
 Terminology: the project says *reacting flows*, not "combustion", everywhere.
 
@@ -68,6 +68,12 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D30 | 4  | Boundary-condition check and guidance | Before the run, a check of the combination of boundary conditions on the whole domain: a pressure level must be fixed (a pressure boundary or a reference cell), the net mass balance must be possible, over-specified combinations are errors (for example velocity inlet together with pressure inlet on the same flow path), and unused or unsuitable turbulence values are reported. Errors and warnings name the offending boundary and say what to change. The documentation carries a guidance table of sensible combinations and the cases each one suits | Same idea as PyAeroFlow D39; a recipe (D18) shows typical combinations |
 | D31 | 4  | Reproducible results | Results are reproducible from run to run on the same hardware and decomposition: gather-based assembly of face contributions with no floating-point atomics, and a fixed summation order in reductions | Mandatory; costs possibly a few percent of speed. Reproducibility across different GPU or rank counts is not promised, because the summation order changes with the decomposition |
 | D32 | 4  | Mesh partitioning | METIS or Scotch (linked C library, allowed by D9) for domain decomposition | Decision between the two at implementation |
+| D33 | 5  | Mesh input, milestone 1 | Gmsh `.msh` version 4 (ASCII and binary), with physical groups as the named boundary-face sets | Further formats (CGNS, other open formats) later through the same reader interface |
+| D34 | 5  | Built-in mesh generator for canonical test cases | In code: block-structured hexahedral meshes with varying cell size and boundary-layer grading (2D as one cell layer thick with symmetry side planes, D3, and full 3D); tetrahedral meshes (hexahedra split); polyhedral meshes (dual of a tetrahedral mesh); mixed meshes combining these. Optional random node perturbation and refinement levels for order-of-accuracy studies | Used by the verification cases; same role as PyAeroFlow D42. Not the general mesher of L8 |
+| D35 | 5  | Pressure linear solver | Aggregation-based algebraic multigrid as preconditioner of CG, V-cycle, Jacobi or Chebyshev smoothers (GPU friendly). ILU-type smoothers excluded on GPU | In-house (D10), verified against hypre (D20) |
+| D36 | 5  | Momentum and scalar linear solvers | BiCGStab with Jacobi preconditioning, a few iterations to a loose relative tolerance per outer iteration | Standard practice for segregated solvers |
+| D37 | 5  | Matrix storage and precision in the linear solvers | Matrix stored once in a GPU-friendly sparse format (ELL or sliced ELL; final choice from gate G1). The multigrid hierarchy is stored and applied in float32; the outer Krylov iteration, residuals and solution stay in float64 (D7) | Mixed precision inside the preconditioner halves memory and bandwidth of the hierarchy without changing the converged result, because the outer float64 iteration corrects it |
+| D38 | 5  | Parallel communication | Halo exchange overlapped with interior computation; GPU-aware MPI. A multi-node run is a milestone-1 acceptance test | Needs access to a multi-node machine (O12) |
 
 
 ## 2a. Language assessment (step 2)
@@ -169,8 +175,12 @@ None yet.
 
 ## 6. Open requirement steps
 
-No item is open at the moment. Steps still to come: linear solvers in detail, mesh formats, case file format,
-output and restart, verification and validation cases, stage plan.
+| ID | Step | Topic | Current proposal |
+|----|------|-------|------------------|
+| O12 | 5 | Hardware for the milestone-1 acceptance tests | D38 makes a multi-node run a milestone-1 test, and the maintainer has no GPU yet. Proposal: CPU multi-rank MPI tests on one node in CI (D22); multi-node and GPU runs on rented cloud instances or a research cluster allocation, to be arranged before the end of milestone 1 |
+
+Steps still to come: case file format, output and restart, verification and
+validation cases, stage plan.
 
 
 ## 7. Stage plan
