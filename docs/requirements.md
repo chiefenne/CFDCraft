@@ -80,8 +80,9 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D42 | 6  | Restart | Same HDF5 file layout, written in parallel by all ranks, readable with a different number of ranks or GPUs. A restart continues the run (counters, time, solver state), as PyAeroFlow D56 and D58 | |
 | D43 | 6  | Monitoring and user-configurable output | A human-readable `.log` file, CSV histories (residuals, forces, integrals), one CSV of wall quantities per boundary, point probes. Which fields, monitors, probes and wall quantities are written, and how often (per iteration, per time step, every N, at listed steps), is chosen by the user in the case file; defaults are modest. The log header states what is written and how large the output will be | Same idea as PyAeroFlow D59 |
 | D44 | 6  | Units | SI on input and output and dimensional inside the solver | PyAeroFlow's non-dimensional form (its D51) is not adopted: reacting flows have many reference scales |
-| D45 | 7  | Verification and validation cases | Canonical CFD cases. Verification: plane Couette and Poiseuille flow, 2D Taylor–Green vortex (time and space order), manufactured solutions on hexahedral, tetrahedral, polyhedral and mixed meshes (D34). Laminar benchmarks: lid-driven cavity 2D and 3D (Ghia et al. 1982), flow around a cylinder Re 20 and Re 100 (Schäfer & Turek 1996), backward-facing step (Armaly et al. 1983), Rayleigh–Bénard convection. Turbulent validation: zero-pressure-gradient flat plate (NASA TMR), channel flow against DNS (Lee & Moser 2015), backward-facing step (Driver & Seegmiller 1985), NACA 0012 (NASA TMR, Ladson), NASA hump | Each ships with gallery example, case file and recipe (D18). The maintainer's own reference data may be added later |
+| D45 | 7  | Verification and validation cases | Canonical CFD cases. Verification: plane Couette and Poiseuille flow, 2D Taylor–Green vortex (time and space order), manufactured solutions on hexahedral, tetrahedral, polyhedral and mixed meshes (D34). Laminar benchmarks: lid-driven cavity 2D and 3D (Ghia et al. 1982), flow around a cylinder Re 20 and Re 100 (Schäfer & Turek 1996), backward-facing step (Armaly et al. 1983), Rayleigh–Bénard convection. Turbulent validation: zero-pressure-gradient flat plate (NASA TMR), channel flow against DNS (Lee & Moser 2015), backward-facing step (Driver & Seegmiller 1985), and general-purpose internal flows: fully developed turbulent pipe flow (DNS of El Khoury et al. 2013), asymmetric plane diffuser (Buice & Eaton 1997), U-bend (Monson et al. 1990), a 3D T-junction mixer on a polyhedral mesh (grid convergence and qualitative mixing). External aerodynamics (NACA 0012, NASA hump) is not part of milestone 1 | Each ships with gallery example, case file and recipe (D18). The maintainer's own reference data may be added later |
 | D46 | 7  | Versions, tags and changelog | Versions 0.x per stage with a Git tag `v0.<stage>`, 1.0 at the end of milestone 1. The assistant does the version bump and the tag. `CHANGELOG.md` carries a high-level summary on top of the full, detailed changelog for every release | Owner rule of 2026-11-14 |
+| D47 | 8  | Design constraints from the discrete-phase (spray) feature, milestone 1 | The face-based mesh (D23) provides what Lagrangian tracking needs: cell adjacency through faces for tracking a particle from cell to cell, a robust point-in-cell search on polyhedra (also after a mesh partition), and halo cells wide enough for particles crossing rank boundaries. Particle data are kept in structure-of-arrays form so that kernels run on GPU. Reproducibility (D31) extends to particles: random numbers come from a counter-based generator keyed by particle identity, step and event, never from a stream that depends on rank or thread order | Costs little now and avoids a redesign when L12 starts; verified in stage 1 by the point-location test on all mesh types |
 
 
 ## 2a. Language assessment (step 2)
@@ -162,6 +163,7 @@ In the order given in step 1.
 | L8 | Built-in mesher | Much later; solver first |
 | L9 | Logo in the ArtCraft style | Peregrine falcon, first version in the repository (`assets/logo/cfdcraft.svg`); variants under review |
 | L11 | Coupled pressure-based solver | Second pressure–velocity algorithm on the shared discretization (D19); needs a block AMG |
+| L12 | Discrete droplet sprays (Lagrangian) | Parcels of droplets tracked through the flow: injection models, drag and other forces, turbulent dispersion, breakup, collision, evaporation and heat transfer (with L1 and L2), wall interaction and films, one-way and two-way coupling to the gas phase. Must be parallel: particles migrate between ranks, the load is balanced when particles cluster, kernels run on GPU (D47). Complements the Euler–Euler and VOF multiphase of L3 |
 | L10 | Fully compressible high-Mach flow (transonic, supersonic) | After low-Mach variable density (D17) |
 
 
@@ -211,7 +213,7 @@ NVIDIA GPUs and CPUs, with MPI. Every stage ends with:
 | **4 Laminar steady flow** | SIMPLEC, time-step-independent Rhie–Chow (D27, D19), boundary conditions with combination check and guidance (D29, D30), TOML case file and validation (D39), log and CSV output (D43) | Couette: round-off error. Poiseuille: observed order 1.8–2.2 on all mesh types. Lid-driven cavity 2D and 3D, Re 100 and 1000, against Ghia et al. |
 | **5 Transient flow, restart, control** | PISO-type algorithm, BDF2 and Crank–Nicolson (D28), adaptive time step, restart (D42), re-reading the case file and control files (D40), configurable output and probes (D43) | Taylor–Green: time order 2, space order 2. Cylinder Re 20 (C_D, C_L, Δp) and Re 100 (C_D,max, C_L,max, Strouhal number) against Schäfer & Turek. Restart continues a run bit-identically on the same decomposition |
 | **6 Turbulence and wall functions** | k-ω SST (2003), standard, realizable and RNG k-ε, wall functions and the automatic wall treatment (D12, D13); generic transport-equation interface | Flat plate: C_f and velocity profile against the NASA TMR values; channel flow against DNS; backward-facing step: reattachment length against experiment |
-| **7 Parallel performance and milestone 1** | Multi-rank MPI with overlapped halo exchange (D38), GPU-aware MPI, strong and weak scaling measurements as far as the hardware allows, NACA 0012 and NASA hump, user documentation, tag `v1.0` | Same result on 1, 2 and 4 ranks within solver tolerance; scaling report states what was measured and where, with the multi-node path labelled "designed for" until a cluster allocation exists (O12); all verification and validation cases of D45 in the gallery |
+| **7 Parallel performance, internal flows, milestone 1** | Multi-rank MPI with overlapped halo exchange (D38), GPU-aware MPI, strong and weak scaling measurements as far as the hardware allows, the general-purpose internal-flow cases of D45 (pipe, plane diffuser, U-bend, T-junction on a polyhedral mesh), user documentation, tag `v1.0` | Same result on 1, 2 and 4 ranks within solver tolerance; scaling report states what was measured and where, with the multi-node path labelled "designed for" until a cluster allocation exists (O12); pipe-flow wall shear and mean profile against DNS; diffuser separation and pressure recovery against Buice & Eaton; U-bend pressure and velocity profiles against Monson et al.; T-junction grid convergence on tetrahedral, polyhedral and mixed meshes; all cases of D45 in the gallery |
 
 ## References
 
@@ -245,4 +247,13 @@ NVIDIA GPUs and CPUs, with MPI. Every stage ends with:
   layer in divergent channel flow*, AIAA J. 23, 163–171 (1985)
 - M. Lee, R. D. Moser, *Direct numerical simulation of turbulent channel flow
   up to Re_τ ≈ 5200*, J. Fluid Mech. 774, 395–415 (2015)
+- G. K. El Khoury et al., *Direct numerical simulation of turbulent pipe flow
+  at moderately high Reynolds numbers*, Flow Turbul. Combust. 91, 475–495
+  (2013)
+- C. U. Buice, J. K. Eaton, *Experimental investigation of flow through an
+  asymmetric plane diffuser*, Stanford Report TSD-107 (1997)
+- D. J. Monson, H. L. Seegmiller, P. K. McConnaughey, Y. S. Chen,
+  *Comparison of experiment with calculations using curvature-corrected
+  zero and two equation turbulence models for a two-dimensional U-duct*,
+  AIAA 90-1484 (1990)
 - hypre: https://github.com/hypre-space/hypre
