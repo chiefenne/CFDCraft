@@ -10,8 +10,8 @@ Living document, updated after each requirement step. Form taken from the
 - **O** – open requirement step, with the current proposal
 
 Status: requirements engineering in progress. Steps 1 (scope) and 2 (language,
-hardware) answered on 2026-11-14; step 3 mostly answered on 2026-11-14 (open:
-O3 pressure–velocity coupling, O8, O10, O11). No code yet.
+hardware) answered on 2026-11-14; step 3 answered on 2026-11-14 except O11
+(continuous integration). No code yet.
 
 Terminology: the project says *reacting flows*, not "combustion", everywhere.
 
@@ -55,6 +55,9 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D16 | 3  | Apple platforms | A Mac runs the float64 path on its CPU (multi-threaded, SIMD). Apple GPUs only through P2, as a declared reduced-precision mode | Follows from D7: Apple GPUs have no float64 hardware and the Metal shading language has no `double` |
 | D17 | 3  | Compressibility | Low-Mach variable density first, together with reacting flows (L2); fully compressible high-Mach flow later (L10) | |
 | D18 | –  | Documentation per feature | Every implemented feature ships with (1) a gallery example (`docs/gallery.md`: one picture per case with the commands that reproduce it), (2) one or more commented case files in `examples/cases/` listed in the case catalogue (`docs/cases.md`: what the case is, the mesh it needs, where it is discussed), (3) a recipe (`docs/recipes.md`: short command sequence for the task, naming the case-file keys it uses). A feature is not done without all three | Owner rule of 2026-11-14, same form as PyAeroFlow |
+| D19 | 3  | Pressure–velocity coupling | Pressure-based, collocated finite volume with Rhie–Chow interpolation, on one shared discretization (the assembly produces per-face coefficients from which scalar or block matrices are built). Segregated SIMPLE-family algorithm first (SIMPLEC steady, PISO-type transient); a coupled pressure-based solver (momentum and pressure in one block system) as the planned second algorithm (L11) | Segregated first: every later physics needs it, and it needs only scalar AMG. Assessment in section 2b |
+| D20 | 3  | Reference linear solver | hypre (open-source solver library of Lawrence Livermore National Laboratory, MIT or Apache-2.0 licence; BoomerAMG, MPI, CUDA) as an optional, linkable reference behind the same interface as the in-house solvers (D10), used to verify them and to benchmark them against the state of the art. Never required to build or run CFDCraft | |
+| D21 | 3  | Clean-room rule | Methods come from the published literature, with references. Code from other solvers is never copied. Open-source solvers may be read for understanding where their licence allows it | Keeps the project under the MIT licence (D1) |
 
 
 ## 2a. Language assessment (step 2)
@@ -82,7 +85,7 @@ fallback is two backends (D8) with CUDA kernels in CUDA C launched from Rust;
 only if that also proves unworkable is the language reopened.
 
 
-## 2b. Segregated or coupled (step 3, open)
+## 2b. Segregated or coupled (step 3, decided in D19)
 
 Is the segregated approach of the industry standards legacy, or an
 advantage? Both, depending on the problem:
@@ -134,6 +137,7 @@ In the order given in step 1.
 | L7 | Desktop app, in the style of the Crafting Apps | On the same engine as the CLI |
 | L8 | Built-in mesher | Much later; solver first |
 | L9 | Logo in the ArtCraft style | Peregrine falcon, first version in the repository (`assets/logo/cfdcraft.svg`); variants under review |
+| L11 | Coupled pressure-based solver | Second pressure–velocity algorithm on the shared discretization (D19); needs a block AMG |
 | L10 | Fully compressible high-Mach flow (transonic, supersonic) | After low-Mach variable density (D17) |
 
 
@@ -157,9 +161,6 @@ None yet.
 
 | ID | Step | Topic | Current proposal |
 |----|------|-------|------------------|
-| O3 | 3 | Pressure–velocity coupling | Pressure-based, collocated finite volume with Rhie–Chow interpolation. Segregated SIMPLE-family algorithm first (SIMPLEC steady, PISO-type transient), coupled pressure-based solver (momentum and pressure in one block system) as a planned second algorithm. Both work on the same discretization: the assembly produces per-face coefficients from which either the scalar matrices or the block matrix are built. Assessment in section 2b |
-| O8 | 2 | Reference linear solver | hypre (open-source solver library of Lawrence Livermore National Laboratory, MIT or Apache-2.0 licence; best known for the BoomerAMG algebraic multigrid; MPI and CUDA) as an optional, linkable reference behind the same interface as the in-house solvers (D10), to verify them and to measure them against the state of the art |
-| O10 | – | Clean-room rule | Numerics from the published literature only; no code taken from other solvers, so the project stays MIT (as in PyAeroFlow) |
 | O11 | – | Continuous integration | CPU tests on GitHub for every pull request (unlike PyAeroFlow X5), since contributors are wanted; GPU tests run locally |
 
 Steps still to come: discretization (gradients, convection and diffusion
