@@ -1,0 +1,25 @@
+# G1 on the CPU: 10 million cells, natural (well-ordered) cell numbering.
+# Single-source kernel bodies (cpu-threads) against hand-written Rust loops
+# (cpu-native); cpu-serial gives the single-thread figure.
+#
+#   cfdcraft bench g1 examples/cases/bench/g1_cpu_10m.toml
+#
+# Needs about 4 GB of memory.
+
+[mesh]
+cells = 10_000_000     # periodic box 215 x 215 x 216
+ordering = "natural"
+
+[run]
+backends = ["cpu-serial", "cpu-threads", "cpu-native"]
+repeat = 10
+warmup = 2
+# threads = 8          # default: all cores
+
+[sell]
+chunk = 32             # slice height; 32 = NVIDIA warp
+sigma = 1              # all rows have 7 entries: no sorting needed
+
+[output]
+directory = "output/g1_cpu_10m"
+name = "g1"

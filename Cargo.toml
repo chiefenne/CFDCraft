@@ -1,0 +1,45 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/cfdcraft-core",
+    "crates/cfdcraft-kernels",
+    "crates/cfdcraft-parallel",
+    "crates/cfdcraft-bench",
+    "crates/cfdcraft-cli",
+]
+# Built separately with the nightly toolchain for the NVIDIA PTX target
+# (see gpu/ptx-kernels/README.md).
+exclude = ["gpu/ptx-kernels"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/chiefenne/CFDCraft"
+authors = ["Andreas Ennemoser"]
+
+[workspace.dependencies]
+cfdcraft-core = { path = "crates/cfdcraft-core", version = "0.0.0" }
+cfdcraft-kernels = { path = "crates/cfdcraft-kernels", version = "0.0.0" }
+cfdcraft-parallel = { path = "crates/cfdcraft-parallel", version = "0.0.0" }
+cfdcraft-bench = { path = "crates/cfdcraft-bench", version = "0.0.0" }
+rayon = "1.12"
+clap = { version = "4.6", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "1.2"
+mpi = "0.8"
+cudarc = { version = "0.19", default-features = false }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+debug = "line-tables-only"

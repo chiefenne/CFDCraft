@@ -1,0 +1,27 @@
+# Gate G1 on an NVIDIA GPU: 10 million cells. The decisive run of stage 0.
+# cuda-rust (single-source Rust kernels, PTX built by gpu/ptx-kernels/build.sh)
+# against cuda-reference (hand-written CUDA C, compiled by NVRTC); the CPU
+# pair runs as well. Pass: every kernel of cuda-rust within 10 % of
+# cuda-reference, results identical to the CPU.
+#
+#   gpu/ptx-kernels/build.sh
+#   cargo build --release -p cfdcraft-cli --features cuda
+#   target/release/cfdcraft bench g1 examples/cases/bench/g1_gpu_10m.toml
+#
+# Needs about 4 GB of host memory and 3.5 GB of GPU memory.
+
+[mesh]
+cells = 10_000_000
+ordering = "natural"
+
+[run]
+backends = ["cuda-reference", "cuda-rust", "cpu-threads", "cpu-native"]
+repeat = 20
+warmup = 3
+device = 0
+rust_ptx = "target/nvptx64-nvidia-cuda/release/cfdcraft_ptx_kernels.ptx"
+tolerance = 1e-12
+
+[output]
+directory = "output/g1_gpu_10m"
+name = "g1"

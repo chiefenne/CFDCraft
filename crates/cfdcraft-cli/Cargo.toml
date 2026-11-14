@@ -1,0 +1,29 @@
+[package]
+name = "cfdcraft-cli"
+description = "CFDCraft command line"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "cfdcraft"
+path = "src/main.rs"
+
+[features]
+cuda = ["cfdcraft-bench/cuda"]
+mpi = ["cfdcraft-parallel/mpi"]
+checked-indexing = ["cfdcraft-bench/checked-indexing"]
+
+[dependencies]
+cfdcraft-core.workspace = true
+cfdcraft-bench.workspace = true
+cfdcraft-parallel.workspace = true
+clap.workspace = true
+anyhow = "1"
+rayon.workspace = true
+
+[lints]
+workspace = true

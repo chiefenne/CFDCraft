@@ -10,7 +10,7 @@ Living document, updated after each requirement step. Form taken from the
 - **O** – open requirement step, with the current proposal
 
 Status: requirements engineering in progress. Steps 1 (scope) and 2 (language,
-hardware) answered on 2026-11-14; steps 3 to 7 (turbulence and platform, discretization, mesh input and solvers, case file and output, test cases) answered on 2026-11-14; the stage plan was confirmed in order by the maintainer on 2026-11-14 (stage 7 changed to internal flows) and sprays (L12) were added. No code yet.
+hardware) answered on 2026-11-14; steps 3 to 7 (turbulence and platform, discretization, mesh input and solvers, case file and output, test cases) answered on 2026-11-14; the stage plan was confirmed in order by the maintainer on 2026-11-14 (stage 7 changed to internal flows) and sprays (L12) were added. Stage 0 started on 2026-11-14 (workspace, CI, G1 harness; see `docs/benchmarks/g1.md`).
 
 Terminology: the project says *reacting flows*, not "combustion", everywhere.
 
@@ -187,6 +187,7 @@ None yet.
 
 | ID | Step | Topic | Current proposal |
 |----|------|-------|------------------|
+| O13 | 0 | GPU for gate G1 | The rustc NVPTX target, which the single-source Rust route needs, supports NVIDIA compute capability 7.0 (Volta, 2017) and newer only. The CUDA C reference runs on older GPUs, but G1 compares the two and therefore needs a GPU of compute capability 7.0 or newer. Proposal: if the maintainer's GPU is older, G1 is run on any Volta-or-newer GPU the maintainer can use (for example a used consumer card of the RTX 20 series or newer, or a borrowed machine); until then D11 stands provisionally on the CPU result. Note: consumer GPUs have low float64 throughput, but the G1 kernels are memory-bound, so this does not decide G1 |
 | O12 | 5 | Multi-node acceptance test | D38 makes a multi-node run a milestone-1 test. The maintainer has an old PC with an NVIDIA GPU (model to be determined) and does not want to rent hardware. Proposal: the milestone-1 tests are multi-rank MPI runs on one machine (CPU ranks in CI, D22, and ranks sharing the one GPU locally); a true multi-node run is accepted when a cluster allocation is available (university or research-computing access, a community contribution) and is then added as a test. Until then the multi-node path is designed for and tested with several ranks on one machine, not claimed as verified |
 
 Steps still to come: verification and validation cases, stage plan.

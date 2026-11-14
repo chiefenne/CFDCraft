@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" width="720" height="400" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<rect width="720" height="400" fill="#ffffff"/>
+<text x="64" y="22" font-size="15" font-weight="bold" fill="#222">G1 kernel benchmark: effective bandwidth</text>
+<text x="64" y="38" fill="#555">9984600 cells, shuffled ordering, linux-x86_64, 2026-11-14</text>
+<line x1="64" x2="704" y1="316.0" y2="316.0" stroke="#ddd"/><text x="58" y="320.0" text-anchor="end" fill="#555">0</text>
+<line x1="64" x2="704" y1="249.0" y2="249.0" stroke="#ddd"/><text x="58" y="253.0" text-anchor="end" fill="#555">5</text>
+<line x1="64" x2="704" y1="182.0" y2="182.0" stroke="#ddd"/><text x="58" y="186.0" text-anchor="end" fill="#555">10</text>
+<line x1="64" x2="704" y1="115.0" y2="115.0" stroke="#ddd"/><text x="58" y="119.0" text-anchor="end" fill="#555">15</text>
+<line x1="64" x2="704" y1="48.0" y2="48.0" stroke="#ddd"/><text x="58" y="52.0" text-anchor="end" fill="#555">20</text>
+<text transform="translate(16 182.0) rotate(-90)" text-anchor="middle" fill="#333">GB/s</text>
+<rect x="80.0" y="212.1" width="62.0" height="103.9" fill="#0072B2"><title>cpu-threads face-flux: 7.8 GB/s</title></rect>
+<rect x="144.0" y="138.7" width="62.0" height="177.3" fill="#E69F00"><title>cpu-native face-flux: 13.2 GB/s</title></rect>
+<text x="144.0" y="334.0" text-anchor="middle" fill="#333">face-flux</text>
+<rect x="240.0" y="252.9" width="62.0" height="63.1" fill="#0072B2"><title>cpu-threads cell-gather: 4.7 GB/s</title></rect>
+<rect x="304.0" y="260.1" width="62.0" height="55.9" fill="#E69F00"><title>cpu-native cell-gather: 4.2 GB/s</title></rect>
+<text x="304.0" y="334.0" text-anchor="middle" fill="#333">cell-gather</text>
+<rect x="400.0" y="182.0" width="62.0" height="134.0" fill="#0072B2"><title>cpu-threads spmv-csr: 10.0 GB/s</title></rect>
+<rect x="464.0" y="186.2" width="62.0" height="129.8" fill="#E69F00"><title>cpu-native spmv-csr: 9.7 GB/s</title></rect>
+<text x="464.0" y="334.0" text-anchor="middle" fill="#333">spmv-csr</text>
+<rect x="560.0" y="215.7" width="62.0" height="100.3" fill="#0072B2"><title>cpu-threads spmv-sell: 7.5 GB/s</title></rect>
+<rect x="624.0" y="201.4" width="62.0" height="114.6" fill="#E69F00"><title>cpu-native spmv-sell: 8.6 GB/s</title></rect>
+<text x="624.0" y="334.0" text-anchor="middle" fill="#333">spmv-sell</text>
+<rect x="64.0" y="360.0" width="12" height="12" fill="#0072B2"/><text x="80.0" y="370.0" fill="#333">cpu-threads</text>
+<rect x="165.0" y="360.0" width="12" height="12" fill="#E69F00"/><text x="181.0" y="370.0" fill="#333">cpu-native</text>
+</svg>

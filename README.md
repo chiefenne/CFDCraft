@@ -10,9 +10,13 @@
 
 ---
 
-> **Status: requirements engineering.** There is no solver code yet. The
-> requirements are being worked out step by step in
-> [docs/requirements.md](docs/requirements.md).
+> **Status: stage 0 (foundations and gate G1).** The requirements are in
+> [docs/requirements.md](docs/requirements.md). The code so far is the
+> workspace, continuous integration and the GPU kernel benchmark that
+> decides the GPU backend ([G1](docs/benchmarks/g1.md)). There is no solver
+> yet.
+
+[![CI](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml)
 
 ## Goal
 
@@ -42,6 +46,30 @@ The guiding targets are:
 Incompressible flow on unstructured meshes, with two or three RANS turbulence
 models, run from a text case file. Everything after that follows the roadmap
 in the [requirements](docs/requirements.md).
+
+## Build and run
+
+Needs Rust 1.89 or newer.
+
+```
+cargo test --workspace
+cargo build --release -p cfdcraft-cli
+target/release/cfdcraft info
+target/release/cfdcraft bench g1 examples/cases/bench/g1_ci_small.toml
+```
+
+Documentation: [example gallery](docs/gallery.md),
+[case catalogue](docs/cases.md), [recipes](docs/recipes.md),
+[changelog](CHANGELOG.md).
+
+| Crate | Content |
+|---|---|
+| `cfdcraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
+| `cfdcraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`) |
+| `cfdcraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
+| `cfdcraft-bench` | gate G1: kernel benchmark, CPU and CUDA backends |
+| `cfdcraft-cli` | the `cfdcraft` command |
+| `gpu/ptx-kernels` | the kernels compiled to NVIDIA PTX (nightly toolchain) |
 
 ## How it is built
 
@@ -73,9 +101,9 @@ of the flow around it.
 
 ## Contributing
 
-The project is at the requirements stage and has one maintainer. Comments on
-the requirements are welcome as GitHub issues. Contribution guidelines will
-follow with the first code.
+The project is at stage 0 and has one maintainer. Comments on the
+requirements are welcome as GitHub issues. Contribution guidelines will
+follow with the first solver code.
 
 ## Licence
 
