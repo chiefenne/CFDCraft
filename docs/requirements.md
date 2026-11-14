@@ -10,7 +10,7 @@ Living document, updated after each requirement step. Form taken from the
 - **O** – open requirement step, with the current proposal
 
 Status: requirements engineering in progress. Steps 1 (scope) and 2 (language,
-hardware) answered on 2026-11-14; step 3 answered on 2026-11-14 completely. No code yet.
+hardware) answered on 2026-11-14; step 3 and step 4 (discretization, boundary conditions, reproducibility) answered on 2026-11-14. No code yet.
 
 Terminology: the project says *reacting flows*, not "combustion", everywhere.
 
@@ -58,6 +58,16 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D20 | 3  | Reference linear solver | hypre (open-source solver library of Lawrence Livermore National Laboratory, MIT or Apache-2.0 licence; BoomerAMG, MPI, CUDA) as an optional, linkable reference behind the same interface as the in-house solvers (D10), used to verify them and to benchmark them against the state of the art. Never required to build or run CFDCraft | |
 | D21 | 3  | Clean-room rule | Methods come from the published literature, with references. Code from other solvers is never copied. Open-source solvers may be read for understanding where their licence allows it | Keeps the project under the MIT licence (D1) |
 | D22 | 3  | Continuous integration | GitHub Actions runs the CPU tests (build, unit tests, small verification cases) on every pull request and every push to `main`, on GitHub's free hosted runners. Free for public repositories. GPU tests are run locally by the maintainer once suitable hardware is available; they are marked separately and are not part of the hosted checks | The maintainer has no GPU hardware yet (2026-11-14), so GPU verification starts when it is available |
+| D23 | 4  | Spatial discretization | Cell-centred finite volume on arbitrary polyhedral cells, face-based data structure (owner and neighbour cell per face) | Every later physics fits it (multiphase, moving meshes, conjugate heat transfer) |
+| D24 | 4  | Gradient reconstruction | Weighted least squares on the face-neighbour stencil as the default; Green-Gauss as a cheaper option | Plain Green-Gauss is only zero-order accurate on skewed polyhedral meshes (Syrakos et al. 2017, as in PyAeroFlow D22) |
+| D25 | 4  | Convection schemes | Second-order linear upwind with a limiter as the default; first-order upwind for start-up; a blended central scheme as an option (needed for LES, L5). Limiters in milestone 1: Venkatakrishnan and Venkatakrishnan–Wang | Further TVD limiters later through the same interface |
+| D26 | 4  | Diffusion on non-orthogonal meshes | Over-relaxed non-orthogonal correction, applied as a deferred correction with a limiter on strongly skewed cells | |
+| D27 | 4  | Rhie–Chow interpolation | Time-step-independent form: steady results do not depend on under-relaxation or time step | |
+| D28 | 4  | Time integration | Second-order backward (BDF2) as the default, first order for the first step; Crank–Nicolson as an option; optional adaptive time step controlled by CFL | |
+| D29 | 4  | Boundary conditions, milestone 1 | Velocity inlet, mass-flow inlet, static-pressure inlet, total-pressure inlet, static-pressure outlet, total-pressure outlet, no-slip wall (also moving), symmetry, periodic. Turbulence values at inlets as turbulence intensity and length scale, or viscosity ratio. Static and total pressure conditions can be combined, for example static pressure at an inlet with total pressure at an outlet | The compatible combinations are enforced by D30 |
+| D30 | 4  | Boundary-condition check and guidance | Before the run, a check of the combination of boundary conditions on the whole domain: a pressure level must be fixed (a pressure boundary or a reference cell), the net mass balance must be possible, over-specified combinations are errors (for example velocity inlet together with pressure inlet on the same flow path), and unused or unsuitable turbulence values are reported. Errors and warnings name the offending boundary and say what to change. The documentation carries a guidance table of sensible combinations and the cases each one suits | Same idea as PyAeroFlow D39; a recipe (D18) shows typical combinations |
+| D31 | 4  | Reproducible results | Results are reproducible from run to run on the same hardware and decomposition: gather-based assembly of face contributions with no floating-point atomics, and a fixed summation order in reductions | Mandatory; costs possibly a few percent of speed. Reproducibility across different GPU or rank counts is not promised, because the summation order changes with the decomposition |
+| D32 | 4  | Mesh partitioning | METIS or Scotch (linked C library, allowed by D9) for domain decomposition | Decision between the two at implementation |
 
 
 ## 2a. Language assessment (step 2)
@@ -159,11 +169,8 @@ None yet.
 
 ## 6. Open requirement steps
 
-No item is open at the moment. Steps still to come: discretization (gradients, convection and diffusion
-schemes, limiters, non-orthogonal correction), time integration, linear
-solvers in detail, mesh formats and partitioning, boundary conditions, case
-file format, output and restart, verification and validation cases, stage
-plan.
+No item is open at the moment. Steps still to come: linear solvers in detail, mesh formats, case file format,
+output and restart, verification and validation cases, stage plan.
 
 
 ## 7. Stage plan
