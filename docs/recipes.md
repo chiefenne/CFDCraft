@@ -19,6 +19,9 @@ the [Example gallery](gallery.md).
 12. [Check the order of accuracy of the scalar operators](#scalar-mms)
 13. [Compare convection schemes and limiters](#scalar-schemes)
 14. [Run the scalar operators on an NVIDIA GPU](#scalar-gpu) (also: free Colab T4)
+15. [Study the pressure solver on a Poisson problem](#poisson-study)
+16. [Run the pressure solver on an NVIDIA GPU against hypre](#poisson-gpu) (also: free Colab T4)
+17. [Build hypre and compare with it](#hypre)
 
 ---
 
@@ -411,5 +414,124 @@ target/release/cfdcraft scalar examples/cases/scalar/mms_poly_box.toml --backend
 "bitwise equal" when a GPU run reproduces the CPU run bit for bit, and the
 run fails if any difference exceeds 1e-10. Keys: `run.backends`,
 `run.rust_ptx` (or `--rust-ptx`).
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="poisson-study"></a>
+## 15. Study the pressure solver on a Poisson problem
+
+The mesh sweeps of stage 3 ([explanation](verification/stage3.md)): each
+case solves the Poisson problem on three or four refinement levels with CG
+and the multigrid (mixed precision and float64) and with Jacobi-CG, on 4
+threads and on 1, prints the iteration ratio between the finest and the
+coarsest level and fails if it exceeds 1.5.
+
+```
+cargo build --release -p cfdcraft-cli
+for m in hex tet poly mixed; do
+  target/release/cfdcraft poisson examples/cases/poisson/poisson_${m}_box.toml
+done
+cat output/poisson_poly_box/poisson.md      # iterations, times, hierarchy, differences
+# plot: output/poisson_poly_box/iterations.svg
+```
+
+Try other multigrid settings from the command line or in `[linear.amg]`:
+
+```
+target/release/cfdcraft poisson examples/cases/poisson/poisson_poly_box.toml --solvers amg,amg-plain,jacobi
+target/release/cfdcraft poisson examples/cases/poisson/poisson_poly_box.toml --levels 4 --threads 1 --repeat 3
+```
+
+```toml
+[linear.amg]
+smoother = "jacobi"        # or "chebyshev"
+degree = 3                 # smoother steps before and after the coarse correction
+strength = 0.02            # more aggressive coarsening
+precision = "double"       # float64 hierarchy
+```
+
+The same solver in `cfdcraft scalar` (gallery 11):
+
+```toml
+[solver]
+linear_solver = "cg"       # symmetric matrices only (no convection)
+preconditioner = "amg"     # also with linear_solver = "bicgstab"
+amg = { smoother = "chebyshev", degree = 2, precision = "mixed" }
+```
+
+The checks as tests (the mesh sweep in release builds):
+
+```
+cargo test --release -p cfdcraft-fv --test stage3
+```
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="poisson-gpu"></a>
+## 16. Run the pressure solver on an NVIDIA GPU against hypre
+
+Without a GPU of your own: open
+[`tools/stage3_colab.ipynb`](https://colab.research.google.com/github/chiefenne/CFDCraft/blob/main/tools/stage3_colab.ipynb)
+in Google Colab, choose a T4 runtime, set `BRANCH` if the stage-3 branch is
+not merged yet, and run all cells (about 30 minutes, most of it compiling
+hypre with CUDA). On any Linux machine with an NVIDIA GPU of compute
+capability 7.0 or newer and the CUDA toolkit:
+
+```
+bash tools/stage3_cloud.sh
+```
+
+By hand (sm_75 for a T4; `nvidia-smi --query-gpu=compute_cap --format=csv`):
+
+```
+tools/build_hypre.sh $PWD/target/hypre-cuda75 75
+gpu/ptx-kernels/build.sh sm_75
+HYPRE_DIR=$PWD/target/hypre-cuda75 cargo build --release -p cfdcraft-cli --features cuda,hypre
+target/release/cfdcraft poisson examples/cases/poisson/poisson_poly_gpu.toml
+target/release/cfdcraft poisson examples/cases/poisson/poisson_poly_box.toml --backends cuda --solvers amg,amg-double,hypre
+```
+
+`poisson_poly_gpu.toml` solves 912 673 polyhedra with the in-house solvers
+on the CPU and on the GPU and with hypre on the GPU; the report gives the
+setup and solve times and ns per cell and iteration of each, and the
+column "Bitwise vs first backend" says whether the GPU solve equals the CPU
+solve bit for bit. Keys: `study.backends`, `study.solvers`,
+`study.rust_ptx` (or `--rust-ptx`), `study.repeat`.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="hypre"></a>
+## 17. Build hypre and compare with it
+
+hypre (MIT or Apache-2.0) is the optional reference solver (D20). It is
+built from source, sequential (no MPI), as a shared library; CFDCraft
+links it only with the cargo feature `hypre` and finds it through
+`HYPRE_DIR`. Needs git, CMake 3.21 or newer and a C compiler (on macOS:
+`brew install cmake`).
+
+```
+tools/build_hypre.sh $PWD/target/hypre                 # about 1–3 minutes
+export HYPRE_DIR=$PWD/target/hypre
+cargo build --release -p cfdcraft-cli --features hypre
+target/release/cfdcraft info                            # features: ..., hypre
+for m in hex tet poly mixed; do
+  target/release/cfdcraft poisson examples/cases/poisson/poisson_${m}_box.toml \
+      --solvers amg,amg-double,amg-plain,jacobi,hypre --backends cpu,cpu-serial \
+      --out output/poisson_${m}_hypre
+done
+cargo test --release -p cfdcraft-fv --features hypre --test stage3
+```
+
+With hypre in `study.solvers` the differences in the report are measured
+against hypre's solution, and the run fails above `study.max_difference`
+(1e-6). hypre runs on one CPU thread; compare its times with the
+`cpu-serial` rows. BoomerAMG settings: `[hypre]` in the case file
+([keys](cases.md#poisson-case-file-keys)).
 
 [↑ back to top](#recipes)

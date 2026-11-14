@@ -1,0 +1,69 @@
+# Poisson problem with a manufactured solution on polyhedral meshes, solved
+# by the stage-3 pressure solver inside the outer iterations of the scalar
+# solver: CG with the smoothed-aggregation multigrid, with the non-orthogonal
+# correction as a deferred correction. Order-of-accuracy sweep over three
+# nested refinements; the variant solves the same case with BiCGStab and
+# Jacobi, for comparison of the work per outer iteration.
+#
+#   cargo run --release -p cfdcraft-cli -- scalar examples/cases/scalar/poisson_amg_poly_box.toml
+#
+# −∇·(Γ∇φ) = s with Γ = 1, no convection,
+# φ = 1 + sin(πx + 0.5) cos(πy + 0.3) cos(πz/2 + 0.2), fixed values of the
+# exact solution on all six patches. The run fails if the order on the
+# finest pair is outside 1.8–2.2.
+
+[mesh.generate]
+type = "poly"
+cells = [4, 4, 4]
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[problem]
+diffusivity = 1.0
+velocity = [0.0, 0.0, 0.0]
+manufactured = {}
+
+[problem.boundary.xmin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.xmax]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.ymin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.ymax]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.zmin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.zmax]
+type = "fixed-value"
+profile = "manufactured"
+
+# solver settings of the two variants; the order is taken from the first
+[verification]
+levels = [1, 2, 3]
+expected_order = [1.8, 2.2]
+
+[[variants]]
+name = "cg-amg"
+[variants.solver]
+scheme = "upwind"            # no convection: the scheme does not matter
+nonorth_correction = true
+tolerance = 1e-10
+linear_solver = "cg"
+preconditioner = "amg"
+linear_tolerance = 1e-4      # per outer iteration
+amg = { smoother = "chebyshev", degree = 2, precision = "mixed" }
+
+[[variants]]
+name = "bicgstab-jacobi"
+[variants.solver]
+scheme = "upwind"
+tolerance = 1e-10
+linear_tolerance = 1e-4
+linear_max_iter = 1000

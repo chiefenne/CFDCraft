@@ -4,9 +4,15 @@
 
 | Version | Stage | Highlights |
 |---|---|---|
+| 0.3 (2026-11-14) | 3 Pressure solver | Pressure linear solver: smoothed-aggregation algebraic multigrid as the preconditioner of CG (Vaněk, Mandel, Brezina 1996), symmetric V-cycle with Chebyshev or Jacobi smoothing, float32 hierarchy with float64 Krylov iteration (mixed precision, D37), one kernel source for the CPU and the NVIDIA GPU, optional hypre 3.2.1 reference (BoomerAMG-PCG, built from source). **10–13 iterations from 512 to 274 625 cells on all mesh types; same solution as hypre to 1.6e-9; on a Tesla T4 6.5 ns per cell and iteration against 10.5 for hypre at 912 673 cells, all GPU results bitwise equal to the CPU.** New command `cfdcraft poisson`, four Poisson case files, gallery 10–11, recipes 15–17 |
 | 0.2 (2026-11-14) | 2 Operators on a scalar equation | Finite-volume operators on a scalar transport equation, one source for the CPU and the NVIDIA GPU: least-squares gradients (exact for linear fields, error 6e-15 on all mesh types), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (no new extrema at K = 0), over-relaxed non-orthogonal diffusion, reproducible gather-based assembly into sliced ELL, BiCGStab. Observed order 1.87–2.08 on hex, tet, poly and mixed meshes in 2D and 3D. **GPU and CPU results bitwise equal on a Tesla T4** (912 673 polyhedra, 311 ns per cell and iteration). New command `cfdcraft scalar`, seven case files, gallery 8–9, recipes 12–14 |
 | 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
 | 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
+
+Release 0.3 closes stage 3: all acceptance tests of the stage plan pass
+(iteration count nearly independent of the mesh size, same converged result
+as hypre, GPU time per cell compared with hypre and reported). The Cargo
+version of the crates is now 0.3.0; the release is the Git tag `v0.3` (D46).
 
 Release 0.2 closes stage 2: all acceptance tests of the stage plan pass
 (exact gradients, no new extrema, observed order 1.8–2.2 on all mesh types,
@@ -24,6 +30,41 @@ CPU: i9-9900K, 2026-11-14, both PASS; O13 closed). The Cargo version of the
 crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
+
+## 0.3 (2026-11-14) – stage 3: pressure solver
+
+New module `cfdcraft-fv::amg`, kernel bodies `cfdcraft-kernels::amg` (one
+source for the CPU and the GPU, float32 and float64) and the command
+`cfdcraft poisson`:
+
+- **Smoothed-aggregation multigrid (D35).** Strength of connection,
+  three-phase greedy aggregation in the cell order, filtered and
+  Jacobi-smoothed prolongator, Galerkin coarse operators, explicit
+  restriction (gather, no atomics), dense coarsest level; deterministic host
+  setup in float64. Plain aggregation as an option.
+- **Symmetric V-cycle** with a Chebyshev (default) or damped Jacobi smoother
+  in D⁻¹A, λ_max from a fixed power iteration.
+- **Mixed precision (D37).** The hierarchy (including a float32 copy of the
+  fine matrix) in float32, CG in float64; `precision = "double"` for
+  comparison. R10 allows f32 only in the multigrid kernels and rejects
+  contracted, approximate and flush-to-zero f32 arithmetic.
+- **Flexible CG** (Notay 2000). `[solver] linear_solver = "cg"` and
+  `preconditioner = "amg"` in `cfdcraft scalar` (also AMG with BiCGStab);
+  the report shows the linear iterations and the multigrid setup time.
+- **GPU.** PTX entries `amg_*_f32`, `amg_*_f64`, `blas_axpy`, `blas_xpby`;
+  the CUDA backend runs the V-cycle with all vectors resident.
+- **hypre reference (D20).** Cargo feature `hypre`: a C shim over hypre's
+  public interface (BoomerAMG with PCG), `tools/build_hypre.sh` builds hypre
+  from source (CPU or CUDA); a CI job builds it and compares.
+- **`cfdcraft poisson`.** Mesh sweeps with several solvers and backends;
+  report of iterations, setup and solve times, ns per cell and iteration,
+  hierarchy, differences to hypre, bitwise comparison across backends;
+  checks of iteration growth and agreement.
+- **Verification.** Stage-3 tests (iterations nearly independent of the
+  mesh size on all mesh types, mixed precision equals float64,
+  SPD V-cycle, bitwise reproducibility, agreement with hypre), five Poisson
+  case files and one scalar case, gallery 10–11, recipes 15–17, the
+  explanation page `docs/verification/stage3.md`, `tools/stage3_colab.ipynb`.
 
 ## 0.2 (2026-11-14) – stage 2: operators on a scalar equation
 

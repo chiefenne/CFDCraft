@@ -4,7 +4,9 @@
 //! - [`fv`]: the finite-volume operators on a scalar (stage 2): gradient,
 //!   limiter, face flux coefficients, row assembly;
 //! - [`blas`]: vector operations and reproducible block dot products of the
-//!   Krylov solvers.
+//!   Krylov solvers;
+//! - [`amg`]: the smoothers, transfers and coarse solve of the algebraic
+//!   multigrid V-cycle (stage 3), generic over float32 and float64.
 //!
 //! Each kernel is a *body*: a function that computes the result for one
 //! index (one face, one cell, one matrix row). A backend supplies the loop:
@@ -26,6 +28,7 @@
 //! callers guarantee that every index lies inside its array.
 #![no_std]
 
+pub mod amg;
 pub mod blas;
 pub mod face;
 pub mod fv;

@@ -100,3 +100,23 @@ pub unsafe fn scale<T: Real>(i: usize, d: &[T], x: &[T]) -> T {
     // SAFETY: guaranteed by the caller.
     unsafe { ld(d, i) * ld(x, i) }
 }
+
+/// CG update: y_i + α x_i.
+///
+/// # Safety
+/// `i` is inside both slices.
+#[inline(always)]
+pub unsafe fn axpy<T: Real>(i: usize, alpha: T, x: &[T], y: &[T]) -> T {
+    // SAFETY: guaranteed by the caller.
+    unsafe { ld(y, i) + alpha * ld(x, i) }
+}
+
+/// CG direction update: x_i + β y_i.
+///
+/// # Safety
+/// `i` is inside both slices.
+#[inline(always)]
+pub unsafe fn xpby<T: Real>(i: usize, x: &[T], beta: T, y: &[T]) -> T {
+    // SAFETY: guaranteed by the caller.
+    unsafe { ld(x, i) + beta * ld(y, i) }
+}

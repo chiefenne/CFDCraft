@@ -1,4 +1,5 @@
-//! Finite-volume operators on a scalar transport equation (stage 2).
+//! Finite-volume operators on a scalar transport equation (stage 2) and
+//! the linear solvers of the pressure equation (stage 3).
 //!
 //! - [`problem`]: the steady convection–diffusion problem, boundary
 //!   conditions and manufactured solutions;
@@ -6,14 +7,22 @@
 //!   least-squares weights, sliced-ELL structure);
 //! - [`backend`]: where the kernel bodies of `cfdcraft_kernels` run: CPU
 //!   threads or the NVIDIA GPU (feature `cuda`);
-//! - [`solver`]: outer deferred-correction iterations and BiCGStab;
+//! - [`amg`]: smoothed-aggregation algebraic multigrid, the pressure
+//!   preconditioner (stage 3);
+//! - [`solver`]: outer deferred-correction iterations, BiCGStab and CG;
+//! - [`poisson`]: the `cfdcraft poisson` linear-solver study (stage 3);
+//! - `hypre` (feature `hypre`): hypre's BoomerAMG as the reference solver;
 //! - [`verify`]: gradient exactness, limiter bounds and order-of-accuracy
 //!   sweeps (the acceptance checks of stage 2);
 //! - [`case`]: the `cfdcraft scalar` case file and run.
 
+pub mod amg;
 pub mod backend;
 pub mod case;
 pub mod disc;
+#[cfg(feature = "hypre")]
+pub mod hypre;
+pub mod poisson;
 pub mod problem;
 pub mod solver;
 pub mod verify;

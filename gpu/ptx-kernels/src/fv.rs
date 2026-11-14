@@ -445,3 +445,33 @@ pub unsafe extern "ptx-kernel" fn blas_scale(n: u32, d: *const f64, x: *const f6
         *out.add(i) = y;
     }
 }
+
+/// CG update y = y + α x, in place.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn blas_axpy(n: u32, alpha: f64, x: *const f64, y: *mut f64) {
+    let i = tid();
+    let n = n as usize;
+    if i >= n {
+        return;
+    }
+    // SAFETY: see the module docs; y is read at index i only.
+    unsafe {
+        let v = blas::axpy(i, alpha, sl(x, n), core::slice::from_raw_parts(y, n));
+        *y.add(i) = v;
+    }
+}
+
+/// CG direction update y = x + β y, in place.
+#[unsafe(no_mangle)]
+pub unsafe extern "ptx-kernel" fn blas_xpby(n: u32, x: *const f64, beta: f64, y: *mut f64) {
+    let i = tid();
+    let n = n as usize;
+    if i >= n {
+        return;
+    }
+    // SAFETY: as above.
+    unsafe {
+        let v = blas::xpby(i, sl(x, n), beta, core::slice::from_raw_parts(y, n));
+        *y.add(i) = v;
+    }
+}

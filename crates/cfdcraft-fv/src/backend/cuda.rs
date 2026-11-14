@@ -10,11 +10,15 @@
 //! "cuda"]`).
 
 use super::{Backend, FaceSettings, Limiter, V};
+use crate::amg::cycle::LevelOps;
+use crate::amg::{Hierarchy, Precision, SellMatrix};
 use crate::disc::Discretisation;
 use anyhow::Context as _;
+use cfdcraft_core::Real;
 use cfdcraft_core::repro::{BLOCK, combine_block_sums};
 use cudarc::driver::{
-    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
+    CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceRepr, LaunchConfig,
+    PushKernelArg, ValidAsZeroBits,
 };
 use cudarc::nvrtc::Ptx;
 use std::path::Path;
@@ -23,7 +27,7 @@ use std::sync::Arc;
 /// Threads per block.
 const THREADS: u32 = 256;
 
-const ENTRIES: [&str; 12] = [
+const ENTRIES: [&str; 14] = [
     "fv_gradient",
     "fv_limiter",
     "fv_faces",
@@ -36,7 +40,265 @@ const ENTRIES: [&str; 12] = [
     "blas_sub_scaled",
     "blas_update_x",
     "blas_scale",
+    "blas_axpy",
+    "blas_xpby",
 ];
+
+/// Entry points of the V-cycle, per precision (suffix `_f32`, `_f64`).
+const AMG_ENTRIES: [&str; 9] = [
+    "amg_smooth_first",
+    "amg_smooth_step",
+    "amg_add",
+    "amg_residual",
+    "amg_spmv",
+    "amg_prolong",
+    "amg_dense",
+    "amg_to",
+    "amg_from",
+];
+const SMOOTH_FIRST: usize = 0;
+const SMOOTH_STEP: usize = 1;
+const ADD: usize = 2;
+const RESIDUAL: usize = 3;
+const SPMV: usize = 4;
+const PROLONG: usize = 5;
+const DENSE: usize = 6;
+const TO: usize = 7;
+const FROM: usize = 8;
+
+/// A precision of the hierarchy on the GPU.
+trait DevReal: Real + DeviceRepr + ValidAsZeroBits {}
+impl DevReal for f32 {}
+impl DevReal for f64 {}
+
+/// A sliced-ELL matrix on the GPU.
+struct DevSell<T> {
+    n_rows: u32,
+    n_cols: u32,
+    chunk: u32,
+    n_slices: u32,
+    stored: u32,
+    slice_ptr: CudaSlice<u32>,
+    slice_len: CudaSlice<u32>,
+    col: CudaSlice<u32>,
+    val: CudaSlice<T>,
+}
+
+impl<T: DevReal> DevSell<T> {
+    fn new(s: &Arc<CudaStream>, m: &SellMatrix<T>) -> anyhow::Result<Self> {
+        Ok(Self {
+            n_rows: m.n_rows as u32,
+            n_cols: m.n_cols as u32,
+            chunk: m.chunk as u32,
+            n_slices: m.slice_ptr.len() as u32,
+            stored: m.stored() as u32,
+            slice_ptr: s.clone_htod(&m.slice_ptr)?,
+            slice_len: s.clone_htod(&m.slice_len)?,
+            col: s.clone_htod(&m.col)?,
+            val: s.clone_htod(&m.val)?,
+        })
+    }
+}
+
+struct DevLevel<T> {
+    a: DevSell<T>,
+    p: DevSell<T>,
+    r: DevSell<T>,
+    dinv: CudaSlice<T>,
+    steps: Vec<(f64, f64)>,
+}
+
+/// The hierarchy on the GPU with its cycle vectors (`x`, `b`: L + 1 levels,
+/// `w`, `d`: L levels) and its entry points.
+struct DevAmg<T> {
+    levels: Vec<DevLevel<T>>,
+    coarse_n: u32,
+    coarse_inv: CudaSlice<T>,
+    x: Vec<CudaSlice<T>>,
+    b: Vec<CudaSlice<T>>,
+    w: Vec<CudaSlice<T>>,
+    d: Vec<CudaSlice<T>>,
+    f: Vec<CudaFunction>,
+}
+
+enum AmgGpu {
+    F32(DevAmg<f32>),
+    F64(DevAmg<f64>),
+}
+
+impl<T: DevReal> DevAmg<T> {
+    fn new(s: &Arc<CudaStream>, module: &Arc<CudaModule>, h: &Hierarchy) -> anyhow::Result<Self> {
+        let mut f = Vec::new();
+        for e in AMG_ENTRIES {
+            let name = format!("{e}_{}", T::NAME);
+            f.push(
+                module
+                    .load_function(&name)
+                    .with_context(|| format!("entry point {name} (rebuild the PTX module)"))?,
+            );
+        }
+        let cv = |v: &[f64]| v.iter().map(|&x| T::from_f64(x)).collect::<Vec<T>>();
+        let mut levels = Vec::new();
+        for l in &h.levels {
+            levels.push(DevLevel {
+                a: DevSell::new(s, &SellMatrix::<T>::from_csr(&l.a))?,
+                p: DevSell::new(s, &SellMatrix::<T>::from_csr(&l.p))?,
+                r: DevSell::new(s, &SellMatrix::<T>::from_csr(&l.r))?,
+                dinv: s.clone_htod(&cv(&l.dinv))?,
+                steps: l.steps.clone(),
+            });
+        }
+        let mut sizes: Vec<usize> = h.levels.iter().map(|l| l.a.n_rows).collect();
+        sizes.push(h.coarse_n);
+        let alloc = |range: &[usize]| -> anyhow::Result<Vec<CudaSlice<T>>> {
+            range.iter().map(|&n| Ok(s.alloc_zeros::<T>(n)?)).collect()
+        };
+        let nl = levels.len();
+        Ok(Self {
+            x: alloc(&sizes)?,
+            b: alloc(&sizes)?,
+            w: alloc(&sizes[..nl])?,
+            d: alloc(&sizes[..nl])?,
+            coarse_n: h.coarse_n as u32,
+            coarse_inv: s.clone_htod(&cv(&h.coarse_inv))?,
+            levels,
+            f,
+        })
+    }
+
+    fn load_rhs(&mut self, s: &Arc<CudaStream>, r: &CudaSlice<f64>) -> anyhow::Result<()> {
+        let n = self.b[0].len() as u32;
+        let mut l = s.launch_builder(&self.f[TO]);
+        l.arg(&n).arg(r).arg(&mut self.b[0]);
+        // SAFETY: argument list of amg_to_*; both vectors have n entries.
+        unsafe { l.launch(cfg(n as usize)) }?;
+        Ok(())
+    }
+
+    fn store(&mut self, s: &Arc<CudaStream>, z: &mut CudaSlice<f64>) -> anyhow::Result<()> {
+        let n = self.x[0].len() as u32;
+        let mut l = s.launch_builder(&self.f[FROM]);
+        l.arg(&n).arg(&self.x[0]).arg(z);
+        // SAFETY: argument list of amg_from_*.
+        unsafe { l.launch(cfg(n as usize)) }?;
+        Ok(())
+    }
+
+    fn smooth_first(&mut self, s: &Arc<CudaStream>, lv: usize, c2: f64) -> anyhow::Result<()> {
+        let n = self.levels[lv].a.n_rows;
+        let c2 = T::from_f64(c2);
+        let mut l = s.launch_builder(&self.f[SMOOTH_FIRST]);
+        l.arg(&n)
+            .arg(&c2)
+            .arg(&self.levels[lv].dinv)
+            .arg(&self.b[lv])
+            .arg(&mut self.d[lv])
+            .arg(&mut self.x[lv]);
+        // SAFETY: argument list of amg_smooth_first_*.
+        unsafe { l.launch(cfg(n as usize)) }?;
+        Ok(())
+    }
+
+    fn smooth_step(
+        &mut self,
+        s: &Arc<CudaStream>,
+        lv: usize,
+        c1: f64,
+        c2: f64,
+    ) -> anyhow::Result<()> {
+        let (c1, c2) = (T::from_f64(c1), T::from_f64(c2));
+        let a = &self.levels[lv].a;
+        let n = a.n_rows;
+        {
+            let mut l = s.launch_builder(&self.f[SMOOTH_STEP]);
+            l.arg(&n).arg(&a.chunk).arg(&a.n_slices).arg(&a.stored);
+            l.arg(&a.slice_ptr)
+                .arg(&a.slice_len)
+                .arg(&a.col)
+                .arg(&a.val);
+            l.arg(&c1).arg(&c2);
+            l.arg(&self.levels[lv].dinv)
+                .arg(&self.b[lv])
+                .arg(&self.x[lv])
+                .arg(&mut self.d[lv]);
+            // SAFETY: argument list of amg_smooth_step_*.
+            unsafe { l.launch(cfg(n as usize)) }?;
+        }
+        let mut l = s.launch_builder(&self.f[ADD]);
+        l.arg(&n).arg(&self.d[lv]).arg(&mut self.x[lv]);
+        // SAFETY: argument list of amg_add_*.
+        unsafe { l.launch(cfg(n as usize)) }?;
+        Ok(())
+    }
+
+    fn restrict(&mut self, s: &Arc<CudaStream>, lv: usize) -> anyhow::Result<()> {
+        let a = &self.levels[lv].a;
+        {
+            let n = a.n_rows;
+            let mut l = s.launch_builder(&self.f[RESIDUAL]);
+            l.arg(&n).arg(&a.chunk).arg(&a.n_slices).arg(&a.stored);
+            l.arg(&a.slice_ptr)
+                .arg(&a.slice_len)
+                .arg(&a.col)
+                .arg(&a.val);
+            l.arg(&self.b[lv]).arg(&self.x[lv]).arg(&mut self.w[lv]);
+            // SAFETY: argument list of amg_residual_*.
+            unsafe { l.launch(cfg(n as usize)) }?;
+        }
+        let r = &self.levels[lv].r;
+        let next = &mut self.b[lv + 1];
+        let mut l = s.launch_builder(&self.f[SPMV]);
+        l.arg(&r.n_rows).arg(&r.n_cols);
+        l.arg(&r.chunk).arg(&r.n_slices).arg(&r.stored);
+        l.arg(&r.slice_ptr)
+            .arg(&r.slice_len)
+            .arg(&r.col)
+            .arg(&r.val);
+        l.arg(&self.w[lv]).arg(next);
+        // SAFETY: argument list of amg_spmv_*; R_l maps level l to l + 1.
+        unsafe { l.launch(cfg(r.n_rows as usize)) }?;
+        Ok(())
+    }
+
+    fn coarse(&mut self, s: &Arc<CudaStream>) -> anyhow::Result<()> {
+        let nl = self.levels.len();
+        let n = self.coarse_n;
+        let mut l = s.launch_builder(&self.f[DENSE]);
+        l.arg(&n)
+            .arg(&self.coarse_inv)
+            .arg(&self.b[nl])
+            .arg(&mut self.x[nl]);
+        // SAFETY: argument list of amg_dense_*; n × n inverse.
+        unsafe { l.launch(cfg(n as usize)) }?;
+        Ok(())
+    }
+
+    fn prolong(&mut self, s: &Arc<CudaStream>, lv: usize) -> anyhow::Result<()> {
+        let p = &self.levels[lv].p;
+        let (lo, hi) = self.x.split_at_mut(lv + 1);
+        let mut l = s.launch_builder(&self.f[PROLONG]);
+        l.arg(&p.n_rows).arg(&p.n_cols);
+        l.arg(&p.chunk).arg(&p.n_slices).arg(&p.stored);
+        l.arg(&p.slice_ptr)
+            .arg(&p.slice_len)
+            .arg(&p.col)
+            .arg(&p.val);
+        l.arg(&hi[0]).arg(&mut lo[lv]);
+        // SAFETY: argument list of amg_prolong_*; P_l maps level l + 1 to l.
+        unsafe { l.launch(cfg(p.n_rows as usize)) }?;
+        Ok(())
+    }
+}
+
+macro_rules! with_amg {
+    ($self:ident, $a:ident => $e:expr) => {
+        match $self.amg.as_mut() {
+            Some(AmgGpu::F32($a)) => $e,
+            Some(AmgGpu::F64($a)) => $e,
+            None => anyhow::bail!("no multigrid hierarchy loaded"),
+        }
+    };
+}
 
 fn cfg(n: usize) -> LaunchConfig {
     let n = n as u32;
@@ -84,7 +346,7 @@ struct Dev {
 pub struct CudaBackend {
     ctx: Arc<CudaContext>,
     stream: Arc<CudaStream>,
-    _module: Arc<CudaModule>,
+    module: Arc<CudaModule>,
     f: Vec<CudaFunction>,
     d: Dev,
     vecs: Vec<CudaSlice<f64>>,
@@ -97,6 +359,7 @@ pub struct CudaBackend {
     stored: u32,
     venkat_k: Option<f64>,
     host: Discretisation,
+    amg: Option<AmgGpu>,
 }
 
 impl CudaBackend {
@@ -169,7 +432,7 @@ impl CudaBackend {
         let mut be = Self {
             ctx,
             stream,
-            _module: module,
+            module,
             f,
             d,
             vecs,
@@ -182,6 +445,7 @@ impl CudaBackend {
             stored: disc.sell.stored() as u32,
             venkat_k: None,
             host: disc.clone(),
+            amg: None,
         };
         be.upload(V::Psi, &vec![1.0; nc])?;
         be.stream.synchronize()?;
@@ -566,5 +830,123 @@ impl Backend for CudaBackend {
         let (a, b) = self.pair(src, dst);
         s.memcpy_dtod(a, b)?;
         Ok(())
+    }
+
+    fn axpy(&mut self, alpha: f64, x: V, y: V) -> anyhow::Result<()> {
+        anyhow::ensure!(x != y, "axpy: x aliases y");
+        let mut yv = self.take(y)?;
+        {
+            let f = self.func("blas_axpy");
+            let mut l = self.stream.launch_builder(f);
+            l.arg(&self.nc)
+                .arg(&alpha)
+                .arg(&self.vecs[x.index()])
+                .arg(&mut yv);
+            // SAFETY: argument list of blas_axpy.
+            unsafe { l.launch(cfg(self.nc as usize)) }?;
+        }
+        self.put(y, yv);
+        Ok(())
+    }
+
+    fn xpby(&mut self, x: V, beta: f64, y: V) -> anyhow::Result<()> {
+        anyhow::ensure!(x != y, "xpby: x aliases y");
+        let mut yv = self.take(y)?;
+        {
+            let f = self.func("blas_xpby");
+            let mut l = self.stream.launch_builder(f);
+            l.arg(&self.nc)
+                .arg(&self.vecs[x.index()])
+                .arg(&beta)
+                .arg(&mut yv);
+            // SAFETY: argument list of blas_xpby.
+            unsafe { l.launch(cfg(self.nc as usize)) }?;
+        }
+        self.put(y, yv);
+        Ok(())
+    }
+
+    fn matrix_values(&mut self) -> anyhow::Result<Vec<f64>> {
+        Ok(self.stream.clone_dtoh(&self.d.val)?)
+    }
+
+    fn discretisation(&self) -> Option<&Discretisation> {
+        Some(&self.host)
+    }
+
+    fn amg_load(&mut self, h: &Hierarchy) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            h.levels.first().map_or(h.coarse_n, |l| l.a.n_rows) == self.nc as usize,
+            "hierarchy size does not match the mesh"
+        );
+        self.amg = None;
+        self.amg = Some(match h.precision {
+            Precision::Mixed => AmgGpu::F32(DevAmg::new(&self.stream, &self.module, h)?),
+            Precision::Double => AmgGpu::F64(DevAmg::new(&self.stream, &self.module, h)?),
+        });
+        Ok(())
+    }
+}
+
+impl LevelOps for CudaBackend {
+    fn amg_levels(&self) -> usize {
+        match &self.amg {
+            Some(AmgGpu::F32(a)) => a.levels.len(),
+            Some(AmgGpu::F64(a)) => a.levels.len(),
+            None => 0,
+        }
+    }
+
+    fn amg_steps(&self, l: usize) -> Vec<(f64, f64)> {
+        match &self.amg {
+            Some(AmgGpu::F32(a)) => a.levels[l].steps.clone(),
+            Some(AmgGpu::F64(a)) => a.levels[l].steps.clone(),
+            None => Vec::new(),
+        }
+    }
+
+    fn amg_load_rhs(&mut self, r: V) -> anyhow::Result<()> {
+        let s = self.stream.clone();
+        let rv = &self.vecs[r.index()];
+        match self.amg.as_mut() {
+            Some(AmgGpu::F32(a)) => a.load_rhs(&s, rv),
+            Some(AmgGpu::F64(a)) => a.load_rhs(&s, rv),
+            None => anyhow::bail!("no multigrid hierarchy loaded"),
+        }
+    }
+
+    fn amg_store(&mut self, z: V) -> anyhow::Result<()> {
+        let s = self.stream.clone();
+        let zv = &mut self.vecs[z.index()];
+        match self.amg.as_mut() {
+            Some(AmgGpu::F32(a)) => a.store(&s, zv),
+            Some(AmgGpu::F64(a)) => a.store(&s, zv),
+            None => anyhow::bail!("no multigrid hierarchy loaded"),
+        }
+    }
+
+    fn amg_smooth_first(&mut self, l: usize, c2: f64) -> anyhow::Result<()> {
+        let s = self.stream.clone();
+        with_amg!(self, a => a.smooth_first(&s, l, c2))
+    }
+
+    fn amg_smooth_step(&mut self, l: usize, c1: f64, c2: f64) -> anyhow::Result<()> {
+        let s = self.stream.clone();
+        with_amg!(self, a => a.smooth_step(&s, l, c1, c2))
+    }
+
+    fn amg_restrict(&mut self, l: usize) -> anyhow::Result<()> {
+        let s = self.stream.clone();
+        with_amg!(self, a => a.restrict(&s, l))
+    }
+
+    fn amg_coarse(&mut self) -> anyhow::Result<()> {
+        let s = self.stream.clone();
+        with_amg!(self, a => a.coarse(&s))
+    }
+
+    fn amg_prolong(&mut self, l: usize) -> anyhow::Result<()> {
+        let s = self.stream.clone();
+        with_amg!(self, a => a.prolong(&s, l))
     }
 }
