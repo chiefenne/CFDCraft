@@ -1,0 +1,30 @@
+# Keeps the year in the README footer at the current year.
+name: Update README year
+
+on:
+  schedule:
+    - cron: "5 0 1 1 *"   # 1 January, 00:05 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-year:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set the current year
+        run: |
+          year=$(date -u +%Y)
+          sed -i -E "s|(<!-- year:start -->)[0-9]{4}(<!-- year:end -->)|\1${year}\2|" README.md
+      - name: Commit if changed
+        run: |
+          if git diff --quiet; then
+            echo "Year is current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Update README year"
+          git push
