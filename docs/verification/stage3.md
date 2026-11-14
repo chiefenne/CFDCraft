@@ -180,10 +180,41 @@ or CUDA) for CI, Colab and local machines; no binary is redistributed.
 
 ## GPU against CPU and hypre (Tesla T4)
 
-Open. `tools/stage3_colab.ipynb` builds hypre with CUDA for the GPU of the
-session, the PTX kernels and the CLI with `cuda,hypre`, and runs the
-912 673-cell polyhedral case on the CPU and the GPU together with hypre on
-the GPU, then the polyhedral sweep on the GPU. The results go here.
+Run on a Google Colab Tesla T4 (sm_75, 15 GB, driver 580.82.07) with
+`tools/stage3_colab.ipynb`. hypre 3.2.1 was built with CUDA for sm_75 and
+without Umpire (the Colab image has no Umpire; hypre allocates with
+`cudaMalloc`). The CPU column is 2 threads on the same Colab machine.
+
+**912 673-cell polyhedral box, tolerance 1e-10:**
+
+| Solver | Backend | Levels | Iterations | Setup (s) | Solve (s) | ns/cell/it. | Bitwise vs CPU |
+|---|---|---:|---:|---:|---:|---:|---|
+| amg | CPU, 2 threads | 4 | 12 | 4.408 | 2.151 | 196.4 | – |
+| amg | CUDA, T4 | 4 | 12 | 4.415 | 0.072 | 6.5 | yes |
+| amg-double | CUDA, T4 | 4 | 12 | 4.418 | 0.101 | 9.2 | yes |
+| jacobi | CUDA, T4 | – | 329 | 0.000 | 0.603 | 2.0 | yes |
+| hypre (BoomerAMG-PCG) | GPU | – | 23 | 1.430 | 0.221 | 10.5 | – |
+
+The GPU solve is 30 times faster than the CPU solve. Per cell and iteration
+the in-house AMG is about 1.6 times faster than hypre on the GPU. hypre needs
+about twice the iterations and a third of the setup time, because its setup
+runs on the GPU and ours still runs on the host (4.4 s, the same on CPU and
+GPU).
+
+**Polyhedral sweep on the T4 (`poisson_poly_box`, cells from 729 to 274 625):**
+
+| Cells | amg it. | amg ns/cell/it. | amg-double ns/cell/it. | hypre it. | hypre ns/cell/it. |
+|---:|---:|---:|---:|---:|---:|
+| 729 | 10 | 290.1 | 316.7 | 17 | 1281.0 |
+| 4 913 | 10 | 52.1 | 64.4 | 18 | 129.1 |
+| 35 937 | 11 | 21.5 | 27.3 | 21 | 29.9 |
+| 274 625 | 11 | 10.1 | 13.4 | 22 | 14.0 |
+
+The in-house AMG keeps 10 to 11 iterations from 729 to 274 625 cells on
+the GPU, as on the CPU. hypre grows from 17 to 22. The per-cell numbers
+at 729 and 4 913 cells are latency bound (the kernels do not fill the GPU
+at these sizes), so only the two largest sizes say something about
+throughput. All GPU results are bitwise equal to the CPU results.
 
 ## Limits of stage 3
 
@@ -199,7 +230,7 @@ the GPU, then the polyhedral sweep on the GPU. The results go here.
   Neumann pressure problem needs a reference value (D30) before the setup;
   a singular coarsest level is reported, not regularised.
 - hypre is used sequentially (no MPI); its GPU build is checked on Colab
-  only.
+  only, and without Umpire, so its GPU setup time is not its best.
 
 ## References
 
