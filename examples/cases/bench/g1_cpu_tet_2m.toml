@@ -1,0 +1,19 @@
+# G1 on the CPU on a tetrahedral mesh (stage 1): about 2 million
+# tetrahedra (each hexahedron of a 70^3 grid split into six), 4 faces per
+# cell: the other end of the faces-per-cell range from the polyhedra.
+#
+#   cfdcraft bench g1 examples/cases/bench/g1_cpu_tet_2m.toml
+
+[mesh]
+type = "tet"
+cells = 2_000_000
+ordering = "natural"
+
+[run]
+backends = ["cpu-threads", "cpu-native"]
+repeat = 10
+warmup = 2
+
+[output]
+directory = "output/g1_cpu_tet_2m"
+name = "g1"

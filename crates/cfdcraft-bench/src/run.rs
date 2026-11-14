@@ -22,22 +22,36 @@ pub fn run_g1(case: &G1Case, log: &mut dyn FnMut(&str)) -> anyhow::Result<G1Repo
     case.validate()?;
     let dims = case.mesh.dims();
     log(&format!(
-        "building workload: {} x {} x {} = {} cells, {} ordering",
+        "building workload: {} mesh on {} x {} x {}, {} ordering",
+        case.mesh.kind.name(),
         dims.0,
         dims.1,
         dims.2,
-        dims.0 * dims.1 * dims.2,
-        serde_json::to_value(case.mesh.ordering)?
-            .as_str()
-            .unwrap_or("?")
+        case.mesh.ordering.name()
     ));
-    let w = Workload::new(
-        dims,
-        case.mesh.ordering,
-        case.mesh.seed,
-        case.sell.chunk,
-        case.sell.sigma,
-    );
+    let w = match case.mesh.kind.generator() {
+        None => Workload::new(
+            dims,
+            case.mesh.ordering,
+            case.mesh.seed,
+            case.sell.chunk,
+            case.sell.sigma,
+        ),
+        Some(kind) => Workload::stage1(
+            kind,
+            dims,
+            case.mesh.ordering,
+            case.mesh.seed,
+            case.sell.chunk,
+            case.sell.sigma,
+        )?,
+    };
+    log(&format!(
+        "{} cells, {} interior faces, {:.2} faces per cell",
+        w.mesh.n_cells,
+        w.mesh.n_faces(),
+        2.0 * w.mesh.n_faces() as f64 / w.mesh.n_cells as f64
+    ));
     let kernels: Vec<Kernel> = case
         .run
         .kernels
@@ -150,6 +164,7 @@ pub fn run_g1(case: &G1Case, log: &mut dyn FnMut(&str)) -> anyhow::Result<G1Repo
         platform: crate::sysinfo::platform(),
         checked_indexing: cfg!(feature = "checked-indexing"),
         mesh: MeshInfo {
+            kind: case.mesh.kind.name().to_string(),
             dims,
             cells: w.mesh.n_cells,
             faces: w.mesh.n_faces(),

@@ -11,13 +11,24 @@ the [Example gallery](gallery.md).
 4. [Run the MPI test with several ranks on one machine](#mpi)
 5. [Check a change the way CI does](#ci-local)
 6. [Make a release (tag and GitHub release)](#release)
+7. [Generate a test mesh and check its quality](#mesh-generate)
+8. [Read a Gmsh mesh and convert it into polyhedra](#mesh-gmsh)
+9. [Partition a mesh and test the halo exchange](#mesh-partition)
+10. [Rerun G1 on polyhedral and tetrahedral meshes](#g1-stage1)
+11. [Update the golden values of the mesher](#golden)
 
 ---
 
 <a id="g1-cpu"></a>
 ## 1. Build, test and run the G1 benchmark on your CPU
 
-Needs Rust 1.89 or newer (`rustup update stable`).
+Needs Rust 1.89 or newer (`rustup update stable`), a C compiler and CMake:
+the HDF5 library behind the VTKHDF writer (D41) and METIS (D32) are built
+from source on the first build, which takes a few minutes (macOS:
+`brew install cmake`; Ubuntu: `sudo apt install cmake`; Windows: Visual
+Studio Build Tools and `winget install Kitware.CMake`). Without them,
+`cargo build --release -p cfdcraft-cli --no-default-features` builds
+everything except the VTKHDF output and METIS (RCB partitioning remains).
 
 ```
 git clone https://github.com/chiefenne/CFDCraft.git && cd CFDCraft
@@ -143,7 +154,12 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --workspace --all-targets --features cfdcraft-bench/cuda -- -D warnings
 cargo test --workspace --release
+cargo test -p cfdcraft-mesh --no-default-features      # without HDF5 and METIS
 gpu/ptx-kernels/build.sh
+for f in examples/cases/mesh/*_box.toml examples/cases/mesh/*_2d.toml; do
+  target/release/cfdcraft mesh "$f" || break
+done
+pip install vtk numpy && python3 tools/check_vtkhdf.py output/*/mesh.vtkhdf
 ```
 
 The workflow is `.github/workflows/ci.yml`; it runs on every pull request on
@@ -166,5 +182,132 @@ A release is a Git tag `v<stage>` (D46) plus a GitHub release. Steps:
 The workflow refuses a version without a changelog section, and creates
 only the release if the tag already exists. The assistant starts it through
 the GitHub API in the same way.
+
+---
+
+<a id="mesh-generate"></a>
+## 7. Generate a test mesh and check its quality
+
+The built-in mesher (D34) makes a box of hexahedra, tetrahedra, polyhedra
+or mixed cells, in 3D or 2D (one cell thick), graded, refined and
+perturbed. Keys `[mesh.generate]` ([Case catalogue](cases.md#mesh-case-file-keys)).
+
+```
+cargo build --release -p cfdcraft-cli
+target/release/cfdcraft mesh examples/cases/mesh/poly_box.toml
+cat output/poly_box/mesh_report.md
+```
+
+The report gives the verdict (valid or not), the cell types, the closure
+|Σ S| / Σ |S| of the worst cell, the total volume against the volume
+enclosed by the boundary, the patch areas, non-orthogonality, skewness,
+face warp, aspect and volume ratio with the cell or face where the maximum
+sits, and the point-location test. `mesh.vtkhdf` holds the mesh with these
+fields per cell; open it in ParaView (5.13 or newer reads VTKHDF 2.4 with
+polyhedra) or render a picture:
+
+```
+pip install vtk
+python3 tools/render_mesh.py output/poly_box/mesh.vtkhdf poly.png --cut --field non_orthogonality
+```
+
+A grid-convergence family: the same case with `refine = 0, 1, 2` gives
+nested meshes (every interval halved), the grading kept.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="mesh-gmsh"></a>
+## 8. Read a Gmsh mesh and convert it into polyhedra
+
+Needs Gmsh 4.x (`pip install gmsh` or gmsh.info). The reader takes MSH 4.1,
+ASCII or binary, first-order elements (tetrahedra, hexahedra, prisms,
+pyramids), physical groups and periodic links (D33).
+
+```
+gmsh -3 examples/meshes/tjunction.geo -format msh41 -o examples/meshes/tjunction.msh
+target/release/cfdcraft mesh examples/meshes/tjunction.msh             # defaults, no case file
+target/release/cfdcraft mesh examples/cases/mesh/tjunction_tet.toml    # RCM, 4 parts
+target/release/cfdcraft mesh examples/cases/mesh/tjunction_poly.toml   # converted into polyhedra
+```
+
+In your own case file: `mesh.file` (relative to the case file),
+`mesh.scale = 0.001` for a mesh in millimetres, `mesh.polyhedral = true`
+for the conversion of a tetrahedral mesh into polyhedra (one cell per node,
+same volume), `mesh.renumber = "rcm"` for a band-limited cell order, and
+`[mesh.patches]` to rename physical groups. Give every boundary surface a
+physical group in Gmsh; surfaces without one become `surface_<tag>`.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="mesh-partition"></a>
+## 9. Partition a mesh and test the halo exchange
+
+```
+target/release/cfdcraft mesh examples/cases/mesh/poly_partition.toml
+target/release/cfdcraft mesh examples/cases/mesh/poly_partition.toml --parts 8 --method rcb
+```
+
+Keys `partition.parts`, `partition.method` (`metis` or `rcb`),
+`partition.halo_layers`. The report lists cells, halo cells, processor
+faces and neighbours per rank, the imbalance and the cut faces;
+`mesh.vtkhdf` has the field `rank`.
+
+The halo exchange over MPI (needs MPI as in recipe 4): every rank builds
+its part with a two-layer halo and fills it from its neighbours.
+
+```
+cargo build --release -p cfdcraft-mesh --features mpi --example mpi_halo
+mpirun --oversubscribe -n 4 target/release/examples/mpi_halo
+```
+
+Prints `MPI halo exchange: PASS` when the halo values, volumes and centroids
+equal the global mesh and the volume sum gives the same bits on every rank.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="g1-stage1"></a>
+## 10. Rerun G1 on polyhedral and tetrahedral meshes
+
+D8 asks for G1 to be rerun on polyhedral and shuffled meshes in stage 1.
+The cloud runs (gallery 7) are on a shared machine; the verdict needs a
+quiet one. On the iMac (about 3 GB of memory each, a few minutes in all):
+
+```
+git pull && cargo build --release -p cfdcraft-cli
+for c in g1_cpu_poly_2m g1_cpu_poly_2m_shuffled g1_cpu_tet_2m; do
+  target/release/cfdcraft bench g1 examples/cases/bench/$c.toml
+  target/release/cfdcraft bench g1 examples/cases/bench/$c.toml   # second run
+done
+```
+
+Send `output/g1_cpu_*/g1.md`. The key `mesh.type` (`poly`, `tet`, `hex`,
+`mixed`, `periodic-box`) chooses the mesh, `mesh.cells` its size. On a GPU
+of compute capability 7.0 or newer (or Colab, recipe 3):
+`cfdcraft bench g1 examples/cases/bench/g1_gpu_poly_4m.toml`.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="golden"></a>
+## 11. Update the golden values of the mesher
+
+`crates/cfdcraft-mesh/tests/golden/mesher.json` holds the cell, face and
+node counts, volumes, quality metrics and partition statistics of every
+combination of mesh type, dimension, perturbation, refinement and 1, 2 and
+4 ranks (R4). A difference fails the test. Only for an intended change:
+
+```
+CFDCRAFT_BLESS=1 cargo test -p cfdcraft-mesh --test golden
+git diff crates/cfdcraft-mesh/tests/golden/mesher.json
+```
+
+and say in the commit message why the values changed.
 
 [↑ back to top](#recipes)

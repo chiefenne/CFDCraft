@@ -53,10 +53,32 @@ jobs:
       - run: cargo test --workspace --locked --release
       - name: G1 smoke run (CPU backends, results bitwise equal)
         run: cargo run --release --locked -p cfdcraft-cli -- bench g1 examples/cases/bench/g1_ci_small.toml
+      - name: Mesh cases (generated meshes, quality report, VTKHDF)
+        shell: bash
+        run: |
+          for f in examples/cases/mesh/*_box.toml examples/cases/mesh/*_2d.toml examples/cases/mesh/poly_partition.toml; do
+            cargo run --release --locked -p cfdcraft-cli -- mesh "$f"
+          done
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Linux'
+        with:
+          python-version: "3.12"
+      - name: VTKHDF files load with VTK's reader (the reader of ParaView)
+        if: runner.os == 'Linux'
+        run: |
+          pip install vtk numpy
+          python3 tools/check_vtkhdf.py output/*/mesh.vtkhdf
+      - name: Without HDF5 and METIS
+        if: runner.os == 'Linux'
+        run: cargo test -p cfdcraft-mesh --no-default-features --locked
       - uses: actions/upload-artifact@v4
         with:
           name: g1-ci-small-${{ matrix.os }}
           path: output/g1_ci_small/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mesh-reports-${{ matrix.os }}
+          path: output/*/mesh_report.md
 
   msrv:
     name: Minimum Rust version
@@ -90,6 +112,11 @@ jobs:
         run: mpirun --oversubscribe -n 4 target/release/examples/mpi_smoke
       - name: Run with 2 ranks
         run: mpirun --oversubscribe -n 2 target/release/examples/mpi_smoke
+      - run: cargo build --release -p cfdcraft-mesh --features mpi --example mpi_halo --locked
+      - name: Halo exchange of a partitioned mesh, 4 and 2 ranks
+        run: |
+          mpirun --oversubscribe -n 4 target/release/examples/mpi_halo
+          mpirun --oversubscribe -n 2 target/release/examples/mpi_halo
 
   ptx:
     name: Single-source GPU kernels compile to PTX

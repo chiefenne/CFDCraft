@@ -66,7 +66,7 @@ impl fmt::Display for Kernel {
 pub struct Workload {
     /// Mesh connectivity.
     pub mesh: FaceMesh,
-    /// Box dimensions.
+    /// Box dimensions (of the hexahedral grid under a stage-1 mesh).
     pub dims: (usize, usize, usize),
     /// Cell ordering.
     pub ordering: Ordering,
@@ -97,6 +97,37 @@ impl Workload {
         sigma: usize,
     ) -> Self {
         let mesh = FaceMesh::periodic_box(dims.0, dims.1, dims.2, ordering, seed);
+        Self::on_mesh(mesh, dims, ordering, seed, chunk, sigma)
+    }
+
+    /// Builds the workload on a stage-1 test mesh of the unit cube whose
+    /// hexahedral grid has `dims` intervals.
+    pub fn stage1(
+        kind: cfdcraft_mesh::generate::Kind,
+        dims: (usize, usize, usize),
+        ordering: Ordering,
+        seed: u64,
+        chunk: usize,
+        sigma: usize,
+    ) -> anyhow::Result<Self> {
+        let spec = cfdcraft_mesh::generate::BoxSpec::new(kind, 3, [dims.0, dims.1, dims.2]);
+        let mut m = spec.generate().map_err(anyhow::Error::msg)?;
+        if ordering == Ordering::Shuffled {
+            let perm = cfdcraft_mesh::renumber::shuffled(m.n_cells, seed);
+            m = cfdcraft_mesh::renumber::apply(&m, &perm).map_err(anyhow::Error::msg)?;
+        }
+        let mesh = FaceMesh::from_mesh(&m);
+        Ok(Self::on_mesh(mesh, dims, ordering, seed, chunk, sigma))
+    }
+
+    fn on_mesh(
+        mesh: FaceMesh,
+        dims: (usize, usize, usize),
+        ordering: Ordering,
+        seed: u64,
+        chunk: usize,
+        sigma: usize,
+    ) -> Self {
         let u = |i: usize, stream: u64| rng::uniform([seed, i as u64, stream]);
         let phi: Vec<f64> = (0..mesh.n_cells).map(|i| u(i, 1)).collect();
         let gamma: Vec<f64> = (0..mesh.n_faces()).map(|f| 0.5 + u(f, 2)).collect();
@@ -104,7 +135,8 @@ impl Workload {
         let x: Vec<f64> = (0..mesh.n_cells).map(|i| u(i, 4) - 0.5).collect();
         let flux: Vec<f64> = (0..mesh.n_faces())
             .map(|f| unsafe {
-                // SAFETY: the mesh is validated by `periodic_box`.
+                // SAFETY: the mesh is validated by `periodic_box` and
+                // `from_mesh`.
                 cfdcraft_kernels::face::face_flux(
                     f,
                     &mesh.owner,

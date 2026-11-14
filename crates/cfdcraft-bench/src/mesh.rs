@@ -151,6 +151,26 @@ impl FaceMesh {
     }
 }
 
+impl FaceMesh {
+    /// The interior faces of a stage-1 mesh (`cfdcraft_mesh::Mesh`): the
+    /// kernels of G1 run on the same arrays the solver will use. Boundary
+    /// faces are left out (they add no gather work).
+    pub fn from_mesh(m: &cfdcraft_mesh::Mesh) -> Self {
+        let owner = m.owner[..m.n_inner_faces].to_vec();
+        let neighbour = m.neighbour[..m.n_inner_faces].to_vec();
+        let (cell_ptr, cell_faces) = cell_face_lists(m.n_cells, &owner, &neighbour);
+        let mesh = Self {
+            n_cells: m.n_cells,
+            owner,
+            neighbour,
+            cell_ptr,
+            cell_faces,
+        };
+        mesh.validate().expect("stage-1 mesh is valid");
+        mesh
+    }
+}
+
 /// Cell-to-face lists from the face-to-cell arrays, faces in ascending order.
 fn cell_face_lists(n_cells: usize, owner: &[u32], neighbour: &[u32]) -> (Vec<u32>, Vec<u32>) {
     let mut count = vec![0u32; n_cells + 1];

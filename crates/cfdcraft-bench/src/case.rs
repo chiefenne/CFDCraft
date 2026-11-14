@@ -23,6 +23,10 @@ pub struct G1Case {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MeshSection {
+    /// `periodic-box` (the synthetic mesh of stage 0) or a stage-1 test
+    /// mesh of the unit cube: `hex`, `tet`, `poly`, `mixed`.
+    #[serde(rename = "type")]
+    pub kind: MeshKind,
     /// Approximate number of cells (a near-cubic periodic box); ignored if
     /// `nx`, `ny` and `nz` are all given.
     pub cells: usize,
@@ -38,9 +42,52 @@ pub struct MeshSection {
     pub seed: u64,
 }
 
+/// Mesh of a G1 run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum MeshKind {
+    /// Synthetic periodic box of hexahedra (stage 0).
+    #[default]
+    PeriodicBox,
+    /// Hexahedra (stage-1 generator).
+    Hex,
+    /// Tetrahedra.
+    Tet,
+    /// Polyhedra (dual of the tetrahedral mesh, 14 faces per interior cell).
+    Poly,
+    /// Hexahedra, prisms, tetrahedra and polyhedra.
+    Mixed,
+}
+
+impl MeshKind {
+    /// Name used in case files and reports.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::PeriodicBox => "periodic-box",
+            Self::Hex => "hex",
+            Self::Tet => "tet",
+            Self::Poly => "poly",
+            Self::Mixed => "mixed",
+        }
+    }
+
+    /// The generator type of a stage-1 mesh.
+    pub fn generator(self) -> Option<cfdcraft_mesh::generate::Kind> {
+        use cfdcraft_mesh::generate::Kind;
+        match self {
+            Self::PeriodicBox => None,
+            Self::Hex => Some(Kind::Hex),
+            Self::Tet => Some(Kind::Tet),
+            Self::Poly => Some(Kind::Poly),
+            Self::Mixed => Some(Kind::Mixed),
+        }
+    }
+}
+
 impl Default for MeshSection {
     fn default() -> Self {
         Self {
+            kind: MeshKind::PeriodicBox,
             cells: 10_000_000,
             nx: None,
             ny: None,
@@ -52,12 +99,19 @@ impl Default for MeshSection {
 }
 
 impl MeshSection {
-    /// Box dimensions.
+    /// Box dimensions: of the periodic box, or the intervals of the
+    /// hexahedral grid under a stage-1 mesh, chosen so that the mesh has
+    /// about `cells` cells.
     pub fn dims(&self) -> (usize, usize, usize) {
-        match (self.nx, self.ny, self.nz) {
-            (Some(a), Some(b), Some(c)) => (a, b, c),
-            _ => crate::mesh::box_dims(self.cells),
+        if let (Some(a), Some(b), Some(c)) = (self.nx, self.ny, self.nz) {
+            return (a, b, c);
         }
+        let per_hex = match self.kind {
+            MeshKind::PeriodicBox | MeshKind::Hex | MeshKind::Poly => 1.0,
+            MeshKind::Tet => 6.0,
+            MeshKind::Mixed => 3.0,
+        };
+        crate::mesh::box_dims((self.cells as f64 / per_hex).round() as usize)
     }
 }
 

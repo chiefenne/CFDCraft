@@ -1,0 +1,28 @@
+# G1 on an NVIDIA GPU on a polyhedral mesh (stage 1): about 4 million
+# polyhedra (14 faces per interior cell), natural and shuffled order are
+# both worth a run (--ordering shuffled). cuda-rust against cuda-reference,
+# the CPU pair as well. The rerun of the GPU verdict that
+# docs/benchmarks/g1.md asks for; fits a free Colab T4 (tools/g1_colab.ipynb).
+#
+#   gpu/ptx-kernels/build.sh
+#   cargo build --release -p cfdcraft-cli --features cuda
+#   target/release/cfdcraft bench g1 examples/cases/bench/g1_gpu_poly_4m.toml
+#
+# Needs about 6 GB of host memory (generator) and 2 GB of GPU memory.
+
+[mesh]
+type = "poly"
+cells = 4_000_000
+ordering = "natural"
+
+[run]
+backends = ["cuda-reference", "cuda-rust", "cpu-threads", "cpu-native"]
+repeat = 20
+warmup = 3
+device = 0
+rust_ptx = "target/nvptx64-nvidia-cuda/release/cfdcraft_ptx_kernels.ptx"
+tolerance = 1e-12
+
+[output]
+directory = "output/g1_gpu_poly_4m"
+name = "g1"

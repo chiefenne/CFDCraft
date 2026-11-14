@@ -1,7 +1,8 @@
 //! `cfdcraft`: the command line of CFDCraft (D4).
 //!
-//! Stage 0 has two commands: `info` (build and platform) and `bench g1`
-//! (the GPU kernel gate). The solver commands follow with the later stages.
+//! Commands: `info` (build and platform), `mesh` (build or read a mesh,
+//! check, partition and write it; stage 1) and `bench g1` (the GPU kernel
+//! gate of stage 0). The solver commands follow with the later stages.
 
 use anyhow::Result;
 use cfdcraft_bench::G1Case;
@@ -23,6 +24,9 @@ struct Cli {
 enum Command {
     /// Print the version, the enabled features and the platform.
     Info,
+    /// Build or read a mesh, check it, partition it and write the quality
+    /// report and a VTKHDF file for ParaView.
+    Mesh(MeshArgs),
     /// Benchmarks.
     Bench {
         #[command(subcommand)]
@@ -37,6 +41,31 @@ enum Bench {
     G1(G1Args),
     /// List the backends compiled into this build.
     Backends,
+}
+
+#[derive(clap::Args)]
+struct MeshArgs {
+    /// Mesh case file (TOML) or a Gmsh `.msh` file.
+    input: PathBuf,
+    /// Number of parts (overrides `partition.parts`).
+    #[arg(long)]
+    parts: Option<usize>,
+    /// Partitioning method: metis or rcb (overrides `partition.method`).
+    #[arg(long)]
+    method: Option<String>,
+    /// Cell order: none, rcm or shuffle (overrides `mesh.renumber`).
+    #[arg(long)]
+    renumber: Option<String>,
+    /// Random points of the point-location test (overrides
+    /// `check.locate_points`).
+    #[arg(long)]
+    locate: Option<usize>,
+    /// Do not write the VTKHDF file.
+    #[arg(long)]
+    no_vtkhdf: bool,
+    /// Output directory (overrides `output.directory`).
+    #[arg(long)]
+    out: Option<PathBuf>,
 }
 
 #[derive(clap::Args)]
@@ -69,6 +98,7 @@ struct G1Args {
 fn main() -> Result<()> {
     match Cli::parse().command {
         Command::Info => info(),
+        Command::Mesh(a) => mesh(a),
         Command::Bench {
             bench: Bench::Backends,
         } => {
@@ -102,6 +132,8 @@ fn info() -> Result<()> {
         ("cuda", cfg!(feature = "cuda")),
         ("mpi", cfg!(feature = "mpi")),
         ("checked-indexing", cfg!(feature = "checked-indexing")),
+        ("hdf5", cfg!(feature = "hdf5")),
+        ("metis", cfg!(feature = "metis")),
     ]
     .into_iter()
     .filter_map(|(n, on)| on.then_some(n))
@@ -118,6 +150,54 @@ fn info() -> Result<()> {
         "backends     {}",
         cfdcraft_bench::backend::available().join(", ")
     );
+    Ok(())
+}
+
+fn mesh(a: MeshArgs) -> Result<()> {
+    use cfdcraft_mesh::case::MeshCase;
+    let is_msh = a.input.extension().is_some_and(|e| e == "msh");
+    let mut case = if is_msh {
+        MeshCase::for_file(&a.input)
+    } else {
+        MeshCase::from_file(&a.input)?
+    };
+    let name = a
+        .input
+        .file_stem()
+        .map_or("mesh".into(), |s| s.to_string_lossy().into_owned());
+    if let Some(p) = a.parts {
+        case.partition.parts = p;
+    }
+    if let Some(m) = a.method {
+        case.partition.method = match m.as_str() {
+            "metis" => cfdcraft_mesh::partition::Method::Metis,
+            "rcb" => cfdcraft_mesh::partition::Method::Rcb,
+            _ => anyhow::bail!("--method: metis or rcb"),
+        };
+    }
+    if let Some(r) = a.renumber {
+        use cfdcraft_mesh::renumber::Ordering;
+        case.mesh.renumber = match r.as_str() {
+            "none" => Ordering::None,
+            "rcm" => Ordering::Rcm,
+            "shuffle" => Ordering::Shuffle,
+            _ => anyhow::bail!("--renumber: none, rcm or shuffle"),
+        };
+    }
+    if let Some(n) = a.locate {
+        case.check.locate_points = n;
+    }
+    if a.no_vtkhdf {
+        case.output.vtkhdf = false;
+    }
+    if a.out.is_some() {
+        case.output.directory = a.out;
+    }
+    let (report, files) = cfdcraft_mesh::case::run(&case, &name, &mut |l| println!("{l}"))?;
+    for f in files {
+        println!("wrote {}", f.display());
+    }
+    anyhow::ensure!(report.quality.ok(), "the mesh is invalid (see the report)");
     Ok(())
 }
 

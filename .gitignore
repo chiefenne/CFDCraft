@@ -25,3 +25,4 @@ rustc-ice-*.txt
 
 # Benchmark and run output
 /output/
+examples/meshes/*.msh

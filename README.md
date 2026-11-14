@@ -10,11 +10,12 @@
 
 ---
 
-> **Status: stage 0 (foundations and gate G1).** The requirements are in
+> **Status: stage 1 done (mesh, release 0.1).** The requirements are in
 > [docs/requirements.md](docs/requirements.md). The code so far is the
-> workspace, continuous integration and the GPU kernel benchmark that
-> decides the GPU backend ([G1](docs/benchmarks/g1.md)). There is no solver
-> yet.
+> workspace, continuous integration, the GPU kernel benchmark that decided
+> the GPU backend ([G1](docs/benchmarks/g1.md)) and the polyhedral mesh:
+> Gmsh reader, test mesher, quality report, partitioning and VTKHDF output.
+> There is no solver yet; stage 2 (operators on a scalar equation) is next.
 
 [![CI](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml)
 
@@ -49,13 +50,15 @@ in the [requirements](docs/requirements.md).
 
 ## Build and run
 
-Needs Rust 1.89 or newer.
+Needs Rust 1.89 or newer, a C compiler and CMake (HDF5 and METIS are built
+from source on the first build; recipe 1 has the details).
 
 ```
 cargo test --workspace
 cargo build --release -p cfdcraft-cli
 target/release/cfdcraft info
 target/release/cfdcraft bench g1 examples/cases/bench/g1_ci_small.toml
+target/release/cfdcraft mesh examples/cases/mesh/poly_partition.toml
 ```
 
 Documentation: [example gallery](docs/gallery.md),
@@ -67,6 +70,7 @@ Documentation: [example gallery](docs/gallery.md),
 | `cfdcraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
 | `cfdcraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`) |
 | `cfdcraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
+| `cfdcraft-mesh` | polyhedral mesh, geometry, quality report, Gmsh reader, test mesher, partitioning and halo, VTKHDF output, point location |
 | `cfdcraft-bench` | gate G1: kernel benchmark, CPU and CUDA backends |
 | `cfdcraft-cli` | the `cfdcraft` command |
 | `gpu/ptx-kernels` | the kernels compiled to NVIDIA PTX (nightly toolchain) |
@@ -101,7 +105,7 @@ of the flow around it.
 
 ## Contributing
 
-The project is at stage 0 and has one maintainer. Comments on the
+The project is at stage 1 and has one maintainer. Comments on the
 requirements are welcome as GitHub issues. Contribution guidelines will
 follow with the first solver code.
 

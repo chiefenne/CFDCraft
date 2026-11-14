@@ -18,6 +18,7 @@ checked-indexing = ["cfdcraft-kernels/checked-indexing"]
 [dependencies]
 cfdcraft-core.workspace = true
 cfdcraft-kernels.workspace = true
+cfdcraft-mesh.workspace = true
 rayon.workspace = true
 serde.workspace = true
 serde_json.workspace = true
