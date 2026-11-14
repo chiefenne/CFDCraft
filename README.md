@@ -10,7 +10,7 @@
 
 ---
 
-> **Status: stage 2 done (operators on a scalar equation, release 0.2).** The
+> **Status: stage 3 done (pressure solver, release 0.3).** The
 > requirements are in [docs/requirements.md](docs/requirements.md). The code
 > so far is the workspace, continuous integration, the GPU kernel benchmark
 > that decided the GPU backend ([G1](docs/benchmarks/g1.md)), the
@@ -18,8 +18,10 @@
 > VTKHDF output) and the finite-volume operators on a scalar transport
 > equation, on the CPU and the GPU: least-squares gradients, limiters,
 > convection and diffusion, reproducible assembly and BiCGStab
-> ([stage 2](docs/verification/stage2.md)). The flow solver starts with
-> stage 3 (pressure solver).
+> ([stage 2](docs/verification/stage2.md)) and the pressure solver: aggregation
+> AMG with CG in mixed precision, with hypre as the reference
+> ([stage 3](docs/verification/stage3.md)). The flow solver starts with
+> stage 4.
 
 [![CI](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/CFDCraft)](https://github.com/chiefenne/CFDCraft/releases)
