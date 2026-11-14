@@ -54,6 +54,7 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D15 | 3  | GPU vendor | NVIDIA (CUDA) only | AMD and Intel GPUs: P6. The single-source question of D8 and gate G1 is therefore NVIDIA against CPU |
 | D16 | 3  | Apple platforms | A Mac runs the float64 path on its CPU (multi-threaded, SIMD). Apple GPUs only through P2, as a declared reduced-precision mode | Follows from D7: Apple GPUs have no float64 hardware and the Metal shading language has no `double` |
 | D17 | 3  | Compressibility | Low-Mach variable density first, together with reacting flows (L2); fully compressible high-Mach flow later (L10) | |
+| D18 | –  | Documentation per feature | Every implemented feature ships with (1) a gallery example (`docs/gallery.md`: one picture per case with the commands that reproduce it), (2) one or more commented case files in `examples/cases/` listed in the case catalogue (`docs/cases.md`: what the case is, the mesh it needs, where it is discussed), (3) a recipe (`docs/recipes.md`: short command sequence for the task, naming the case-file keys it uses). A feature is not done without all three | Owner rule of 2026-11-14, same form as PyAeroFlow |
 
 
 ## 2a. Language assessment (step 2)
