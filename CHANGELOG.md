@@ -18,15 +18,11 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
 
-## Unreleased
+## 0.1 (2026-11-14) – stage 1: mesh
 
 - Release workflow (`.github/workflows/release.yml`): creates the tag
   `v<version>` on `main` and a GitHub release with the changelog section of
   that version as notes; dry-run by default (recipe 6).
-
----
-
-## 0.1 (2026-11-14) – stage 1: mesh
 
 New crate `cfdcraft-mesh` (features `hdf5` and `metis`, both on by default;
 `mpi` for the MPI halo test):
