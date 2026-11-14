@@ -10,7 +10,7 @@ Living document, updated after each requirement step. Form taken from the
 - **O** – open requirement step, with the current proposal
 
 Status: requirements engineering in progress. Steps 1 (scope) and 2 (language,
-hardware) answered on 2026-11-14; steps 3 to 6 (turbulence and platform, discretization, mesh input and solvers, case file and output) answered on 2026-11-14. No code yet.
+hardware) answered on 2026-11-14; steps 3 to 7 (turbulence and platform, discretization, mesh input and solvers, case file and output, test cases) answered on 2026-11-14; the stage plan below is a draft for review. No code yet.
 
 Terminology: the project says *reacting flows*, not "combustion", everywhere.
 
@@ -80,6 +80,8 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D42 | 6  | Restart | Same HDF5 file layout, written in parallel by all ranks, readable with a different number of ranks or GPUs. A restart continues the run (counters, time, solver state), as PyAeroFlow D56 and D58 | |
 | D43 | 6  | Monitoring and user-configurable output | A human-readable `.log` file, CSV histories (residuals, forces, integrals), one CSV of wall quantities per boundary, point probes. Which fields, monitors, probes and wall quantities are written, and how often (per iteration, per time step, every N, at listed steps), is chosen by the user in the case file; defaults are modest. The log header states what is written and how large the output will be | Same idea as PyAeroFlow D59 |
 | D44 | 6  | Units | SI on input and output and dimensional inside the solver | PyAeroFlow's non-dimensional form (its D51) is not adopted: reacting flows have many reference scales |
+| D45 | 7  | Verification and validation cases | Canonical CFD cases. Verification: plane Couette and Poiseuille flow, 2D Taylor–Green vortex (time and space order), manufactured solutions on hexahedral, tetrahedral, polyhedral and mixed meshes (D34). Laminar benchmarks: lid-driven cavity 2D and 3D (Ghia et al. 1982), flow around a cylinder Re 20 and Re 100 (Schäfer & Turek 1996), backward-facing step (Armaly et al. 1983), Rayleigh–Bénard convection. Turbulent validation: zero-pressure-gradient flat plate (NASA TMR), channel flow against DNS (Lee & Moser 2015), backward-facing step (Driver & Seegmiller 1985), NACA 0012 (NASA TMR, Ladson), NASA hump | Each ships with gallery example, case file and recipe (D18). The maintainer's own reference data may be added later |
+| D46 | 7  | Versions, tags and changelog | Versions 0.x per stage with a Git tag `v0.<stage>`, 1.0 at the end of milestone 1. The assistant does the version bump and the tag. `CHANGELOG.md` carries a high-level summary on top of the full, detailed changelog for every release | Owner rule of 2026-11-14 |
 
 
 ## 2a. Language assessment (step 2)
@@ -188,14 +190,28 @@ None yet.
 Steps still to come: verification and validation cases, stage plan.
 
 
-## 7. Stage plan
+## 7. Stage plan (draft, awaiting the maintainer's review)
 
-Not yet defined (last requirement step). One item is fixed already:
+Milestone 1 is version 1.0: incompressible flow, steady and transient, on
+unstructured 3D meshes (polyhedra), with k-ω SST and the k-ε variants, on
+NVIDIA GPUs and CPUs, with MPI. Every stage ends with:
+
+- passing tests (CPU tests on GitHub, D22; GPU tests run locally by the
+  maintainer, marked `gpu`; long runs marked `slow`);
+- a gallery example, case files and a recipe for each new feature (D18);
+- updated documentation and `CHANGELOG.md` (D46);
+- a Git tag `v0.<stage>`.
 
 | Stage | Content | Tests, acceptance |
 |-------|---------|-------------------|
-| **0 Gate G1: kernel benchmark** | Two representative kernels (a face-based flux loop on an unstructured mesh, a sparse matrix-vector product), float64, at 10–50 million cells: hand-written CUDA reference against the candidate single-source Rust routes; the same kernels on CPU | A single-source route within 10 % of the CUDA reference confirms D11 with one kernel source; otherwise two backends (D8) |
-
+| **0 Foundations and gate G1** | Cargo workspace, CI (D22), documentation skeleton (gallery, cases, recipes). Gate G1: kernel benchmark, a face-based flux loop and a sparse matrix-vector product at 10–50 million cells, hand-written CUDA reference against the single-source Rust route, on the maintainer's GPU and on CPU | G1: single-source route within 10 % of the CUDA reference, or two backends (D8). Language decision D11 confirmed or reopened |
+| **1 Mesh** | Polyhedral face-based mesh structure (D23), geometry (face areas and normals, volumes, centroids, non-orthogonality and skewness), Gmsh reader (D33), built-in test mesher (D34), partitioning and halo layout (D32), VTKHDF writer (D41), mesh quality report | Every cell closed (Σ n·dS = 0); total volume equals domain volume; Gmsh files written by Gmsh load; VTKHDF files load in ParaView |
+| **2 Operators on a scalar equation, GPU** | Least-squares gradients (D24), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (D25), non-orthogonal diffusion correction (D26), sparse matrix format (D37), BiCGStab (D36), gather-based reproducible assembly (D31), CPU and GPU kernels | Gradients exact for linear fields on all mesh types; limiter creates no new extrema; convection–diffusion with an exact solution, observed order 1.8–2.2 on hexahedral, tetrahedral, polyhedral and mixed meshes; bitwise identical results from run to run; GPU and CPU agree to round-off tolerance |
+| **3 Pressure solver** | Aggregation AMG with CG (D35), mixed-precision hierarchy (D37), hypre reference (D20) | Poisson problem on all mesh types: iteration count nearly independent of mesh size; same converged result as hypre; GPU time per cell compared with hypre and reported |
+| **4 Laminar steady flow** | SIMPLEC, time-step-independent Rhie–Chow (D27, D19), boundary conditions with combination check and guidance (D29, D30), TOML case file and validation (D39), log and CSV output (D43) | Couette: round-off error. Poiseuille: observed order 1.8–2.2 on all mesh types. Lid-driven cavity 2D and 3D, Re 100 and 1000, against Ghia et al. |
+| **5 Transient flow, restart, control** | PISO-type algorithm, BDF2 and Crank–Nicolson (D28), adaptive time step, restart (D42), re-reading the case file and control files (D40), configurable output and probes (D43) | Taylor–Green: time order 2, space order 2. Cylinder Re 20 (C_D, C_L, Δp) and Re 100 (C_D,max, C_L,max, Strouhal number) against Schäfer & Turek. Restart continues a run bit-identically on the same decomposition |
+| **6 Turbulence and wall functions** | k-ω SST (2003), standard, realizable and RNG k-ε, wall functions and the automatic wall treatment (D12, D13); generic transport-equation interface | Flat plate: C_f and velocity profile against the NASA TMR values; channel flow against DNS; backward-facing step: reattachment length against experiment |
+| **7 Parallel performance and milestone 1** | Multi-rank MPI with overlapped halo exchange (D38), GPU-aware MPI, strong and weak scaling measurements as far as the hardware allows, NACA 0012 and NASA hump, user documentation, tag `v1.0` | Same result on 1, 2 and 4 ranks within solver tolerance; scaling report states what was measured and where, with the multi-node path labelled "designed for" until a cluster allocation exists (O12); all verification and validation cases of D45 in the gallery |
 
 ## References
 
@@ -217,4 +233,16 @@ Not yet defined (last requirement step). One item is fixed already:
   predicting incompressible fluid flows*, Numer. Heat Transfer 7, 147–163
   (1984)
 - NASA Turbulence Modeling Resource: https://tmbwg.github.io/turbmodels/
+- U. Ghia, K. N. Ghia, C. T. Shin, *High-Re solutions for incompressible flow
+  using the Navier–Stokes equations and a multigrid method*, J. Comput. Phys.
+  48, 387–411 (1982)
+- M. Schäfer, S. Turek, *Benchmark computations of laminar flow around a
+  cylinder*, Notes on Numerical Fluid Mechanics 52, 547–566 (1996)
+- B. F. Armaly, F. Durst, J. C. F. Pereira, B. Schönung, *Experimental and
+  theoretical investigation of backward-facing step flow*, J. Fluid Mech. 127,
+  473–496 (1983)
+- D. M. Driver, H. L. Seegmiller, *Features of a reattaching turbulent shear
+  layer in divergent channel flow*, AIAA J. 23, 163–171 (1985)
+- M. Lee, R. D. Moser, *Direct numerical simulation of turbulent channel flow
+  up to Re_τ ≈ 5200*, J. Fluid Mech. 774, 395–415 (2015)
 - hypre: https://github.com/hypre-space/hypre
