@@ -20,7 +20,7 @@ in [gallery 8–9](../gallery.md#scalar-mms), the case files in the
 | The limiter creates no new extrema | with K = 0 every limited face value lies inside the range of the cell and its neighbours (random field, all mesh types); the converged oblique step stays in [0, 1] to 1e-7 with both limiters | tests `limited_face_values_create_no_new_extrema`, `oblique_step_stays_bounded_with_the_limiters`; case `oblique_step_2d` |
 | Convection–diffusion with an exact solution, observed order 1.8–2.2 on hexahedral, tetrahedral, polyhedral and mixed meshes | 1.87 to 2.08 on the finest pair of all eight meshes (table below) | test `order_of_accuracy_on_all_mesh_types` (release builds, CI); cases `mms_*` |
 | Bitwise identical results from run to run | bitwise equal for 1, 2, 3 and 4 threads and from run to run, with the limiter on | test `results_are_bitwise_reproducible` |
-| GPU and CPU agree to round-off | designed to agree **bitwise** (same summation order, no fused multiply-adds); the run on a Tesla T4 is open | case `mms_poly_gpu`, `tools/stage2_colab.ipynb` |
+| GPU and CPU agree to round-off | **bitwise equal** on a Tesla T4 (Colab, 2026-11-14): 912 673 polyhedra with the Venkatakrishnan limiter, both GPU runs equal the CPU run bit for bit; the four oblique-step schemes and the polyhedral sweep are bitwise equal too (see below) | case `mms_poly_gpu`, `tools/stage2_colab.ipynb` |
 
 ### Order of accuracy
 
@@ -61,6 +61,33 @@ asymptotic range into meshes small enough for CI.
 **Why the coarse pairs are lower.** Each level gets its own random
 perturbation, so the meshes are not smooth refinements of each other; the
 observed order settles towards 2 from about 4 000 cells on.
+
+### GPU against CPU (Tesla T4, 2026-11-14)
+
+`tools/stage2_colab.ipynb` on a free Colab T4 (driver 580.82, CUDA 13.0,
+the CPU side is the Colab VM: Intel Xeon @ 2.0 GHz, 2 threads). Case
+`mms_poly_gpu`: 912 673 polyhedra, linear upwind with the Venkatakrishnan
+limiter (K = 5), 21 outer iterations, final residual 8.0e-11, L2 error
+7.241e-5, solved on the CPU and twice on the GPU:
+
+| Backend | Time | ns/cell/it. | vs CPU | gradient / limiter / faces / assembly / linear solver (s) |
+|---|---:|---:|---|---|
+| CPU, 2 threads | 158.8 s | 8 238 | – | 0.95 / 4.08 / 3.31 / 1.84 / 147.7 |
+| Tesla T4, run 1 | 7.6 s | 311 | bitwise equal | 0.23 / 0.18 / 0.07 / 0.21 / 5.26 |
+| Tesla T4, run 2 | 7.1 s | 317 | bitwise equal | 0.23 / 0.17 / 0.07 / 0.21 / 5.39 |
+
+The GPU result is bit for bit the CPU result and the same from run to run
+(D31). The GPU run is 21 to 22 times faster than the two-thread VM; that
+figure only shows that the GPU path works and is not a performance claim,
+because the CPU side is a small shared machine and the linear solver
+(Jacobi BiCGStab, 97 iterations per outer iteration at the start) dominates
+both: 93 % of the time on the CPU, 74 % on the GPU. Per outer iteration
+the operator kernels (gradient, limiter, faces, assembly) take 0.03 s on
+the GPU for 0.9 million cells. The oblique step (four schemes, 2 401 cells)
+is bitwise equal on the GPU for all four variants, and the polyhedral sweep
+on the GPU alone gives the observed orders 1.830 and 1.976, the same as the
+CPU. Small meshes are launch-bound on the GPU (2 800 ns/cell/it. at 2 401
+cells against 311 at 0.9 million).
 
 ### Limiters on the oblique step
 

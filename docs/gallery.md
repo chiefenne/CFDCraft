@@ -273,6 +273,10 @@ largest in the interior, where the solution has its largest curvature.
 The same case on hexahedra, tetrahedra, mixed cells and 2D polygons gives
 observed orders between 1.87 and 2.08 on the finest pair; table and
 discussion in [Stage 2 verification](verification/stage2.md#order-of-accuracy).
+On an NVIDIA GPU the operators give bitwise the CPU result: the 912 673-cell
+case `mms_poly_gpu` on a Tesla T4 runs at 311 ns per cell and iteration
+([GPU against CPU](verification/stage2.md#gpu-against-cpu-tesla-t4-2026-11-14),
+recipe 14).
 
 | | |
 |---|---|

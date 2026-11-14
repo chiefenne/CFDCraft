@@ -10,7 +10,7 @@
 
 ---
 
-> **Status: stage 2 (operators on a scalar equation) in review.** The
+> **Status: stage 2 done (operators on a scalar equation, release 0.2).** The
 > requirements are in [docs/requirements.md](docs/requirements.md). The code
 > so far is the workspace, continuous integration, the GPU kernel benchmark
 > that decided the GPU backend ([G1](docs/benchmarks/g1.md)), the

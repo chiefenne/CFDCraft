@@ -4,8 +4,15 @@
 
 | Version | Stage | Highlights |
 |---|---|---|
+| 0.2 (2026-11-14) | 2 Operators on a scalar equation | Finite-volume operators on a scalar transport equation, one source for the CPU and the NVIDIA GPU: least-squares gradients (exact for linear fields, error 6e-15 on all mesh types), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (no new extrema at K = 0), over-relaxed non-orthogonal diffusion, reproducible gather-based assembly into sliced ELL, BiCGStab. Observed order 1.87–2.08 on hex, tet, poly and mixed meshes in 2D and 3D. **GPU and CPU results bitwise equal on a Tesla T4** (912 673 polyhedra, 311 ns per cell and iteration). New command `cfdcraft scalar`, seven case files, gallery 8–9, recipes 12–14 |
 | 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
 | 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
+
+Release 0.2 closes stage 2: all acceptance tests of the stage plan pass
+(exact gradients, no new extrema, observed order 1.8–2.2 on all mesh types,
+bitwise reproducible results, GPU and CPU bitwise equal on a Tesla T4). The
+Cargo version of the crates is now 0.2.0; the release is the Git tag `v0.2`
+(D46).
 
 Release 0.1 closes stage 1: all acceptance tests of the stage plan pass
 (closed cells, exact volumes, Gmsh files from Gmsh load, VTKHDF files load
@@ -18,7 +25,7 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
 
-## Unreleased – stage 2: operators on a scalar equation
+## 0.2 (2026-11-14) – stage 2: operators on a scalar equation
 
 New crate `cfdcraft-fv` (features `hdf5`, default on, and `cuda`) and new
 kernel bodies in `cfdcraft-kernels` (`fv`, `blas`), one source for the CPU
@@ -56,7 +63,10 @@ and the GPU:
   `tools/check_kernels.sh` refuses atomics, f32 and fused or approximate f64
   arithmetic in the kernels and the PTX (R10).
 - **GPU check.** `tools/stage2_colab.ipynb` and `tools/stage2_cloud.sh`
-  (CPU against two GPU runs on 0.9 million polyhedra).
+  (CPU against two GPU runs on 0.9 million polyhedra). Result on a Tesla
+  T4 (Colab): both GPU runs, the four oblique-step schemes and the sweep
+  are bitwise equal to the CPU; 7.1 s against 158.8 s on the 2-thread
+  Colab VM.
 
 ---
 
