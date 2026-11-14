@@ -10,7 +10,7 @@ Living document, updated after each requirement step. Form taken from the
 - **O** – open requirement step, with the current proposal
 
 Status: requirements engineering in progress. Steps 1 (scope) and 2 (language,
-hardware) answered on 2026-11-14; step 3 answered on 2026-11-14 completely. No code yet.
+hardware) answered on 2026-11-14; steps 3 to 7 (turbulence and platform, discretization, mesh input and solvers, case file and output, test cases) answered on 2026-11-14; the stage plan was confirmed in order by the maintainer on 2026-11-14 (stage 7 changed to internal flows) and sprays (L12) were added. No code yet.
 
 Terminology: the project says *reacting flows*, not "combustion", everywhere.
 
@@ -58,6 +58,31 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D20 | 3  | Reference linear solver | hypre (open-source solver library of Lawrence Livermore National Laboratory, MIT or Apache-2.0 licence; BoomerAMG, MPI, CUDA) as an optional, linkable reference behind the same interface as the in-house solvers (D10), used to verify them and to benchmark them against the state of the art. Never required to build or run CFDCraft | |
 | D21 | 3  | Clean-room rule | Methods come from the published literature, with references. Code from other solvers is never copied. Open-source solvers may be read for understanding where their licence allows it | Keeps the project under the MIT licence (D1) |
 | D22 | 3  | Continuous integration | GitHub Actions runs the CPU tests (build, unit tests, small verification cases) on every pull request and every push to `main`, on GitHub's free hosted runners. Free for public repositories. GPU tests are run locally by the maintainer once suitable hardware is available; they are marked separately and are not part of the hosted checks | The maintainer has no GPU hardware yet (2026-11-14), so GPU verification starts when it is available |
+| D23 | 4  | Spatial discretization | Cell-centred finite volume on arbitrary polyhedral cells, face-based data structure (owner and neighbour cell per face) | Every later physics fits it (multiphase, moving meshes, conjugate heat transfer) |
+| D24 | 4  | Gradient reconstruction | Weighted least squares on the face-neighbour stencil as the default; Green-Gauss as a cheaper option | Plain Green-Gauss is only zero-order accurate on skewed polyhedral meshes (Syrakos et al. 2017, as in PyAeroFlow D22) |
+| D25 | 4  | Convection schemes | Second-order linear upwind with a limiter as the default; first-order upwind for start-up; a blended central scheme as an option (needed for LES, L5). Limiters in milestone 1: Venkatakrishnan and Venkatakrishnan–Wang | Further TVD limiters later through the same interface |
+| D26 | 4  | Diffusion on non-orthogonal meshes | Over-relaxed non-orthogonal correction, applied as a deferred correction with a limiter on strongly skewed cells | |
+| D27 | 4  | Rhie–Chow interpolation | Time-step-independent form: steady results do not depend on under-relaxation or time step | |
+| D28 | 4  | Time integration | Second-order backward (BDF2) as the default, first order for the first step; Crank–Nicolson as an option; optional adaptive time step controlled by CFL | |
+| D29 | 4  | Boundary conditions, milestone 1 | Velocity inlet, mass-flow inlet, static-pressure inlet, total-pressure inlet, static-pressure outlet, total-pressure outlet, no-slip wall (also moving), symmetry, periodic. Turbulence values at inlets as turbulence intensity and length scale, or viscosity ratio. Static and total pressure conditions can be combined, for example static pressure at an inlet with total pressure at an outlet | The compatible combinations are enforced by D30 |
+| D30 | 4  | Boundary-condition check and guidance | Before the run, a check of the combination of boundary conditions on the whole domain: a pressure level must be fixed (a pressure boundary or a reference cell), the net mass balance must be possible, over-specified combinations are errors (for example velocity inlet together with pressure inlet on the same flow path), and unused or unsuitable turbulence values are reported. Errors and warnings name the offending boundary and say what to change. The documentation carries a guidance table of sensible combinations and the cases each one suits | Same idea as PyAeroFlow D39; a recipe (D18) shows typical combinations |
+| D31 | 4  | Reproducible results | Results are reproducible from run to run on the same hardware and decomposition: gather-based assembly of face contributions with no floating-point atomics, and a fixed summation order in reductions | Mandatory; costs possibly a few percent of speed. Reproducibility across different GPU or rank counts is not promised, because the summation order changes with the decomposition |
+| D32 | 4  | Mesh partitioning | METIS or Scotch (linked C library, allowed by D9) for domain decomposition | Decision between the two at implementation |
+| D33 | 5  | Mesh input, milestone 1 | Gmsh `.msh` version 4 (ASCII and binary), with physical groups as the named boundary-face sets | Further formats (CGNS, other open formats) later through the same reader interface |
+| D34 | 5  | Built-in mesh generator for canonical test cases | In code: block-structured hexahedral meshes with varying cell size and boundary-layer grading (2D as one cell layer thick with symmetry side planes, D3, and full 3D); tetrahedral meshes (hexahedra split); polyhedral meshes (dual of a tetrahedral mesh); mixed meshes combining these. Optional random node perturbation and refinement levels for order-of-accuracy studies | Used by the verification cases; same role as PyAeroFlow D42. Not the general mesher of L8 |
+| D35 | 5  | Pressure linear solver | Aggregation-based algebraic multigrid as preconditioner of CG, V-cycle, Jacobi or Chebyshev smoothers (GPU friendly). ILU-type smoothers excluded on GPU | In-house (D10), verified against hypre (D20) |
+| D36 | 5  | Momentum and scalar linear solvers | BiCGStab with Jacobi preconditioning, a few iterations to a loose relative tolerance per outer iteration | Standard practice for segregated solvers |
+| D37 | 5  | Matrix storage and precision in the linear solvers | Matrix stored once in a GPU-friendly sparse format (ELL or sliced ELL; final choice from gate G1). The multigrid hierarchy is stored and applied in float32; the outer Krylov iteration, residuals and solution stay in float64 (D7) | Mixed precision inside the preconditioner halves memory and bandwidth of the hierarchy without changing the converged result, because the outer float64 iteration corrects it |
+| D38 | 5  | Parallel communication | Halo exchange overlapped with interior computation; GPU-aware MPI. A multi-node run is a milestone-1 acceptance test | Needs access to a multi-node machine (O12) |
+| D39 | 6  | Case file | TOML (standard-library style parser in Rust), literature names and established acronyms, every key with a sensible default optional, validation before the run (unknown keys with "did you mean", types, ranges, consistency), resolved configuration with defaults written to the output directory. Same principles as PyAeroFlow D26–D30 | |
+| D40 | 6  | Re-reading the case file during a run | The case file can be re-read while a run is going on, on a schedule the user sets: every iteration, every time step, every N iterations or time steps, or never (default). Only settings that are safe to change at run time are applied (output, restart and monitoring settings, stop criteria, relaxation factors, time step); every change is logged, and a change to anything else is reported as not applied. In addition the control files of PyAeroFlow L7 are kept: `.stop` (write a restart and the results, end cleanly), `.result_N` (write results at iteration or step N), `.read_toml_N` (read the case file at iteration or step N) | PyAeroFlow L7 (5) and (6) |
+| D41 | 6  | Field output | VTKHDF: one parallel HDF5 file per write (one file per time step or a transient series in one file), read directly by ParaView. Linked HDF5 library (D9) | Per-rank VTU files are not workable at 100+ million cells |
+| D42 | 6  | Restart | Same HDF5 file layout, written in parallel by all ranks, readable with a different number of ranks or GPUs. A restart continues the run (counters, time, solver state), as PyAeroFlow D56 and D58 | |
+| D43 | 6  | Monitoring and user-configurable output | A human-readable `.log` file, CSV histories (residuals, forces, integrals), one CSV of wall quantities per boundary, point probes. Which fields, monitors, probes and wall quantities are written, and how often (per iteration, per time step, every N, at listed steps), is chosen by the user in the case file; defaults are modest. The log header states what is written and how large the output will be | Same idea as PyAeroFlow D59 |
+| D44 | 6  | Units | SI on input and output and dimensional inside the solver | PyAeroFlow's non-dimensional form (its D51) is not adopted: reacting flows have many reference scales |
+| D45 | 7  | Verification and validation cases | Canonical CFD cases. Verification: plane Couette and Poiseuille flow, 2D Taylor–Green vortex (time and space order), manufactured solutions on hexahedral, tetrahedral, polyhedral and mixed meshes (D34). Laminar benchmarks: lid-driven cavity 2D and 3D (Ghia et al. 1982), flow around a cylinder Re 20 and Re 100 (Schäfer & Turek 1996), backward-facing step (Armaly et al. 1983), Rayleigh–Bénard convection. Turbulent validation: zero-pressure-gradient flat plate (NASA TMR), channel flow against DNS (Lee & Moser 2015), backward-facing step (Driver & Seegmiller 1985), and general-purpose internal flows: fully developed turbulent pipe flow (DNS of El Khoury et al. 2013), asymmetric plane diffuser (Buice & Eaton 1997), U-bend (Monson et al. 1990), a 3D T-junction mixer on a polyhedral mesh (grid convergence and qualitative mixing). External aerodynamics (NACA 0012, NASA hump) is not part of milestone 1 | Each ships with gallery example, case file and recipe (D18). The maintainer's own reference data may be added later |
+| D46 | 7  | Versions, tags and changelog | Versions 0.x per stage with a Git tag `v0.<stage>`, 1.0 at the end of milestone 1. The assistant does the version bump and the tag. `CHANGELOG.md` carries a high-level summary on top of the full, detailed changelog for every release | Owner rule of 2026-11-14 |
+| D47 | 8  | Design constraints from the discrete-phase (spray) feature, milestone 1 | The face-based mesh (D23) provides what Lagrangian tracking needs: cell adjacency through faces for tracking a particle from cell to cell, a robust point-in-cell search on polyhedra (also after a mesh partition), and halo cells wide enough for particles crossing rank boundaries. Particle data are kept in structure-of-arrays form so that kernels run on GPU. Reproducibility (D31) extends to particles: random numbers come from a counter-based generator keyed by particle identity, step and event, never from a stream that depends on rank or thread order | Costs little now and avoids a redesign when L12 starts; verified in stage 1 by the point-location test on all mesh types |
 
 
 ## 2a. Language assessment (step 2)
@@ -124,7 +149,7 @@ needs only scalar AMG) and coupled second.
 
 ## 3. Planned for later
 
-In the order given in step 1.
+Order of work after milestone 1: L1, L2, L12 (sprays, after energy and species because evaporation needs them), L3, L4, L5; L6 to L11 as the need arises.
 
 | ID | Feature | Notes |
 |----|---------|-------|
@@ -138,6 +163,7 @@ In the order given in step 1.
 | L8 | Built-in mesher | Much later; solver first |
 | L9 | Logo in the ArtCraft style | Peregrine falcon, first version in the repository (`assets/logo/cfdcraft.svg`); variants under review |
 | L11 | Coupled pressure-based solver | Second pressure–velocity algorithm on the shared discretization (D19); needs a block AMG |
+| L12 | Discrete droplet sprays (Lagrangian) | Droplets are tracked as parcels, each standing for many identical droplets (tracking every droplet is impossible at 100+ million cells). Models in this order of priority: breakup (for example KH-RT), evaporation and heat transfer (with L1 and L2), wall films and wall interaction, collision; injection models, drag and other forces, turbulent dispersion and one-way and two-way coupling to the gas phase come with the first version. Must be parallel: parcels migrate between ranks, the load is balanced when parcels cluster, kernels run on GPU (D47). Complements the Euler–Euler and VOF multiphase of L3 |
 | L10 | Fully compressible high-Mach flow (transonic, supersonic) | After low-Mach variable density (D17) |
 
 
@@ -159,21 +185,35 @@ None yet.
 
 ## 6. Open requirement steps
 
-No item is open at the moment. Steps still to come: discretization (gradients, convection and diffusion
-schemes, limiters, non-orthogonal correction), time integration, linear
-solvers in detail, mesh formats and partitioning, boundary conditions, case
-file format, output and restart, verification and validation cases, stage
-plan.
+| ID | Step | Topic | Current proposal |
+|----|------|-------|------------------|
+| O12 | 5 | Multi-node acceptance test | D38 makes a multi-node run a milestone-1 test. The maintainer has an old PC with an NVIDIA GPU (model to be determined) and does not want to rent hardware. Proposal: the milestone-1 tests are multi-rank MPI runs on one machine (CPU ranks in CI, D22, and ranks sharing the one GPU locally); a true multi-node run is accepted when a cluster allocation is available (university or research-computing access, a community contribution) and is then added as a test. Until then the multi-node path is designed for and tested with several ranks on one machine, not claimed as verified |
+
+Steps still to come: verification and validation cases, stage plan.
 
 
 ## 7. Stage plan
 
-Not yet defined (last requirement step). One item is fixed already:
+Milestone 1 is version 1.0: incompressible flow, steady and transient, on
+unstructured 3D meshes (polyhedra), with k-ω SST and the k-ε variants, on
+NVIDIA GPUs and CPUs, with MPI. Every stage ends with:
+
+- passing tests (CPU tests on GitHub, D22; GPU tests run locally by the
+  maintainer, marked `gpu`; long runs marked `slow`);
+- a gallery example, case files and a recipe for each new feature (D18);
+- updated documentation and `CHANGELOG.md` (D46);
+- a Git tag `v0.<stage>`.
 
 | Stage | Content | Tests, acceptance |
 |-------|---------|-------------------|
-| **0 Gate G1: kernel benchmark** | Two representative kernels (a face-based flux loop on an unstructured mesh, a sparse matrix-vector product), float64, at 10–50 million cells: hand-written CUDA reference against the candidate single-source Rust routes; the same kernels on CPU | A single-source route within 10 % of the CUDA reference confirms D11 with one kernel source; otherwise two backends (D8) |
-
+| **0 Foundations and gate G1** | Cargo workspace, CI (D22), documentation skeleton (gallery, cases, recipes). Gate G1: kernel benchmark, a face-based flux loop and a sparse matrix-vector product at 10–50 million cells, hand-written CUDA reference against the single-source Rust route, on the maintainer's GPU and on CPU | G1: single-source route within 10 % of the CUDA reference, or two backends (D8). Language decision D11 confirmed or reopened |
+| **1 Mesh** | Polyhedral face-based mesh structure (D23), geometry (face areas and normals, volumes, centroids, non-orthogonality and skewness), Gmsh reader (D33), built-in test mesher (D34), partitioning and halo layout (D32), VTKHDF writer (D41), mesh quality report | Every cell closed (Σ n·dS = 0); total volume equals domain volume; Gmsh files written by Gmsh load; VTKHDF files load in ParaView |
+| **2 Operators on a scalar equation, GPU** | Least-squares gradients (D24), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (D25), non-orthogonal diffusion correction (D26), sparse matrix format (D37), BiCGStab (D36), gather-based reproducible assembly (D31), CPU and GPU kernels | Gradients exact for linear fields on all mesh types; limiter creates no new extrema; convection–diffusion with an exact solution, observed order 1.8–2.2 on hexahedral, tetrahedral, polyhedral and mixed meshes; bitwise identical results from run to run; GPU and CPU agree to round-off tolerance |
+| **3 Pressure solver** | Aggregation AMG with CG (D35), mixed-precision hierarchy (D37), hypre reference (D20) | Poisson problem on all mesh types: iteration count nearly independent of mesh size; same converged result as hypre; GPU time per cell compared with hypre and reported |
+| **4 Laminar steady flow** | SIMPLEC, time-step-independent Rhie–Chow (D27, D19), boundary conditions with combination check and guidance (D29, D30), TOML case file and validation (D39), log and CSV output (D43) | Couette: round-off error. Poiseuille: observed order 1.8–2.2 on all mesh types. Lid-driven cavity 2D and 3D, Re 100 and 1000, against Ghia et al. |
+| **5 Transient flow, restart, control** | PISO-type algorithm, BDF2 and Crank–Nicolson (D28), adaptive time step, restart (D42), re-reading the case file and control files (D40), configurable output and probes (D43) | Taylor–Green: time order 2, space order 2. Cylinder Re 20 (C_D, C_L, Δp) and Re 100 (C_D,max, C_L,max, Strouhal number) against Schäfer & Turek. Restart continues a run bit-identically on the same decomposition |
+| **6 Turbulence and wall functions** | k-ω SST (2003), standard, realizable and RNG k-ε, wall functions and the automatic wall treatment (D12, D13); generic transport-equation interface | Flat plate: C_f and velocity profile against the NASA TMR values; channel flow against DNS; backward-facing step: reattachment length against experiment |
+| **7 Parallel performance, internal flows, milestone 1** | Multi-rank MPI with overlapped halo exchange (D38), GPU-aware MPI, strong and weak scaling measurements as far as the hardware allows, the general-purpose internal-flow cases of D45 (pipe, plane diffuser, U-bend, T-junction on a polyhedral mesh), user documentation, tag `v1.0` | Same result on 1, 2 and 4 ranks within solver tolerance; scaling report states what was measured and where, with the multi-node path labelled "designed for" until a cluster allocation exists (O12); pipe-flow wall shear and mean profile against DNS; diffuser separation and pressure recovery against Buice & Eaton; U-bend pressure and velocity profiles against Monson et al.; T-junction grid convergence on tetrahedral, polyhedral and mixed meshes; all cases of D45 in the gallery |
 
 ## References
 
@@ -195,4 +235,25 @@ Not yet defined (last requirement step). One item is fixed already:
   predicting incompressible fluid flows*, Numer. Heat Transfer 7, 147–163
   (1984)
 - NASA Turbulence Modeling Resource: https://tmbwg.github.io/turbmodels/
+- U. Ghia, K. N. Ghia, C. T. Shin, *High-Re solutions for incompressible flow
+  using the Navier–Stokes equations and a multigrid method*, J. Comput. Phys.
+  48, 387–411 (1982)
+- M. Schäfer, S. Turek, *Benchmark computations of laminar flow around a
+  cylinder*, Notes on Numerical Fluid Mechanics 52, 547–566 (1996)
+- B. F. Armaly, F. Durst, J. C. F. Pereira, B. Schönung, *Experimental and
+  theoretical investigation of backward-facing step flow*, J. Fluid Mech. 127,
+  473–496 (1983)
+- D. M. Driver, H. L. Seegmiller, *Features of a reattaching turbulent shear
+  layer in divergent channel flow*, AIAA J. 23, 163–171 (1985)
+- M. Lee, R. D. Moser, *Direct numerical simulation of turbulent channel flow
+  up to Re_τ ≈ 5200*, J. Fluid Mech. 774, 395–415 (2015)
+- G. K. El Khoury et al., *Direct numerical simulation of turbulent pipe flow
+  at moderately high Reynolds numbers*, Flow Turbul. Combust. 91, 475–495
+  (2013)
+- C. U. Buice, J. K. Eaton, *Experimental investigation of flow through an
+  asymmetric plane diffuser*, Stanford Report TSD-107 (1997)
+- D. J. Monson, H. L. Seegmiller, P. K. McConnaughey, Y. S. Chen,
+  *Comparison of experiment with calculations using curvature-corrected
+  zero and two equation turbulence models for a two-dimensional U-duct*,
+  AIAA 90-1484 (1990)
 - hypre: https://github.com/hypre-space/hypre
