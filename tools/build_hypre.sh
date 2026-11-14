@@ -26,7 +26,9 @@ build=$src/build${arch:+-cuda$arch}
 opts=(-DHYPRE_ENABLE_MPI=OFF -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release
       -DCMAKE_INSTALL_PREFIX="$prefix")
 if [ -n "$arch" ]; then
-    opts+=(-DHYPRE_ENABLE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES="$arch")
+    # Umpire (a GPU memory pool) is optional; without it hypre allocates with
+    # cudaMalloc, which is what the Colab build needs (no Umpire on the image).
+    opts+=(-DHYPRE_ENABLE_CUDA=ON -DHYPRE_ENABLE_UMPIRE=OFF -DCMAKE_CUDA_ARCHITECTURES="$arch")
 fi
 cmake -S "$src/src" -B "$build" "${opts[@]}" >/dev/null
 cmake --build "$build" -j "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" >/dev/null
