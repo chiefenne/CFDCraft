@@ -10,7 +10,7 @@ Living document, updated after each requirement step. Form taken from the
 - **O** – open requirement step, with the current proposal
 
 Status: requirements engineering in progress. Steps 1 (scope) and 2 (language,
-hardware) answered on 2026-11-14; steps 3, 4 (discretization, boundary conditions, reproducibility) and 5 (mesh input, linear solvers, parallel communication) answered on 2026-11-14. No code yet.
+hardware) answered on 2026-11-14; steps 3 to 6 (turbulence and platform, discretization, mesh input and solvers, case file and output) answered on 2026-11-14. No code yet.
 
 Terminology: the project says *reacting flows*, not "combustion", everywhere.
 
@@ -74,6 +74,12 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
 | D36 | 5  | Momentum and scalar linear solvers | BiCGStab with Jacobi preconditioning, a few iterations to a loose relative tolerance per outer iteration | Standard practice for segregated solvers |
 | D37 | 5  | Matrix storage and precision in the linear solvers | Matrix stored once in a GPU-friendly sparse format (ELL or sliced ELL; final choice from gate G1). The multigrid hierarchy is stored and applied in float32; the outer Krylov iteration, residuals and solution stay in float64 (D7) | Mixed precision inside the preconditioner halves memory and bandwidth of the hierarchy without changing the converged result, because the outer float64 iteration corrects it |
 | D38 | 5  | Parallel communication | Halo exchange overlapped with interior computation; GPU-aware MPI. A multi-node run is a milestone-1 acceptance test | Needs access to a multi-node machine (O12) |
+| D39 | 6  | Case file | TOML (standard-library style parser in Rust), literature names and established acronyms, every key with a sensible default optional, validation before the run (unknown keys with "did you mean", types, ranges, consistency), resolved configuration with defaults written to the output directory. Same principles as PyAeroFlow D26–D30 | |
+| D40 | 6  | Re-reading the case file during a run | The case file can be re-read while a run is going on, on a schedule the user sets: every iteration, every time step, every N iterations or time steps, or never (default). Only settings that are safe to change at run time are applied (output, restart and monitoring settings, stop criteria, relaxation factors, time step); every change is logged, and a change to anything else is reported as not applied. In addition the control files of PyAeroFlow L7 are kept: `.stop` (write a restart and the results, end cleanly), `.result_N` (write results at iteration or step N), `.read_toml_N` (read the case file at iteration or step N) | PyAeroFlow L7 (5) and (6) |
+| D41 | 6  | Field output | VTKHDF: one parallel HDF5 file per write (one file per time step or a transient series in one file), read directly by ParaView. Linked HDF5 library (D9) | Per-rank VTU files are not workable at 100+ million cells |
+| D42 | 6  | Restart | Same HDF5 file layout, written in parallel by all ranks, readable with a different number of ranks or GPUs. A restart continues the run (counters, time, solver state), as PyAeroFlow D56 and D58 | |
+| D43 | 6  | Monitoring and user-configurable output | A human-readable `.log` file, CSV histories (residuals, forces, integrals), one CSV of wall quantities per boundary, point probes. Which fields, monitors, probes and wall quantities are written, and how often (per iteration, per time step, every N, at listed steps), is chosen by the user in the case file; defaults are modest. The log header states what is written and how large the output will be | Same idea as PyAeroFlow D59 |
+| D44 | 6  | Units | SI on input and output and dimensional inside the solver | PyAeroFlow's non-dimensional form (its D51) is not adopted: reacting flows have many reference scales |
 
 
 ## 2a. Language assessment (step 2)
@@ -177,10 +183,9 @@ None yet.
 
 | ID | Step | Topic | Current proposal |
 |----|------|-------|------------------|
-| O12 | 5 | Hardware for the milestone-1 acceptance tests | D38 makes a multi-node run a milestone-1 test, and the maintainer has no GPU yet. Proposal: CPU multi-rank MPI tests on one node in CI (D22); multi-node and GPU runs on rented cloud instances or a research cluster allocation, to be arranged before the end of milestone 1 |
+| O12 | 5 | Multi-node acceptance test | D38 makes a multi-node run a milestone-1 test. The maintainer has an old PC with an NVIDIA GPU (model to be determined) and does not want to rent hardware. Proposal: the milestone-1 tests are multi-rank MPI runs on one machine (CPU ranks in CI, D22, and ranks sharing the one GPU locally); a true multi-node run is accepted when a cluster allocation is available (university or research-computing access, a community contribution) and is then added as a test. Until then the multi-node path is designed for and tested with several ranks on one machine, not claimed as verified |
 
-Steps still to come: case file format, output and restart, verification and
-validation cases, stage plan.
+Steps still to come: verification and validation cases, stage plan.
 
 
 ## 7. Stage plan
