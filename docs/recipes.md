@@ -10,6 +10,7 @@ the [Example gallery](gallery.md).
 3. [Run gate G1 on an NVIDIA GPU](#g1-gpu) (also: free Colab T4)
 4. [Run the MPI test with several ranks on one machine](#mpi)
 5. [Check a change the way CI does](#ci-local)
+6. [Make a release (tag and GitHub release)](#release)
 
 ---
 
@@ -147,5 +148,23 @@ gpu/ptx-kernels/build.sh
 
 The workflow is `.github/workflows/ci.yml`; it runs on every pull request on
 Linux, macOS and Windows.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="release"></a>
+## 6. Make a release (tag and GitHub release)
+
+A release is a Git tag `v<stage>` (D46) plus a GitHub release. Steps:
+
+1. A pull request moves the `## Unreleased` section of `CHANGELOG.md` to
+   `## <version> (YYYY-MM-DD) – ...` and adds a row to the summary table.
+2. After the merge: GitHub, Actions, **Release**, *Run workflow*, version
+   `0.1`, first with *dry run* checked (prints the notes), then without.
+
+The workflow refuses a version without a changelog section, and creates
+only the release if the tag already exists. The assistant starts it through
+the GitHub API in the same way.
 
 [↑ back to top](#recipes)
