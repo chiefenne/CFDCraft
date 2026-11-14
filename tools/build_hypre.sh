@@ -19,7 +19,10 @@ prefix=${1:-$root/target/hypre}
 arch=${2:-}
 version=${HYPRE_VERSION:-v3.2.1}
 src=$root/target/hypre-src-$version
-if [ ! -d "$src" ]; then
+# A source tree restored from a cache can be incomplete: re-clone unless the
+# CMake project is really there.
+if [ ! -f "$src/src/CMakeLists.txt" ]; then
+    rm -rf "$src"
     git -c advice.detachedHead=false clone --quiet --depth 1 -b "$version" https://github.com/hypre-space/hypre "$src"
 fi
 build=$src/build${arch:+-cuda$arch}
