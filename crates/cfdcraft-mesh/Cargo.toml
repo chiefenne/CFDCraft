@@ -1,0 +1,38 @@
+[package]
+name = "cfdcraft-mesh"
+description = "CFDCraft mesh: polyhedral face-based mesh, geometry and quality, built-in test mesher, Gmsh reader, partitioning and halo layout, point location and VTKHDF output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["hdf5", "metis"]
+# VTKHDF output through the HDF5 C library (D41, D9), built from its
+# bundled source (needs CMake and a C compiler, no HDF5 installation).
+hdf5 = ["dep:hdf5-metno"]
+# Graph partitioning with METIS 5, built from source (D32).
+metis = ["dep:metis"]
+# MPI halo exchange example (system MPI library).
+mpi = ["cfdcraft-parallel/mpi"]
+
+[dependencies]
+cfdcraft-core.workspace = true
+cfdcraft-kernels.workspace = true
+cfdcraft-parallel.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+anyhow = "1"
+hdf5-metno = { workspace = true, optional = true }
+metis = { workspace = true, optional = true }
+
+[[example]]
+name = "mpi_halo"
+required-features = ["mpi"]
+
+[lints]
+workspace = true

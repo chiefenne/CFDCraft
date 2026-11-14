@@ -4,11 +4,98 @@
 
 | Version | Stage | Highlights |
 |---|---|---|
+| 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
 | 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
+
+Release 0.1 closes stage 1: all acceptance tests of the stage plan pass
+(closed cells, exact volumes, Gmsh files from Gmsh load, VTKHDF files load
+with VTK's reader, point location on all mesh types). The Cargo version of
+the crates is now 0.1.0; the release is the Git tag `v0.1` (D46).
 
 Release 0.0 closes stage 0: both verdicts of gate G1 are in (GPU: Tesla T4,
 CPU: i9-9900K, 2026-11-14, both PASS; O13 closed). The Cargo version of the
 crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
+
+---
+
+## 0.1 (2026-11-14) – stage 1: mesh
+
+New crate `cfdcraft-mesh` (features `hdf5` and `metis`, both on by default;
+`mpi` for the MPI halo test):
+
+- **Mesh structure (D23).** Faces as node lists, `owner` and `neighbour`
+  per face, the faces of each cell with their orientation; patches and cell
+  zones. Order: inner faces, processor faces, boundary faces by patch;
+  cells inner, owned cells touching the halo, halo cells by source rank,
+  each group in reverse Cuthill-McKee order (R1). u64 global ids for every
+  cell, face and node in input order (R2). `validate()` checks index ranges,
+  ordering and topological closure (every edge used twice).
+- **Geometry.** Face area vectors and centroids from a triangle fan about
+  the node average, cell volumes and centroids from tetrahedra on the same
+  fan: Σ S = 0 to round-off for every cell, volumes add up to the domain
+  volume.
+- **Quality report.** Closure, total against enclosed volume, patch areas,
+  non-orthogonality, skewness, face warp, aspect ratio, volume ratio,
+  inverted faces, non-positive volumes; Markdown and JSON.
+- **Gmsh reader (D33).** MSH 4.1 ASCII and binary (either endianness),
+  tetrahedra, hexahedra, prisms, pyramids; physical surfaces as patches,
+  physical volumes as cell zones, periodic links; refuses higher-order
+  elements and other versions with a clear message.
+- **Test mesher (D34).** Box meshes of hexahedra, tetrahedra (Kuhn split),
+  polyhedra (dual of the tetrahedra), mixed cells; 3D or 2D one cell thick
+  (D3); exponential grading per direction, one- or two-sided; nested
+  refinement levels; node perturbation by the counter-based generator,
+  boundary nodes kept on their faces. Conversion of any tetrahedral mesh into
+  polyhedra with the exact volume (also on curved walls).
+- **Renumbering.** Reverse Cuthill-McKee and shuffle, with the ids kept.
+- **Partitioning (D32).** METIS (vendored) and recursive coordinate
+  bisection; imbalance, cut faces and neighbours in the report.
+- **Decomposition and halo (D38, R3).** Local meshes with halo depth as a
+  parameter; per-neighbour send lists and contiguous receive ranges;
+  several fields per message; host-staged transport now, GPU-aware selected
+  at run time later on the same plan. Halo geometry filled by exchange.
+- **VTKHDF writer (D41).** VTKHDF 2.4 `PartitionedDataSetCollection`:
+  block `internal` with cell fields and one block per patch; standard VTK
+  cells and `VTK_POLYHEDRON`; global-id order. HDF5 built from source and
+  linked statically (needs CMake).
+- **Point location and tracking (D47).** Tetrahedral-decomposition walk
+  from cell to cell through the faces, with a bin search where the walk
+  stops at a non-convex boundary; reports where a track leaves the mesh or
+  the rank.
+
+Tests: closure, volume and patch areas of 16 generated variants; Gmsh ASCII
+against binary, zones, prisms, pyramids, periodic links, refusals; VTKHDF of
+all types; point location on all types; decomposition with METIS and RCB on
+1, 2, 3 and 5 parts and 1 and 2 halo layers; **golden values (R4)** for 32
+cases of mesh type × dimension × perturbation × refinement × 1, 2 and 4
+ranks, checking that owned volumes sum to the total and that every halo
+cell has exactly one owner; the MPI halo exchange on 2 and 4 ranks in CI.
+
+CLI: `cfdcraft mesh CASE.toml | FILE.msh` builds or reads, renumbers,
+checks, partitions and writes the report and `mesh.vtkhdf`. G1:
+`mesh.type = "poly" | "tet" | "hex" | "mixed"` runs the benchmark on
+stage-1 meshes.
+
+Tools: `tools/check_vtkhdf.py` (checks files with VTK's reader),
+`tools/render_mesh.py` (gallery pictures), `tools/gmsh_test_meshes.py`
+(the Gmsh test files), `examples/meshes/tjunction.geo`.
+
+Documentation: gallery examples 3–7, mesh cases and keys in the case
+catalogue, recipes 6–10, the G1 stage-1 rerun, implementation notes in
+D23, D32, D38, D41 and D47, new open item O15.
+
+Findings:
+
+- Polyhedral boundary faces merged across a curved wall lose volume
+  (0.34 % on the T-junction); keeping one planar piece per triangle there
+  makes the dual exactly as large as the tetrahedral mesh.
+- VTK computes the volume of a polyhedron as that of the convex hull of its
+  nodes, so the VTKHDF check computes it from VTK's faces instead.
+- **G1 on polyhedra (shared cloud machine, 2 million cells):** bitwise
+  equal; the single-source bodies are 25–42 % faster on cell gather, equal
+  on SpMV-CSR, 4–30 % slower on face flux, as on a hexahedral box of the
+  same size. Shuffled order costs a factor 3 to 4. Quiet-machine and GPU
+  reruns are open (O15).
 
 ---
 

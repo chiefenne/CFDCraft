@@ -1,0 +1,18 @@
+# mixed test mesh of a box with boundary-layer grading towards y = 0 and
+# y = 1 and perturbed nodes: one of the four mesh types of the built-in
+# generator (D34). Gallery example 3.
+#
+#   cfdcraft mesh examples/cases/mesh/mixed_box.toml
+
+[mesh.generate]
+type = "mixed"
+dimension = 3
+lower = [0.0, 0.0, 0.0]
+upper = [2.0, 1.0, 1.0]
+cells = [12, 8, 6]
+grading.y = { ratio = 4.0, symmetric = true }   # middle / wall interval
+perturb = 0.15
+seed = 2026
+
+[check]
+locate_points = 2000

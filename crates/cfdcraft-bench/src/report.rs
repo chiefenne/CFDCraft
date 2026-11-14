@@ -30,6 +30,8 @@ pub struct G1Report {
 /// Mesh and matrix sizes.
 #[derive(Debug, Clone, Serialize)]
 pub struct MeshInfo {
+    /// Mesh type (`periodic-box`, `hex`, `tet`, `poly`, `mixed`).
+    pub kind: String,
     /// Box dimensions.
     pub dims: (usize, usize, usize),
     /// Cells.
@@ -105,9 +107,10 @@ impl G1Report {
         let _ = writeln!(s, "## G1 run {} ({})\n", self.date_utc, self.platform);
         let _ = writeln!(
             s,
-            "Mesh: periodic box {} × {} × {} = {} cells, {} faces, {} ordering. \
+            "Mesh: {} on {} × {} × {}: {} cells, {} faces, {} ordering. \
              CSR: {} non-zeros. SELL-{}-{}: {} stored entries ({:.1} % padding). \
              CFDCraft {}{}.\n",
+            m.kind,
             m.dims.0,
             m.dims.1,
             m.dims.2,
@@ -216,8 +219,9 @@ impl G1Report {
             r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}" font-family="Helvetica, Arial, sans-serif" font-size="12">
 <rect width="{w}" height="{h}" fill="#ffffff"/>
 <text x="{l}" y="22" font-size="15" font-weight="bold" fill="#222">G1 kernel benchmark: effective bandwidth</text>
-<text x="{l}" y="38" fill="#555">{} cells, {} ordering, {}, {}</text>
+<text x="{l}" y="38" fill="#555">{} mesh, {} cells, {} ordering, {}, {}</text>
 "##,
+            self.mesh.kind,
             self.mesh.cells,
             self.mesh.ordering.name(),
             self.platform,

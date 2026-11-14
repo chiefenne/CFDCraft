@@ -1,0 +1,22 @@
+# Polyhedral mesh of the unit cube (the dual of a tetrahedral mesh, nodes
+# perturbed), split into 4 parts with METIS, one halo layer, with the
+# point-location test of D47. Gallery example 4.
+#
+#   cfdcraft mesh examples/cases/mesh/poly_partition.toml
+
+[mesh.generate]
+type = "poly"          # hex | tet | poly | mixed
+dimension = 3          # 2: one cell layer thick in z (D3)
+lower = [0.0, 0.0, 0.0]
+upper = [1.0, 1.0, 1.0]
+cells = [12, 12, 12]   # intervals of the underlying hexahedral grid
+perturb = 0.2          # fraction of the local interval, 0 to 0.3
+seed = 2026
+
+[partition]
+parts = 4
+method = "metis"       # metis | rcb
+halo_layers = 1
+
+[check]
+locate_points = 5000   # random points for the point-location test (D47)
