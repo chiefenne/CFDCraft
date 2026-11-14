@@ -378,6 +378,30 @@ impl Discretisation {
         }
     }
 
+    /// The assembled matrix as CSR (columns ascending), from the values of
+    /// its sliced-ELL slots: slot 0 is the diagonal, then one slot per
+    /// interior face of the cell.
+    pub fn matrix_csr(&self, val: &[f64]) -> crate::amg::Csr {
+        let s = &self.sell;
+        let rows = (0..self.n_cells)
+            .map(|c| {
+                let lo = self.cell_ptr[c] as usize;
+                let hi = self.cell_ptr[c + 1] as usize;
+                let len = 1 + self.cell_faces[lo..hi]
+                    .iter()
+                    .filter(|&&e| unpack_face(e).0 < self.n_interior)
+                    .count();
+                (0..len)
+                    .map(|j| {
+                        let k = s.pos(c, j);
+                        (s.col[k], val[k])
+                    })
+                    .collect()
+            })
+            .collect();
+        crate::amg::Csr::from_rows(self.n_cells, rows)
+    }
+
     /// Borrowed boundary coefficients.
     pub fn boundary(&self) -> cfdcraft_kernels::fv::Boundary<'_, f64> {
         cfdcraft_kernels::fv::Boundary {

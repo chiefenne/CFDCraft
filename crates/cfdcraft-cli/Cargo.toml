@@ -19,6 +19,8 @@ hdf5 = ["cfdcraft-mesh/hdf5", "cfdcraft-fv/hdf5"]
 # METIS partitioning (built from source).
 metis = ["cfdcraft-mesh/metis"]
 cuda = ["cfdcraft-bench/cuda", "cfdcraft-fv/cuda"]
+# hypre as the reference solver of `cfdcraft poisson` (needs HYPRE_DIR).
+hypre = ["cfdcraft-fv/hypre"]
 mpi = ["cfdcraft-parallel/mpi"]
 checked-indexing = ["cfdcraft-bench/checked-indexing"]
 

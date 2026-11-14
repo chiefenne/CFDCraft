@@ -2,8 +2,9 @@
 //!
 //! Commands: `info` (build and platform), `mesh` (build or read a mesh,
 //! check, partition and write it; stage 1), `scalar` (steady scalar
-//! transport, verification sweeps, CPU and GPU; stage 2) and `bench g1` (the
-//! GPU kernel gate of stage 0). The flow solver commands follow with the
+//! transport, verification sweeps, CPU and GPU; stage 2), `poisson` (the
+//! pressure solver study: CG with algebraic multigrid against hypre; stage
+//! 3) and `bench g1` (the GPU kernel gate of stage 0). The flow solver commands follow with the
 //! later stages.
 
 use anyhow::Result;
@@ -33,6 +34,10 @@ enum Command {
     /// one mesh, an order-of-accuracy sweep, or several solver variants, on
     /// the CPU and the GPU.
     Scalar(ScalarArgs),
+    /// Study the pressure solver on a Poisson problem (stage 3): CG with the
+    /// smoothed-aggregation multigrid, Jacobi and hypre, over refinement
+    /// levels, on the CPU and the GPU.
+    Poisson(PoissonArgs),
     /// Benchmarks.
     Bench {
         #[command(subcommand)]
@@ -98,6 +103,36 @@ struct ScalarArgs {
 }
 
 #[derive(clap::Args)]
+struct PoissonArgs {
+    /// Poisson case file (TOML).
+    case: PathBuf,
+    /// Comma-separated backends: cpu, cpu-serial, cuda (overrides
+    /// `study.backends`).
+    #[arg(long, value_delimiter = ',')]
+    backends: Option<Vec<String>>,
+    /// Comma-separated solvers: amg, amg-double, amg-plain, jacobi, hypre
+    /// (overrides `study.solvers`).
+    #[arg(long, value_delimiter = ',')]
+    solvers: Option<Vec<String>>,
+    /// CPU threads (overrides `study.threads`).
+    #[arg(long)]
+    threads: Option<usize>,
+    /// PTX module of the GPU backend (overrides `study.rust_ptx`).
+    #[arg(long)]
+    rust_ptx: Option<PathBuf>,
+    /// Refinement levels of `[mesh.generate]`, comma-separated (overrides
+    /// `study.levels`).
+    #[arg(long, value_delimiter = ',')]
+    levels: Option<Vec<u32>>,
+    /// Repetitions of each solve (overrides `study.repeat`).
+    #[arg(long)]
+    repeat: Option<usize>,
+    /// Output directory (overrides `output.directory`).
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
+#[derive(clap::Args)]
 struct G1Args {
     /// Case file (TOML); every key is optional.
     case: Option<PathBuf>,
@@ -129,6 +164,7 @@ fn main() -> Result<()> {
         Command::Info => info(),
         Command::Mesh(a) => mesh(a),
         Command::Scalar(a) => scalar(a),
+        Command::Poisson(a) => poisson(a),
         Command::Bench {
             bench: Bench::Backends,
         } => {
@@ -164,6 +200,7 @@ fn info() -> Result<()> {
         ("checked-indexing", cfg!(feature = "checked-indexing")),
         ("hdf5", cfg!(feature = "hdf5")),
         ("metis", cfg!(feature = "metis")),
+        ("hypre", cfg!(feature = "hypre")),
     ]
     .into_iter()
     .filter_map(|(n, on)| on.then_some(n))
@@ -259,6 +296,40 @@ fn scalar(a: ScalarArgs) -> Result<()> {
         );
     }
     println!("wrote {}", dir.join("scalar.md").display());
+    check(&rep)
+}
+
+fn poisson(a: PoissonArgs) -> Result<()> {
+    use cfdcraft_fv::poisson::{PoissonCase, StudySolver, check, output_dir, run};
+    let mut case = PoissonCase::from_file(&a.case)?;
+    if let Some(b) = a.backends {
+        case.study.backends = b;
+    }
+    if let Some(s) = a.solvers {
+        case.study.solvers = s
+            .iter()
+            .map(|n| n.parse::<StudySolver>())
+            .collect::<Result<_>>()?;
+    }
+    if a.threads.is_some() {
+        case.study.threads = a.threads;
+    }
+    if let Some(p) = a.rust_ptx {
+        case.study.rust_ptx = p;
+    }
+    if let Some(l) = a.levels {
+        case.study.levels = l;
+    }
+    if let Some(r) = a.repeat {
+        case.study.repeat = r;
+    }
+    case.validate()?;
+    let (name, dir) = output_dir(&case, &a.case, a.out);
+    let rep = run(&case, &name, &dir, |l| println!("{l}"))?;
+    for (n, r) in &rep.iteration_ratios {
+        println!("iterations finest / coarsest level, {n}: {r:.2}");
+    }
+    println!("wrote {}", dir.join("poisson.md").display());
     check(&rep)
 }
 

@@ -544,13 +544,16 @@ impl ScalarReport {
         let _ = writeln!(s, "- total time: {:.2} s\n", self.seconds);
         let _ = writeln!(
             s,
-            "| Variant | Backend | Device | Cells | Outer it. | Final residual | L2 error | max error | φ range | ns/cell/it. | vs first backend |"
+            "| Variant | Backend | Device | Cells | Outer it. | Linear it. | Final residual | L2 error | max error | φ range | ns/cell/it. | vs first backend |"
         );
-        let _ = writeln!(s, "|---|---|---|---:|---:|---:|---:|---:|---|---:|---|");
+        let _ = writeln!(
+            s,
+            "|---|---|---|---:|---:|---:|---:|---:|---:|---|---:|---|"
+        );
         for v in &self.solves {
             let _ = writeln!(
                 s,
-                "| {} | {} | {} | {} | {} | {:.2e} | {} | {} | [{:.4}, {:.4}] | {:.0} | {} |",
+                "| {} | {} | {} | {} | {} | {} | {:.2e} | {} | {} | [{:.4}, {:.4}] | {:.0} | {} |",
                 if v.variant.is_empty() {
                     "–"
                 } else {
@@ -560,6 +563,7 @@ impl ScalarReport {
                 v.device,
                 v.cells,
                 v.outcome.outer,
+                v.outcome.linear_iterations.iter().sum::<usize>(),
                 v.outcome.residuals.last().copied().unwrap_or(f64::NAN),
                 v.mms
                     .as_ref()
@@ -579,14 +583,22 @@ impl ScalarReport {
         }
         let _ = writeln!(
             s,
-            "\nTime per phase (seconds; R6), per solve: gradient / limiter / faces / assembly / linear solver\n"
+            "\nTime per phase (seconds; R6), per solve: gradient / limiter / faces / assembly / linear solver / multigrid setup\n"
         );
         for v in &self.solves {
             let t = &v.outcome.timings;
             let _ = writeln!(
                 s,
-                "- {} {} {} cells: {:.3} / {:.3} / {:.3} / {:.3} / {:.3}",
-                v.variant, v.backend, v.cells, t.gradient, t.limiter, t.faces, t.assemble, t.linear
+                "- {} {} {} cells: {:.3} / {:.3} / {:.3} / {:.3} / {:.3} / {:.3}",
+                v.variant,
+                v.backend,
+                v.cells,
+                t.gradient,
+                t.limiter,
+                t.faces,
+                t.assemble,
+                t.linear,
+                t.amg_setup
             );
         }
         if !self.orders.is_empty() {

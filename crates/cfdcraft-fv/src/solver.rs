@@ -1,10 +1,13 @@
 //! The steady scalar solver: outer iterations of deferred correction, each a
 //! gradient, a limiter, the face coefficients, the assembly and a linear
-//! solve by BiCGStab with Jacobi preconditioning (D36).
+//! solve: BiCGStab (D36) or, for symmetric matrices such as the pressure
+//! equation, CG (D35), preconditioned by Jacobi or by the algebraic
+//! multigrid of [`crate::amg`].
 //!
 //! The solver drives a [`Backend`] and only moves scalars (dot products,
 //! norms) to the host, so the same code runs on the CPU and on the GPU.
 
+use crate::amg::{self, AmgSettings, HierarchyInfo};
 use crate::backend::{Backend, FaceSettings, Limiter, V};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -33,6 +36,29 @@ pub enum LimiterKind {
     VenkatakrishnanWang,
 }
 
+/// Krylov method of the linear solves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum LinearSolver {
+    /// BiCGStab (van der Vorst 1992), any matrix (D36).
+    #[default]
+    Bicgstab,
+    /// Flexible preconditioned conjugate gradients (Notay 2000), symmetric
+    /// positive definite matrices (D35).
+    Cg,
+}
+
+/// Preconditioner of the linear solves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum Preconditioner {
+    /// Diagonal (Jacobi).
+    #[default]
+    Jacobi,
+    /// One V-cycle of the smoothed-aggregation multigrid (stage 3).
+    Amg,
+}
+
 /// `[solver]` settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -59,6 +85,12 @@ pub struct Settings {
     pub linear_max_iter: usize,
     /// Relative tolerance of each linear solve.
     pub linear_tolerance: f64,
+    /// Krylov method.
+    pub linear_solver: LinearSolver,
+    /// Preconditioner.
+    pub preconditioner: Preconditioner,
+    /// Multigrid settings (`preconditioner = "amg"`).
+    pub amg: AmgSettings,
 }
 
 impl Default for Settings {
@@ -74,6 +106,9 @@ impl Default for Settings {
             tolerance: 1e-10,
             linear_max_iter: 200,
             linear_tolerance: 1e-3,
+            linear_solver: LinearSolver::Bicgstab,
+            preconditioner: Preconditioner::Jacobi,
+            amg: AmgSettings::default(),
         }
     }
 }
@@ -91,6 +126,7 @@ impl Settings {
             self.linear_tolerance > 0.0 && self.linear_tolerance < 1.0,
             "[solver] linear_tolerance must lie in (0, 1)"
         );
+        self.amg.validate()?;
         Ok(())
     }
 
@@ -116,12 +152,14 @@ pub struct Timings {
     pub assemble: f64,
     /// Linear solves.
     pub linear: f64,
+    /// Multigrid setup (host), including the transfer of the matrix.
+    pub amg_setup: f64,
 }
 
 impl Timings {
     /// Total seconds.
     pub fn total(&self) -> f64 {
-        self.gradient + self.limiter + self.faces + self.assemble + self.linear
+        self.gradient + self.limiter + self.faces + self.assemble + self.linear + self.amg_setup
     }
 }
 
@@ -138,6 +176,8 @@ pub struct Outcome {
     pub converged: bool,
     /// Phase timings.
     pub timings: Timings,
+    /// Multigrid hierarchy, when used.
+    pub amg: Option<HierarchyInfo>,
 }
 
 impl Outcome {
@@ -209,7 +249,33 @@ pub fn solve(
             ));
             break;
         }
-        let lin = bicgstab(be, s.linear_max_iter, s.linear_tolerance, rr)?;
+        if s.preconditioner == Preconditioner::Amg && out.amg.is_none() {
+            // the matrix of the stage-2/3 problems does not change between
+            // outer iterations (constant mass flux and diffusivity): one
+            // setup serves all of them
+            let ts = Instant::now();
+            out.amg = Some(setup_amg(be, &s.amg)?);
+            tm.amg_setup += ts.elapsed().as_secs_f64();
+        }
+        let lin = match s.linear_solver {
+            LinearSolver::Bicgstab => bicgstab(
+                be,
+                s.preconditioner,
+                s.linear_max_iter,
+                s.linear_tolerance,
+                rr,
+            )?,
+            LinearSolver::Cg => {
+                cg(
+                    be,
+                    s.preconditioner,
+                    s.linear_max_iter,
+                    s.linear_tolerance,
+                    rr,
+                )?
+                .0
+            }
+        };
         be.sync()?;
         tm.linear += t.elapsed().as_secs_f64();
         out.timings = tm;
@@ -225,11 +291,84 @@ pub fn solve(
     Ok(out)
 }
 
-/// BiCGStab (van der Vorst 1992) with right Jacobi preconditioning on
+/// Builds the multigrid hierarchy of the matrix assembled in the backend
+/// and loads it there.
+pub fn setup_amg(be: &mut dyn Backend, s: &AmgSettings) -> anyhow::Result<HierarchyInfo> {
+    let t = Instant::now();
+    let val = be.matrix_values()?;
+    let a = be_matrix(be, &val)?;
+    let mut h = amg::build(a, s)?;
+    be.amg_load(&h)?;
+    be.sync()?;
+    h.info.setup_seconds = t.elapsed().as_secs_f64();
+    Ok(h.info)
+}
+
+fn be_matrix(be: &dyn Backend, val: &[f64]) -> anyhow::Result<amg::Csr> {
+    be.discretisation()
+        .map(|d| d.matrix_csr(val))
+        .ok_or_else(|| anyhow::anyhow!("backend without host discretisation"))
+}
+
+/// out = M⁻¹ x.
+pub fn precondition(be: &mut dyn Backend, pc: Preconditioner, x: V, out: V) -> anyhow::Result<()> {
+    match pc {
+        Preconditioner::Jacobi => be.precondition(x, out),
+        Preconditioner::Amg => amg::cycle::vcycle(be, x, out),
+    }
+}
+
+/// Flexible preconditioned CG (Notay 2000: the Polak–Ribière form of β,
+/// robust to a preconditioner that is symmetric only up to the rounding of
+/// its float32 hierarchy) on A Phi = Rhs; expects R = Rhs − A Phi with norm
+/// `r0`. Stops when ‖r‖ ≤ `rel_tol` r0. Returns the iterations done and the
+/// final ‖r‖ / r0 of the recursive residual.
+pub fn cg(
+    be: &mut dyn Backend,
+    pc: Preconditioner,
+    max_iter: usize,
+    rel_tol: f64,
+    r0: f64,
+) -> anyhow::Result<(usize, f64)> {
+    let target = rel_tol * r0;
+    if r0 == 0.0 {
+        return Ok((0, 0.0));
+    }
+    precondition(be, pc, V::R, V::Z)?;
+    be.copy(V::Z, V::P)?;
+    let mut rho = be.dot(V::R, V::Z)?;
+    let mut rn = r0;
+    for it in 1..=max_iter {
+        be.spmv(V::P, V::Q)?;
+        let pq = be.dot(V::P, V::Q)?;
+        anyhow::ensure!(
+            pq > 0.0 && rho > 0.0,
+            "CG breakdown in iteration {it} ((p, A p) = {pq:.3e}, (r, z) = {rho:.3e}):              the matrix or the preconditioner is not positive definite"
+        );
+        let alpha = rho / pq;
+        be.axpy(alpha, V::P, V::Phi)?;
+        be.copy(V::R, V::Rold)?;
+        be.axpy(-alpha, V::Q, V::R)?;
+        rn = be.dot(V::R, V::R)?.sqrt();
+        if rn <= target {
+            return Ok((it, rn / r0));
+        }
+        precondition(be, pc, V::R, V::Z)?;
+        let rho_new = be.dot(V::R, V::Z)?;
+        let zr_old = be.dot(V::Z, V::Rold)?;
+        let beta = (rho_new - zr_old) / rho;
+        rho = rho_new;
+        be.xpby(V::Z, beta, V::P)?;
+    }
+    Ok((max_iter, rn / r0))
+}
+
+/// BiCGStab (van der Vorst 1992) with right preconditioning on
 /// A Phi = Rhs; expects R = Rhs − A Phi with norm `r0`. Returns the
 /// iterations done.
 pub fn bicgstab(
     be: &mut dyn Backend,
+    pc: Preconditioner,
     max_iter: usize,
     rel_tol: f64,
     r0: f64,
@@ -242,7 +381,7 @@ pub fn bicgstab(
         if rho == 0.0 {
             return Ok(it - 1);
         }
-        be.precondition(V::P, V::Ph)?;
+        precondition(be, pc, V::P, V::Ph)?;
         be.spmv(V::Ph, V::Vv)?;
         let rv = be.dot(V::Rh, V::Vv)?;
         if rv == 0.0 {
@@ -257,7 +396,7 @@ pub fn bicgstab(
             be.update_x(alpha, 0.0)?;
             return Ok(it);
         }
-        be.precondition(V::S, V::Sh)?;
+        precondition(be, pc, V::S, V::Sh)?;
         be.spmv(V::Sh, V::T)?;
         let ts = be.dot(V::T, V::S)?;
         let tt = be.dot(V::T, V::T)?;

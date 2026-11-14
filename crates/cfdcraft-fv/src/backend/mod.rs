@@ -13,6 +13,8 @@ pub mod cpu;
 #[cfg(feature = "cuda")]
 pub mod cuda;
 
+use crate::amg::Hierarchy;
+use crate::amg::cycle::LevelOps;
 use crate::disc::Discretisation;
 
 /// The named vectors of a backend.
@@ -43,11 +45,15 @@ pub enum V {
     S,
     Sh,
     T,
+    /// CG work vectors: preconditioned residual, A p, previous residual.
+    Z,
+    Q,
+    Rold,
 }
 
 impl V {
     /// Vectors with one value per cell.
-    pub const CELL: [V; 15] = [
+    pub const CELL: [V; 18] = [
         V::Phi,
         V::Gx,
         V::Gy,
@@ -63,6 +69,9 @@ impl V {
         V::S,
         V::Sh,
         V::T,
+        V::Z,
+        V::Q,
+        V::Rold,
     ];
     /// Vectors with one value per face.
     pub const FACE: [V; 3] = [V::Cp, V::Cn, V::Bf];
@@ -73,7 +82,7 @@ impl V {
     }
 
     /// Number of vectors.
-    pub const COUNT: usize = 18;
+    pub const COUNT: usize = 21;
 }
 
 /// Gradient limiter (D25).
@@ -104,8 +113,9 @@ pub struct FaceSettings {
     pub nonorth_limit: f64,
 }
 
-/// Operations of a backend.
-pub trait Backend {
+/// Operations of a backend; the multigrid level operations of
+/// [`LevelOps`] drive the V-cycle of [`crate::amg::cycle::vcycle`].
+pub trait Backend: LevelOps {
     /// Name (`cpu`, `cuda`).
     fn name(&self) -> String;
     /// Device description.
@@ -146,6 +156,18 @@ pub trait Backend {
     fn precondition(&mut self, x: V, out: V) -> anyhow::Result<()>;
     /// dst = src.
     fn copy(&mut self, src: V, dst: V) -> anyhow::Result<()>;
+    /// y = y + α x.
+    fn axpy(&mut self, alpha: f64, x: V, y: V) -> anyhow::Result<()>;
+    /// y = x + β y.
+    fn xpby(&mut self, x: V, beta: f64, y: V) -> anyhow::Result<()>;
+
+    /// The assembled matrix values in the sliced-ELL slots of the
+    /// discretisation (for the multigrid setup on the host).
+    fn matrix_values(&mut self) -> anyhow::Result<Vec<f64>>;
+    /// Stores a multigrid hierarchy on the device, in its precision.
+    fn amg_load(&mut self, h: &Hierarchy) -> anyhow::Result<()>;
+    /// The host copy of the discretisation.
+    fn discretisation(&self) -> Option<&Discretisation>;
 }
 
 /// Builds a backend by name: `cpu` (all threads), `cpu-serial`, or `cuda`

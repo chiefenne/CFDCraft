@@ -1,0 +1,62 @@
+# The pressure solver (stage 3) on the GPU: CG with the smoothed-aggregation
+# multigrid (mixed precision and float64) and Jacobi-CG on the CPU and on the
+# GPU, against hypre's BoomerAMG-PCG on its own device (a GPU build of hypre
+# on the GPU), on about 0.9 million polyhedra. The report gives the
+# iterations, the setup and solve times and ns per cell and CG iteration of
+# every solver, and whether each GPU solve is bitwise equal to the CPU solve.
+#
+#   tools/build_hypre.sh target/hypre-cuda 75
+#   gpu/ptx-kernels/build.sh sm_75
+#   HYPRE_DIR=target/hypre-cuda cargo build --release -p cfdcraft-cli --features cuda,hypre
+#   target/release/cfdcraft poisson examples/cases/poisson/poisson_poly_gpu.toml
+#
+# or on Google Colab: tools/stage3_colab.ipynb. Needs a GPU of compute
+# capability 7.0 or newer and about 2 GB of GPU memory. The run fails if a
+# solution differs from hypre's by more than 1e-6 (relative) or if a solver
+# differs between the CPU and the GPU.
+
+[mesh.generate]
+type = "poly"
+cells = [12, 12, 12]   # refine 3: 96 intervals per direction, 97³ = 912 673 cells
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[problem]
+diffusivity = 1.0
+velocity = [0.0, 0.0, 0.0]
+manufactured = {}
+
+[problem.boundary.xmin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.xmax]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.ymin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.ymax]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.zmin]
+type = "fixed-value"
+profile = "manufactured"
+[problem.boundary.zmax]
+type = "fixed-value"
+profile = "manufactured"
+
+[linear]
+tolerance = 1e-10
+
+[linear.amg]
+smoother = "chebyshev"
+degree = 2
+precision = "mixed"
+
+[study]
+levels = [3]
+solvers = ["amg", "amg-double", "jacobi", "hypre"]
+backends = ["cpu", "cuda"]
+repeat = 3              # the fastest of three solves is reported

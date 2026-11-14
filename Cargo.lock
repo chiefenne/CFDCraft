@@ -172,6 +172,7 @@ name = "cfdcraft-fv"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "cc",
  "cfdcraft-core",
  "cfdcraft-kernels",
  "cfdcraft-mesh",

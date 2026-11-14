@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Builds the single-source kernels (G1 and stage 2) as a PTX module for
+# Builds the single-source kernels (G1, stage 2 and stage 3) as a PTX module for
 # NVIDIA GPUs.
 #
 #   gpu/ptx-kernels/build.sh            # PTX for sm_70 (Volta), JIT-compiled for newer GPUs
@@ -24,7 +24,12 @@ fi
 ptx="$root/target/nvptx64-nvidia-cuda/release/cfdcraft_ptx_kernels.ptx"
 for k in g1_face_flux g1_cell_gather g1_spmv_csr g1_spmv_sell \
     fv_gradient fv_limiter fv_faces fv_assemble fv_residual \
-    blas_block_dot blas_block_min_max blas_update_p blas_sub_scaled blas_update_x blas_scale; do
+    blas_block_dot blas_block_min_max blas_update_p blas_sub_scaled blas_update_x blas_scale \
+    blas_axpy blas_xpby \
+    amg_smooth_first_f32 amg_smooth_step_f32 amg_add_f32 amg_residual_f32 amg_spmv_f32 \
+    amg_prolong_f32 amg_dense_f32 amg_to_f32 amg_from_f32 \
+    amg_smooth_first_f64 amg_smooth_step_f64 amg_add_f64 amg_residual_f64 amg_spmv_f64 \
+    amg_prolong_f64 amg_dense_f64 amg_to_f64 amg_from_f64; do
     grep -q ".entry $k" "$ptx" || { echo "missing entry point $k in $ptx" >&2; exit 1; }
 done
 echo "wrote $ptx ($(grep -m1 '^\.target' "$ptx"))"

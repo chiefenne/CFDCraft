@@ -220,7 +220,14 @@ fn bicgstab_reaches_its_tolerance() {
     be.assemble(1.0).unwrap();
     be.residual(V::Phi, V::Rhs, V::R).unwrap();
     let r0 = be.dot(V::R, V::R).unwrap().sqrt();
-    let it = cfdcraft_fv::solver::bicgstab(&mut be, 500, 1e-10, r0).unwrap();
+    let it = cfdcraft_fv::solver::bicgstab(
+        &mut be,
+        cfdcraft_fv::solver::Preconditioner::Jacobi,
+        500,
+        1e-10,
+        r0,
+    )
+    .unwrap();
     be.residual(V::Phi, V::Rhs, V::R).unwrap();
     let r1 = be.dot(V::R, V::R).unwrap().sqrt();
     assert!(

@@ -1,7 +1,8 @@
 //! The single-source GPU route: the kernel bodies of `cfdcraft-kernels`
 //! wrapped as PTX entry points, one GPU thread per output. The `g1_*`
 //! entries are the kernels of gate G1 (stage 0); the `fv_*` and `blas_*`
-//! entries in [`fv`] are the scalar operators of stage 2.
+//! entries in [`fv`] are the scalar operators of stage 2, the `amg_*`
+//! entries in [`amg`] the multigrid V-cycle of stage 3.
 //!
 //! The wrappers only compute the thread index, build slices from the raw
 //! device pointers and their sizes, and call the body that the CPU backends
@@ -15,6 +16,7 @@
 #![feature(abi_ptx, stdarch_nvptx)]
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
+mod amg;
 mod fv;
 
 use cfdcraft_kernels::{face, spmv};

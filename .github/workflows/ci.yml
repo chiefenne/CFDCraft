@@ -66,6 +66,13 @@ jobs:
             case "$f" in *_gpu.toml) continue;; esac
             cargo run --release --locked -p cfdcraft-cli -- scalar "$f"
           done
+      - name: Poisson studies of the pressure solver (stage 3; each checks its own results)
+        shell: bash
+        run: |
+          for f in examples/cases/poisson/*.toml; do
+            case "$f" in *_gpu.toml) continue;; esac
+            cargo run --release --locked -p cfdcraft-cli -- poisson "$f"
+          done
       - uses: actions/setup-python@v5
         if: runner.os == 'Linux'
         with:
@@ -94,6 +101,51 @@ jobs:
           path: |
             output/*/scalar.md
             output/*/*.svg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: poisson-reports-${{ matrix.os }}
+          path: |
+            output/poisson_*/poisson.md
+            output/poisson_*/iterations.svg
+
+  hypre:
+    name: Pressure solver against hypre (D20)
+    runs-on: ubuntu-latest
+    env:
+      HYPRE_DIR: ${{ github.workspace }}/hypre-install
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Cache the hypre build
+        id: hypre-cache
+        uses: actions/cache@v4
+        with:
+          path: hypre-install
+          key: hypre-v3.2.1-${{ runner.os }}-${{ hashFiles('tools/build_hypre.sh') }}
+      - name: Build hypre (sequential, shared)
+        if: steps.hypre-cache.outputs.cache-hit != 'true'
+        run: tools/build_hypre.sh "$HYPRE_DIR"
+      - run: cargo clippy -p cfdcraft-fv -p cfdcraft-cli --all-targets --locked --features cfdcraft-fv/hypre,cfdcraft-cli/hypre
+      - name: Stage-3 tests including the agreement with hypre
+        run: cargo test --release --locked -p cfdcraft-fv --features hypre --test stage3
+      - name: Poisson studies with hypre as the reference
+        shell: bash
+        run: |
+          cargo build --release --locked -p cfdcraft-cli --features hypre
+          for f in examples/cases/poisson/*_box.toml; do
+            n=$(basename "$f" .toml)
+            target/release/cfdcraft poisson "$f" --solvers amg,amg-double,jacobi,hypre \
+              --backends cpu,cpu-serial --out "output/${n}_hypre"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: poisson-hypre-reports
+          path: |
+            output/*_hypre/poisson.md
+            output/*_hypre/iterations.svg
 
   msrv:
     name: Minimum Rust version
@@ -134,7 +186,7 @@ jobs:
           mpirun --oversubscribe -n 2 target/release/examples/mpi_halo
 
   ptx:
-    name: Single-source GPU kernels compile to PTX (G1 and stage 2)
+    name: Single-source GPU kernels compile to PTX (G1, stages 2 and 3)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
