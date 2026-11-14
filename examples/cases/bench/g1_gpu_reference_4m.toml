@@ -1,0 +1,25 @@
+# The hand-written CUDA reference kernels on a small GPU (2 GB, any NVIDIA
+# GPU the CUDA 12 driver supports, Maxwell and newer). No G1 verdict: the
+# single-source Rust route needs compute capability 7.0 or newer (O13).
+# Checks the CUDA path end to end (driver, NVRTC, transfers) and that the
+# GPU results equal the CPU results bitwise.
+#
+#   cargo build --release -p cfdcraft-cli --features cuda
+#   target/release/cfdcraft bench g1 examples/cases/bench/g1_gpu_reference_4m.toml
+#
+# Needs about 1.4 GB of GPU memory and 2 GB of host memory.
+
+[mesh]
+cells = 4_000_000
+ordering = "natural"
+
+[run]
+backends = ["cuda-reference", "cpu-threads"]
+repeat = 20
+warmup = 3
+device = 0
+tolerance = 1e-12
+
+[output]
+directory = "output/g1_gpu_reference_4m"
+name = "g1"

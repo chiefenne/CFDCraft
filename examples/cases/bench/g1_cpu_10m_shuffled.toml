@@ -1,0 +1,19 @@
+# G1 on the CPU with a randomly numbered mesh: the worst case for caches.
+# Real unstructured meshes after renumbering lie between this case and
+# g1_cpu_10m.toml.
+#
+#   cfdcraft bench g1 examples/cases/bench/g1_cpu_10m_shuffled.toml
+
+[mesh]
+cells = 10_000_000
+ordering = "shuffled"
+seed = 2026
+
+[run]
+backends = ["cpu-threads", "cpu-native"]
+repeat = 10
+warmup = 2
+
+[output]
+directory = "output/g1_cpu_10m_shuffled"
+name = "g1"

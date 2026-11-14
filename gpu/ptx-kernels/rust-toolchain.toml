@@ -1,0 +1,5 @@
+[toolchain]
+channel = "nightly"
+targets = ["nvptx64-nvidia-cuda"]
+components = ["llvm-tools", "llvm-bitcode-linker"]
+profile = "minimal"

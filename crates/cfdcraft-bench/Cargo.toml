@@ -1,0 +1,29 @@
+[package]
+name = "cfdcraft-bench"
+description = "CFDCraft benchmarks: the GPU kernel gate G1 (single-source Rust against hand-written CUDA, and CPU)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+# NVIDIA GPU backends `cuda-reference` and `cuda-rust`. The CUDA driver and
+# NVRTC libraries are loaded at run time, so a build needs no CUDA toolkit.
+cuda = ["dep:cudarc"]
+# Measure the single-source CPU route with bounds-checked loads.
+checked-indexing = ["cfdcraft-kernels/checked-indexing"]
+
+[dependencies]
+cfdcraft-core.workspace = true
+cfdcraft-kernels.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+anyhow = "1"
+cudarc = { workspace = true, optional = true, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-12000"] }
+
+[lints]
+workspace = true

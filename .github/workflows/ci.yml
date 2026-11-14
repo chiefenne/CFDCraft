@@ -1,0 +1,109 @@
+# Continuous integration (D22): CPU build and tests on GitHub's free hosted
+# runners, on every pull request and every push to main. GPU tests run on
+# the maintainer's machine and are not part of these checks.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+  RUSTDOCFLAGS: -D warnings
+
+jobs:
+  lint:
+    name: Format, clippy, docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked
+      # the CUDA backends compile without a CUDA toolkit (driver and NVRTC
+      # are loaded at run time)
+      - run: cargo clippy --workspace --all-targets --locked --features cfdcraft-bench/cuda
+      - run: cargo doc --workspace --no-deps --locked
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --locked
+      - run: cargo test --workspace --locked --release
+      - name: G1 smoke run (CPU backends, results bitwise equal)
+        run: cargo run --release --locked -p cfdcraft-cli -- bench g1 examples/cases/bench/g1_ci_small.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g1-ci-small-${{ matrix.os }}
+          path: output/g1_ci_small/
+
+  msrv:
+    name: Minimum Rust version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.89
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --locked
+
+  mpi:
+    name: MPI, 4 ranks on one machine (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Open MPI (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin libclang-dev
+      - name: Install Open MPI (macOS)
+        if: runner.os == 'macOS'
+        run: brew install open-mpi
+      - run: cargo test -p cfdcraft-parallel --features mpi --locked
+      - run: cargo build --release -p cfdcraft-parallel --features mpi --example mpi_smoke --locked
+      - name: Run with 4 ranks
+        run: mpirun --oversubscribe -n 4 target/release/examples/mpi_smoke
+      - name: Run with 2 ranks
+        run: mpirun --oversubscribe -n 2 target/release/examples/mpi_smoke
+
+  ptx:
+    name: Single-source GPU kernels compile to PTX
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # rustup reads gpu/ptx-kernels/rust-toolchain.toml and installs nightly
+      # with the nvptx64-nvidia-cuda target
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: gpu/ptx-kernels -> ../../target
+      - run: gpu/ptx-kernels/build.sh
+      - run: gpu/ptx-kernels/build.sh sm_86
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g1-ptx
+          path: target/nvptx64-nvidia-cuda/release/cfdcraft_ptx_kernels.ptx

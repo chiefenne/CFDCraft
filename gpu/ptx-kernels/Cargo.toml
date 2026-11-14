@@ -1,0 +1,31 @@
+[package]
+name = "cfdcraft-ptx-kernels"
+description = "G1 single-source route: the cfdcraft-kernels bodies as NVIDIA PTX entry points"
+version = "0.0.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+# Not a member of the main workspace: built with the nightly toolchain for
+# the nvptx64-nvidia-cuda target by build.sh.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+cfdcraft-kernels = { path = "../../crates/cfdcraft-kernels" }
+cfdcraft-core = { path = "../../crates/cfdcraft-core" }
+
+[features]
+checked-indexing = ["cfdcraft-kernels/checked-indexing"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+debug = false
+
+[profile.dev]
+panic = "abort"

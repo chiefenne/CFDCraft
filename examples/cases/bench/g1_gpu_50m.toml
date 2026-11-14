@@ -1,0 +1,19 @@
+# Gate G1 at the upper end of the stage-plan range: 50 million cells.
+# Needs about 20 GB of host memory and 17 GB of GPU memory; reduce
+# mesh.cells to what the GPU holds (each million cells needs about 0.35 GB on
+# the GPU and 0.4 GB on the host).
+#
+#   target/release/cfdcraft bench g1 examples/cases/bench/g1_gpu_50m.toml
+
+[mesh]
+cells = 50_000_000
+ordering = "natural"
+
+[run]
+backends = ["cuda-reference", "cuda-rust"]
+repeat = 20
+warmup = 3
+
+[output]
+directory = "output/g1_gpu_50m"
+name = "g1"
