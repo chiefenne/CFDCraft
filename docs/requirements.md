@@ -10,7 +10,7 @@ Living document, updated after each requirement step. Form taken from the
 - **O** – open requirement step, with the current proposal
 
 Status: requirements engineering in progress. Steps 1 (scope) and 2 (language,
-hardware) answered on 2026-11-14; steps 3 to 7 (turbulence and platform, discretization, mesh input and solvers, case file and output, test cases) answered on 2026-11-14; the stage plan below is a draft for review. No code yet.
+hardware) answered on 2026-11-14; steps 3 to 7 (turbulence and platform, discretization, mesh input and solvers, case file and output, test cases) answered on 2026-11-14; the stage plan was confirmed in order by the maintainer on 2026-11-14 (stage 7 changed to internal flows) and sprays (L12) were added. No code yet.
 
 Terminology: the project says *reacting flows*, not "combustion", everywhere.
 
@@ -149,7 +149,7 @@ needs only scalar AMG) and coupled second.
 
 ## 3. Planned for later
 
-In the order given in step 1.
+Order of work after milestone 1: L1, L2, L12 (sprays, after energy and species because evaporation needs them), L3, L4, L5; L6 to L11 as the need arises.
 
 | ID | Feature | Notes |
 |----|---------|-------|
@@ -163,7 +163,7 @@ In the order given in step 1.
 | L8 | Built-in mesher | Much later; solver first |
 | L9 | Logo in the ArtCraft style | Peregrine falcon, first version in the repository (`assets/logo/cfdcraft.svg`); variants under review |
 | L11 | Coupled pressure-based solver | Second pressure–velocity algorithm on the shared discretization (D19); needs a block AMG |
-| L12 | Discrete droplet sprays (Lagrangian) | Parcels of droplets tracked through the flow: injection models, drag and other forces, turbulent dispersion, breakup, collision, evaporation and heat transfer (with L1 and L2), wall interaction and films, one-way and two-way coupling to the gas phase. Must be parallel: particles migrate between ranks, the load is balanced when particles cluster, kernels run on GPU (D47). Complements the Euler–Euler and VOF multiphase of L3 |
+| L12 | Discrete droplet sprays (Lagrangian) | Droplets are tracked as parcels, each standing for many identical droplets (tracking every droplet is impossible at 100+ million cells). Models in this order of priority: breakup (for example KH-RT), evaporation and heat transfer (with L1 and L2), wall films and wall interaction, collision; injection models, drag and other forces, turbulent dispersion and one-way and two-way coupling to the gas phase come with the first version. Must be parallel: parcels migrate between ranks, the load is balanced when parcels cluster, kernels run on GPU (D47). Complements the Euler–Euler and VOF multiphase of L3 |
 | L10 | Fully compressible high-Mach flow (transonic, supersonic) | After low-Mach variable density (D17) |
 
 
@@ -192,7 +192,7 @@ None yet.
 Steps still to come: verification and validation cases, stage plan.
 
 
-## 7. Stage plan (draft, awaiting the maintainer's review)
+## 7. Stage plan
 
 Milestone 1 is version 1.0: incompressible flow, steady and transient, on
 unstructured 3D meshes (polyhedra), with k-ω SST and the k-ε variants, on
