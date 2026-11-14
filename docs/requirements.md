@@ -238,8 +238,8 @@ NVIDIA GPUs and CPUs, with MPI. Every stage ends with:
   elliptic-relaxation eddy-viscosity turbulence model for CFD*, Int. J. Heat
   Fluid Flow 25, 1047–1051 (2004)
 - M. Popovac, K. Hanjalić, *Compound wall treatment for RANS computation of
-  complex turbulent flows and heat transfer*, Flow, Turbulence and
-  (FTaC) 78, 177–202 (2007)
+  complex turbulent flows and heat transfer*, FTaC (Springer journal) 78,
+  177–202 (2007)
 - M. Popovac, *Robust eddy viscosity turbulence modeling with elliptic
   relaxation and compound wall treatment*, Energies 16(9), 3685 (2023)
 - K. Hanjalić, B. Launder, *Modelling Turbulence in Engineering and the
