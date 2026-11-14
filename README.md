@@ -79,4 +79,6 @@ follow with the first code.
 
 ## Licence
 
-[MIT](LICENSE)
+Distributed under the MIT licence. See [LICENSE](LICENSE) for more information.
+
+<!-- year:start -->2026<!-- year:end --> Andreas Ennemoser – andreas.ennemoser@aon.at
