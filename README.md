@@ -18,6 +18,9 @@
 > There is no solver yet; stage 2 (operators on a scalar equation) is next.
 
 [![CI](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/chiefenne/CFDCraft)](https://github.com/chiefenne/CFDCraft/releases)
+[![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](Cargo.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Goal
 
