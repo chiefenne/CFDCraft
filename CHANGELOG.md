@@ -6,8 +6,9 @@
 |---|---|---|
 | Unreleased | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark (CPU measured; GPU run pending the maintainer's GPU) |
 
-The tag `v0.0` is set when gate G1 has been measured on the GPU and the
-language decision D11 is confirmed or reopened.
+The tag `v0.0` is set on the CPU verdict of gate G1 from the maintainer's
+machine; the GPU verdict stays open until a GPU of compute capability 7.0 or
+newer is available (O13).
 
 ---
 
@@ -48,7 +49,9 @@ Documentation: [gallery](docs/gallery.md), [case catalogue](docs/cases.md),
 Findings:
 
 - The rustc NVPTX target supports compute capability 7.0 (Volta) and newer
-  only; G1 needs such a GPU for the single-source route (O13).
+  only; G1 needs such a GPU for the single-source route (O13). The
+  maintainer's GTX 960 (compute capability 5.2) runs the CPU verdict and the
+  CUDA reference (`g1_gpu_reference_4m.toml`, recipe 2), not the GPU verdict.
 - On the CPU the single-source bodies match hand-written loops once the
   parallel loop uses large enough work packets (64 Ki outputs): with 4 Ki the
   face-flux kernel was about 30 % slower on 10 million cells.

@@ -6,9 +6,10 @@ keys it uses; the keys of the benchmark cases are listed in the
 the [Example gallery](gallery.md).
 
 1. [Build, test and run the G1 benchmark on your CPU](#g1-cpu)
-2. [Run gate G1 on an NVIDIA GPU](#g1-gpu)
-3. [Run the MPI test with several ranks on one machine](#mpi)
-4. [Check a change the way CI does](#ci-local)
+2. [Run G1 on Windows: CPU verdict and the CUDA reference](#g1-windows)
+3. [Run gate G1 on an NVIDIA GPU](#g1-gpu)
+4. [Run the MPI test with several ranks on one machine](#mpi)
+5. [Check a change the way CI does](#ci-local)
 
 ---
 
@@ -36,8 +37,47 @@ Options override the case file: `--cells 2000000`, `--ordering shuffled`,
 
 ---
 
+<a id="g1-windows"></a>
+## 2. Run G1 on Windows: CPU verdict and the CUDA reference
+
+For a Windows PC with any NVIDIA GPU (the maintainer's machine: i7-4790,
+GTX 960). Install Rust with `rustup-init.exe` from https://rustup.rs (it
+offers the Visual Studio C++ build tools if they are missing) and Git. In
+PowerShell:
+
+```
+git clone https://github.com/chiefenne/CFDCraft.git
+cd CFDCraft
+cargo test --workspace --release
+cargo build --release -p cfdcraft-cli
+target\release\cfdcraft info
+target\release\cfdcraft bench g1 examples\cases\bench\g1_cpu_10m.toml
+```
+
+Close other programs first; run the last command twice. It prints
+`G1 cpu-threads against cpu-native: PASS` or `FAIL` and writes
+`output\g1_cpu_10m\g1.md`, `g1.json` and `g1.svg`.
+
+The CUDA reference (needs an up-to-date NVIDIA driver and the CUDA 12
+toolkit from https://developer.nvidia.com/cuda-downloads, for its NVRTC
+library; on the GTX 960 use CUDA 12, because CUDA 13 dropped Maxwell):
+
+```
+cargo build --release -p cfdcraft-cli --features cuda
+target\release\cfdcraft bench backends        # lists cuda-reference
+target\release\cfdcraft bench g1 examples\cases\bench\g1_gpu_reference_4m.toml
+```
+
+The check column must say `bitwise` for every kernel. Send the two `g1.md`
+files; they go into [G1 results](benchmarks/g1.md#maintainers-machine).
+Keys: `run.backends`, `run.threads`, `mesh.cells`.
+
+[↑ back to top](#recipes)
+
+---
+
 <a id="g1-gpu"></a>
-## 2. Run gate G1 on an NVIDIA GPU
+## 3. Run gate G1 on an NVIDIA GPU
 
 Needs the NVIDIA driver, a CUDA 12 toolkit (only its NVRTC library is used,
 for the hand-written reference) and, for the single-source route, a GPU of
@@ -64,7 +104,7 @@ commands in it by hand.
 ---
 
 <a id="mpi"></a>
-## 3. Run the MPI test with several ranks on one machine
+## 4. Run the MPI test with several ranks on one machine
 
 Needs an MPI library and libclang (Ubuntu:
 `sudo apt install libopenmpi-dev openmpi-bin libclang-dev`; macOS:
@@ -84,7 +124,7 @@ exchange) and a reproducible sum that gives the same bits on every rank.
 ---
 
 <a id="ci-local"></a>
-## 4. Check a change the way CI does
+## 5. Check a change the way CI does
 
 ```
 cargo fmt --all --check
