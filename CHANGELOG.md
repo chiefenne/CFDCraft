@@ -12,6 +12,12 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
 
+## Unreleased
+
+- Release workflow (`.github/workflows/release.yml`): creates the tag
+  `v<version>` on `main` and a GitHub release with the changelog section of
+  that version as notes; dry-run by default (recipe 6).
+
 ## 0.0 (2026-11-14) – stage 0: foundations and gate G1
 
 Workspace (`Cargo.toml`, Rust 2024 edition, minimum Rust 1.89):
