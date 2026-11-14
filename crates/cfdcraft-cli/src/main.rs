@@ -89,6 +89,15 @@ fn info() -> Result<()> {
     println!("cpu          {}", cfdcraft_bench::sysinfo::cpu_model());
     println!("threads      {}", rayon::current_num_threads());
     println!("precision    f64 (reference path, D7)");
+    {
+        use cfdcraft_parallel::Communicator as _;
+        let c = cfdcraft_parallel::SerialComm;
+        println!(
+            "ranks        {} ({} communicator; MPI runs start with mpirun)",
+            c.size(),
+            c.name()
+        );
+    }
     let features: Vec<&str> = [
         ("cuda", cfg!(feature = "cuda")),
         ("mpi", cfg!(feature = "mpi")),

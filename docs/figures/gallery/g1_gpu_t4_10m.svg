@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" width="720" height="400" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<rect width="720" height="400" fill="#ffffff"></rect>
+<text x="64" y="22" font-size="15" font-weight="bold" fill="#222">G1 kernel benchmark: effective bandwidth</text>
+<text x="64" y="38" fill="#555">9984600 cells, natural ordering, linux-x86_64, 2026-11-14</text>
+<line x1="64" x2="704" y1="316.0" y2="316.0" stroke="#ddd"></line><text x="58" y="320.0" text-anchor="end" fill="#555">0</text>
+<line x1="64" x2="704" y1="249.0" y2="249.0" stroke="#ddd"></line><text x="58" y="253.0" text-anchor="end" fill="#555">125</text>
+<line x1="64" x2="704" y1="182.0" y2="182.0" stroke="#ddd"></line><text x="58" y="186.0" text-anchor="end" fill="#555">250</text>
+<line x1="64" x2="704" y1="115.0" y2="115.0" stroke="#ddd"></line><text x="58" y="119.0" text-anchor="end" fill="#555">375</text>
+<line x1="64" x2="704" y1="48.0" y2="48.0" stroke="#ddd"></line><text x="58" y="52.0" text-anchor="end" fill="#555">500</text>
+<text transform="translate(16 182.0) rotate(-90)" text-anchor="middle" fill="#333">GB/s</text>
+<rect x="80.0" y="185.0" width="30.0" height="131.0" fill="#0072B2"><title>cuda-reference face-flux: 244.5 GB/s</title></rect>
+<rect x="112.0" y="185.2" width="30.0" height="130.8" fill="#E69F00"><title>cuda-rust face-flux: 244.1 GB/s</title></rect>
+<rect x="144.0" y="312.5" width="30.0" height="3.5" fill="#009E73"><title>cpu-threads face-flux: 6.6 GB/s</title></rect>
+<rect x="176.0" y="309.2" width="30.0" height="6.8" fill="#CC79A7"><title>cpu-native face-flux: 12.7 GB/s</title></rect>
+<text x="144.0" y="334.0" text-anchor="middle" fill="#333">face-flux</text>
+<rect x="240.0" y="179.1" width="30.0" height="136.9" fill="#0072B2"><title>cuda-reference cell-gather: 255.4 GB/s</title></rect>
+<rect x="272.0" y="179.3" width="30.0" height="136.7" fill="#E69F00"><title>cuda-rust cell-gather: 255.1 GB/s</title></rect>
+<rect x="304.0" y="311.8" width="30.0" height="4.2" fill="#009E73"><title>cpu-threads cell-gather: 7.8 GB/s</title></rect>
+<rect x="336.0" y="314.2" width="30.0" height="1.8" fill="#CC79A7"><title>cpu-native cell-gather: 3.4 GB/s</title></rect>
+<text x="304.0" y="334.0" text-anchor="middle" fill="#333">cell-gather</text>
+<rect x="400.0" y="197.7" width="30.0" height="118.3" fill="#0072B2"><title>cuda-reference spmv-csr: 220.7 GB/s</title></rect>
+<rect x="432.0" y="197.7" width="30.0" height="118.3" fill="#E69F00"><title>cuda-rust spmv-csr: 220.7 GB/s</title></rect>
+<rect x="464.0" y="309.6" width="30.0" height="6.4" fill="#009E73"><title>cpu-threads spmv-csr: 12.0 GB/s</title></rect>
+<rect x="496.0" y="309.9" width="30.0" height="6.1" fill="#CC79A7"><title>cpu-native spmv-csr: 11.4 GB/s</title></rect>
+<text x="464.0" y="334.0" text-anchor="middle" fill="#333">spmv-csr</text>
+<rect x="560.0" y="194.2" width="30.0" height="121.8" fill="#0072B2"><title>cuda-reference spmv-sell: 227.2 GB/s</title></rect>
+<rect x="592.0" y="195.4" width="30.0" height="120.6" fill="#E69F00"><title>cuda-rust spmv-sell: 224.9 GB/s</title></rect>
+<rect x="624.0" y="312.5" width="30.0" height="3.5" fill="#009E73"><title>cpu-threads spmv-sell: 6.6 GB/s</title></rect>
+<rect x="656.0" y="312.1" width="30.0" height="3.9" fill="#CC79A7"><title>cpu-native spmv-sell: 7.4 GB/s</title></rect>
+<text x="624.0" y="334.0" text-anchor="middle" fill="#333">spmv-sell</text>
+<rect x="64.0" y="360.0" width="12" height="12" fill="#0072B2"></rect><text x="80.0" y="370.0" fill="#333">cuda-reference</text>
+<rect x="186.0" y="360.0" width="12" height="12" fill="#E69F00"></rect><text x="202.0" y="370.0" fill="#333">cuda-rust</text>
+<rect x="273.0" y="360.0" width="12" height="12" fill="#009E73"></rect><text x="289.0" y="370.0" fill="#333">cpu-threads</text>
+<rect x="374.0" y="360.0" width="12" height="12" fill="#CC79A7"></rect><text x="390.0" y="370.0" fill="#333">cpu-native</text>
+</svg>
