@@ -32,7 +32,7 @@ bytes that must move over the median time. Procedure, numbers and reading:
 | | |
 |---|---|
 | Mesh | periodic box 215 × 215 × 216 = 9 984 600 cells, 29 953 800 faces, natural numbering |
-| Machine | Intel Xeon @ 2.10 GHz, 4 virtual cores (shared cloud machine) |
+| Machine | chart: Intel Xeon @ 2.10 GHz, 4 virtual cores (shared cloud machine); the verdict run on a quiet i9-9900K is in [G1](benchmarks/g1.md#cpu-verdict-imac-i9-9900k-2026-11-14) |
 | Case file | `bench/g1_cpu_10m.toml` |
 
 ```

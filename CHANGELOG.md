@@ -4,15 +4,15 @@
 
 | Version | Stage | Highlights |
 |---|---|---|
-| Unreleased | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; CPU verdict still to be taken on the maintainer's PC |
+| 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
 
-The tag `v0.0` is set when both verdicts of gate G1 are in. The GPU verdict
-is in (Tesla T4, 2026-11-14: PASS); the CPU verdict from the maintainer's
-machine is open (O13).
+Release 0.0 closes stage 0: both verdicts of gate G1 are in (GPU: Tesla T4,
+CPU: i9-9900K, 2026-11-14, both PASS; O13 closed). The Cargo version of the
+crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
 
-## Unreleased – stage 0: foundations and gate G1
+## 0.0 (2026-11-14) – stage 0: foundations and gate G1
 
 Workspace (`Cargo.toml`, Rust 2024 edition, minimum Rust 1.89):
 
@@ -59,6 +59,9 @@ Findings:
   hand-written CUDA C kernels on all four kernels (220–255 GB/s of 320 GB/s),
   in two runs, with results bitwise equal to the CPU. D8: one kernel source;
   D11 stands. The single-source GPU route needs nightly Rust (O14).
+- **G1 CPU verdict, Intel i9-9900K (macOS), 10 million cells: PASS** in two
+  runs: largest time ratio single-source against hand-written Rust loops
+  1.018, results bitwise equal, 20–26 GB/s.
 - The rustc NVPTX target supports compute capability 7.0 (Volta) and newer
   only; G1 needs such a GPU for the single-source route (O13). The
   maintainer's GTX 960 (compute capability 5.2) runs the CPU verdict and the
