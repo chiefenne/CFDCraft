@@ -4,8 +4,8 @@
 //! check, partition and write it; stage 1), `scalar` (steady scalar
 //! transport, verification sweeps, CPU and GPU; stage 2), `poisson` (the
 //! pressure solver study: CG with algebraic multigrid against hypre; stage
-//! 3) and `bench g1` (the GPU kernel gate of stage 0). The flow solver commands follow with the
-//! later stages.
+//! 3), `flow` (steady incompressible laminar flow with SIMPLEC; stage 4)
+//! and `bench g1` (the GPU kernel gate of stage 0).
 
 use anyhow::Result;
 use cfdcraft_bench::G1Case;
@@ -38,6 +38,11 @@ enum Command {
     /// smoothed-aggregation multigrid, Jacobi and hypre, over refinement
     /// levels, on the CPU and the GPU.
     Poisson(PoissonArgs),
+    /// Solve a steady incompressible laminar flow case (stage 4): SIMPLEC
+    /// or SIMPLE with the Rhie–Chow interpolation, on one mesh or an
+    /// order-of-accuracy sweep. `--check` only checks the case file and the
+    /// boundary conditions.
+    Flow(FlowArgs),
     /// Benchmarks.
     Bench {
         #[command(subcommand)]
@@ -133,6 +138,32 @@ struct PoissonArgs {
 }
 
 #[derive(clap::Args)]
+struct FlowArgs {
+    /// Flow case file (TOML).
+    case: PathBuf,
+    /// Check the case file and the boundary conditions, then stop.
+    #[arg(long)]
+    check: bool,
+    /// CPU threads (overrides `run.threads`).
+    #[arg(long)]
+    threads: Option<usize>,
+    /// Refinement levels of `[mesh.generate]`, comma-separated (overrides
+    /// `verification.levels`).
+    #[arg(long, value_delimiter = ',')]
+    levels: Option<Vec<u32>>,
+    /// Largest number of outer iterations (overrides
+    /// `solver.max_iterations`).
+    #[arg(long)]
+    max_iterations: Option<usize>,
+    /// Do not write the VTKHDF file.
+    #[arg(long)]
+    no_vtkhdf: bool,
+    /// Output directory (overrides `output.directory`).
+    #[arg(long)]
+    out: Option<PathBuf>,
+}
+
+#[derive(clap::Args)]
 struct G1Args {
     /// Case file (TOML); every key is optional.
     case: Option<PathBuf>,
@@ -165,6 +196,7 @@ fn main() -> Result<()> {
         Command::Mesh(a) => mesh(a),
         Command::Scalar(a) => scalar(a),
         Command::Poisson(a) => poisson(a),
+        Command::Flow(a) => flow(a),
         Command::Bench {
             bench: Bench::Backends,
         } => {
@@ -296,6 +328,30 @@ fn scalar(a: ScalarArgs) -> Result<()> {
         );
     }
     println!("wrote {}", dir.join("scalar.md").display());
+    check(&rep)
+}
+
+fn flow(a: FlowArgs) -> Result<()> {
+    use cfdcraft_flow::case::{FlowCase, check, check_case, output_dir, run};
+    let mut case = FlowCase::from_file(&a.case)?;
+    if a.threads.is_some() {
+        case.run.threads = a.threads;
+    }
+    if let Some(l) = a.levels {
+        case.verification.levels = l;
+    }
+    if let Some(n) = a.max_iterations {
+        case.solver.max_iterations = n;
+    }
+    if a.no_vtkhdf {
+        case.output.vtkhdf = false;
+    }
+    if a.check {
+        return check_case(&case, &a.case, |l| println!("{l}"));
+    }
+    let (name, dir) = output_dir(&case, &a.case, a.out);
+    let rep = run(&case, &name, &dir, |l| println!("{l}"))?;
+    println!("wrote {}", dir.join("flow.md").display());
     check(&rep)
 }
 

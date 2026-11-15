@@ -9,6 +9,7 @@ with VTK (the library under ParaView), off screen.
 --top   look along -z (2D meshes, one cell thick)
 --half  remove the cells above the mid plane z = zc (use with --top)
 --crop X0 X1 Y0 Y1   keep only the cells inside this x-y window
+--no-edges  do not draw the cell edges (fine meshes, flow fields)
 """
 import argparse
 import vtk
@@ -25,6 +26,7 @@ ap.add_argument("--title", default="")
 ap.add_argument("--size", default="900x700")
 ap.add_argument("--range", nargs=2, type=float, default=None)
 ap.add_argument("--categorical", action="store_true")
+ap.add_argument("--no-edges", action="store_true")
 a = ap.parse_args()
 
 r = vtk.vtkHDFReader()
@@ -118,7 +120,8 @@ act = vtk.vtkActor()
 act.SetMapper(m)
 if not a.field:
     act.GetProperty().SetColor(0.80, 0.87, 0.97)
-act.GetProperty().EdgeVisibilityOn()
+if not a.no_edges:
+    act.GetProperty().EdgeVisibilityOn()
 act.GetProperty().SetEdgeColor(0.12, 0.12, 0.16)
 act.GetProperty().SetLineWidth(1.0)
 ren.AddActor(act)

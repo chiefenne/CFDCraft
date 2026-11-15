@@ -1,0 +1,57 @@
+# Lid-driven cavity at Re = 100 on 64 x 64 hexahedra (stage 4).
+#
+#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/cavity_re100.toml
+#
+# Unit square cavity, the lid (ymax) slides at 1 m/s, the other walls are at
+# rest; ρ = 1 kg/m³, μ = 0.01 Pa s, so Re = ρ U L / μ = 100. One cell layer
+# with symmetry planes front and back. No boundary fixes the pressure, so a
+# reference cell holds it (the check says so). The velocity on the two
+# centre lines is compared with Ghia, Ghia & Shin (1982); the run fails if
+# the largest deviation exceeds 2 % of the lid speed.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.015625]
+cells = [64, 64, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+relaxation_velocity = 0.9
+tolerance = 1e-8
+max_iterations = 3000
+
+[verification]
+reference = "ghia-re100"
+reference_tolerance = 0.02
+lid_velocity = 1.0
+require_convergence = true
+
+[[output.lines]]
+name = "vertical"            # u along x = 0.5
+from = [0.5, 0.0, 0.0078125]
+to = [0.5, 1.0, 0.0078125]
+[[output.lines]]
+name = "horizontal"          # v along y = 0.5
+from = [0.0, 0.5, 0.0078125]
+to = [1.0, 0.5, 0.0078125]

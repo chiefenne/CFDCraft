@@ -6,6 +6,7 @@ members = [
     "crates/cfdcraft-parallel",
     "crates/cfdcraft-mesh",
     "crates/cfdcraft-fv",
+    "crates/cfdcraft-flow",
     "crates/cfdcraft-bench",
     "crates/cfdcraft-cli",
 ]
@@ -14,7 +15,7 @@ members = [
 exclude = ["gpu/ptx-kernels"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
@@ -22,12 +23,13 @@ repository = "https://github.com/chiefenne/CFDCraft"
 authors = ["Andreas Ennemoser"]
 
 [workspace.dependencies]
-cfdcraft-core = { path = "crates/cfdcraft-core", version = "0.3.0" }
-cfdcraft-kernels = { path = "crates/cfdcraft-kernels", version = "0.3.0" }
-cfdcraft-parallel = { path = "crates/cfdcraft-parallel", version = "0.3.0" }
-cfdcraft-mesh = { path = "crates/cfdcraft-mesh", version = "0.3.0", default-features = false }
-cfdcraft-fv = { path = "crates/cfdcraft-fv", version = "0.3.0", default-features = false }
-cfdcraft-bench = { path = "crates/cfdcraft-bench", version = "0.3.0" }
+cfdcraft-core = { path = "crates/cfdcraft-core", version = "0.4.0" }
+cfdcraft-kernels = { path = "crates/cfdcraft-kernels", version = "0.4.0" }
+cfdcraft-parallel = { path = "crates/cfdcraft-parallel", version = "0.4.0" }
+cfdcraft-mesh = { path = "crates/cfdcraft-mesh", version = "0.4.0", default-features = false }
+cfdcraft-fv = { path = "crates/cfdcraft-fv", version = "0.4.0", default-features = false }
+cfdcraft-flow = { path = "crates/cfdcraft-flow", version = "0.4.0", default-features = false }
+cfdcraft-bench = { path = "crates/cfdcraft-bench", version = "0.4.0" }
 rayon = "1.12"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }

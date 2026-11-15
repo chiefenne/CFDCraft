@@ -509,6 +509,14 @@ impl Backend for CpuBackend {
         Ok(self.val.clone())
     }
 
+    fn set_matrix(&mut self, val: &[f64]) -> anyhow::Result<()> {
+        anyhow::ensure!(val.len() == self.val.len(), "set_matrix: wrong length");
+        self.val.copy_from_slice(val);
+        let dinv = diagonal_inverse(&self.d, val);
+        self.vecs[V::Dinv.index()] = dinv;
+        Ok(())
+    }
+
     fn discretisation(&self) -> Option<&Discretisation> {
         Some(&self.d)
     }
@@ -594,4 +602,11 @@ impl LevelOps for CpuBackend {
         with_amg!(self, a => a.prolong(pool, l));
         Ok(())
     }
+}
+
+/// 1 / diagonal of a matrix in the sliced-ELL slots of `d` (slot 0).
+pub(crate) fn diagonal_inverse(d: &Discretisation, val: &[f64]) -> Vec<f64> {
+    (0..d.n_cells)
+        .map(|c| 1.0 / val[d.sell.pos(c, 0)])
+        .collect()
 }

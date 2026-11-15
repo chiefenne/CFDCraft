@@ -22,6 +22,9 @@ the [Example gallery](gallery.md).
 15. [Study the pressure solver on a Poisson problem](#poisson-study)
 16. [Run the pressure solver on an NVIDIA GPU against hypre](#poisson-gpu) (also: free Colab T4)
 17. [Build hypre and compare with it](#hypre)
+18. [Verify the flow solver on Couette and Poiseuille flow](#flow-verification)
+19. [Run the lid-driven cavity and compare with Ghia et al.](#flow-cavity)
+20. [Set up the boundary conditions of a flow case](#flow-boundaries)
 
 ---
 
@@ -533,5 +536,137 @@ against hypre's solution, and the run fails above `study.max_difference`
 (1e-6). hypre runs on one CPU thread; compare its times with the
 `cpu-serial` rows. BoomerAMG settings: `[hypre]` in the case file
 ([keys](cases.md#poisson-case-file-keys)).
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="flow-verification"></a>
+## 18. Verify the flow solver on Couette and Poiseuille flow
+
+The exact solutions of stage 4 ([explanation](verification/stage4.md)):
+Couette flow must come out at the iteration error on every mesh type,
+Poiseuille flow with an observed order of 1.8–2.2. Each case checks its own
+result and fails otherwise.
+
+```
+cargo build --release -p cfdcraft-cli
+for m in hex tet poly mixed; do
+  target/release/cfdcraft flow examples/cases/flow/couette_${m}.toml
+done
+for m in hex tet poly mixed; do
+  target/release/cfdcraft flow examples/cases/flow/poiseuille_${m}.toml
+done
+cat output/poiseuille_poly/flow.md          # errors per level, observed order, patches
+# plots: output/poiseuille_poly/convergence.svg, residuals.svg
+```
+
+Keys used: `[analytic]` (`type = "couette"` or `"poiseuille"`),
+`profile = "analytic"` at the velocity inlet, `[verification]` `levels`,
+`expected_order`, `max_error`. More levels or other settings from the
+command line:
+
+```
+target/release/cfdcraft flow examples/cases/flow/poiseuille_hex.toml --levels 0,1,2,3
+target/release/cfdcraft flow examples/cases/flow/poiseuille_hex.toml --threads 1 --max-iterations 8000
+```
+
+The checks as tests (the solving ones in release builds):
+
+```
+cargo test --release -p cfdcraft-flow --test stage4
+```
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="flow-cavity"></a>
+## 19. Run the lid-driven cavity and compare with Ghia et al.
+
+```
+cargo build --release -p cfdcraft-cli
+target/release/cfdcraft flow examples/cases/flow/cavity_re100.toml       # about 5 s
+target/release/cfdcraft flow examples/cases/flow/cavity_re1000.toml      # about 1 min
+target/release/cfdcraft flow examples/cases/flow/cavity_re100_poly3d.toml
+cat output/cavity_re1000/flow.md
+# centre lines against Ghia et al.: output/cavity_re1000/centreline_u.svg, centreline_v.svg
+# velocity and pressure along the lines: line_vertical.csv, line_horizontal.csv
+# wall pressure and shear stress: wall_ymax.csv (lid) and the other walls
+pip install vtk
+python3 tools/render_mesh.py output/cavity_re1000/fields.vtkhdf cavity.png --field speed --top --no-edges
+```
+
+Keys used: `[verification]` `reference = "ghia-re100"` or `"ghia-re1000"`,
+`reference_tolerance` (lid speeds), `lid_velocity`; `[[output.lines]]`
+for the sampling lines. The Reynolds number is ρ U L / μ with the unit
+cavity; the case is refused if it does not match the reference.
+
+Convergence: the outer iterations grow with the mesh and the Reynolds
+number. A larger `relaxation_velocity` (0.9 to 0.95) needs fewer; lower it
+(0.7, or `scheme = "upwind"` for the first iterations) if a run diverges:
+
+```toml
+[solver]
+relaxation_velocity = 0.9
+tolerance = 1e-8
+max_iterations = 10000
+```
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="flow-boundaries"></a>
+## 20. Set up the boundary conditions of a flow case
+
+Every patch of the mesh needs a `[boundary.<patch>]` table. Check a case
+before running it: the check (D30) names each boundary that is missing,
+unknown (with "did you mean"), over-specified or unsuitable, and says what
+to change; `--check` stops after it.
+
+```
+target/release/cfdcraft mesh examples/cases/mesh/hex_2d.toml     # patch names: output/hex_2d/mesh_report.md
+target/release/cfdcraft flow my_case.toml --check
+```
+
+A channel with a known flow rate:
+
+```toml
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]        # or normal_velocity = 1.0, or mass-flow-inlet
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.walls]
+type = "wall"
+```
+
+A pressure-driven flow (the flow rate is a result):
+
+```toml
+[boundary.inlet]
+type = "total-pressure-inlet"
+total_pressure = 10.0
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+```
+
+An enclosed flow (no pressure boundary: the reference cell holds the level):
+
+```toml
+[boundary.lid]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]
+[pressure]
+reference_point = [0.5, 0.5, 0.0]
+reference_value = 0.0
+```
+
+The table of sensible combinations and the cases each one suits is in the
+[case catalogue](cases.md#sensible-combinations-d30); every condition and
+key is listed in [boundary conditions](cases.md#boundary-conditions-d29).
 
 [↑ back to top](#recipes)

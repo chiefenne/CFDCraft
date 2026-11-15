@@ -1,0 +1,28 @@
+[package]
+name = "cfdcraft-flow"
+description = "CFDCraft incompressible flow solver: SIMPLEC with Rhie–Chow interpolation on polyhedral meshes, boundary conditions with a combination check, the flow case file, log and CSV output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["hdf5"]
+# VTKHDF output of the fields (HDF5 built from source).
+hdf5 = ["cfdcraft-fv/hdf5", "cfdcraft-mesh/hdf5"]
+
+[dependencies]
+cfdcraft-core.workspace = true
+cfdcraft-kernels.workspace = true
+cfdcraft-mesh.workspace = true
+cfdcraft-fv.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+anyhow = "1"
+
+[lints]
+workspace = true
