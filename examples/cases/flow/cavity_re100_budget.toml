@@ -1,0 +1,68 @@
+# Lid-driven cavity at Re = 100 with a budget (stage 5, D83): the case of
+# cavity_re100.toml with [run.limits], the way a script or an agent runs it.
+#
+#   cargo run --release -p foehncraft-cli -- --json flow examples/cases/flow/cavity_re100_budget.toml
+#
+# The run converges in about 440 SIMPLEC iterations, well inside the
+# limits, and ends with exit code 0. Each limit, when reached, stops the run
+# with its restart file and results, exit code 3 and the code of the limit
+# in result.json (RUN003 wall time, RUN004 iterations, RUN005 output), so
+# that a tighter budget can be tried and continued:
+#
+#   foehn --json flow cavity_re100_budget.toml --set run.limits.max_iterations=300   # exit 3, RUN004
+#   foehn --json flow cavity_re100_budget.toml --restart latest                     # continues, exit 0
+#
+# The continuation is bitwise the run without the stop. Recipe 26 shows
+# the whole contract for scripts and agents.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.015625]
+cells = [64, 64, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+relaxation_velocity = 0.9
+tolerance = 1e-8
+max_iterations = 3000
+
+[run.limits]
+max_wall_time = 600.0          # s
+max_iterations = 2000          # outer iterations
+max_output = 50e6              # bytes in the output directory
+
+[verification]
+reference = "ghia-re100"
+reference_tolerance = 0.02
+lid_velocity = 1.0
+require_convergence = true
+
+[[output.lines]]
+name = "vertical"            # u along x = 0.5
+from = [0.5, 0.0, 0.0078125]
+to = [0.5, 1.0, 0.0078125]
+[[output.lines]]
+name = "horizontal"          # v along y = 0.5
+from = [0.0, 0.5, 0.0078125]
+to = [1.0, 0.5, 0.0078125]

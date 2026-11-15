@@ -39,6 +39,10 @@ pub const RUNTIME_KEYS: &[&str] = &[
     "run.restart_at",
     "run.restart_final",
     "run.reread_every",
+    "run.limits.max_wall_time",
+    "run.limits.max_steps",
+    "run.limits.max_iterations",
+    "run.limits.max_output",
     "solver.max_iterations",
     "solver.tolerance",
     "solver.relaxation_velocity",
@@ -174,7 +178,7 @@ fn show(v: Option<&toml::Value>) -> String {
 /// `current`. An unreadable or invalid file is an error (the caller keeps
 /// `current`).
 pub fn reread(path: &Path, current: &FlowCase) -> Result<Reread> {
-    let new = FlowCase::from_file(path)?;
+    let new = FlowCase::from_file_with(path, &current.overrides)?;
     let old_v = toml::Value::try_from(current)?;
     let new_v = toml::Value::try_from(&new)?;
     let (mut a, mut b) = (BTreeMap::new(), BTreeMap::new());
@@ -198,6 +202,7 @@ pub fn reread(path: &Path, current: &FlowCase) -> Result<Reread> {
     }
     let mut case: FlowCase = merged.try_into()?;
     case.source = current.source.clone();
+    case.overrides = current.overrides.clone();
     case.validate()?;
     Ok(Reread {
         case,

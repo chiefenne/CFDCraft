@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 460" width="640" height="460" font-family="Helvetica, Arial, sans-serif" font-size="12">
+<rect width="640" height="460" fill="#ffffff"/>
+<text x="275.0" y="26" text-anchor="middle" font-size="15">Estimate of foehn flow --check against the run</text>
+<rect x="80" y="50" width="390" height="350" fill="none" stroke="#444"/>
+<line x1="80.0" y1="50" x2="80.0" y2="400" stroke="#e5e5e5"/>
+<line x1="80" y1="400.0" x2="470" y2="400.0" stroke="#e5e5e5"/>
+<text x="80.0" y="418" text-anchor="middle">10 kB</text>
+<text x="72" y="404.0" text-anchor="end">10 kB</text>
+<line x1="158.0" y1="50" x2="158.0" y2="400" stroke="#e5e5e5"/>
+<line x1="80" y1="330.0" x2="470" y2="330.0" stroke="#e5e5e5"/>
+<text x="158.0" y="418" text-anchor="middle">100 kB</text>
+<text x="72" y="334.0" text-anchor="end">100 kB</text>
+<line x1="236.0" y1="50" x2="236.0" y2="400" stroke="#e5e5e5"/>
+<line x1="80" y1="260.0" x2="470" y2="260.0" stroke="#e5e5e5"/>
+<text x="236.0" y="418" text-anchor="middle">1 MB</text>
+<text x="72" y="264.0" text-anchor="end">1 MB</text>
+<line x1="314.0" y1="50" x2="314.0" y2="400" stroke="#e5e5e5"/>
+<line x1="80" y1="190.0" x2="470" y2="190.0" stroke="#e5e5e5"/>
+<text x="314.0" y="418" text-anchor="middle">10 MB</text>
+<text x="72" y="194.0" text-anchor="end">10 MB</text>
+<line x1="392.0" y1="50" x2="392.0" y2="400" stroke="#e5e5e5"/>
+<line x1="80" y1="120.0" x2="470" y2="120.0" stroke="#e5e5e5"/>
+<text x="392.0" y="418" text-anchor="middle">100 MB</text>
+<text x="72" y="124.0" text-anchor="end">100 MB</text>
+<line x1="470.0" y1="50" x2="470.0" y2="400" stroke="#e5e5e5"/>
+<line x1="80" y1="50.0" x2="470" y2="50.0" stroke="#e5e5e5"/>
+<text x="470.0" y="418" text-anchor="middle">1 GB</text>
+<text x="72" y="54.0" text-anchor="end">1 GB</text>
+<line x1="80.0" y1="400.0" x2="470.0" y2="50.0" stroke="#888"/>
+<line x1="80.0" y1="394.5" x2="463.8" y2="50.0" stroke="#888" stroke-dasharray="4 4"/>
+<line x1="86.2" y1="400.0" x2="470.0" y2="55.5" stroke="#888" stroke-dasharray="4 4"/>
+<circle cx="326.7" cy="178.3" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="164.4" cy="322.8" r="4" fill="#d9822b" fill-opacity="0.85"/>
+<circle cx="139.7" cy="345.1" r="4" fill="#2e9e5b" fill-opacity="0.85"/>
+<circle cx="386.8" cy="124.8" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="379.6" cy="130.2" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="355.9" cy="151.2" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="247.9" cy="247.0" r="4" fill="#d9822b" fill-opacity="0.85"/>
+<circle cx="246.6" cy="249.8" r="4" fill="#2e9e5b" fill-opacity="0.85"/>
+<circle cx="392.0" cy="117.4" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="271.6" cy="225.6" r="4" fill="#d9822b" fill-opacity="0.85"/>
+<circle cx="296.2" cy="205.1" r="4" fill="#2e9e5b" fill-opacity="0.85"/>
+<circle cx="384.0" cy="126.8" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="319.0" cy="185.3" r="4" fill="#d9822b" fill-opacity="0.85"/>
+<circle cx="262.7" cy="236.7" r="4" fill="#2e9e5b" fill-opacity="0.85"/>
+<circle cx="431.6" cy="83.0" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="373.1" cy="136.7" r="4" fill="#d9822b" fill-opacity="0.85"/>
+<circle cx="318.5" cy="187.1" r="4" fill="#2e9e5b" fill-opacity="0.85"/>
+<circle cx="404.5" cy="108.7" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="306.7" cy="194.2" r="4" fill="#d9822b" fill-opacity="0.85"/>
+<circle cx="306.9" cy="195.7" r="4" fill="#2e9e5b" fill-opacity="0.85"/>
+<circle cx="367.0" cy="143.1" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="277.3" cy="224.4" r="4" fill="#2e9e5b" fill-opacity="0.85"/>
+<circle cx="357.7" cy="151.2" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="247.9" cy="247.0" r="4" fill="#d9822b" fill-opacity="0.85"/>
+<circle cx="263.7" cy="236.6" r="4" fill="#2e9e5b" fill-opacity="0.85"/>
+<circle cx="359.1" cy="151.2" r="4" fill="#1f6fb4" fill-opacity="0.85"/>
+<circle cx="248.7" cy="246.3" r="4" fill="#d9822b" fill-opacity="0.85"/>
+<circle cx="263.7" cy="236.6" r="4" fill="#2e9e5b" fill-opacity="0.85"/>
+<text x="275.0" y="444" text-anchor="middle">measured</text>
+<text x="18" y="225.0" text-anchor="middle" transform="rotate(-90 18 225.0)">estimated</text>
+<circle cx="490" cy="66" r="4" fill="#1f6fb4"/>
+<text x="500" y="70">peak memory</text>
+<circle cx="490" cy="88" r="4" fill="#d9822b"/>
+<text x="500" y="92">fields.vtkhdf</text>
+<circle cx="490" cy="110" r="4" fill="#2e9e5b"/>
+<text x="500" y="114">restart.h5</text>
+<line x1="482" y1="132" x2="498" y2="132" stroke="#888" stroke-dasharray="4 4"/>
+<text x="500" y="136">± 20 %</text>
+</svg>

@@ -23,6 +23,8 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 anyhow = "1"
+schemars.workspace = true
+sha2.workspace = true
 hdf5-metno = { workspace = true, optional = true }
 
 [lints]

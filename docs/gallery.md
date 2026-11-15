@@ -27,6 +27,7 @@ All commands run from the repository root. Case files are in
 | 15 | [Cylinder in a channel: the Schäfer & Turek benchmark](#cylinder) | 5 | built-in O-grid, steady Re 20, vortex street at Re 100, adaptive time step, force coefficients |
 | 16 | [The flow loop on a GPU](#gpu-flow) | 5 | single-source flow kernels, CPU = GPU bitwise, time per cell on a Tesla T4 |
 | 17 | [Adjoint-ready kernels: derivatives and checkpointing](#adjoint-ready) | 5 | dual numbers through the kernel bodies, transposed matrices, binomial checkpointing |
+| 18 | [A run that a program can drive](#run-contract) | 5 | `--json`, exit codes, `--set`, limits, signals, `--restart latest`, diagnostic codes, estimate before the run, byte-identical files |
 
 ---
 
@@ -668,6 +669,61 @@ the snapshots.
 cargo test --release -p foehncraft-flow --test adjoint -- --nocapture   # Jacobians, one line per kernel
 cargo test --release -p foehncraft-flow --lib -- adjoint_tests checkpoint   # transposed matrices, checkpointing
 python3 tools/checkpoint_chart.py checkpoint_steps.svg
+```
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="run-contract"></a>
+## 18. A run that a program can drive
+
+![Memory and file sizes estimated by foehn flow --check against eleven runs](figures/gallery/estimate.svg)
+
+A parametric study, a batch job or an agent drives `foehn` without
+reading its log: it sets keys with `--set`, reads one JSON object, acts on
+the exit code and continues a stopped run with `--restart latest`. Before
+it starts a run, `--check` tells it what the run will cost. The chart
+shows that estimate against eleven runs of the catalogue, from 128 to
+28 227 cells, hexahedra to polyhedra: peak memory within 6 %, field and
+restart files within 9 %. The memory model is a base of 14 MB plus
+1960 bytes per interior face and 710 per boundary face.
+
+```
+$ foehn --json flow cavity_re100_budget.toml --set run.limits.max_iterations=300; echo "exit $?"
+{
+  "format": "foehncraft.result",
+  "format_version": "1.0",
+  "status": "stopped",
+  "exit_code": 3,
+  "stop": { "code": "RUN004", "kind": "iterations", "message": "stopped at the limit of 300 outer iterations ([run.limits] max_iterations)" },
+  ...
+exit 3
+$ foehn --json flow cavity_re100_budget.toml --restart latest; echo "exit $?"
+  ...
+  "status": "finished",
+exit 0
+```
+
+| Check | Result |
+|---|---|
+| Stop at a limit or on SIGTERM, then `--restart latest` | fields and restart file bitwise equal to the run without the stop (steady and transient) |
+| Two identical runs | `result.json`, `fields.vtkhdf`, `restart.h5` and every CSV byte for byte the same; only the log, the reports and `run.jsonl` (timings) differ |
+| Exit codes | 0 finished, 1 error (as a JSON object with code and key), 2 failed check (`RUN006`, `RUN007`), 3 stopped (`RUN001`–`RUN005`) |
+| A typo in the case file | `CASE002` with the key `mesh.generate.cels`, line 4, column 1 and "did you mean `cells`" |
+| The 19 flow cases of the catalogue, this build against main | every field, CSV and JSON value bitwise equal; the resolved case gains the empty `[run.limits]` table |
+
+| | |
+|---|---|
+| Code | `foehncraft_flow::engine` (run, check, estimate, limits, result, run record), `diag` (codes), `schema` (JSON Schema), `foehncraft-cli` |
+| Tests | `crates/foehncraft-cli/tests/run_contract.rs`, unit tests in `engine.rs`, `diag.rs`, `schema.rs` |
+| Formats | [interfaces.md](interfaces.md), [keys.md](keys.md) |
+| Case | `examples/cases/flow/cavity_re100_budget.toml` |
+| Recipe | [26](recipes.md#run-contract) |
+
+```
+cargo test --release -p foehncraft-cli --test run_contract
+python3 tools/estimate_chart.py estimate.svg
 ```
 
 [↑ back to top](#example-gallery)

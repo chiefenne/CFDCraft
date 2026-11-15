@@ -17,6 +17,26 @@ at 02:07 Vienna time and pull requests with the label `full-ci` run the full
 tier: `release` profile, debug tests, every case including the cylinder at
 Re 100, and the slow tests. One summary check, "CI OK".
 
+**Run contract for scripts and agents (stage 5, part 4a).** `foehn flow`
+can be driven by a program: `--set key=value` overrides (TOML values),
+global `--json` (one JSON object on standard output, human text on
+standard error) and `--quiet`, exit codes 0 finished, 1 error, 2 failed
+checks, 3 stopped; SIGUSR1 writes a restart file, SIGTERM, SIGINT and
+SIGUSR2 stop cleanly, `--restart latest` continues bitwise; budgets in
+`[run.limits]` (wall time, steps or iterations, output volume). Every run
+writes `result.json` (status, overrides, provenance with commit and case
+hash, diagnostics, results, SHA-256 of the outputs; byte-identical between
+identical runs) and the run record `run.jsonl`. 41 stable diagnostic
+codes with key paths, locations and `--set` fixes; `foehn schema` prints
+the JSON Schema of the case file, `docs/keys.md` is generated from it;
+`--check` estimates memory, output and wall time; `--read-root` and
+`--write-root` confine the files; CSV, VTKHDF and restart files describe
+themselves; HDF5 files have no timestamps. The CLI is a thin layer on
+`foehncraft_flow::engine`; `foehncraft-flow` without default features is
+checked C-free in CI. Formats and codes: `docs/interfaces.md`; recipe 26,
+gallery 18, case `cavity_re100_budget.toml`. No result changes: the
+catalogue gives bitwise the fields of main.
+
 ## Summary
 
 | Version | Stage | Highlights |

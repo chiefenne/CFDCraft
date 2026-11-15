@@ -44,7 +44,9 @@ pub use setup::{Hierarchy, HierarchyInfo, build};
 use serde::{Deserialize, Serialize};
 
 /// Aggregation flavour.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Aggregation {
     /// Smoothed aggregation (Vaněk, Mandel, Brezina 1996).
@@ -55,7 +57,9 @@ pub enum Aggregation {
 }
 
 /// Smoother of the V-cycle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Smoother {
     /// Chebyshev polynomial in D⁻¹A.
@@ -66,7 +70,9 @@ pub enum Smoother {
 }
 
 /// Precision of the hierarchy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Precision {
     /// Hierarchy in float32, Krylov iteration in float64 (D37).
@@ -87,7 +93,7 @@ impl Precision {
 }
 
 /// `[solver.amg]` settings.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct AmgSettings {
     /// Smoothed or plain aggregation.

@@ -47,7 +47,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Cell type of a generated mesh.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Kind {
     /// Hexahedra.
@@ -74,7 +76,7 @@ impl Kind {
 }
 
 /// Grading of one direction.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Grading {
     /// Ratio of the last to the first interval of the base mesh (with
@@ -130,7 +132,7 @@ impl Grading {
 }
 
 /// Specification of a generated box mesh.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BoxSpec {
     /// Cell type.
@@ -163,7 +165,7 @@ pub struct BoxSpec {
 }
 
 /// Grading of the three directions.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GradingSpec {
     /// x direction.

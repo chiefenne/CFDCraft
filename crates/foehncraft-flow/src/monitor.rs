@@ -81,20 +81,22 @@ pub struct History {
 }
 
 impl History {
-    /// A history `name` in `dir` with `header`; with `continue_after` the
-    /// existing rows up to that step (first column) are kept.
+    /// A history `name` in `dir` with the comment lines `preamble` (D75)
+    /// and the column `header`; with `continue_after` the existing rows up
+    /// to that step (first column) are kept.
     pub fn new(
         dir: &Path,
         name: &str,
+        preamble: &str,
         header: &str,
         continue_after: Option<usize>,
     ) -> Result<Self> {
         let path = dir.join(name);
-        let mut text = format!("{header}\n");
+        let mut text = format!("{preamble}{header}\n");
         if let Some(n) = continue_after
             && let Ok(old) = std::fs::read_to_string(&path)
         {
-            let mut lines = old.lines();
+            let mut lines = old.lines().skip_while(|l| l.starts_with('#'));
             if lines.next() == Some(header) {
                 for l in lines {
                     let step = l.split(',').next().and_then(|v| v.parse::<usize>().ok());

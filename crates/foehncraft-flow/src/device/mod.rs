@@ -345,6 +345,16 @@ pub fn register_gpu(name: &'static str, f: GpuFactory) {
     let _ = GPU.set((name, f));
 }
 
+/// The flow backends of this build: `cpu`, and the GPU backend when one is
+/// registered.
+pub fn available() -> Vec<&'static str> {
+    let mut v = vec!["cpu"];
+    if let Some((n, _)) = GPU.get() {
+        v.push(n);
+    }
+    v
+}
+
 /// Creates a device: `cpu`, or `cuda` when the build registered it (`ptx`
 /// names its kernel module, from `gpu/ptx-kernels`).
 pub fn create(name: &str, s: &Setup, ptx: &std::path::Path) -> Result<Box<dyn FlowDevice>> {

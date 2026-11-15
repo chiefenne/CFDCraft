@@ -46,7 +46,9 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 /// Time integration (D28).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum TimeScheme {
     /// First-order backward differences (backward Euler).

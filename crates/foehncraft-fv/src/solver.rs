@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
 /// Convection scheme (D25).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Scheme {
     /// First-order upwind.
@@ -24,7 +26,9 @@ pub enum Scheme {
 }
 
 /// Limiter of the case file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum LimiterKind {
     /// No limiter.
@@ -49,7 +53,9 @@ pub enum LinearSolver {
 }
 
 /// Preconditioner of the linear solves.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Preconditioner {
     /// Diagonal (Jacobi).

@@ -35,12 +35,15 @@ foehncraft-cuda = { path = "crates/foehncraft-cuda", version = "0.4.0" }
 rayon = "1.12"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["preserve_order"] }
 toml = "1.2"
 mpi = "0.8"
 hdf5-metno = { version = "0.15", features = ["static"] }
 metis = "0.2"
 cudarc = { version = "0.19", default-features = false }
+schemars = "1.2"
+sha2 = "0.11"
+signal-hook = "0.4"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
