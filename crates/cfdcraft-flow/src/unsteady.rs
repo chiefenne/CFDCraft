@@ -797,7 +797,15 @@ fn run_one<F: FnMut(&str)>(
                 rp.outer,
                 r.pressure_iterations
             ));
+            // the histories reach the disk with every log line, so a run
+            // that is killed keeps them up to there
             history.flush()?;
+            if let Some(f) = forces.as_mut() {
+                f.flush()?;
+            }
+            if let Some(f) = probe_csv.as_mut() {
+                f.flush()?;
+            }
         }
         let req = control.check(n, case.run.reread_every);
         let at_monitor = monitors && n.is_multiple_of(case.output.monitor_every);

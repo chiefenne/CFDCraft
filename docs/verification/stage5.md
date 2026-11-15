@@ -24,7 +24,7 @@ requests and are added here. The commands are in
 | Taylor–Green vortex: space order 2 | 16² to 128² cells at Δt = 0.0025 s: 3.02, 2.55, 2.09 | case `taylor_green_space` (fail outside 1.8–2.2) |
 | Order 2 at large time steps | Courant numbers 1.3 to 9 with outer iterations to 1e-9: 1.97, 2.00 | case `taylor_green_cfl10` |
 | Cylinder 2D-1, Re 20 (C_D, C_L, Δp) | on 24 576 cells C_D and Δp inside the reference ranges, C_L 0.4 % below; on 98 304 cells all three inside | case `cylinder_re20` (fails above 0.5 %), test `cylinder_re20_on_the_coarse_mesh` |
-| Cylinder 2D-2, Re 100 (C_D,max, C_L,max, St) | on 6 144 cells C_D,max, St and Δp inside the ranges, C_L,max 1.9 % below; on 24 576 cells see the table below | case `cylinder_re100` (fails above 2.5 %) |
+| Cylinder 2D-2, Re 100 (C_D,max, C_L,max, St) | on 6 144 cells C_D,max, St and Δp inside the ranges, C_L,max 1.9 % below | case `cylinder_re100` (fails above 2.5 %) |
 | A restart continues bit-identically (D42) | BDF2 with the adaptive step, and Crank–Nicolson with outer iterations: every field, old level, the clock and the multigrid matrix of the continued run equal those of the run without the interruption | tests `restart_continues_bit_identically`, `restart_crank_nicolson_outer` |
 | Control files and re-reading (D40) | `.stop` ends a run with its restart file and results; `.result_N` writes the fields at step N; `.read_toml_N` and `reread_every` apply the changed run-time keys and list the rest as not applied | tests `stop_file_ends_the_run`, `result_and_reread_files` |
 | Steady state of the time stepping | the lid-driven cavity at Re 100, time-stepped with BDF2 or Crank–Nicolson at Courant number 6 to the steady state, equals the SIMPLEC solution to 2e-12 (relative); the Rhie–Chow time-step term does not depend on Δt (D27) | case `cavity_re100_transient` (Ghia et al. to 0.44 % / 0.95 %, as stage 4), test `steady_state_of_the_time_stepping_is_the_simplec_solution` |
@@ -107,7 +107,6 @@ St 0.295–0.305, Δp 2.46–2.50 Pa):
 | Cells | Steps | Δt (s) | C_D,max | C_L,max | St | Δp (Pa) | Time |
 |---:|---:|---:|---:|---:|---:|---:|---:|
 | 6 144 | 8 488 | 5.0e-4–1.2e-3 | 3.2319 | 0.9712 | 0.2955 | 2.4819 | 458 s, 1 thread |
-| 24 576 | TBD_R1_STEPS | TBD_R1_DT | TBD_R1_CD | TBD_R1_CL | TBD_R1_ST | TBD_R1_DP | TBD_R1_TIME |
 
 ## Methods
 

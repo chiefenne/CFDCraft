@@ -554,7 +554,6 @@ after the lift maximum.
 | Re 20 | 98 304 | 5.5800 | 0.01060 | | 0.11751 |
 | Re 100, reference | | 3.22–3.24 | 0.99–1.01 | 0.295–0.305 | 2.46–2.50 |
 | Re 100 | 6 144 | 3.2319 | 0.9712 | 0.2955 | 2.4819 |
-| Re 100 | 24 576 | TBD_R1_CD | TBD_R1_CL | TBD_R1_ST | TBD_R1_DP |
 
 ![The O-grid around the cylinder, refine 0](figures/gallery/cylinder_mesh.png)
 

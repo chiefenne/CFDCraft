@@ -12,8 +12,7 @@
 # period of the largest lift. The run fails if a value lies further from its
 # reference range than 2.5 % of the range midpoint: on this coarse mesh
 # (refine 0, 6144 cells, about 8500 steps) C_D,max, St and Δp are inside
-# their ranges and C_L,max is 1.9 % low; docs/verification/stage5.md has the
-# finer meshes.
+# their ranges and C_L,max is 1.9 % low (docs/verification/stage5.md).
 
 [mesh.cylinder]
 refine = 0
