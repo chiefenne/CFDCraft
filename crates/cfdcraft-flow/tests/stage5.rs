@@ -144,7 +144,7 @@ fn restart_continues_bit_identically() {
         16,
         time,
         &format!(
-            "[run]\nrestart = \"{}\"\n[solver]\namg_rebuild = 5",
+            "[run]\nrestart = '{}'\n[solver]\namg_rebuild = 5",
             from.display()
         ),
     );
@@ -176,7 +176,7 @@ fn restart_crank_nicolson_outer() {
     let cont = taylor_green(
         16,
         time,
-        &format!("[run]\nrestart = \"{}\"\n{extra}", from.display()),
+        &format!("[run]\nrestart = '{}'\n{extra}", from.display()),
     );
     let db = out("restart_cn_cont");
     run_in(&cont, "cont", &db);
