@@ -2,11 +2,21 @@
 //! (D85): `FOEHNCRAFT_GIT_COMMIT`, with `-dirty` when the work tree has
 //! uncommitted changes, `unknown` outside a Git checkout. Runs `git` at
 //! build time only; the solver itself starts no processes (D82).
+//!
+//! With hypre linked as a shared library (feature `hypre`), also sets the
+//! rpath of the `foehn` binary to hypre's library directory, which the
+//! build script of `foehncraft-fv` reports.
 
 use std::path::Path;
 use std::process::Command;
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=DEP_FOEHNCRAFT_HYPRE_LIBDIR");
+    if let Ok(dir) = std::env::var("DEP_FOEHNCRAFT_HYPRE_LIBDIR")
+        && std::env::var("CARGO_CFG_WINDOWS").is_err()
+    {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
+    }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let git = root.join(".git");
     if git.is_dir() {
