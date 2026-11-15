@@ -8,8 +8,8 @@
 //! and `bench g1` (the GPU kernel gate of stage 0).
 
 use anyhow::Result;
-use inncraft_bench::G1Case;
 use clap::{Parser, Subcommand};
+use inncraft_bench::G1Case;
 use std::path::PathBuf;
 
 #[derive(Parser)]

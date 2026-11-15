@@ -14,13 +14,13 @@ use crate::amg::cycle::LevelOps;
 use crate::amg::{Hierarchy, Precision, SellMatrix};
 use crate::disc::Discretisation;
 use anyhow::Context as _;
-use inncraft_core::Real;
-use inncraft_core::repro::{BLOCK, combine_block_sums};
 use cudarc::driver::{
     CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceRepr, LaunchConfig,
     PushKernelArg, ValidAsZeroBits,
 };
 use cudarc::nvrtc::Ptx;
+use inncraft_core::Real;
+use inncraft_core::repro::{BLOCK, combine_block_sums};
 use std::path::Path;
 use std::sync::Arc;
 
