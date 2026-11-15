@@ -294,7 +294,9 @@ and run backwards for a discrete adjoint solver (L17: surface
 sensitivities, shape optimisation, adjoint error indicators), at little
 cost if followed from stage 5. This part reviews the kernels of stages 2
 to 5 against its six items and adds what was missing. No result of a run
-changes: the 19 flow cases give bitwise the files of part 2.
+changes: the 20 flow cases of the catalogue that run on the CPU give
+bitwise the files of part 2 (160 files, `tools/compare_runs.py` against
+the build of `main`).
 
 | D59 item | How Foehncraft meets it | Check |
 |---|---|---|
