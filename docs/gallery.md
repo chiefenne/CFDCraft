@@ -538,7 +538,7 @@ vortices; on 98 304 cells the drag and lift coefficients and the pressure
 difference across the cylinder lie inside the reference ranges
 (C_D 5.5800, C_L 0.01060, Δp 0.11751 Pa).
 
-![Vortex street at Re = 100](figures/gallery/cylinder_re100_speed.png)
+![Vortex street at Re = 100, 24 576 cells, t = 8 s](figures/gallery/cylinder_re100_speed.png)
 
 At Re = 100 a vortex street forms. The time step follows a Courant number
 of 0.8; from t = 5 s the run evaluates the largest drag and lift, the
@@ -554,6 +554,7 @@ after the lift maximum.
 | Re 20 | 98 304 | 5.5800 | 0.01060 | | 0.11751 |
 | Re 100, reference | | 3.22–3.24 | 0.99–1.01 | 0.295–0.305 | 2.46–2.50 |
 | Re 100 | 6 144 | 3.2319 | 0.9712 | 0.2955 | 2.4819 |
+| Re 100 | 24 576 | 3.2305 | 0.9847 | 0.3008 | 2.4854 |
 
 ![The O-grid around the cylinder, refine 0](figures/gallery/cylinder_mesh.png)
 

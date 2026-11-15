@@ -798,7 +798,9 @@ python3 tools/render_mesh.py output/cylinder_re20/fields.vtkhdf cylinder.png --f
 ```
 
 The mesh is built in (`[mesh.cylinder]`); `refine = 1` and `2` give 24 576
-and 98 304 cells. On 98 304 cells the steady case needs
+and 98 304 cells. Re 100 with `refine = 1` takes about 40 minutes on two
+cores and brings C_L,max to 0.5 % of its range; with a finer mesh lower the
+first `time_step` (the adaptive step starts from it). On 98 304 cells the steady case needs
 `relaxation_velocity = 0.5` and about 12 000 outer iterations:
 
 ```toml
