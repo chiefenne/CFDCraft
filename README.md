@@ -134,11 +134,11 @@ of the flow around it.
 ## Why the name
 
 **Foehn** (German *Föhn*) is pronounced [føːn]
-[🔊](https://github.com/chiefenne/Foehncraft/raw/main/assets/pronunciation/foehn.mp3) in German, a long "ö" as in
+[🔊](https://github.com/chiefenne/Foehncraft/blob/main/assets/pronunciation/foehn.mp3) in German, a long "ö" as in
 French *feu*, followed by "n"; English speakers say /fɜːn/ ("fern") or /feɪn/. The recordings are by the
 maintainer, a native speaker who grew up in Innsbruck.
 Foehncraft is therefore [ˈføːnkraft]
-[🔊](https://github.com/chiefenne/Foehncraft/raw/main/assets/pronunciation/foehncraft.mp3).
+[🔊](https://github.com/chiefenne/Foehncraft/blob/main/assets/pronunciation/foehncraft.mp3).
 
 The foehn is the warm, dry wind that falls down the lee side of a mountain
 range. Innsbruck, where the maintainer grew up and where the name comes from,
