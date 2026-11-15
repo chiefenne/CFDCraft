@@ -73,6 +73,15 @@ jobs:
             case "$f" in *_gpu.toml) continue;; esac
             cargo run --release --locked -p cfdcraft-cli -- poisson "$f"
           done
+      - name: Flow cases (stage 4; each checks its own results; all on Linux, the quick ones elsewhere)
+        shell: bash
+        run: |
+          for f in examples/cases/flow/*.toml; do
+            if [ "$RUNNER_OS" != "Linux" ]; then
+              case "$f" in *couette_*|*cavity_re100.toml|*cavity_re100_poly3d.toml|*poiseuille_hex.toml|*poiseuille_poly.toml) ;; *) continue;; esac
+            fi
+            cargo run --release --locked -p cfdcraft-cli -- flow "$f"
+          done
       - uses: actions/setup-python@v5
         if: runner.os == 'Linux'
         with:
@@ -87,6 +96,7 @@ jobs:
         run: |
           cargo test -p cfdcraft-mesh --no-default-features --locked
           cargo test -p cfdcraft-fv --no-default-features --locked
+          cargo test -p cfdcraft-flow --no-default-features --locked
       - uses: actions/upload-artifact@v4
         with:
           name: g1-ci-small-${{ matrix.os }}
@@ -107,6 +117,15 @@ jobs:
           path: |
             output/poisson_*/poisson.md
             output/poisson_*/iterations.svg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flow-reports-${{ matrix.os }}
+          path: |
+            output/couette_*/flow.md
+            output/poiseuille_*/flow.md
+            output/poiseuille_*/convergence.svg
+            output/cavity_*/flow.md
+            output/cavity_*/*.svg
 
   hypre:
     name: Pressure solver against hypre (D20)

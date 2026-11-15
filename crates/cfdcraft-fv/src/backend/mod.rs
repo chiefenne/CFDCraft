@@ -164,6 +164,10 @@ pub trait Backend: LevelOps {
     /// The assembled matrix values in the sliced-ELL slots of the
     /// discretisation (for the multigrid setup on the host).
     fn matrix_values(&mut self) -> anyhow::Result<Vec<f64>>;
+    /// Replaces the matrix by values in the sliced-ELL slots of the
+    /// discretisation (assembled elsewhere, e.g. by the flow solver) and sets
+    /// `Dinv` from its diagonal (slot 0).
+    fn set_matrix(&mut self, val: &[f64]) -> anyhow::Result<()>;
     /// Stores a multigrid hierarchy on the device, in its precision.
     fn amg_load(&mut self, h: &Hierarchy) -> anyhow::Result<()>;
     /// The host copy of the discretisation.

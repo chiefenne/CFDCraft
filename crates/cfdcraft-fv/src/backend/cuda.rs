@@ -870,6 +870,17 @@ impl Backend for CudaBackend {
         Ok(self.stream.clone_dtoh(&self.d.val)?)
     }
 
+    fn set_matrix(&mut self, val: &[f64]) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            val.len() == self.host.sell.stored(),
+            "set_matrix: wrong length"
+        );
+        let s = self.stream.clone();
+        s.memcpy_htod(val, &mut self.d.val)?;
+        let dinv = super::cpu::diagonal_inverse(&self.host, val);
+        self.upload(V::Dinv, &dinv)
+    }
+
     fn discretisation(&self) -> Option<&Discretisation> {
         Some(&self.host)
     }

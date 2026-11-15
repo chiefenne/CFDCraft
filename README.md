@@ -10,18 +10,20 @@
 
 ---
 
-> **Status: stage 3 done (pressure solver, release 0.3).** The
+> **Status: stage 4 done (laminar steady flow, release 0.4).** The
 > requirements are in [docs/requirements.md](docs/requirements.md). The code
 > so far is the workspace, continuous integration, the GPU kernel benchmark
 > that decided the GPU backend ([G1](docs/benchmarks/g1.md)), the
 > polyhedral mesh (Gmsh reader, test mesher, quality report, partitioning,
-> VTKHDF output) and the finite-volume operators on a scalar transport
-> equation, on the CPU and the GPU: least-squares gradients, limiters,
-> convection and diffusion, reproducible assembly and BiCGStab
-> ([stage 2](docs/verification/stage2.md)) and the pressure solver: aggregation
-> AMG with CG in mixed precision, with hypre as the reference
-> ([stage 3](docs/verification/stage3.md)). The flow solver starts with
-> stage 4.
+> VTKHDF output), the finite-volume operators on a scalar transport
+> equation on the CPU and the GPU ([stage 2](docs/verification/stage2.md)),
+> the pressure solver: aggregation AMG with CG in mixed precision, with
+> hypre as the reference ([stage 3](docs/verification/stage3.md)), and the
+> first flow solver: steady incompressible laminar flow with SIMPLEC, the
+> Rhie–Chow interpolation and checked boundary conditions, verified on
+> Couette, Poiseuille and the lid-driven cavity
+> ([stage 4](docs/verification/stage4.md)). Transient flow follows with
+> stage 5.
 
 [![CI](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/CFDCraft)](https://github.com/chiefenne/CFDCraft/releases)
@@ -70,6 +72,7 @@ target/release/cfdcraft bench g1 examples/cases/bench/g1_ci_small.toml
 target/release/cfdcraft mesh examples/cases/mesh/poly_partition.toml
 target/release/cfdcraft scalar examples/cases/scalar/mms_poly_box.toml
 target/release/cfdcraft poisson examples/cases/poisson/poisson_poly_box.toml
+target/release/cfdcraft flow examples/cases/flow/cavity_re100.toml
 ```
 
 ## Documentation
@@ -77,20 +80,21 @@ target/release/cfdcraft poisson examples/cases/poisson/poisson_poly_box.toml
 | Kind | What it is for | Where |
 |---|---|---|
 | Tutorial | a first mesh, end to end, in about ten minutes | [docs/tutorial.md](docs/tutorial.md) |
-| How-to | steps for one task: build, run, check, partition, rerun G1, order of accuracy, pressure solver and hypre, GPU runs | [docs/recipes.md](docs/recipes.md) |
+| How-to | steps for one task: build, run, check, partition, rerun G1, order of accuracy, pressure solver and hypre, GPU runs, flow cases and boundary conditions | [docs/recipes.md](docs/recipes.md) |
 | Reference | every case file, its keys and defaults | [docs/cases.md](docs/cases.md) |
 | Examples | what each feature computes, with pictures and the commands | [docs/gallery.md](docs/gallery.md) |
-| Explanation | requirements, decisions, benchmark and verification results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md), [stage 2](docs/verification/stage2.md), [stage 3](docs/verification/stage3.md) |
+| Explanation | requirements, decisions, benchmark and verification results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md), [stage 2](docs/verification/stage2.md), [stage 3](docs/verification/stage3.md), [stage 4](docs/verification/stage4.md) |
 
 The [changelog](CHANGELOG.md) lists every release.
 
 | Crate | Content |
 |---|---|
 | `cfdcraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
-| `cfdcraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`) |
+| `cfdcraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
 | `cfdcraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
 | `cfdcraft-mesh` | polyhedral mesh, geometry, quality report, Gmsh reader, test mesher, partitioning and halo, VTKHDF output, point location |
 | `cfdcraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU and CUDA backends |
+| `cfdcraft-flow` | incompressible flow: SIMPLEC and SIMPLE with the Rhie–Chow interpolation, boundary conditions and their check, the `cfdcraft flow` case, exact solutions and reference data |
 | `cfdcraft-bench` | gate G1: kernel benchmark, CPU and CUDA backends |
 | `cfdcraft-cli` | the `cfdcraft` command |
 | `gpu/ptx-kernels` | the kernels compiled to NVIDIA PTX (nightly toolchain) |
@@ -125,7 +129,7 @@ of the flow around it.
 
 ## Contributing
 
-The project is at stage 1 and has one maintainer. Comments on the
+The project is at stage 4 and has one maintainer. Comments on the
 requirements are welcome as GitHub issues. Contribution guidelines will
 follow with the first solver code.
 

@@ -136,7 +136,7 @@ dependencies = [
 
 [[package]]
 name = "cfdcraft-bench"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "cfdcraft-core",
@@ -151,11 +151,12 @@ dependencies = [
 
 [[package]]
 name = "cfdcraft-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "cfdcraft-bench",
  "cfdcraft-core",
+ "cfdcraft-flow",
  "cfdcraft-fv",
  "cfdcraft-mesh",
  "cfdcraft-parallel",
@@ -165,11 +166,26 @@ dependencies = [
 
 [[package]]
 name = "cfdcraft-core"
-version = "0.3.0"
+version = "0.4.0"
+
+[[package]]
+name = "cfdcraft-flow"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "cfdcraft-core",
+ "cfdcraft-fv",
+ "cfdcraft-kernels",
+ "cfdcraft-mesh",
+ "rayon",
+ "serde",
+ "serde_json",
+ "toml",
+]
 
 [[package]]
 name = "cfdcraft-fv"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "cc",
@@ -185,14 +201,14 @@ dependencies = [
 
 [[package]]
 name = "cfdcraft-kernels"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "cfdcraft-core",
 ]
 
 [[package]]
 name = "cfdcraft-mesh"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "cfdcraft-core",
@@ -208,7 +224,7 @@ dependencies = [
 
 [[package]]
 name = "cfdcraft-parallel"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "cfdcraft-core",
  "mpi",

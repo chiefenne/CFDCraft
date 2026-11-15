@@ -4,10 +4,17 @@
 
 | Version | Stage | Highlights |
 |---|---|---|
+| 0.4 (2026-11-15) | 4 Laminar steady flow | First flow solver: steady incompressible laminar flow with SIMPLEC (and SIMPLE) on polyhedral meshes, relaxation-independent Rhie–Chow interpolation (Majumdar 1988), CG + AMG for the pressure correction, boundary conditions of D29 (walls also moving, velocity and mass-flow inlets, static and total pressure inlets and outlets, symmetry) with a check of their combination and guidance (D30), TOML case file with "did you mean" (D39), log, CSV, wall and line output (D43). **Couette exact to the iteration tolerance on all mesh types; Poiseuille observed order 1.80–2.00; lid-driven cavity within 0.4–1.4 % of Ghia et al. at Re 100 and 1000 in 2D and within 2.5 % on 3D tetrahedra and polyhedra.** New crate `cfdcraft-flow`, command `cfdcraft flow`, thirteen case files, gallery 12–13, recipes 18–20. CPU only; the GPU flow loop follows with stage 5 |
 | 0.3 (2026-11-14) | 3 Pressure solver | Pressure linear solver: smoothed-aggregation algebraic multigrid as the preconditioner of CG (Vaněk, Mandel, Brezina 1996), symmetric V-cycle with Chebyshev or Jacobi smoothing, float32 hierarchy with float64 Krylov iteration (mixed precision, D37), one kernel source for the CPU and the NVIDIA GPU, optional hypre 3.2.1 reference (BoomerAMG-PCG, built from source). **10–13 iterations from 512 to 274 625 cells on all mesh types; same solution as hypre to 1.6e-9; on a Tesla T4 6.5 ns per cell and iteration against 10.5 for hypre at 912 673 cells, all GPU results bitwise equal to the CPU.** New command `cfdcraft poisson`, four Poisson case files, gallery 10–11, recipes 15–17 |
 | 0.2 (2026-11-14) | 2 Operators on a scalar equation | Finite-volume operators on a scalar transport equation, one source for the CPU and the NVIDIA GPU: least-squares gradients (exact for linear fields, error 6e-15 on all mesh types), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (no new extrema at K = 0), over-relaxed non-orthogonal diffusion, reproducible gather-based assembly into sliced ELL, BiCGStab. Observed order 1.87–2.08 on hex, tet, poly and mixed meshes in 2D and 3D. **GPU and CPU results bitwise equal on a Tesla T4** (912 673 polyhedra, 311 ns per cell and iteration). New command `cfdcraft scalar`, seven case files, gallery 8–9, recipes 12–14 |
 | 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
 | 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
+
+Release 0.4 closes stage 4: all acceptance tests of the stage plan pass
+(Couette at round-off, that is at the iteration tolerance; Poiseuille order
+1.8–2.2 on all mesh types; lid-driven cavity in 2D and 3D at Re 100 and 1000
+against Ghia et al.). The Cargo version of the crates is now 0.4.0; the
+release is the Git tag `v0.4` (D46).
 
 Release 0.3 closes stage 3: all acceptance tests of the stage plan pass
 (iteration count nearly independent of the mesh size, same converged result
@@ -28,6 +35,56 @@ the crates is now 0.1.0; the release is the Git tag `v0.1` (D46).
 Release 0.0 closes stage 0: both verdicts of gate G1 are in (GPU: Tesla T4,
 CPU: i9-9900K, 2026-11-14, both PASS; O13 closed). The Cargo version of the
 crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
+
+---
+
+## 0.4 (2026-11-15) – stage 4: laminar steady flow
+
+New crate `cfdcraft-flow`, kernel bodies `cfdcraft-kernels::flow` (one
+source for the CPU and the GPU) and the command `cfdcraft flow`:
+
+- **SIMPLEC and SIMPLE (D19).** Segregated outer iterations on the
+  collocated, cell-centred polyhedral grid: momentum with implicit upwind
+  and deferred linear-upwind convection, orthogonal diffusion implicit and
+  the non-orthogonal and skewness corrections deferred, implicit
+  under-relaxation; pressure correction with the SIMPLEC factor
+  D^C = V/(a_P/α − Σ|a_N|), solved with CG and the stage-3 multigrid
+  (hierarchy rebuilt every 10 outer iterations); reference cell when no
+  boundary fixes the pressure.
+- **Rhie–Chow interpolation (D27)** with the relaxation term of Majumdar
+  (1988): the converged result does not depend on the under-relaxation
+  (lid force equal to 3e-11 for α_u = 0.7 and 0.9).
+- **Boundary conditions (D29):** wall (also moving), velocity inlet (vector,
+  normal speed or the exact profile), mass-flow inlet, static- and
+  total-pressure inlet and outlet (freely combined), symmetry (implicit per
+  component). Periodic boundaries follow with stage 6.
+- **Boundary-condition check (D30)** before every run and with
+  `cfdcraft flow --check`: missing and unknown patches with "did you mean",
+  net mass flow without a pressure boundary, over-specified flow paths,
+  wall normal velocity, unused turbulence values, non-planar symmetry,
+  reference-cell note; the guidance table of sensible combinations in the
+  case catalogue.
+- **Case file (D39):** `[fluid]`, `[flow]`, `[initial]`, `[pressure]`,
+  `[boundary.<patch>]`, `[solver]`, `[analytic]`, `[verification]`, `[run]`,
+  `[output]`; unknown keys and values with "did you mean"; the resolved case
+  with all defaults in `case.resolved.toml`.
+- **Output (D43):** `flow.log` with a header of what is written and how
+  large, `residuals.csv`, `patches.csv` (mass flow, mean pressure, force),
+  `wall_<patch>.csv` (pressure and wall shear stress per face, in global
+  face order), `line_<name>.csv`, `fields.vtkhdf`, `flow.md`, `flow.json`
+  and SVG charts (residuals, convergence, centre lines against the
+  reference).
+- **Verification:** exact solutions (Couette, Poiseuille) and the
+  centre-line data of Ghia et al. (1982) for Re 100 and 1000; thirteen case
+  files (CI runs all of them on Linux and the quick ones on macOS and
+  Windows); tests for Couette, Poiseuille order, the cavity, relaxation
+  independence, quick convergence with symmetry planes, the check, "did you
+  mean" and bitwise equality on 1 and 4 threads.
+- `Backend::set_matrix` (new matrix values on the same pattern) on the CPU
+  and CUDA backends; `tools/render_mesh.py --no-edges`.
+- Documentation: [stage 4 verification](docs/verification/stage4.md),
+  gallery 12–13, recipes 18–20, flow cases, keys, boundary conditions and
+  guidance in the case catalogue.
 
 ---
 

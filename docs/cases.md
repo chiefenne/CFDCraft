@@ -162,6 +162,129 @@ must be zero).
 | `output.directory` | `output/<case name>` | output directory |
 | `output.vtkhdf` | false | write φ of the finest level (`fields.vtkhdf`) |
 
+## Flow cases (`examples/cases/flow/`)
+
+Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
+interpolation ([explanation](verification/stage4.md)). Run with
+`cfdcraft flow FILE`; `cfdcraft flow FILE --check` only checks the case file
+and the boundary conditions (D30); command-line options override the file
+(`cfdcraft flow --help`). Each run writes `flow.log` (the header says what
+is written and how large it is), `residuals.csv` (one row per outer
+iteration; `residuals_level<N>.csv` per level of a sweep), `patches.csv`
+(per patch: area, mass flow, mean pressure, force), `wall_<patch>.csv` (per
+wall face: position, pressure, wall shear stress), `line_<name>.csv` for
+each sampling line, `fields.vtkhdf` (velocity, speed, pressure and, with an
+exact solution, the velocity error), `case.resolved.toml` (the case with
+every default filled in), `flow.md` and `flow.json` (the report), and the
+charts `residuals.svg`, `convergence.svg` (sweeps) and `centreline_u.svg`,
+`centreline_v.svg` (cavity against the reference data). The run fails when
+a check of the case fails (observed order, error, reference deviation,
+convergence, mass balance). CI runs every case on Linux and the quick ones
+on macOS and Windows (R5).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/couette_hex.toml` | generated hex 2D, 128 cells | plane Couette flow with convection: error at the solver tolerance (≤ 1e-9 required) | recipe 18 |
+| `flow/couette_tet.toml`, `couette_poly.toml`, `couette_mixed.toml` | generated 2D, perturbed by 15 %, 128 to 256 cells | the same Stokes flow on perturbed tetrahedra (prisms), polyhedra and mixed cells | recipe 18 |
+| `flow/poiseuille_hex.toml` | generated hex 2D, perturbed, 512 to 8 192 cells (3 levels) | plane Poiseuille flow, observed order of the velocity error 1.8–2.2 required | gallery 13, recipe 18 |
+| `flow/poiseuille_tet.toml`, `poiseuille_poly.toml`, `poiseuille_mixed.toml` | generated 2D, 3 levels | the same on prisms, perturbed polyhedra and mixed cells | gallery 13, recipe 18 |
+| `flow/cavity_re100.toml` | generated hex 2D, 64 × 64 | lid-driven cavity, Re = 100, against Ghia et al. (1982), deviation ≤ 2 % of the lid speed | gallery 12, recipe 19 |
+| `flow/cavity_re1000.toml` | generated hex 2D, 128 × 128 | the same at Re = 1000 | gallery 12, recipe 19 |
+| `flow/cavity_re100_tet3d.toml` | generated tet 3D, 24 576 tetrahedra in a slab with symmetry planes | the cavity on fully three-dimensional tetrahedra, deviation ≤ 3 % | recipe 19 |
+| `flow/cavity_re100_poly3d.toml` | generated poly 3D, 5 445 polyhedra | the same on polyhedra | recipe 19 |
+| `flow/cavity_re1000_poly3d.toml` | generated poly 3D, 28 227 polyhedra | Re = 1000 on polyhedra, deviation ≤ 3 % | gallery 12, recipe 19 |
+
+### Flow case-file keys
+
+`[mesh]`, `[mesh.generate]` as in the [mesh cases](#mesh-case-file-keys).
+Unknown keys and values are errors with a "did you mean" hint (D39). SI
+units.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `fluid.density` | 1 | ρ (kg/m³) |
+| `fluid.viscosity` | 1e-3 | dynamic viscosity μ (Pa s) |
+| `flow.convection` | true | false: Stokes flow |
+| `flow.body_force` | `[0, 0, 0]` | body force per unit volume (N/m³) |
+| `initial.velocity` | `[0, 0, 0]` | start velocity (m/s) |
+| `initial.pressure` | 0 | start pressure (Pa) |
+| `pressure.reference_point` | lower corner of the bounding box | the cell containing it holds the pressure level when no boundary fixes it |
+| `pressure.reference_value` | 0 | pressure in that cell (Pa) |
+| `boundary.<patch>` | required for every patch | condition, table below |
+| `solver.algorithm` | `"simplec"` | `simplec` (Van Doormaal & Raithby 1984) or `simple` |
+| `solver.scheme` | `"linear-upwind"` | convection of momentum: `upwind` or `linear-upwind` |
+| `solver.limiter` | `"none"` | gradient limiter: `none`, `venkatakrishnan`, `venkatakrishnan-wang` |
+| `solver.limiter_k` | 5 | constant K of the limiter |
+| `solver.nonorth_correction` | true | deferred non-orthogonal and skewness correction of the viscous term |
+| `solver.relaxation_velocity` | 0.7 | under-relaxation α_u of the momentum equations (implicit, Patankar 1980) |
+| `solver.relaxation_pressure` | 1 (SIMPLEC), 0.3 (SIMPLE) | relaxation α_p of the pressure correction |
+| `solver.max_iterations` | 2000 | largest number of outer iterations |
+| `solver.tolerance` | 1e-8 | converged when every scaled residual (momentum, continuity) is below it |
+| `solver.momentum_tolerance` | 1e-2 | relative tolerance of each momentum solve (BiCGStab, Jacobi) |
+| `solver.momentum_max_iter` | 50 | largest number of BiCGStab iterations per solve |
+| `solver.pressure_tolerance` | 1e-2 | relative tolerance of each pressure-correction solve |
+| `solver.pressure_max_iter` | 100 | largest number of CG iterations per solve |
+| `solver.pressure_preconditioner` | `"amg"` | `amg` (stage 3) or `jacobi` |
+| `solver.amg.*` | as `linear.amg.*` of the [Poisson cases](#poisson-case-file-keys) | multigrid settings |
+| `solver.amg_rebuild` | 10 | rebuild the hierarchy every N outer iterations |
+| `solver.log_every` | 10 | a log line every N outer iterations |
+| `analytic.type` | none | exact solution for the checks: `couette` or `poiseuille` |
+| `analytic.lower`, `analytic.upper` | 0, 1 | channel walls (y) |
+| `analytic.wall_velocity` | 1 | Couette: speed of the upper wall |
+| `analytic.mean_velocity` | 1 | Poiseuille: mean velocity |
+| `analytic.x_outlet`, `analytic.pressure` / `pressure_outlet` | 1, 0 | Poiseuille: outlet position and pressure; Couette: the constant pressure |
+| `verification.levels` | none | refinement levels of `[mesh.generate]`: an order-of-accuracy sweep |
+| `verification.expected_order` | none | accepted range of the observed order on the finest pair |
+| `verification.max_error` | none | largest accepted relative L2 velocity error |
+| `verification.reference` | none | `ghia-re100` or `ghia-re1000`: centre-line data of the unit cavity |
+| `verification.reference_tolerance` | none | largest accepted deviation, in lid speeds |
+| `verification.lid_velocity` | 1 | lid speed for the reference comparison and the Reynolds number |
+| `verification.require_convergence` | none | fail unless the outer iterations converge |
+| `run.threads` | all cores | CPU threads (meshes below 20 000 cells run on one; the results are bitwise the same) |
+| `output.directory` | `output/<case name>` | output directory |
+| `output.vtkhdf` | true | write `fields.vtkhdf` |
+| `output.history_every` | 1 | a row of `residuals.csv` every N outer iterations |
+| `output.wall_csv` | true | write `wall_<patch>.csv` for every wall |
+| `output.lines` | none | sampling lines `[[output.lines]]` with `name`, `from`, `to`, `points` (101) |
+
+### Boundary conditions (D29)
+
+| `type` | Keys | Velocity | Pressure | Mass flux |
+|---|---|---|---|---|
+| `wall` | `velocity` (default 0; only the tangential part is kept) | prescribed | extrapolated | 0 |
+| `velocity-inlet` | one of `velocity`, `normal_velocity` (into the domain), `profile = "analytic"` | prescribed | extrapolated | ρ u_b·S |
+| `mass-flow-inlet` | `mass_flow` (kg/s, spread by area) | normal, from the mass flow | extrapolated | prescribed |
+| `static-pressure-inlet` | `pressure` | normal to the face, from the flux | prescribed | Rhie–Chow |
+| `total-pressure-inlet` | `total_pressure` | normal to the face, from the flux | p₀ − ½ρu_n² | Rhie–Chow |
+| `static-pressure-outlet` | `pressure` | extrapolated | prescribed | Rhie–Chow |
+| `total-pressure-outlet` | `total_pressure` | extrapolated | p₀ − ½ρu_n² | Rhie–Chow |
+| `symmetry` | none | no shear stress, zero normal component | extrapolated | 0 |
+| `periodic` | `partner` | comes with stage 6 (the face pairing); an error until then | | |
+
+Inlets also take `turbulence_intensity`, `turbulence_length_scale` and
+`viscosity_ratio` for the turbulence models of stage 6; in laminar flow the
+check reports them as unused.
+
+### Sensible combinations (D30)
+
+The check runs before every solve and with `--check`. Errors stop the run
+and name the boundary and what to change (a missing or unknown patch with
+"did you mean", a net mass flow with no pressure boundary to take it, a
+flow path whose rate is prescribed twice, a wall with a normal velocity, a
+negative mass flow); warnings and notes say what the run will do (no
+pressure boundary: the reference cell holds the level; nothing drives a
+flow; unused turbulence values; a symmetry patch that is not planar).
+
+| Combination | Suits | Pressure level |
+|---|---|---|
+| velocity-inlet + static-pressure-outlet (+ walls, symmetry) | internal flows with a known flow rate: channels, pipes, ducts, the Poiseuille case | outlet pressure |
+| mass-flow-inlet + static-pressure-outlet | as above when the mass flow is known rather than a velocity profile | outlet pressure |
+| total-pressure-inlet + static-pressure-outlet | pressure-driven flows: the flow rate is a result (fans, valves, plenum to plenum) | both |
+| static-pressure-inlet + static-pressure-outlet | pressure-driven flows with a known static pressure drop | both |
+| static-pressure-inlet + total-pressure-outlet | flows that exhaust into a large volume at a known total pressure | both |
+| walls only, one wall moving (+ symmetry) | enclosed flows: the lid-driven cavity | reference cell |
+| velocity-inlet + velocity-inlet + static-pressure-outlet | mixing of two streams: the T-junction | outlet pressure |
+
 ## Benchmarks (`examples/cases/bench/`)
 
 Gate G1, the kernel benchmark of stage 0 ([G1](benchmarks/g1.md)). Run with

@@ -21,6 +21,8 @@ All commands run from the repository root. Case files are in
 | 9 | [Oblique step: four convection schemes](#oblique-step) | 2 | Venkatakrishnan and Venkatakrishnan–Wang limiters, bounded solutions |
 | 10 | [Pressure solver: iterations over the mesh size](#poisson-iterations) | 3 | CG with smoothed-aggregation AMG, mixed precision, hypre reference |
 | 11 | [Poisson manufactured solution with the multigrid](#poisson-amg-mms) | 3 | CG + AMG inside the outer iterations, non-orthogonal correction |
+| 12 | [Lid-driven cavity against Ghia et al.](#cavity) | 4 | SIMPLEC, Rhie–Chow, reference cell, centre-line comparison, 2D and 3D cells |
+| 13 | [Poiseuille flow: order of accuracy of the flow solver](#poiseuille) | 4 | second order on all mesh types, velocity inlet with the exact profile, pressure outlet |
 
 ---
 
@@ -398,6 +400,81 @@ BiCGStab with Jacobi, and the time per outer iteration drops from 2 357 to
 ```
 target/release/cfdcraft scalar examples/cases/scalar/poisson_amg_poly_box.toml
 # report: output/poisson_amg_poly_box/scalar.md (linear iterations, time per phase incl. multigrid setup)
+```
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="cavity"></a>
+## 12. Lid-driven cavity against Ghia et al.
+
+![Speed in the lid-driven cavity at Re = 1000 on 128 x 128 hexahedra](figures/gallery/cavity_re1000_speed.png)
+
+The first flow of CFDCraft: the unit cavity with the lid sliding at 1 m/s,
+steady and laminar, solved with SIMPLEC and the relaxation-independent
+Rhie–Chow interpolation of stage 4. No boundary fixes the pressure, so a
+reference cell holds its level. At Re = 1000 the primary vortex moves
+towards the centre and the two corner vortices at the bottom grow; the
+velocity on the two centre lines matches the tabulated multigrid solution
+of Ghia, Ghia & Shin (1982) to 0.4 % (u) and 1.4 % (v) of the lid speed.
+
+![u on the vertical centre line, Re = 1000](figures/gallery/cavity_re1000_u.svg)
+![v on the horizontal centre line, Re = 1000](figures/gallery/cavity_re1000_v.svg)
+
+The same flow on fully three-dimensional cells, a slab with symmetry planes
+front and back: 0.7 % / 1.3 % at Re = 100 on 5 445 polyhedra, 2.0 % / 2.4 %
+at Re = 1000 on 28 227 polyhedra, 2.5 % / 2.2 % at Re = 100 on 24 576
+tetrahedra. Re = 100 on 64 × 64 hexahedra: 0.44 % / 0.95 %
+([u](figures/gallery/cavity_re100_u.svg), [v](figures/gallery/cavity_re100_v.svg)).
+
+![Speed at Re = 100 on polyhedra](figures/gallery/cavity_re100_poly3d_speed.png)
+
+| | |
+|---|---|
+| Mesh | generated hex 2D, 128 × 128 cells, one layer with symmetry planes |
+| Physics | ρ = 1 kg/m³, μ = 0.001 Pa s, lid 1 m/s: Re = 1 000 |
+| Solver | SIMPLEC, linear upwind, α_u = 0.9, CG + AMG for the pressure correction; 1 397 outer iterations to 1e-8, 54 s on a shared 4-core cloud machine |
+| Case files | `flow/cavity_re1000.toml`, `cavity_re100.toml`, `cavity_re100_poly3d.toml`, `cavity_re100_tet3d.toml`, `cavity_re1000_poly3d.toml` |
+
+```
+cargo build --release -p cfdcraft-cli
+target/release/cfdcraft flow examples/cases/flow/cavity_re1000.toml
+# report: output/cavity_re1000/flow.md, charts: centreline_u.svg, centreline_v.svg, residuals.svg
+python3 tools/render_mesh.py output/cavity_re1000/fields.vtkhdf cavity.png --field speed --top --no-edges
+```
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="poiseuille"></a>
+## 13. Poiseuille flow: order of accuracy of the flow solver
+
+![L2 velocity error over the mesh size on perturbed polyhedra](figures/gallery/poiseuille_poly_convergence.svg)
+
+Plane channel flow between walls at rest, the exact parabola at the inlet
+(`profile = "analytic"`), a static-pressure outlet, Re = 10, on three nested
+meshes per cell type. The velocity error falls with the square of the mesh
+size on every type, the check of stage 4 (1.8–2.2 on the finest pair);
+Couette flow (`couette_*.toml`) comes out at the iteration error, as a
+linear profile must.
+
+| Mesh | Cells (finest) | L2 error (finest) | Observed order |
+|---|---:|---:|---:|
+| hex, perturbed 15 % | 8 192 | 1.10e-4 | 1.98, 1.89 |
+| tet (prisms) | 16 384 | 6.70e-5 | 1.93, 1.80 |
+| poly, perturbed 15 % | 8 385 | 7.74e-5 | 2.01, 2.00 |
+| mixed | 12 288 | 9.05e-5 | 1.94, 1.88 |
+
+| | |
+|---|---|
+| Meshes | generated 2D, 32 × 16 to 128 × 64 intervals in a 2 × 1 channel |
+| Case files | `flow/poiseuille_hex.toml`, `poiseuille_tet.toml`, `poiseuille_poly.toml`, `poiseuille_mixed.toml` |
+
+```
+target/release/cfdcraft flow examples/cases/flow/poiseuille_poly.toml
+# report: output/poiseuille_poly/flow.md, plot: convergence.svg
 ```
 
 [↑ back to top](#example-gallery)

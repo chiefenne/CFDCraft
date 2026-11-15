@@ -3,6 +3,8 @@
 //! - [`face`], [`spmv`]: the kernels of gate G1 (stage 0);
 //! - [`fv`]: the finite-volume operators on a scalar (stage 2): gradient,
 //!   limiter, face flux coefficients, row assembly;
+//! - [`flow`]: the incompressible flow solver (stage 4): momentum faces and
+//!   rows, Rhie–Chow mass flux, pressure correction, boundary values;
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
 //! - [`amg`]: the smoothers, transfers and coarse solve of the algebraic
@@ -31,6 +33,7 @@
 pub mod amg;
 pub mod blas;
 pub mod face;
+pub mod flow;
 pub mod fv;
 pub mod spmv;
 
