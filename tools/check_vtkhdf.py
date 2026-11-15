@@ -1,8 +1,8 @@
-"""Reads CFDCraft VTKHDF files with VTK's own reader (the reader ParaView
+"""Reads Ennecraft VTKHDF files with VTK's own reader (the reader ParaView
 uses) and checks them:
 
 - the file loads, with the block `internal` and one block per patch;
-- the cell volumes agree with the field `volume` written by CFDCraft. For
+- the cell volumes agree with the field `volume` written by Ennecraft. For
   standard cells VTK's own cell volumes are used (this checks the node order
   of tetrahedra, hexahedra, prisms and pyramids); for polyhedra the volume is
   computed here from the faces as VTK reads them, by the divergence theorem

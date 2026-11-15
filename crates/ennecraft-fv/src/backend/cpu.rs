@@ -1,0 +1,612 @@
+//! CPU backend: the kernel bodies in multi-threaded loops (rayon).
+//!
+//! Each output value is computed by one iteration from its index, so the
+//! results are bitwise the same for any number of threads (D31).
+
+use super::{Backend, FaceSettings, Limiter, V};
+use crate::amg::cycle::LevelOps;
+use crate::amg::{Hierarchy, Precision, SellMatrix};
+use crate::disc::Discretisation;
+use ennecraft_core::Real;
+use ennecraft_core::repro::{BLOCK, combine_block_sums};
+use ennecraft_kernels::fv::{self, FaceInputs, SellLayout, Vec3};
+use ennecraft_kernels::{amg, blas, spmv};
+use rayon::prelude::*;
+
+/// Indices per task of the parallel loops.
+const GRAIN: usize = 1 << 14;
+
+/// CPU backend.
+pub struct CpuBackend {
+    d: Discretisation,
+    pool: rayon::ThreadPool,
+    vecs: Vec<Vec<f64>>,
+    scratch: Vec<f64>,
+    val: Vec<f64>,
+    eps2: Option<(f64, Vec<f64>)>,
+    amg: Option<Amg>,
+}
+
+/// One level of the hierarchy in precision `T`, with its cycle vectors.
+struct LevelData<T> {
+    a: SellMatrix<T>,
+    dinv: Vec<T>,
+    p: SellMatrix<T>,
+    r: SellMatrix<T>,
+    steps: Vec<(f64, f64)>,
+}
+
+/// The hierarchy in precision `T`; `x`, `b` have L + 1 entries (the
+/// coarsest last), `w`, `d` have L.
+struct AmgData<T> {
+    levels: Vec<LevelData<T>>,
+    coarse_n: usize,
+    coarse_inv: Vec<T>,
+    x: Vec<Vec<T>>,
+    b: Vec<Vec<T>>,
+    w: Vec<Vec<T>>,
+    d: Vec<Vec<T>>,
+}
+
+enum Amg {
+    F32(AmgData<f32>),
+    F64(AmgData<f64>),
+}
+
+/// Fills `out[i] = f(i)` in parallel, one value per index.
+fn par_fill<T: Real>(pool: &rayon::ThreadPool, out: &mut [T], f: impl Fn(usize, T) -> T + Sync) {
+    pool.install(|| {
+        out.par_chunks_mut(GRAIN).enumerate().for_each(|(c, ch)| {
+            for (j, o) in ch.iter_mut().enumerate() {
+                *o = f(c * GRAIN + j, *o);
+            }
+        })
+    });
+}
+
+impl<T: Real> AmgData<T> {
+    fn new(h: &Hierarchy) -> Self {
+        let cv = |v: &[f64]| v.iter().map(|&x| T::from_f64(x)).collect::<Vec<T>>();
+        let levels: Vec<LevelData<T>> = h
+            .levels
+            .iter()
+            .map(|l| LevelData {
+                a: SellMatrix::from_csr(&l.a),
+                dinv: cv(&l.dinv),
+                p: SellMatrix::from_csr(&l.p),
+                r: SellMatrix::from_csr(&l.r),
+                steps: l.steps.clone(),
+            })
+            .collect();
+        let mut sizes: Vec<usize> = h.levels.iter().map(|l| l.a.n_rows).collect();
+        sizes.push(h.coarse_n);
+        let zeros = |n: usize| vec![T::ZERO; n];
+        Self {
+            coarse_n: h.coarse_n,
+            coarse_inv: cv(&h.coarse_inv),
+            x: sizes.iter().map(|&n| zeros(n)).collect(),
+            b: sizes.iter().map(|&n| zeros(n)).collect(),
+            w: sizes[..levels.len()].iter().map(|&n| zeros(n)).collect(),
+            d: sizes[..levels.len()].iter().map(|&n| zeros(n)).collect(),
+            levels,
+        }
+    }
+
+    fn load_rhs(&mut self, pool: &rayon::ThreadPool, r: &[f64]) {
+        // SAFETY: b_0 and r have one entry per cell.
+        par_fill(pool, &mut self.b[0], |i, _| unsafe { amg::convert(i, r) });
+    }
+
+    fn store(&self, pool: &rayon::ThreadPool, z: &mut [f64]) {
+        let x = &self.x[0];
+        // SAFETY: as above.
+        par_fill(pool, z, |i, _| unsafe { amg::convert(i, x) });
+    }
+
+    fn smooth_first(&mut self, pool: &rayon::ThreadPool, l: usize, c2: f64) {
+        let c2 = T::from_f64(c2);
+        let (dinv, b) = (&self.levels[l].dinv, &self.b[l]);
+        // SAFETY: level vectors have one entry per row of A_l.
+        par_fill(pool, &mut self.d[l], |i, _| unsafe {
+            amg::smooth_first(i, dinv, b, c2)
+        });
+        self.x[l].copy_from_slice(&self.d[l]);
+    }
+
+    fn smooth_step(&mut self, pool: &rayon::ThreadPool, l: usize, c1: f64, c2: f64) {
+        let (c1, c2) = (T::from_f64(c1), T::from_f64(c2));
+        let lv = &self.levels[l];
+        let (a, dinv, b, x) = (lv.a.view(), &lv.dinv, &self.b[l], &self.x[l]);
+        // SAFETY: A_l was built by `SellMatrix::from_csr` for these sizes.
+        par_fill(pool, &mut self.d[l], |i, di| unsafe {
+            amg::smooth_step(i, &a, dinv, b, x, di, c1, c2)
+        });
+        let d = &self.d[l];
+        par_fill(pool, &mut self.x[l], |i, xi| amg::add(xi, d[i]));
+    }
+
+    fn restrict(&mut self, pool: &rayon::ThreadPool, l: usize) {
+        let lv = &self.levels[l];
+        let (a, b, x) = (lv.a.view(), &self.b[l], &self.x[l]);
+        // SAFETY: as above.
+        par_fill(pool, &mut self.w[l], |i, _| unsafe {
+            amg::residual(i, &a, b, x)
+        });
+        let (r, w) = (lv.r.view(), &self.w[l]);
+        // SAFETY: R_l has the rows of level l + 1 and the columns of level l.
+        par_fill(pool, &mut self.b[l + 1], |i, _| unsafe { r.row(i, w) });
+    }
+
+    fn coarse(&mut self, pool: &rayon::ThreadPool) {
+        let nl = self.levels.len();
+        let (n, m, b) = (self.coarse_n, &self.coarse_inv, &self.b[nl]);
+        // SAFETY: the dense inverse is n × n.
+        par_fill(pool, &mut self.x[nl], |i, _| unsafe {
+            amg::dense_row(i, n, m, b)
+        });
+    }
+
+    fn prolong(&mut self, pool: &rayon::ThreadPool, l: usize) {
+        let (lo, hi) = self.x.split_at_mut(l + 1);
+        let (p, xc) = (self.levels[l].p.view(), &hi[0]);
+        // SAFETY: P_l has the rows of level l and the columns of level l + 1.
+        par_fill(pool, &mut lo[l], |i, xi| unsafe {
+            amg::prolong_add(i, &p, xc, xi)
+        });
+    }
+}
+
+macro_rules! with_amg {
+    ($self:ident, $a:ident => $e:expr) => {
+        match $self.amg.as_mut() {
+            Some(Amg::F32($a)) => $e,
+            Some(Amg::F64($a)) => $e,
+            None => anyhow::bail!("no multigrid hierarchy loaded"),
+        }
+    };
+}
+
+/// A raw pointer that may be shared by the threads of a gather loop in
+/// which every index writes its own, disjoint outputs.
+#[derive(Clone, Copy)]
+struct Shared(*mut f64);
+// SAFETY: used only where each thread writes disjoint entries.
+unsafe impl Send for Shared {}
+// SAFETY: as above.
+unsafe impl Sync for Shared {}
+
+impl CpuBackend {
+    /// New backend on `threads` threads (`None`: all cores).
+    pub fn new(d: Discretisation, threads: Option<usize>) -> anyhow::Result<Self> {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads.unwrap_or(0))
+            .build()?;
+        let mut vecs = vec![Vec::new(); V::COUNT];
+        for v in V::CELL {
+            vecs[v.index()] = vec![0.0; d.n_cells];
+        }
+        for v in V::FACE {
+            vecs[v.index()] = vec![0.0; d.n_faces];
+        }
+        vecs[V::Psi.index()].fill(1.0);
+        let val = vec![0.0; d.sell.stored()];
+        Ok(Self {
+            d,
+            pool,
+            vecs,
+            scratch: Vec::new(),
+            val,
+            eps2: None,
+            amg: None,
+        })
+    }
+
+    fn v(&self, v: V) -> &[f64] {
+        &self.vecs[v.index()]
+    }
+
+    /// Computes `out[i] = body(self, i)` into the scratch buffer and swaps it
+    /// in, so `out` may also be an input.
+    fn map_into(&mut self, out: V, body: impl Fn(&Self, usize) -> f64 + Sync) {
+        let n = self.vecs[out.index()].len();
+        let mut s = std::mem::take(&mut self.scratch);
+        s.resize(n, 0.0);
+        let this = &*self;
+        this.pool.install(|| {
+            s.par_chunks_mut(GRAIN).enumerate().for_each(|(c, ch)| {
+                for (j, o) in ch.iter_mut().enumerate() {
+                    *o = body(this, c * GRAIN + j);
+                }
+            })
+        });
+        std::mem::swap(&mut s, &mut self.vecs[out.index()]);
+        self.scratch = s;
+    }
+
+    fn grad_view(&self) -> Vec3<'_, f64> {
+        Vec3 {
+            x: self.v(V::Gx),
+            y: self.v(V::Gy),
+            z: self.v(V::Gz),
+        }
+    }
+
+    fn sell_row(&self, r: usize, x: &[f64]) -> f64 {
+        let s = &self.d.sell;
+        // SAFETY: the structure was built by `sell_structure` for this
+        // mesh; every column is a cell index.
+        unsafe { spmv::sell_row(r, s.chunk, &s.slice_ptr, &s.slice_len, &s.col, &self.val, x) }
+    }
+}
+
+impl Backend for CpuBackend {
+    fn name(&self) -> String {
+        if self.pool.current_num_threads() == 1 {
+            "cpu-serial".into()
+        } else {
+            "cpu".into()
+        }
+    }
+
+    fn device(&self) -> String {
+        format!("CPU, {} threads", self.pool.current_num_threads())
+    }
+
+    fn n_cells(&self) -> usize {
+        self.d.n_cells
+    }
+
+    fn upload(&mut self, v: V, data: &[f64]) -> anyhow::Result<()> {
+        let t = &mut self.vecs[v.index()];
+        anyhow::ensure!(t.len() == data.len(), "upload of {v:?}: wrong length");
+        t.copy_from_slice(data);
+        Ok(())
+    }
+
+    fn download(&mut self, v: V) -> anyhow::Result<Vec<f64>> {
+        Ok(self.vecs[v.index()].clone())
+    }
+
+    fn sync(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn gradient(&mut self) -> anyhow::Result<()> {
+        let mut gx = std::mem::take(&mut self.vecs[V::Gx.index()]);
+        let mut gy = std::mem::take(&mut self.vecs[V::Gy.index()]);
+        let mut gz = std::mem::take(&mut self.vecs[V::Gz.index()]);
+        let (d, phi) = (&self.d, &self.vecs[V::Phi.index()]);
+        let (topo, bc, w) = (d.topology(), d.boundary(), d.lsq.view());
+        self.pool.install(|| {
+            gx.par_chunks_mut(GRAIN)
+                .zip(gy.par_chunks_mut(GRAIN))
+                .zip(gz.par_chunks_mut(GRAIN))
+                .enumerate()
+                .for_each(|(ci, ((x, y), z))| {
+                    for j in 0..x.len() {
+                        // SAFETY: the discretisation was built from a
+                        // validated mesh; c is a local cell.
+                        let g = unsafe { fv::lsq_gradient(ci * GRAIN + j, &topo, &w, phi, &bc) };
+                        x[j] = g[0];
+                        y[j] = g[1];
+                        z[j] = g[2];
+                    }
+                })
+        });
+        self.vecs[V::Gx.index()] = gx;
+        self.vecs[V::Gy.index()] = gy;
+        self.vecs[V::Gz.index()] = gz;
+        Ok(())
+    }
+
+    fn limiter(&mut self, l: Limiter) -> anyhow::Result<()> {
+        let eps2: Vec<f64> = match l {
+            Limiter::None => {
+                self.vecs[V::Psi.index()].fill(1.0);
+                return Ok(());
+            }
+            Limiter::Venkatakrishnan { k } => match &self.eps2 {
+                Some((kk, e)) if *kk == k => e.clone(),
+                _ => {
+                    let e = self.d.venkat_eps2(k);
+                    self.eps2 = Some((k, e.clone()));
+                    e
+                }
+            },
+            Limiter::VenkatakrishnanWang { k } => {
+                let (mn, mx) = self.min_max(V::Phi)?;
+                let e = k * (mx - mn);
+                vec![e * e]
+            }
+        };
+        self.map_into(V::Psi, |s, c| {
+            let d = &s.d;
+            // SAFETY: as in `gradient`; eps2 has one entry or one per cell.
+            unsafe {
+                fv::venkat_limiter(
+                    c,
+                    &d.topology(),
+                    s.v(V::Phi),
+                    &d.boundary(),
+                    &s.grad_view(),
+                    &d.cell_centroid.view(),
+                    &d.face_centroid.view(),
+                    &eps2,
+                )
+            }
+        });
+        Ok(())
+    }
+
+    fn faces(&mut self, st: FaceSettings) -> anyhow::Result<()> {
+        let mut cp = std::mem::take(&mut self.vecs[V::Cp.index()]);
+        let mut cn = std::mem::take(&mut self.vecs[V::Cn.index()]);
+        let mut bf = std::mem::take(&mut self.vecs[V::Bf.index()]);
+        let d = &self.d;
+        let inp = FaceInputs {
+            topo: d.topology(),
+            bc: d.boundary(),
+            mass_flux: &d.mass_flux,
+            gamma: &d.gamma,
+            dgeo: &d.dgeo,
+            k: d.k.view(),
+            weight: &d.weight,
+            face_centroid: d.face_centroid.view(),
+            cell_centroid: d.cell_centroid.view(),
+            phi: self.v(V::Phi),
+            grad: self.grad_view(),
+            psi: self.v(V::Psi),
+            blend: st.blend,
+            nonorth: if st.nonorth { 1.0 } else { 0.0 },
+            nonorth_limit: st.nonorth_limit,
+        };
+        self.pool.install(|| {
+            cp.par_chunks_mut(GRAIN)
+                .zip(cn.par_chunks_mut(GRAIN))
+                .zip(bf.par_chunks_mut(GRAIN))
+                .enumerate()
+                .for_each(|(ci, ((a, b), c))| {
+                    for j in 0..a.len() {
+                        // SAFETY: f is a face of the discretisation.
+                        let (x, y, z) = unsafe { fv::face_coefficients(ci * GRAIN + j, &inp) };
+                        a[j] = x;
+                        b[j] = y;
+                        c[j] = z;
+                    }
+                })
+        });
+        self.vecs[V::Cp.index()] = cp;
+        self.vecs[V::Cn.index()] = cn;
+        self.vecs[V::Bf.index()] = bf;
+        Ok(())
+    }
+
+    fn assemble(&mut self, alpha: f64) -> anyhow::Result<()> {
+        let mut rhs = std::mem::take(&mut self.vecs[V::Rhs.index()]);
+        let mut dinv = std::mem::take(&mut self.vecs[V::Dinv.index()]);
+        let (pv, pr, pd) = (
+            Shared(self.val.as_mut_ptr()),
+            Shared(rhs.as_mut_ptr()),
+            Shared(dinv.as_mut_ptr()),
+        );
+        let d = &self.d;
+        let topo = d.topology();
+        let layout = SellLayout {
+            chunk: d.sell.chunk,
+            slice_ptr: &d.sell.slice_ptr,
+        };
+        let (cp, cn, bf, phi) = (self.v(V::Cp), self.v(V::Cn), self.v(V::Bf), self.v(V::Phi));
+        let n = d.n_cells;
+        self.pool.install(|| {
+            (0..n.div_ceil(GRAIN)).into_par_iter().for_each(|ci| {
+                let (pv, pr, pd) = (pv, pr, pd);
+                for c in ci * GRAIN..((ci + 1) * GRAIN).min(n) {
+                    // SAFETY: row c and rhs[c], dinv[c] are written by this
+                    // iteration only; the SELL storage has a slot for every
+                    // interior face of c.
+                    unsafe {
+                        fv::assemble_row(
+                            c, &topo, cp, cn, bf, &d.source, phi, alpha, &layout, pv.0, pr.0, pd.0,
+                        )
+                    }
+                }
+            })
+        });
+        self.vecs[V::Rhs.index()] = rhs;
+        self.vecs[V::Dinv.index()] = dinv;
+        Ok(())
+    }
+
+    fn spmv(&mut self, x: V, out: V) -> anyhow::Result<()> {
+        self.map_into(out, |s, r| s.sell_row(r, s.v(x)));
+        Ok(())
+    }
+
+    fn residual(&mut self, x: V, b: V, out: V) -> anyhow::Result<()> {
+        self.map_into(out, |s, r| s.v(b)[r] - s.sell_row(r, s.v(x)));
+        Ok(())
+    }
+
+    fn dot(&mut self, a: V, b: V) -> anyhow::Result<f64> {
+        let (x, y) = (self.v(a), self.v(b));
+        let nb = x.len().div_ceil(BLOCK);
+        let sums: Vec<f64> = self.pool.install(|| {
+            (0..nb)
+                .into_par_iter()
+                // SAFETY: blk * BLOCK < len.
+                .map(|blk| unsafe { blas::block_dot(blk, x, y) })
+                .collect()
+        });
+        Ok(combine_block_sums(&sums))
+    }
+
+    fn min_max(&mut self, a: V) -> anyhow::Result<(f64, f64)> {
+        let x = self.v(a);
+        let nb = x.len().div_ceil(BLOCK);
+        let mm: Vec<(f64, f64)> = self.pool.install(|| {
+            (0..nb)
+                .into_par_iter()
+                // SAFETY: blk * BLOCK < len.
+                .map(|blk| unsafe { blas::block_min_max(blk, x) })
+                .collect()
+        });
+        Ok(mm
+            .iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &(c, d)| {
+                (a.min(c), b.max(d))
+            }))
+    }
+
+    fn update_p(&mut self, beta: f64, omega: f64) -> anyhow::Result<()> {
+        // SAFETY: all cell vectors have the same length.
+        self.map_into(V::P, |s, i| unsafe {
+            blas::update_p(i, s.v(V::R), s.v(V::P), s.v(V::Vv), beta, omega)
+        });
+        Ok(())
+    }
+
+    fn sub_scaled(&mut self, x: V, z: V, alpha: f64, out: V) -> anyhow::Result<()> {
+        // SAFETY: as above.
+        self.map_into(out, |s, i| unsafe {
+            blas::sub_scaled(i, s.v(x), s.v(z), alpha)
+        });
+        Ok(())
+    }
+
+    fn update_x(&mut self, alpha: f64, omega: f64) -> anyhow::Result<()> {
+        // SAFETY: as above.
+        self.map_into(V::Phi, |s, i| unsafe {
+            blas::update_x(i, s.v(V::Phi), s.v(V::Ph), s.v(V::Sh), alpha, omega)
+        });
+        Ok(())
+    }
+
+    fn precondition(&mut self, x: V, out: V) -> anyhow::Result<()> {
+        // SAFETY: as above.
+        self.map_into(out, |s, i| unsafe { blas::scale(i, s.v(V::Dinv), s.v(x)) });
+        Ok(())
+    }
+
+    fn copy(&mut self, src: V, dst: V) -> anyhow::Result<()> {
+        let s = self.vecs[src.index()].clone();
+        self.vecs[dst.index()] = s;
+        Ok(())
+    }
+
+    fn axpy(&mut self, alpha: f64, x: V, y: V) -> anyhow::Result<()> {
+        // SAFETY: all cell vectors have the same length.
+        self.map_into(y, |s, i| unsafe { blas::axpy(i, alpha, s.v(x), s.v(y)) });
+        Ok(())
+    }
+
+    fn xpby(&mut self, x: V, beta: f64, y: V) -> anyhow::Result<()> {
+        // SAFETY: as above.
+        self.map_into(y, |s, i| unsafe { blas::xpby(i, s.v(x), beta, s.v(y)) });
+        Ok(())
+    }
+
+    fn matrix_values(&mut self) -> anyhow::Result<Vec<f64>> {
+        Ok(self.val.clone())
+    }
+
+    fn set_matrix(&mut self, val: &[f64]) -> anyhow::Result<()> {
+        anyhow::ensure!(val.len() == self.val.len(), "set_matrix: wrong length");
+        self.val.copy_from_slice(val);
+        let dinv = diagonal_inverse(&self.d, val);
+        self.vecs[V::Dinv.index()] = dinv;
+        Ok(())
+    }
+
+    fn discretisation(&self) -> Option<&Discretisation> {
+        Some(&self.d)
+    }
+
+    fn amg_load(&mut self, h: &Hierarchy) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            h.levels.first().map_or(h.coarse_n, |l| l.a.n_rows) == self.d.n_cells,
+            "hierarchy size does not match the mesh"
+        );
+        self.amg = Some(match h.precision {
+            Precision::Mixed => Amg::F32(AmgData::new(h)),
+            Precision::Double => Amg::F64(AmgData::new(h)),
+        });
+        Ok(())
+    }
+}
+
+impl LevelOps for CpuBackend {
+    fn amg_levels(&self) -> usize {
+        match &self.amg {
+            Some(Amg::F32(a)) => a.levels.len(),
+            Some(Amg::F64(a)) => a.levels.len(),
+            None => 0,
+        }
+    }
+
+    fn amg_steps(&self, l: usize) -> Vec<(f64, f64)> {
+        match &self.amg {
+            Some(Amg::F32(a)) => a.levels[l].steps.clone(),
+            Some(Amg::F64(a)) => a.levels[l].steps.clone(),
+            None => Vec::new(),
+        }
+    }
+
+    fn amg_load_rhs(&mut self, r: V) -> anyhow::Result<()> {
+        let rv = std::mem::take(&mut self.vecs[r.index()]);
+        let pool = &self.pool;
+        let res = (|| -> anyhow::Result<()> {
+            with_amg!(self, a => a.load_rhs(pool, &rv));
+            Ok(())
+        })();
+        self.vecs[r.index()] = rv;
+        res
+    }
+
+    fn amg_store(&mut self, z: V) -> anyhow::Result<()> {
+        let mut zv = std::mem::take(&mut self.vecs[z.index()]);
+        let pool = &self.pool;
+        let res = (|| -> anyhow::Result<()> {
+            with_amg!(self, a => a.store(pool, &mut zv));
+            Ok(())
+        })();
+        self.vecs[z.index()] = zv;
+        res
+    }
+
+    fn amg_smooth_first(&mut self, l: usize, c2: f64) -> anyhow::Result<()> {
+        let pool = &self.pool;
+        with_amg!(self, a => a.smooth_first(pool, l, c2));
+        Ok(())
+    }
+
+    fn amg_smooth_step(&mut self, l: usize, c1: f64, c2: f64) -> anyhow::Result<()> {
+        let pool = &self.pool;
+        with_amg!(self, a => a.smooth_step(pool, l, c1, c2));
+        Ok(())
+    }
+
+    fn amg_restrict(&mut self, l: usize) -> anyhow::Result<()> {
+        let pool = &self.pool;
+        with_amg!(self, a => a.restrict(pool, l));
+        Ok(())
+    }
+
+    fn amg_coarse(&mut self) -> anyhow::Result<()> {
+        let pool = &self.pool;
+        with_amg!(self, a => a.coarse(pool));
+        Ok(())
+    }
+
+    fn amg_prolong(&mut self, l: usize) -> anyhow::Result<()> {
+        let pool = &self.pool;
+        with_amg!(self, a => a.prolong(pool, l));
+        Ok(())
+    }
+}
+
+/// 1 / diagonal of a matrix in the sliced-ELL slots of `d` (slot 0).
+pub(crate) fn diagonal_inverse(d: &Discretisation, val: &[f64]) -> Vec<f64> {
+    (0..d.n_cells)
+        .map(|c| 1.0 / val[d.sell.pos(c, 0)])
+        .collect()
+}

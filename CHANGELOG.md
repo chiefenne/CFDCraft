@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+**Renamed from CFDCraft to Ennecraft**, so that the name cannot be confused with
+other projects. Crates are now `ennecraft-*`, the command is `ennecraft`, the
+environment variables are `ENNECRAFT_*`, and the repository is
+`chiefenne/Ennecraft`. Entries below keep the names of their time.
+
 ## Summary
 
 | Version | Stage | Highlights |

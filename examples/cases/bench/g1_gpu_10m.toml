@@ -5,8 +5,8 @@
 # cuda-reference, results identical to the CPU.
 #
 #   gpu/ptx-kernels/build.sh
-#   cargo build --release -p cfdcraft-cli --features cuda
-#   target/release/cfdcraft bench g1 examples/cases/bench/g1_gpu_10m.toml
+#   cargo build --release -p ennecraft-cli --features cuda
+#   target/release/ennecraft bench g1 examples/cases/bench/g1_gpu_10m.toml
 #
 # Needs about 4 GB of host memory and 3.5 GB of GPU memory.
 
@@ -19,7 +19,7 @@ backends = ["cuda-reference", "cuda-rust", "cpu-threads", "cpu-native"]
 repeat = 20
 warmup = 3
 device = 0
-rust_ptx = "target/nvptx64-nvidia-cuda/release/cfdcraft_ptx_kernels.ptx"
+rust_ptx = "target/nvptx64-nvidia-cuda/release/ennecraft_ptx_kernels.ptx"
 tolerance = 1e-12
 
 [output]

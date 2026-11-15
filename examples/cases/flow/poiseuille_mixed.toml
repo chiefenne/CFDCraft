@@ -1,6 +1,6 @@
 # Plane Poiseuille flow on mixed cells: order-of-accuracy sweep (stage 4).
 #
-#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/poiseuille_mixed.toml
+#   cargo run --release -p ennecraft-cli -- flow examples/cases/flow/poiseuille_mixed.toml
 #
 # Channel 0 < y < 1 of length 2 between walls at rest, the exact parabolic
 # profile (mean velocity 1 m/s) at the inlet, a static pressure outlet,

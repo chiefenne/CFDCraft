@@ -2,7 +2,7 @@
 # renumbered by reverse Cuthill-McKee, split into 4 parts. Gallery example 6.
 #
 #   gmsh -3 examples/meshes/tjunction.geo -format msh41 -o examples/meshes/tjunction.msh
-#   cfdcraft mesh examples/cases/mesh/tjunction_tet.toml
+#   ennecraft mesh examples/cases/mesh/tjunction_tet.toml
 
 [mesh]
 file = "../../meshes/tjunction.msh"   # relative to this case file

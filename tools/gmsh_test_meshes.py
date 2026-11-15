@@ -1,11 +1,11 @@
-"""Writes the small Gmsh test meshes of crates/cfdcraft-mesh/tests/data.
+"""Writes the small Gmsh test meshes of crates/ennecraft-mesh/tests/data.
 
 Needs the Gmsh Python module (pip install gmsh). Run from the repository
 root:  python3 tools/gmsh_test_meshes.py
 """
 import gmsh, os
 
-OUT = "crates/cfdcraft-mesh/tests/data"
+OUT = "crates/ennecraft-mesh/tests/data"
 
 
 def save(name, binary):

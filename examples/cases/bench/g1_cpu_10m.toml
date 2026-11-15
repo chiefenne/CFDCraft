@@ -2,7 +2,7 @@
 # Single-source kernel bodies (cpu-threads) against hand-written Rust loops
 # (cpu-native); cpu-serial gives the single-thread figure.
 #
-#   cfdcraft bench g1 examples/cases/bench/g1_cpu_10m.toml
+#   ennecraft bench g1 examples/cases/bench/g1_cpu_10m.toml
 #
 # Needs about 4 GB of memory.
 

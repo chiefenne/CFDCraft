@@ -3,20 +3,20 @@
 version = 4
 
 [[package]]
-name = "cfdcraft-core"
+name = "ennecraft-core"
 version = "0.4.0"
 
 [[package]]
-name = "cfdcraft-kernels"
+name = "ennecraft-kernels"
 version = "0.4.0"
 dependencies = [
- "cfdcraft-core",
+ "ennecraft-core",
 ]
 
 [[package]]
-name = "cfdcraft-ptx-kernels"
+name = "ennecraft-ptx-kernels"
 version = "0.4.0"
 dependencies = [
- "cfdcraft-core",
- "cfdcraft-kernels",
+ "ennecraft-core",
+ "ennecraft-kernels",
 ]
