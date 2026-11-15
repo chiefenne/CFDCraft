@@ -156,7 +156,9 @@ impl Default for RunSection {
             warmup: 2,
             threads: None,
             device: 0,
-            rust_ptx: PathBuf::from("target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx"),
+            rust_ptx: PathBuf::from(
+                "target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx",
+            ),
             tolerance: 1e-12,
         }
     }

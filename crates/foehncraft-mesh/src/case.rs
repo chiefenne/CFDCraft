@@ -379,8 +379,8 @@ pub fn run(
                 continue;
             }
             r.inside += 1;
-            let hint =
-                (foehncraft_core::rng::bits([case.check.seed, i, 7]) % mesh.n_cells as u64) as usize;
+            let hint = (foehncraft_core::rng::bits([case.check.seed, i, 7]) % mesh.n_cells as u64)
+                as usize;
             let tw = Instant::now();
             let tr = loc.track(loc.start(hint), x);
             walk_time += tw.elapsed().as_secs_f64();

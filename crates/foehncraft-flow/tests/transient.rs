@@ -6,8 +6,10 @@ use foehncraft_flow::case::{FlowCase, FlowReport, run};
 use std::path::Path;
 
 fn run_case(case: &FlowCase, name: &str) -> FlowReport {
-    let dir =
-        std::env::temp_dir().join(format!("foehncraft_transient_{name}_{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "foehncraft_transient_{name}_{}",
+        std::process::id()
+    ));
     let r = run(case, name, &dir, |_| {}).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
     r
