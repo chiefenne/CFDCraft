@@ -1,6 +1,6 @@
 # Taylor–Green vortex, time order of Crank–Nicolson with plain PISO (stage 5).
 #
-#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/taylor_green_cn.toml
+#   cargo run --release -p ennecraft-cli -- flow examples/cases/flow/taylor_green_cn.toml
 #
 # The decaying vortex u = −U cos kx sin ky F, v = U sin kx cos ky F,
 # F = exp(−2νk²t), on the unit square (one period) with the exact velocity on

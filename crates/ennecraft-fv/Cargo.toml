@@ -1,0 +1,42 @@
+[package]
+name = "ennecraft-fv"
+description = "Ennecraft finite-volume operators on a scalar: least-squares gradients, limiters, convection and diffusion, sliced-ELL assembly, BiCGStab, and the pressure solver (CG with smoothed-aggregation AMG, mixed precision), on the CPU and the NVIDIA GPU"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+# the build script passes the hypre library directory to dependents
+# (DEP_ENNECRAFT_HYPRE_LIBDIR) for their rpath
+links = "ennecraft_hypre"
+
+[features]
+default = ["hdf5"]
+# VTKHDF output of the fields (HDF5 built from source).
+hdf5 = ["ennecraft-mesh/hdf5"]
+# METIS available for the mesh case (not needed by the operators).
+metis = ["ennecraft-mesh/metis"]
+# NVIDIA GPU backend: the kernel bodies as PTX (gpu/ptx-kernels), loaded at
+# run time through the CUDA driver; a build needs no CUDA toolkit.
+cuda = ["dep:cudarc"]
+# hypre (BoomerAMG with PCG) as the reference solver of `ennecraft poisson`
+# (D20): needs HYPRE_DIR, the install prefix of a sequential hypre build.
+hypre = ["dep:cc"]
+
+[dependencies]
+ennecraft-core.workspace = true
+ennecraft-kernels.workspace = true
+ennecraft-mesh.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+anyhow = "1"
+cudarc = { workspace = true, optional = true, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-12000"] }
+
+[build-dependencies]
+cc = { version = "1", optional = true }
+
+[lints]
+workspace = true

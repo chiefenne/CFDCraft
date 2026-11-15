@@ -1,14 +1,14 @@
 //! Stage 2: the finite-volume operators and the Krylov vector operations of
-//! `cfdcraft_kernels::{fv, blas}` as PTX entry points, one GPU thread per
-//! output. The host side is `crates/cfdcraft-fv/src/backend/cuda.rs`; the
+//! `ennecraft_kernels::{fv, blas}` as PTX entry points, one GPU thread per
+//! output. The host side is `crates/ennecraft-fv/src/backend/cuda.rs`; the
 //! argument lists there must match these signatures exactly.
 //!
 //! Every pointer comes with its length (or a length from which it follows);
 //! the host validated the mesh and built every array for it.
 
 use crate::tid;
-use cfdcraft_kernels::fv::{self, Boundary, FaceInputs, SellLayout, Topology, Vec3};
-use cfdcraft_kernels::{blas, spmv};
+use ennecraft_kernels::fv::{self, Boundary, FaceInputs, SellLayout, Topology, Vec3};
+use ennecraft_kernels::{blas, spmv};
 use core::slice::from_raw_parts as sl;
 
 /// Topology from raw parts.
@@ -322,7 +322,7 @@ pub unsafe extern "ptx-kernel" fn fv_residual(
     }
 }
 
-/// Block sums of a·b: one thread per block of `cfdcraft_core::repro::BLOCK`
+/// Block sums of a·b: one thread per block of `ennecraft_core::repro::BLOCK`
 /// values, in the same order as on the CPU.
 #[unsafe(no_mangle)]
 pub unsafe extern "ptx-kernel" fn blas_block_dot(

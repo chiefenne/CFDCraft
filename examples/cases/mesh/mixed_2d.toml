@@ -3,7 +3,7 @@
 # The patches zmin and zmax take the symmetry condition in a 2D case.
 # Gallery example 5.
 #
-#   cfdcraft mesh examples/cases/mesh/mixed_2d.toml
+#   ennecraft mesh examples/cases/mesh/mixed_2d.toml
 
 [mesh.generate]
 type = "mixed"

@@ -1,14 +1,14 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/cfdcraft-core",
-    "crates/cfdcraft-kernels",
-    "crates/cfdcraft-parallel",
-    "crates/cfdcraft-mesh",
-    "crates/cfdcraft-fv",
-    "crates/cfdcraft-flow",
-    "crates/cfdcraft-bench",
-    "crates/cfdcraft-cli",
+    "crates/ennecraft-core",
+    "crates/ennecraft-kernels",
+    "crates/ennecraft-parallel",
+    "crates/ennecraft-mesh",
+    "crates/ennecraft-fv",
+    "crates/ennecraft-flow",
+    "crates/ennecraft-bench",
+    "crates/ennecraft-cli",
 ]
 # Built separately with the nightly toolchain for the NVIDIA PTX target
 # (see gpu/ptx-kernels/README.md).
@@ -19,17 +19,17 @@ version = "0.4.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
-repository = "https://github.com/chiefenne/CFDCraft"
+repository = "https://github.com/chiefenne/Ennecraft"
 authors = ["Andreas Ennemoser"]
 
 [workspace.dependencies]
-cfdcraft-core = { path = "crates/cfdcraft-core", version = "0.4.0" }
-cfdcraft-kernels = { path = "crates/cfdcraft-kernels", version = "0.4.0" }
-cfdcraft-parallel = { path = "crates/cfdcraft-parallel", version = "0.4.0" }
-cfdcraft-mesh = { path = "crates/cfdcraft-mesh", version = "0.4.0", default-features = false }
-cfdcraft-fv = { path = "crates/cfdcraft-fv", version = "0.4.0", default-features = false }
-cfdcraft-flow = { path = "crates/cfdcraft-flow", version = "0.4.0", default-features = false }
-cfdcraft-bench = { path = "crates/cfdcraft-bench", version = "0.4.0" }
+ennecraft-core = { path = "crates/ennecraft-core", version = "0.4.0" }
+ennecraft-kernels = { path = "crates/ennecraft-kernels", version = "0.4.0" }
+ennecraft-parallel = { path = "crates/ennecraft-parallel", version = "0.4.0" }
+ennecraft-mesh = { path = "crates/ennecraft-mesh", version = "0.4.0", default-features = false }
+ennecraft-fv = { path = "crates/ennecraft-fv", version = "0.4.0", default-features = false }
+ennecraft-flow = { path = "crates/ennecraft-flow", version = "0.4.0", default-features = false }
+ennecraft-bench = { path = "crates/ennecraft-bench", version = "0.4.0" }
 rayon = "1.12"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }

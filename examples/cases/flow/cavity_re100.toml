@@ -1,6 +1,6 @@
 # Lid-driven cavity at Re = 100 on 64 x 64 hexahedra (stage 4).
 #
-#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/cavity_re100.toml
+#   cargo run --release -p ennecraft-cli -- flow examples/cases/flow/cavity_re100.toml
 #
 # Unit square cavity, the lid (ymax) slides at 1 m/s, the other walls are at
 # rest; ρ = 1 kg/m³, μ = 0.01 Pa s, so Re = ρ U L / μ = 100. One cell layer

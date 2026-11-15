@@ -50,20 +50,20 @@ echo "== Single-source kernels -> PTX for sm_$cc"
 gpu/ptx-kernels/build.sh "sm_$cc"
 
 echo "== CLI with CUDA and hypre"
-cargo build --release --locked -p cfdcraft-cli --features cuda,hypre
-target/release/cfdcraft info
+cargo build --release --locked -p ennecraft-cli --features cuda,hypre
+target/release/ennecraft info
 
 status=0
 run() {
-    echo "== cfdcraft poisson $*"
-    target/release/cfdcraft poisson "$@" || status=1
+    echo "== ennecraft poisson $*"
+    target/release/ennecraft poisson "$@" || status=1
 }
 run examples/cases/poisson/poisson_poly_gpu.toml --out output/stage3_gpu_poly
 run examples/cases/poisson/poisson_poly_box.toml --backends cuda --solvers amg,amg-double,hypre \
     --out output/stage3_gpu_sweep
 
 echo "== Stage-3 tests against the GPU build of hypre"
-cargo test --release --locked -p cfdcraft-fv --features hypre --test stage3 || status=1
+cargo test --release --locked -p ennecraft-fv --features hypre --test stage3 || status=1
 
 echo
 echo "== Reports (copy everything below into the project thread)"

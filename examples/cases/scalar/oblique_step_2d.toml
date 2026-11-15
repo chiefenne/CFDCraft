@@ -1,7 +1,7 @@
 # Oblique step: pure convection of a discontinuity at 30° to the x axis on
 # a 2D polygonal mesh, with four convection schemes (stage 2, D25).
 #
-#   cargo run --release -p cfdcraft-cli -- scalar examples/cases/scalar/oblique_step_2d.toml
+#   cargo run --release -p ennecraft-cli -- scalar examples/cases/scalar/oblique_step_2d.toml
 #
 # φ = 1 enters through ymin and through xmin below y = 0.2, φ = 0 through
 # xmin above it; zero gradient at the outflow (xmax, ymax) and on the z

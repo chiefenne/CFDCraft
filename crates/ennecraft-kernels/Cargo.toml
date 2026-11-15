@@ -1,0 +1,20 @@
+[package]
+name = "ennecraft-kernels"
+description = "Ennecraft compute kernels: one source for the CPU and the NVIDIA GPU (single-source route of gate G1)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+# Bounds-checked loads in the kernel bodies. Off by default; gate G1 measures
+# what the checks cost (docs/benchmarks/g1.md).
+checked-indexing = []
+
+[dependencies]
+ennecraft-core.workspace = true
+
+[lints]
+workspace = true
