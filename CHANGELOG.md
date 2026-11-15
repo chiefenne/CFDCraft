@@ -61,7 +61,10 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
   `foehn flow --backend cuda` runs every flow case, steady and transient,
   on an NVIDIA GPU (compute capability 7.0 or newer), with all fields,
   matrices and old levels in GPU memory; results bitwise equal to the CPU
-  (D31).
+  (D31). **Tesla T4 (Colab): all 8 cases bitwise equal to the CPU; 722 ns
+  per cell and SIMPLEC iteration on 970 225 polyhedra (7.1 times the two
+  CPU threads of the VM), 1 049 ns per cell and PISO step on 98 304 cells
+  (9.2 times).** Gallery 16.
 - **One source down to the argument lists:** the 27 operations of the flow
   loop are entries of `foehncraft_kernels::entry` (a `#[repr(C)]` argument
   block and a body per index). The CPU loops and the PTX entries `flow_*`

@@ -25,6 +25,7 @@ All commands run from the repository root. Case files are in
 | 13 | [Poiseuille flow: order of accuracy of the flow solver](#poiseuille) | 4 | second order on all mesh types, velocity inlet with the exact profile, pressure outlet |
 | 14 | [Taylor–Green vortex: second order in time and space](#taylor-green) | 5 | PISO, variable-step BDF2, Crank–Nicolson, extrapolation, outer iterations at large steps |
 | 15 | [Cylinder in a channel: the Schäfer & Turek benchmark](#cylinder) | 5 | built-in O-grid, steady Re 20, vortex street at Re 100, adaptive time step, force coefficients |
+| 16 | [The flow loop on a GPU](#gpu-flow) | 5 | single-source flow kernels, CPU = GPU bitwise, time per cell on a Tesla T4 |
 
 ---
 
@@ -571,5 +572,58 @@ target/release/foehn flow examples/cases/flow/cylinder_re100.toml
 # report: output/cylinder_re100/flow.md, chart: coefficients.svg, histories: forces.csv, probes.csv
 python3 tools/render_mesh.py output/cylinder_re20/fields.vtkhdf cylinder.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
 ```
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="gpu-flow"></a>
+## 16. The flow loop on a GPU
+
+![Time per cell and iteration (or step) of eight flow cases, CPU against a Tesla T4](figures/gallery/gpu_flow_times.svg)
+
+The same flow cases run on the CPU and on an NVIDIA GPU
+(`run.backend = "cuda"`). The operations of the flow loop are written once
+in Rust and run as CPU loops and as PTX; fields, matrices and old time
+levels stay in GPU memory, and the pressure and momentum solves run on the
+GPU backend. On a free Colab Tesla T4 (sm_75) against the two CPU threads
+of the VM, **all eight cases give bitwise the same fields, residual
+histories, forces, reports and restart files** (D31: gather-based
+assembly, no fused multiply-adds, no atomics, fixed reduction tree).
+
+| Case | Cells | CPU ns/cell | GPU ns/cell | CPU s | GPU s |
+|---|---:|---:|---:|---:|---:|
+| couette_poly | 153 | 12 358 | 20 594 | 0.2 | 1.5 |
+| poiseuille_mixed | 12 288 | 2 925 | 855 | 43.1 | 15.3 |
+| cavity_re100 | 4 096 | 4 011 | 1 389 | 7.3 | 2.9 |
+| cavity_re100_poly3d | 5 445 | 5 848 | 1 559 | 6.4 | 2.3 |
+| cavity_re100_transient | 4 096 | 14 085 | 6 140 | 28.9 | 13.0 |
+| taylor_green_cn | 4 096 | 8 678 | 2 621 | 46.4 | 15.1 |
+| cylinder_re100_gpu | 98 304 | 9 692 | 1 049 | 191.8 | 22.2 |
+| cavity_poly3d_gpu | 970 225 | 5 116 | 722 | 200.1 | 136.4 |
+
+Time per cell and SIMPLEC iteration (steady cases) or PISO step
+(transient cases); the wall times include mesh generation and output, which
+is why the million-cell case gains less in wall time (1.5 times, 30
+iterations) than per iteration. Small meshes do not fill the GPU: the
+153-cell case is slower on the GPU. The Krylov solvers still read a dot
+product back per iteration (D76 follows later).
+
+| | |
+|---|---|
+| Mesh | generated cavity (hexahedra, polyhedra, 3D polyhedra up to 970 225 cells), built-in cylinder mesh, refine 2 |
+| Solver | SIMPLEC (steady) and PISO with BDF2 or Crank–Nicolson (transient), CG + AMG and BiCGStab on the GPU |
+| Case files | `flow/cavity_poly3d_gpu.toml`, `flow/cylinder_re100_gpu.toml`, and the catalogue cases of the table |
+| Report | `docs/benchmarks/stage5_gpu_t4.md` |
+
+```
+cargo build --release --features cuda   # nightly Rust, PTX: gpu/ptx-kernels/build.sh
+python3 tools/stage5_cloud.py           # eight cases on cpu and cuda, bitwise comparison, report.md
+target/release/foehn flow examples/cases/flow/cylinder_re100_gpu.toml --backend cuda
+python3 tools/gpu_chart.py output/stage5_gpu/report.md gpu_flow_times.svg
+```
+
+Without a GPU of your own: `tools/stage5_colab.ipynb` on a free Colab T4
+(recipe 24).
 
 [↑ back to top](#example-gallery)

@@ -266,8 +266,18 @@ build).
 | Check | Result | Where |
 |---|---|---|
 | CPU results unchanged by the executor | all 19 flow cases bitwise equal to the previous build | `tools/compare_runs.py` |
-| GPU = CPU, bitwise | *pending: Colab T4 run of `tools/stage5_colab.ipynb`* | `tools/stage5_cloud.py`, cases `cavity_poly3d_gpu`, `cylinder_re100_gpu` and six catalogue cases |
-| Time per cell and iteration on the GPU | *pending* | as above |
+| GPU = CPU, bitwise | all 8 cases bitwise equal (fields, residual histories, forces, reports, restart files; 6 to 13 files per case), Tesla T4, 2026-11-15 | `tools/stage5_cloud.py`, [`docs/benchmarks/stage5_gpu_t4.md`](../benchmarks/stage5_gpu_t4.md) |
+| Time per cell and iteration on the GPU | 722 ns on 970 225 polyhedra (CPU, 2 threads: 5 116 ns, ×7.1); 1 049 ns per step on 98 304 cells (CPU 9 692 ns, ×9.2) | as above, gallery 16 |
+
+The speed-up grows with the mesh: 2.3–3.8 times on 4 096 to 12 288 cells,
+7 to 9 times from 98 304 cells, and below one (0.6) on the 153-cell
+Couette case, where the time is the latency of the launches. The CPU of the
+Colab VM has two threads, so the ratios against a workstation CPU are
+smaller; the GPU numbers are those of a 2018 Tesla T4, and the Krylov
+solvers still read a dot product back per iteration (below), which is
+what the small cases mostly measure. No fused multiply-adds and no
+atomics are in the GPU path, and the results are the CPU's to the last
+bit.
 
 **Not yet (D76):** the Krylov solvers still read a dot product back per
 iteration (the BiCGStab and CG of stage 2 and 3), a step reads its
