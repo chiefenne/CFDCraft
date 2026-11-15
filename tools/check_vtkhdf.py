@@ -42,16 +42,19 @@ def check(path):
              for i in range(out.GetNumberOfPartitionedDataSets())]
     grid = out.GetPartitionedDataSet(names.index("internal")).GetPartition(0)
     n = grid.GetNumberOfCells()
-    sizes = vtk.vtkCellSizeFilter()
-    sizes.SetInputData(grid)
-    sizes.Update()
-    vol = v2n(sizes.GetOutput().GetCellData().GetArray("Volume")).copy()
     types = np.array([grid.GetCellType(i) for i in range(n)])
-    for i in np.nonzero(types == vtk.VTK_POLYHEDRON)[0]:
-        vol[i] = polyhedron_volume(grid.GetCell(i))
     msg = f"{path}: {n} cells, {len(names) - 1} patches"
     ours = grid.GetCellData().GetArray("volume")
+    # Volumes are compared only where Foehncraft wrote them (the mesh files);
+    # computing them for a field file without `volume` checked nothing and
+    # took minutes for polyhedral meshes.
     if ours is not None:
+        sizes = vtk.vtkCellSizeFilter()
+        sizes.SetInputData(grid)
+        sizes.Update()
+        vol = v2n(sizes.GetOutput().GetCellData().GetArray("Volume")).copy()
+        for i in np.nonzero(types == vtk.VTK_POLYHEDRON)[0]:
+            vol[i] = polyhedron_volume(grid.GetCell(i))
         ours = v2n(ours)
         err = abs(vol - ours).max() / abs(ours).max()
         msg += f", max relative volume difference {err:.1e}"

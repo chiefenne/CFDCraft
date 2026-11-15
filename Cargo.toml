@@ -51,3 +51,14 @@ all = { level = "warn", priority = -1 }
 codegen-units = 1
 lto = "thin"
 debug = "line-tables-only"
+
+# Profile for the fast PR gate: same optimisation level as `release`, but
+# no LTO and 16 codegen units, so the workspace crates compile about twice
+# as fast. Results are bitwise equal to `release` (Rust never contracts or
+# reassociates f64 arithmetic, whatever the codegen units). main, nightly
+# and releases keep using `release`.
+[profile.ci]
+inherits = "release"
+codegen-units = 16
+lto = false
+debug = false
