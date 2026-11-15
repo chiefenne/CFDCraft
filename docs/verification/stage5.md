@@ -379,7 +379,7 @@ Requirements D62, D64, D69 (the run record), D75 and D77–D87 make a run
 something a program can drive: a parametric study (D62), a batch job, or
 an agent through the later MCP server (L18). This part adds them on the
 solver side; the conservation ledger and the divergence report (D63, D88,
-D89) follow as part 4b. No result changes: the 19 flow cases of the
+D89) follow as part 4b. No result changes: the 20 flow cases of the
 catalogue give bitwise the fields, CSV files and report values of the
 build of `main` (`tools/compare_runs.py --across-versions`; the resolved
 case gains the empty `[run.limits]` table).
