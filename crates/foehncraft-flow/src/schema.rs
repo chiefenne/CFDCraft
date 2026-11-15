@@ -523,7 +523,8 @@ mod tests {
 
     #[test]
     fn key_reference_is_up_to_date() {
-        let doc = include_str!("../../../docs/keys.md");
+        // a Windows checkout may have CRLF line ends
+        let doc = include_str!("../../../docs/keys.md").replace("\r\n", "\n");
         assert!(
             doc == markdown(),
             "docs/keys.md is out of date: regenerate it with\n  \
