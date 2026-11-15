@@ -23,6 +23,8 @@ All commands run from the repository root. Case files are in
 | 11 | [Poisson manufactured solution with the multigrid](#poisson-amg-mms) | 3 | CG + AMG inside the outer iterations, non-orthogonal correction |
 | 12 | [Lid-driven cavity against Ghia et al.](#cavity) | 4 | SIMPLEC, Rhie–Chow, reference cell, centre-line comparison, 2D and 3D cells |
 | 13 | [Poiseuille flow: order of accuracy of the flow solver](#poiseuille) | 4 | second order on all mesh types, velocity inlet with the exact profile, pressure outlet |
+| 14 | [Taylor–Green vortex: second order in time and space](#taylor-green) | 5 | PISO, variable-step BDF2, Crank–Nicolson, extrapolation, outer iterations at large steps |
+| 15 | [Cylinder in a channel: the Schäfer & Turek benchmark](#cylinder) | 5 | built-in O-grid, steady Re 20, vortex street at Re 100, adaptive time step, force coefficients |
 
 ---
 
@@ -475,6 +477,99 @@ linear profile must.
 ```
 target/release/cfdcraft flow examples/cases/flow/poiseuille_poly.toml
 # report: output/poiseuille_poly/flow.md, plot: convergence.svg
+```
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="taylor-green"></a>
+## 14. Taylor–Green vortex: second order in time and space
+
+![Change of the solution over the time step, BDF2](figures/gallery/taylor_green_bdf2_time.svg)
+
+The decaying vortex on the unit square, Re = 100, the exact velocity on
+the four sides at each time level. Five runs on the same 64 × 64 mesh
+with time steps from 0.01 to 0.000625 s: the change of the solution when
+the step is halved falls with Δt², for BDF2 and for Crank–Nicolson, with
+one outer iteration per step (plain PISO with two correctors). That needs
+the convecting flux and the deferred corrections extrapolated to the new
+time; without it the lag of these terms makes PISO first order.
+
+| Scheme | Observed time order (pairs of steps) |
+|---|---|
+| BDF2 | 2.35, 2.42, 2.21 |
+| Crank–Nicolson | 2.40, 2.41, 2.00 |
+| BDF2, Courant 1.3 to 9, outer iterations to 1e-9 | 1.97, 2.00 |
+
+![Velocity error over the mesh size](figures/gallery/taylor_green_space.svg)
+
+In space, at a fixed small step, the error falls from 2.6e-2 on 16² to
+1.3e-4 on 128² cells, order 2.09 on the finest pair.
+
+| | |
+|---|---|
+| Mesh | generated hex 2D, 64 × 64 (time), 16² to 128² (space) |
+| Physics | ρ = 1 kg/m³, μ = 0.01 Pa s, U = 1 m/s, L = 1 m: Re = 100, t = 0 to 0.4 s |
+| Solver | PISO, two correctors, BDF2 or Crank–Nicolson, linear solves to 1e-8 |
+| Case files | `flow/taylor_green_bdf2.toml`, `taylor_green_cn.toml`, `taylor_green_space.toml`, `taylor_green_cfl10.toml` |
+
+```
+cargo build --release -p cfdcraft-cli
+target/release/cfdcraft flow examples/cases/flow/taylor_green_bdf2.toml
+# report: output/taylor_green_bdf2/flow.md, plot: time_convergence.svg
+target/release/cfdcraft flow examples/cases/flow/taylor_green_space.toml
+# report: output/taylor_green_space/flow.md, plot: convergence.svg
+```
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="cylinder"></a>
+## 15. Cylinder in a channel: the Schäfer & Turek benchmark
+
+![Speed around the cylinder at Re = 20, 98 304 cells](figures/gallery/cylinder_re20_speed.png)
+
+The laminar cylinder benchmark of Schäfer & Turek (1996): a cylinder of
+0.1 m in a 2.2 × 0.41 m channel, slightly off the centre line, with a
+parabolic inflow. At Re = 20 the flow is steady with two attached
+vortices; on 98 304 cells the drag and lift coefficients and the pressure
+difference across the cylinder lie inside the reference ranges
+(C_D 5.5800, C_L 0.01060, Δp 0.11751 Pa).
+
+![Vortex street at Re = 100](figures/gallery/cylinder_re100_speed.png)
+
+At Re = 100 a vortex street forms. The time step follows a Courant number
+of 0.8; from t = 5 s the run evaluates the largest drag and lift, the
+Strouhal number of the lift and the pressure difference half a period
+after the lift maximum.
+
+![Drag and lift coefficients over time, Re = 100](figures/gallery/cylinder_re100_coefficients.svg)
+
+| Case | Cells | C_D (max) | C_L (max) | St | Δp (Pa) |
+|---|---:|---:|---:|---:|---:|
+| Re 20, reference | | 5.57–5.59 | 0.0104–0.0110 | | 0.1172–0.1176 |
+| Re 20 | 24 576 | 5.5808 | 0.01036 | | 0.11750 |
+| Re 20 | 98 304 | 5.5800 | 0.01060 | | 0.11751 |
+| Re 100, reference | | 3.22–3.24 | 0.99–1.01 | 0.295–0.305 | 2.46–2.50 |
+| Re 100 | 6 144 | 3.2319 | 0.9712 | 0.2955 | 2.4819 |
+| Re 100 | 24 576 | TBD_R1_CD | TBD_R1_CL | TBD_R1_ST | TBD_R1_DP |
+
+![The O-grid around the cylinder, refine 0](figures/gallery/cylinder_mesh.png)
+
+| | |
+|---|---|
+| Mesh | built in (`[mesh.cylinder]`): O-grid around the cylinder, graded wake block; refine 0, 1, 2: 6 144, 24 576, 98 304 hexahedra in one layer |
+| Physics | ρ = 1 kg/m³, μ = 0.001 Pa s, Ū = 0.2 m/s (Re 20) or 1 m/s (Re 100), D = 0.1 m |
+| Solver | Re 20 steady SIMPLEC; Re 100 PISO with BDF2, adaptive Δt (Courant 0.8), t = 0 to 8 s |
+| Case files | `flow/cylinder_re20.toml`, `cylinder_re100.toml` |
+
+```
+target/release/cfdcraft flow examples/cases/flow/cylinder_re20.toml
+target/release/cfdcraft flow examples/cases/flow/cylinder_re100.toml
+# report: output/cylinder_re100/flow.md, chart: coefficients.svg, histories: forces.csv, probes.csv
+python3 tools/render_mesh.py output/cylinder_re20/fields.vtkhdf cylinder.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
 ```
 
 [↑ back to top](#example-gallery)

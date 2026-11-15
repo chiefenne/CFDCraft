@@ -1,0 +1,58 @@
+# Taylor–Green vortex, time order of BDF2 with plain PISO (stage 5).
+#
+#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/taylor_green_bdf2.toml
+#
+# The decaying vortex u = −U cos kx sin ky F, v = U sin kx cos ky F,
+# F = exp(−2νk²t), on the unit square (one period) with the exact velocity on
+# the sides, Re = 100, from t = 0 to 0.4 s. Five runs on the same 64 x 64
+# mesh with Δt = 0.01 … 0.000625 s (Courant number 0.63 … 0.04), one outer
+# iteration per step (plain PISO, two correctors). The observed time order
+# comes from the differences of successive solutions (the spatial error
+# cancels); the run fails if the order on the smallest steps is outside
+# 1.8–2.3 (D28 acceptance; the orders approach 2 from above).
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.015625]
+cells = [64, 64, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.01         # Re = ρ U L / μ = 100
+
+[flow]
+convection = true
+
+# the exact velocity on all four sides, at the time of each step
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.xmax]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.ymin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.ymax]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[analytic]
+type = "taylor-green"    # U = 1 m/s, period L = 1 m
+
+[time]
+scheme = "bdf2"
+time_step = 0.01
+end_time = 0.4
+
+[verification]
+time_steps = [0.01, 0.005, 0.0025, 0.00125, 0.000625]
+expected_time_order = [1.8, 2.3]
+
+[output]
+wall_csv = false

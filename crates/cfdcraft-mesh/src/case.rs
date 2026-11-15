@@ -10,9 +10,11 @@
 //! [mesh.generate]          # the built-in generator (crate::generate::BoxSpec)
 //! type = "poly"
 //! cells = [16, 16, 16]
+//! # or [mesh.cylinder]: a channel with a cylinder (crate::cylinder::CylinderSpec)
 //! ```
 
 use crate::Geometry;
+use crate::cylinder::CylinderSpec;
 use crate::decompose::{HaloPlan, decompose};
 use crate::generate::BoxSpec;
 use crate::locate::{Locator, TrackEnd};
@@ -51,6 +53,8 @@ pub struct MeshSection {
     pub scale: f64,
     /// Built-in generator.
     pub generate: Option<BoxSpec>,
+    /// Built-in channel with a cylinder.
+    pub cylinder: Option<CylinderSpec>,
     /// Convert a tetrahedral mesh into polyhedra (the dual mesh, one cell
     /// per node).
     pub polyhedral: bool,
@@ -68,6 +72,7 @@ impl Default for MeshSection {
             file: None,
             scale: 1.0,
             generate: None,
+            cylinder: None,
             polyhedral: false,
             renumber: Ordering::None,
             seed: 2026,
@@ -205,9 +210,26 @@ pub struct MeshReport {
 
 /// Builds or reads the mesh of a case.
 pub fn build_mesh(case: &MeshSection) -> Result<(Mesh, String, Vec<String>)> {
+    let given = [
+        case.file.is_some(),
+        case.generate.is_some(),
+        case.cylinder.is_some(),
+    ];
+    if given.iter().filter(|&&g| g).count() > 1 {
+        bail!("[mesh]: give one of `file`, `[mesh.generate]` and `[mesh.cylinder]`");
+    }
+    if let Some(spec) = &case.cylinder {
+        let mut mesh = spec.generate().map_err(anyhow::Error::msg)?;
+        for (old, new) in &case.patches {
+            mesh.rename_patch(old, new).map_err(anyhow::Error::msg)?;
+        }
+        return Ok((mesh, spec.describe(), Vec::new()));
+    }
     let (mut mesh, source, warnings) = match (&case.file, &case.generate) {
         (Some(_), Some(_)) => bail!("[mesh]: give either `file` or `[mesh.generate]`, not both"),
-        (None, None) => bail!("[mesh]: give `file` or a `[mesh.generate]` table"),
+        (None, None) => {
+            bail!("[mesh]: give `file`, a `[mesh.generate]` or a `[mesh.cylinder]` table")
+        }
         (Some(f), None) => {
             let g = crate::gmsh::read(f).map_err(anyhow::Error::msg)?;
             let mut mesh = g.mesh;

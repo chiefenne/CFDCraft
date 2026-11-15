@@ -257,8 +257,13 @@ pub struct MomentumRowOut<T> {
     pub val: *mut T,
     /// Right-hand sides of the three components.
     pub rhs: [*mut T; 3],
-    /// D_P = V_P / a_P (relaxed diagonal), for the Rhie–Chow flux.
+    /// D_P = V_P / a_P (relaxed diagonal with the time term), for the
+    /// Rhie–Chow flux.
     pub d: *mut T,
+    /// D^s_P = V_P / a_P (relaxed diagonal of the full operator, θ = 1,
+    /// without the time term), for the time-step term of the Rhie–Chow flux
+    /// (equal to `d` in steady flow).
+    pub ds: *mut T,
     /// D_P^C = V_P / (a_P − Σ |a_N|) (SIMPLEC), for the pressure correction.
     pub dc: *mut T,
     /// Relaxed diagonal of each component (with the symmetry parts); the
@@ -293,6 +298,30 @@ pub struct MomentumRowInputs<'a, T> {
     pub mom_kind: &'a [u32],
     /// Face area vectors.
     pub face_area: Vec3<'a, T>,
+    /// Weight θ of the implicit spatial terms (1 for steady flow, backward
+    /// Euler and BDF2, ½ for Crank–Nicolson).
+    pub theta: T,
+    /// True in a time step: the time-derivative and old-time terms below
+    /// enter; false (steady) skips them and their arrays may be empty.
+    pub transient: bool,
+    /// Time-derivative coefficient ρ a₀ / Δt; the diagonal gets
+    /// τ_P = ρ a₀ V_P / Δt.
+    pub tau: T,
+    /// Coefficients ρ (−a₁) / Δt and ρ (−a₂) / Δt of the old levels uⁿ and
+    /// uⁿ⁻¹ on the right-hand side (backward differences
+    /// du/dt ≈ (a₀ uⁿ⁺¹ + a₁ uⁿ + a₂ uⁿ⁻¹) / Δt).
+    pub c_old: [T; 2],
+    /// Velocity at the old time level n.
+    pub u_old: Vec3<'a, T>,
+    /// Velocity at the old time level n − 1 (read only when `c_old[1]` is
+    /// not zero).
+    pub u_old2: Vec3<'a, T>,
+    /// Weight 1 − θ of the explicit spatial operator (Crank–Nicolson); 0
+    /// skips `explicit`.
+    pub explicit_weight: T,
+    /// The spatial operator Σ_f ±F_f(uⁿ) of the old level per component
+    /// ([`momentum_operator`]).
+    pub explicit: Vec3<'a, T>,
 }
 
 /// Momentum row of cell `c`: Σ_f ±F_f = (−∇p_P + f_b) V_P per component,
@@ -300,6 +329,17 @@ pub struct MomentumRowInputs<'a, T> {
 /// with three right-hand sides. Also writes D_P = V_P / (a_P/α) and the
 /// SIMPLEC factor D^C_P = V_P / (a_P/α + Σ a_N) (off-diagonals a_N ≤ 0),
 /// bounded below by 10⁻¹² a_P/α.
+///
+/// In a time step (`transient`) the face terms are weighted with θ, the
+/// diagonal gets the time term τ_P = ρ a₀ V_P / Δt and the right-hand side
+/// the old levels ρ V_P (−a₁ uⁿ − a₂ uⁿ⁻¹) / Δt and, for Crank–Nicolson,
+/// −(1 − θ) Σ_f ±F_f(uⁿ):
+///
+/// (θ a_P + τ_P)/α u_P + θ Σ a_N u_N = θ b + ρV(−a₁uⁿ − a₂uⁿ⁻¹)/Δt
+///   − (1 − θ) R(uⁿ) + (1 − α)/α (θ a_P + τ_P) u_P^prev.
+///
+/// D_P then contains τ_P; D^s_P = V_P / (θ a_P/α) does not. With θ = 1 and
+/// no time term the arithmetic is exactly that of the steady row.
 ///
 /// # Safety
 /// As [`crate::fv::assemble_row`]; the output arrays have an entry for `c`
@@ -326,12 +366,13 @@ pub unsafe fn momentum_row<T: Real>(c: usize, inp: &MomentumRowInputs<T>, out: &
         while k < hi {
             let (f, is_nb) = unpack_face(ld(t.cell_faces, k));
             let bf = inp.bf.at(f);
+            let th = inp.theta;
             if is_nb {
-                diag -= ld(inp.cn, f);
-                b[0] += bf[0];
-                b[1] += bf[1];
-                b[2] += bf[2];
-                let a = -ld(inp.cp, f);
+                diag -= th * ld(inp.cn, f);
+                b[0] += th * bf[0];
+                b[1] += th * bf[1];
+                b[2] += th * bf[2];
+                let a = -(th * ld(inp.cp, f));
                 off += a;
                 *out.val.add(inp.layout.pos(c, j)) = a;
                 j += 1;
@@ -340,17 +381,17 @@ pub unsafe fn momentum_row<T: Real>(c: usize, inp: &MomentumRowInputs<T>, out: &
                     let s = inp.face_area.at(f);
                     let a2 = dot(s, s);
                     let c = ld(inp.cp, f);
-                    sym[0] += c * s[0] * s[0] / a2;
-                    sym[1] += c * s[1] * s[1] / a2;
-                    sym[2] += c * s[2] * s[2] / a2;
+                    sym[0] += th * (c * s[0] * s[0] / a2);
+                    sym[1] += th * (c * s[1] * s[1] / a2);
+                    sym[2] += th * (c * s[2] * s[2] / a2);
                 } else {
-                    diag += ld(inp.cp, f);
+                    diag += th * ld(inp.cp, f);
                 }
-                b[0] -= bf[0];
-                b[1] -= bf[1];
-                b[2] -= bf[2];
+                b[0] -= th * bf[0];
+                b[1] -= th * bf[1];
+                b[2] -= th * bf[2];
                 if f < t.n_interior {
-                    let a = ld(inp.cn, f);
+                    let a = th * ld(inp.cn, f);
                     off += a;
                     *out.val.add(inp.layout.pos(c, j)) = a;
                     j += 1;
@@ -358,18 +399,51 @@ pub unsafe fn momentum_row<T: Real>(c: usize, inp: &MomentumRowInputs<T>, out: &
             }
             k += 1;
         }
-        let dr = diag / inp.alpha;
         let u = inp.u.at(c);
+        // the face terms of the diagonal carry θ; D^s is that of the full
+        // operator (Crank–Nicolson: the steady state is then the SIMPLEC
+        // one, and the face flux follows the same θ-scheme as the cells);
+        // × θ is exact for θ = 1
+        let ds = vol / (diag / inp.alpha) * inp.theta;
+        let mut src = [T::ZERO; 3];
+        if inp.transient {
+            diag += inp.tau * vol;
+            let uo = inp.u_old.at(c);
+            let mut i = 0;
+            while i < 3 {
+                src[i] = inp.c_old[0] * vol * uo[i];
+                i += 1;
+            }
+            if inp.c_old[1] != T::ZERO {
+                let uo2 = inp.u_old2.at(c);
+                i = 0;
+                while i < 3 {
+                    src[i] += inp.c_old[1] * vol * uo2[i];
+                    i += 1;
+                }
+            }
+            if inp.explicit_weight != T::ZERO {
+                let r = inp.explicit.at(c);
+                i = 0;
+                while i < 3 {
+                    src[i] -= inp.explicit_weight * r[i];
+                    i += 1;
+                }
+            }
+        }
+        let dr = diag / inp.alpha;
         let mut i = 0;
         while i < 3 {
             let a = diag + sym[i];
             let ar = a / inp.alpha;
-            *out.rhs[i].add(c) = b[i] + (ar - a) * u[i];
+            let rhs = if inp.transient { b[i] + src[i] } else { b[i] };
+            *out.rhs[i].add(c) = rhs + (ar - a) * u[i];
             *out.diag[i].add(c) = ar;
             i += 1;
         }
         *out.val.add(inp.layout.pos(c, 0)) = dr;
         *out.d.add(c) = vol / dr;
+        *out.ds.add(c) = ds;
         let dcd = (dr + off).max_of(T::from_f64(1e-12) * dr);
         *out.dc.add(c) = vol / dcd;
     }
@@ -407,6 +481,16 @@ pub struct FluxInputs<'a, T> {
     pub d: &'a [T],
     /// Relaxation term per face, (1 − α_u)(ṁ_f − ρ ū_f·S)ⁿ⁻¹, added as is.
     pub relax: &'a [T],
+    /// True to add the time-step term (a time step with the pressure
+    /// terms); false skips it, `ds` and `time` may then be empty.
+    pub transient: bool,
+    /// D^s_P per cell, D_P without the time term ([`MomentumRowOut::ds`]).
+    pub ds: &'a [T],
+    /// Old-level part per face, Y_f = Σ_k (−a_k/a₀)(ṁ_f − ρ ū_f·S)ᵏ over
+    /// the old levels k = n, n − 1.
+    pub time: &'a [T],
+    /// Under-relaxation factor α_u of the momentum equations.
+    pub alpha: T,
 }
 
 /// Face mass flux (kg/s) out of the owner, with the Rhie–Chow interpolation
@@ -426,6 +510,16 @@ pub struct FluxInputs<'a, T> {
 /// boundary value at outlets, the owner value extrapolated to the face at
 /// pressure inlets) and the boundary pressure enter the same formula. A linear
 /// velocity and a linear pressure give the exact flux on every mesh.
+///
+/// **Time-step term (D27).** In a time step the flux gets
+/// γ_f Y_f with Y_f the old-level differences (ṁ − ρ ū·S) of
+/// [`FluxInputs::time`] and γ_f = α (1 − D̄_f / D̄^s_f), D̄^s the
+/// interpolated D without the time term. At a steady state
+/// (ṁ − ρ ū·S)(α − γ_f) = −ρ D̄_f |S|²/(d·S) \[jump\], so the face flux equals
+/// the one of the steady solver with D̄^s/α: the converged result depends
+/// neither on Δt nor on α (the analogue of Majumdar's relaxation term; the
+/// cell-centred form ρ D a₀/Δt is only approximately independent on
+/// non-uniform meshes).
 ///
 /// # Safety
 /// As [`momentum_face`].
@@ -479,7 +573,13 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
             let d = sub(xn, xp);
             let df = w * ld(inp.d, p) + wn * ld(inp.d, n);
             let jump = (ld(inp.p, n) - ld(inp.p, p)) - dot(gpf, d);
-            inp.rho * (dot(uf, s) - df * dgeo * jump) + ld(inp.relax, f)
+            let m = inp.rho * (dot(uf, s) - df * dgeo * jump) + ld(inp.relax, f);
+            if inp.transient {
+                let dsf = w * ld(inp.ds, p) + wn * ld(inp.ds, n);
+                m + inp.alpha * (T::ONE - df / dsf) * ld(inp.time, f)
+            } else {
+                m
+            }
         } else {
             let fb = f - t.n_interior;
             if ld(inp.flux_kind, fb) == FLUX_PRESSURE {
@@ -493,7 +593,13 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
                     ]
                 };
                 let jump = (ld(inp.pb, fb) - ld(inp.p, p)) - dot(gpp, rp);
-                inp.rho * (dot(uf, s) - ld(inp.d, p) * dgeo * jump) + ld(inp.relax, f)
+                let dp = ld(inp.d, p);
+                let m = inp.rho * (dot(uf, s) - dp * dgeo * jump) + ld(inp.relax, f);
+                if inp.transient {
+                    m + inp.alpha * (T::ONE - dp / ld(inp.ds, p)) * ld(inp.time, f)
+                } else {
+                    m
+                }
             } else {
                 inp.rho * dot(inp.ub.at(fb), s)
             }
@@ -738,6 +844,253 @@ pub unsafe fn boundary_pressure<T: Real>(
             pset - T::from_f64(0.5) * inp.rho * un * un / dot(s, s)
         } else {
             pset
+        }
+    }
+}
+
+/// Inputs of [`momentum_operator`]: the face coefficients of
+/// [`momentum_face`] for the old level.
+#[derive(Clone, Copy)]
+pub struct OperatorInputs<'a, T> {
+    /// Connectivity.
+    pub topo: Topology<'a>,
+    /// Face coefficients c_P, c_N.
+    pub cp: &'a [T],
+    /// See `cp`.
+    pub cn: &'a [T],
+    /// Deferred parts b_f of the three components.
+    pub bf: Vec3<'a, T>,
+    /// Momentum kinds of the boundary faces.
+    pub mom_kind: &'a [u32],
+    /// Face area vectors.
+    pub face_area: Vec3<'a, T>,
+    /// The velocity the coefficients act on.
+    pub u: Vec3<'a, T>,
+}
+
+/// The spatial operator of the momentum equations of cell `c`,
+/// R_i = Σ_f ±F_f,i (out of the cell positive) with
+/// F_f,i = c_P u_owner,i + c_N u_neighbour,i + b_f,i, and on symmetry faces
+/// c_P n̂_i² u_P,i + b_f,i: the same terms as the row of [`momentum_row`],
+/// evaluated with a known velocity. Crank–Nicolson uses it for the explicit
+/// half of the old level.
+///
+/// # Safety
+/// As [`momentum_row`].
+#[inline(always)]
+pub unsafe fn momentum_operator<T: Real>(c: usize, inp: &OperatorInputs<T>) -> [T; 3] {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let t = &inp.topo;
+        let lo = ld(t.cell_ptr, c) as usize;
+        let hi = ld(t.cell_ptr, c + 1) as usize;
+        let uc = inp.u.at(c);
+        let mut r = [T::ZERO; 3];
+        let mut k = lo;
+        while k < hi {
+            let (f, is_nb) = unpack_face(ld(t.cell_faces, k));
+            let cp = ld(inp.cp, f);
+            let cn = ld(inp.cn, f);
+            let bf = inp.bf.at(f);
+            let mut i = 0;
+            if f < t.n_interior {
+                let o = if is_nb {
+                    ld(t.owner, f) as usize
+                } else {
+                    ld(t.neighbour, f) as usize
+                };
+                let uo = inp.u.at(o);
+                while i < 3 {
+                    if is_nb {
+                        r[i] -= cp * uo[i] + cn * uc[i] + bf[i];
+                    } else {
+                        r[i] += cp * uc[i] + cn * uo[i] + bf[i];
+                    }
+                    i += 1;
+                }
+            } else if ld(inp.mom_kind, f - t.n_interior) == MOM_SYMMETRY {
+                let s = inp.face_area.at(f);
+                let a2 = dot(s, s);
+                while i < 3 {
+                    r[i] += (cp * s[i] * s[i] / a2) * uc[i] + bf[i];
+                    i += 1;
+                }
+            } else {
+                while i < 3 {
+                    r[i] += cp * uc[i] + bf[i];
+                    i += 1;
+                }
+            }
+            k += 1;
+        }
+        r
+    }
+}
+
+/// Σ_N val_PN x_N over the off-diagonal slots of row `c` (the interior
+/// faces of the cell in stored order, slot 1, 2, …), for the neighbour
+/// correction of the PISO correctors: H(x)_P = −Σ_N val_PN x_N.
+///
+/// # Safety
+/// As [`momentum_row`]; `val` is the SELL storage of `layout`, `x` has an
+/// entry per cell.
+#[inline(always)]
+pub unsafe fn neighbour_sum<T: Real>(
+    c: usize,
+    topo: &Topology,
+    layout: &SellLayout,
+    val: &[T],
+    x: &[T],
+) -> T {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let lo = ld(topo.cell_ptr, c) as usize;
+        let hi = ld(topo.cell_ptr, c + 1) as usize;
+        let mut s = T::ZERO;
+        let mut j = 1;
+        let mut k = lo;
+        while k < hi {
+            let (f, is_nb) = unpack_face(ld(topo.cell_faces, k));
+            if f < topo.n_interior {
+                let o = if is_nb {
+                    ld(topo.owner, f)
+                } else {
+                    ld(topo.neighbour, f)
+                };
+                s += ld(val, layout.pos(c, j)) * ld(x, o as usize);
+                j += 1;
+            }
+            k += 1;
+        }
+        s
+    }
+}
+
+/// Mass flux of a cell velocity increment δ through face `f`:
+/// ρ (w δ_P + (1 − w) δ_N)·S on interior faces, ρ δ_P·S on pressure
+/// boundaries ([`FLUX_PRESSURE`]) and 0 where the boundary fixes the flux.
+///
+/// # Safety
+/// As [`pressure_face`]; `delta` has an entry per cell.
+#[inline(always)]
+pub unsafe fn delta_flux<T: Real>(
+    f: usize,
+    topo: &Topology,
+    geo: &FaceGeometry<T>,
+    flux_kind: &[u32],
+    rho: T,
+    delta: &Vec3<T>,
+) -> T {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let p = ld(topo.owner, f) as usize;
+        let s = geo.area.at(f);
+        let dp = delta.at(p);
+        if f < topo.n_interior {
+            let n = ld(topo.neighbour, f) as usize;
+            let dn = delta.at(n);
+            let w = ld(geo.weight, f);
+            let wn = T::ONE - w;
+            let df = [
+                w * dp[0] + wn * dn[0],
+                w * dp[1] + wn * dn[1],
+                w * dp[2] + wn * dn[2],
+            ];
+            rho * dot(df, s)
+        } else if ld(flux_kind, f - topo.n_interior) == FLUX_PRESSURE {
+            rho * dot(dp, s)
+        } else {
+            T::ZERO
+        }
+    }
+}
+
+/// Courant number of cell `c`, `factor` Σ_f |ṁ_f| / V_c with
+/// `factor` = Δt / (2ρ): the outflow volume of one time step over the cell
+/// volume (half the throughflow is the outflow in a divergence-free field).
+///
+/// # Safety
+/// As [`throughflow`]; `volume` has an entry for `c`.
+#[inline(always)]
+pub unsafe fn courant<T: Real>(
+    c: usize,
+    topo: &Topology,
+    mass_flux: &[T],
+    volume: &[T],
+    factor: T,
+) -> T {
+    // SAFETY: guaranteed by the caller.
+    unsafe { factor * throughflow(c, topo, mass_flux) / ld(volume, c) }
+}
+
+/// Parts of the momentum residual scale of cell `c`: per component the
+/// unrelaxed a_P u_P,i and b_i − (a_P/α − a_P) u_P,i, from the relaxed
+/// diagonal `diag` (a_P/α) and the right-hand side `rhs` of
+/// [`momentum_row`]. Returns `(a u, b)` per component.
+///
+/// # Safety
+/// Every array has an entry for `c`.
+#[inline(always)]
+pub unsafe fn residual_scale<T: Real>(
+    c: usize,
+    u: &Vec3<T>,
+    rhs: &Vec3<T>,
+    diag: &Vec3<T>,
+    alpha: T,
+) -> ([T; 3], [T; 3]) {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let uc = u.at(c);
+        let b = rhs.at(c);
+        let dg = diag.at(c);
+        let mut v = [T::ZERO; 3];
+        let mut w = [T::ZERO; 3];
+        let mut i = 0;
+        while i < 3 {
+            let dr = dg[i];
+            let a = dr * alpha;
+            v[i] = a * uc[i];
+            w[i] = b[i] - (dr - a) * uc[i];
+            i += 1;
+        }
+        (v, w)
+    }
+}
+
+/// a (x_i − y_i).
+///
+/// # Safety
+/// `i` is inside both slices.
+#[inline(always)]
+pub unsafe fn scaled_difference<T: Real>(i: usize, a: T, x: &[T], y: &[T]) -> T {
+    // SAFETY: guaranteed by the caller.
+    unsafe { a * (ld(x, i) - ld(y, i)) }
+}
+
+/// a x_i + b y_i.
+///
+/// # Safety
+/// `i` is inside both slices.
+#[inline(always)]
+pub unsafe fn lincomb<T: Real>(i: usize, a: T, x: &[T], b: T, y: &[T]) -> T {
+    // SAFETY: guaranteed by the caller.
+    unsafe { a * ld(x, i) + b * ld(y, i) }
+}
+
+/// Boundary value b of the least-squares gradient of boundary face `fb`:
+/// 0 where the variable has a zero normal gradient (`zero_gradient` = 1,
+/// the face value then follows the owner), else the face value.
+///
+/// # Safety
+/// `fb` is inside both slices.
+#[inline(always)]
+pub unsafe fn boundary_constant<T: Real>(fb: usize, zero_gradient: &[T], value: &[T]) -> T {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        if ld(zero_gradient, fb) == T::ONE {
+            T::ZERO
+        } else {
+            ld(value, fb)
         }
     }
 }

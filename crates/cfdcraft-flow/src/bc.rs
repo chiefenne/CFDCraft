@@ -7,7 +7,7 @@
 //! | type | velocity | pressure | mass flux |
 //! |---|---|---|---|
 //! | `wall` | `velocity` (default 0; a moving wall keeps only its tangential part) | extrapolated | 0 |
-//! | `velocity-inlet` | `velocity`, `normal_velocity` or `profile = "analytic"` | extrapolated | ρ u_b·S |
+//! | `velocity-inlet` | `velocity`, `normal_velocity`, `profile = "analytic"` or `profile = "parabolic"` (with `max_velocity`, `profile_axes`) | extrapolated | ρ u_b·S |
 //! | `mass-flow-inlet` | normal, from `mass_flow` (kg/s) spread by area | extrapolated | prescribed |
 //! | `static-pressure-inlet` | normal to the face, from the flux | `pressure` | Rhie–Chow |
 //! | `total-pressure-inlet` | normal to the face, from the flux | p₀ − ½ρu_n² from `total_pressure` | Rhie–Chow |
@@ -38,8 +38,45 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum InletProfile {
-    /// The velocity of the `[analytic]` solution at the face centroid.
+    /// The velocity of the `[analytic]` solution at the face centroid (at
+    /// the time of the step in a transient case).
     Analytic,
+    /// A parabola normal to the face, u_n = U_max Π_a 4 η_a (1 − η_a) with
+    /// η_a = (x_a − x_a,min)/(x_a,max − x_a,min) over the patch extent along
+    /// each axis a of `profile_axes` (developed laminar inflow; two axes for
+    /// a duct).
+    Parabolic,
+}
+
+/// A coordinate axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Axis {
+    /// x.
+    X,
+    /// y.
+    Y,
+    /// z.
+    Z,
+}
+
+/// Bounding box of the nodes of a patch.
+pub type Extent = ([f64; 3], [f64; 3]);
+
+/// The bounding box of the nodes of patch `p`.
+pub fn patch_extent(mesh: &Mesh, p: &cfdcraft_mesh::Patch) -> Extent {
+    let mut lo = [f64::INFINITY; 3];
+    let mut hi = [f64::NEG_INFINITY; 3];
+    for f in p.range() {
+        for &n in mesh.face(f) {
+            let x = mesh.points[n as usize];
+            for i in 0..3 {
+                lo[i] = lo[i].min(x[i]);
+                hi[i] = hi[i].max(x[i]);
+            }
+        }
+    }
+    (lo, hi)
 }
 
 /// Turbulence values at an inlet (used from stage 6 on).
@@ -91,6 +128,12 @@ pub enum BoundaryCondition {
         /// Profile instead of a constant.
         #[serde(default)]
         profile: Option<InletProfile>,
+        /// Largest speed of the parabolic profile (m/s).
+        #[serde(default)]
+        max_velocity: Option<f64>,
+        /// Axes across which the parabolic profile varies.
+        #[serde(default)]
+        profile_axes: Vec<Axis>,
         /// Turbulence values (stage 6).
         #[serde(default)]
         turbulence_intensity: Option<f64>,
@@ -317,45 +360,52 @@ fn prescribed_outflow(
     bcs: &BTreeMap<String, BoundaryCondition>,
     rho: f64,
     analytic: Option<&Analytic>,
-) -> BTreeMap<String, f64> {
+) -> (BTreeMap<String, f64>, f64) {
     let mut out = BTreeMap::new();
+    let mut gross = 0.0;
     for p in &mesh.patches {
         let Some(bc) = bcs.get(&p.name) else { continue };
         let area: f64 = p.range().map(|f| norm(geo.face_area[f])).sum();
+        let ext = patch_extent(mesh, p);
         let q = match bc {
             BoundaryCondition::VelocityInlet { .. } => p
                 .range()
                 .map(|f| {
-                    rho * dot(
-                        inlet_velocity(bc, geo, f, analytic).unwrap_or([0.0; 3]),
-                        geo.face_area[f],
-                    )
+                    let q = rho
+                        * dot(
+                            inlet_velocity(bc, geo, f, analytic, &ext).unwrap_or([0.0; 3]),
+                            geo.face_area[f],
+                        );
+                    gross += q.abs();
+                    q
                 })
                 .sum(),
             BoundaryCondition::MassFlowInlet { mass_flow, .. } => {
-                if area > 0.0 {
-                    -mass_flow
-                } else {
-                    0.0
-                }
+                gross += mass_flow.abs();
+                if area > 0.0 { -mass_flow } else { 0.0 }
             }
             _ => continue,
         };
         out.insert(p.name.clone(), q);
     }
-    out
+    (out, gross)
 }
 
-fn inlet_velocity(
+/// The prescribed velocity of face `f` of a velocity inlet whose patch has
+/// the extent `ext` (None for other conditions).
+pub fn inlet_velocity(
     bc: &BoundaryCondition,
     geo: &Geometry,
     f: usize,
     analytic: Option<&Analytic>,
+    ext: &Extent,
 ) -> Option<[f64; 3]> {
     let BoundaryCondition::VelocityInlet {
         velocity,
         normal_velocity,
         profile,
+        max_velocity,
+        profile_axes,
         ..
     } = bc
     else {
@@ -363,6 +413,22 @@ fn inlet_velocity(
     };
     if let Some(InletProfile::Analytic) = profile {
         return analytic.map(|a| a.velocity(geo.face_centroid[f]));
+    }
+    if let Some(InletProfile::Parabolic) = profile {
+        let x = geo.face_centroid[f];
+        let mut un = (*max_velocity)?;
+        for a in profile_axes {
+            let i = *a as usize;
+            let (lo, hi) = (ext.0[i], ext.1[i]);
+            let eta = if hi > lo {
+                (x[i] - lo) / (hi - lo)
+            } else {
+                0.5
+            };
+            un *= 4.0 * eta * (1.0 - eta);
+        }
+        let s = geo.face_area[f];
+        return Some(scale(s, -un / norm(s)));
     }
     if let Some(v) = velocity {
         return Some(*v);
@@ -440,6 +506,8 @@ pub fn check(
                 velocity,
                 normal_velocity,
                 profile,
+                max_velocity,
+                profile_axes,
                 ..
             } => {
                 let given = usize::from(velocity.is_some())
@@ -455,11 +523,33 @@ pub fn check(
                         ),
                     );
                 }
-                if profile.is_some() && analytic.is_none() {
+                if *profile == Some(InletProfile::Analytic) && analytic.is_none() {
                     push(
                         Level::Error,
                         Some(name),
                         "`profile = \"analytic\"` needs an [analytic] table".into(),
+                    );
+                }
+                if *profile == Some(InletProfile::Parabolic)
+                    && (max_velocity.is_none() || profile_axes.is_empty())
+                {
+                    push(
+                        Level::Error,
+                        Some(name),
+                        "`profile = \"parabolic\"` needs `max_velocity` (m/s) and \
+                         `profile_axes` (for example [\"y\"])"
+                            .into(),
+                    );
+                }
+                if *profile != Some(InletProfile::Parabolic)
+                    && (max_velocity.is_some() || !profile_axes.is_empty())
+                {
+                    push(
+                        Level::Warning,
+                        Some(name),
+                        "`max_velocity` and `profile_axes` are only used with \
+                         `profile = \"parabolic\"`"
+                            .into(),
                     );
                 }
             }
@@ -509,15 +599,26 @@ pub fn check(
                     );
                 }
             }
-            BoundaryCondition::VelocityInlet { .. } => {
+            BoundaryCondition::VelocityInlet { profile, .. } => {
+                let ext = patch_extent(mesh, p);
                 let out_faces = p
                     .range()
                     .filter(|&f| {
-                        inlet_velocity(bc, geo, f, analytic)
+                        inlet_velocity(bc, geo, f, analytic, &ext)
                             .is_some_and(|u| dot(u, geo.face_area[f]) > 0.0)
                     })
                     .count();
-                if out_faces > 0 {
+                if out_faces > 0 && *profile == Some(InletProfile::Analytic) {
+                    push(
+                        Level::Note,
+                        Some(&p.name),
+                        format!(
+                            "the exact solution leaves the domain on {out_faces} of {} faces \
+                             (the velocity is prescribed there as well)",
+                            p.len
+                        ),
+                    );
+                } else if out_faces > 0 {
                     push(
                         Level::Warning,
                         Some(&p.name),
@@ -568,9 +669,11 @@ pub fn check(
         .filter(|(_, b)| b.is_pressure_outlet())
         .map(|(n, _)| *n)
         .collect();
-    let q = prescribed_outflow(mesh, geo, bcs, rho, analytic);
+    // the scale of the balance is the flow through the faces, so that a
+    // boundary that the flow enters and leaves (an exact solution) does not
+    // make round-off look like an imbalance
+    let (q, scale_q) = prescribed_outflow(mesh, geo, bcs, rho, analytic);
     let net: f64 = q.values().sum();
-    let scale_q: f64 = q.values().map(|v| v.abs()).sum();
     let inflow: Vec<&str> = q
         .iter()
         .filter(|&(_, &v)| v < 0.0)
@@ -721,6 +824,7 @@ pub fn arrays(
             .get(&p.name)
             .ok_or_else(|| anyhow::anyhow!("no boundary condition for `{}`", p.name))?;
         let area: f64 = p.range().map(|f| norm(geo.face_area[f])).sum();
+        let ext = patch_extent(mesh, p);
         let outlet = bc.is_pressure_outlet();
         let wall_like = matches!(
             bc,
@@ -760,7 +864,7 @@ pub fn arrays(
                     set_ub(sub(*velocity, scale(n, dot(*velocity, n))));
                 }
                 BoundaryCondition::VelocityInlet { .. } => {
-                    set_ub(inlet_velocity(bc, geo, f, analytic).unwrap_or([0.0; 3]));
+                    set_ub(inlet_velocity(bc, geo, f, analytic, &ext).unwrap_or([0.0; 3]));
                 }
                 BoundaryCondition::MassFlowInlet { mass_flow, .. } => {
                     set_ub(scale(n, -mass_flow / (rho * area)));

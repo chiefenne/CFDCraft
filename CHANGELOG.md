@@ -38,6 +38,39 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
 
+## Unreleased – stage 5: transient laminar flow (part 1)
+
+Stage 5 comes in several pull requests and is released as 0.5 when it is
+complete. The first part, the transient core and its benchmarks
+([stage 5](docs/verification/stage5.md)):
+
+- **PISO (Issa 1986)** with variable-step BDF2, Crank–Nicolson (first step
+  BDF1, the start of Rannacher 1984) and BDF1; two correctors with the
+  neighbour correction between them; optional outer iterations per step
+  (PIMPLE-type) with a residual tolerance; the convecting flux and the
+  deferred corrections extrapolated to the new time, which keeps plain
+  PISO second order. A case is transient when it has a `[time]` table.
+- **Adaptive time step** from the largest Courant number, with a growth
+  limit inside the zero-stability range of BDF2.
+- **Rhie–Chow time-step term (D27)** whose steady state is exactly the
+  steady solution, for any Δt (cavity: equal to SIMPLEC to 2e-12).
+- **Restart files (D42, HDF5):** a continued run is bit-identical to the
+  run without the interruption. **Control files and re-reading (D40):**
+  `.stop`, `.result_N`, `.read_toml_N`, `run.reread_every`. **Monitors
+  (D43):** `history.csv`, `forces.csv`, `probes.csv`, field series,
+  force coefficients.
+- **Built-in cylinder mesh** `[mesh.cylinder]` (O-grid and wake block) and
+  the parabolic inlet profile; the Schäfer & Turek benchmarks 2D-1 and
+  2D-2 with their evaluation (C_D, C_L, St, Δp).
+- **Results:** Taylor–Green time order 2.21 (BDF2) and 2.00
+  (Crank–Nicolson) on the finest pair, space order 2.09, order 2 at
+  Courant numbers up to 9 with outer iterations; cylinder Re 20 inside all
+  reference ranges on 98 304 cells; Re 100 on 6 144 cells with C_D,max,
+  St and Δp inside the ranges.
+- `cfdcraft flow --restart FILE --end-time T`; seven new case files,
+  gallery 14–15, recipes 21–23. The Release workflow now refreshes the
+  cached README badges (recipe 6).
+
 ## 0.4 (2026-11-15) – stage 4: laminar steady flow
 
 New crate `cfdcraft-flow`, kernel bodies `cfdcraft-kernels::flow` (one

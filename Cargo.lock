@@ -177,6 +177,7 @@ dependencies = [
  "cfdcraft-fv",
  "cfdcraft-kernels",
  "cfdcraft-mesh",
+ "hdf5-metno",
  "rayon",
  "serde",
  "serde_json",

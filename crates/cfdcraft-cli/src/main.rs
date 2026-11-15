@@ -38,10 +38,13 @@ enum Command {
     /// smoothed-aggregation multigrid, Jacobi and hypre, over refinement
     /// levels, on the CPU and the GPU.
     Poisson(PoissonArgs),
-    /// Solve a steady incompressible laminar flow case (stage 4): SIMPLEC
-    /// or SIMPLE with the Rhie–Chow interpolation, on one mesh or an
-    /// order-of-accuracy sweep. `--check` only checks the case file and the
-    /// boundary conditions.
+    /// Solve an incompressible laminar flow case: steady with SIMPLEC or
+    /// SIMPLE (stage 4), transient with PISO and BDF2 or Crank–Nicolson
+    /// when the case has a `[time]` table (stage 5); on one mesh, an
+    /// order-of-accuracy sweep in space or a sweep over time steps.
+    /// `--check` only checks the case file and the boundary conditions.
+    /// Control files in the output directory steer a running case: `.stop`,
+    /// `.result_N`, `.read_toml_N`.
     Flow(FlowArgs),
     /// Benchmarks.
     Bench {
@@ -158,6 +161,13 @@ struct FlowArgs {
     /// Do not write the VTKHDF file.
     #[arg(long)]
     no_vtkhdf: bool,
+    /// Continue from this restart file (overrides `run.restart`).
+    #[arg(long)]
+    restart: Option<PathBuf>,
+    /// End time of a transient case in s (replaces `time.end_time` and
+    /// `time.steps`).
+    #[arg(long)]
+    end_time: Option<f64>,
     /// Output directory (overrides `output.directory`).
     #[arg(long)]
     out: Option<PathBuf>,
@@ -345,6 +355,17 @@ fn flow(a: FlowArgs) -> Result<()> {
     }
     if a.no_vtkhdf {
         case.output.vtkhdf = false;
+    }
+    if a.restart.is_some() {
+        case.run.restart = a.restart;
+    }
+    if let Some(e) = a.end_time {
+        let Some(t) = case.time.as_mut() else {
+            anyhow::bail!("--end-time needs a transient case (a [time] table)");
+        };
+        t.end_time = Some(e);
+        t.steps = None;
+        t.validate()?;
     }
     if a.check {
         return check_case(&case, &a.case, |l| println!("{l}"));
