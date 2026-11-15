@@ -1,7 +1,8 @@
-//! The steady incompressible flow solver: the SIMPLEC algorithm (Van
-//! Doormaal & Raithby 1984), or SIMPLE (Patankar & Spalding 1972), on the
-//! collocated, cell-centred grid with the Rhie–Chow face mass flux (D19,
-//! D27).
+//! The incompressible flow solver state and the steady algorithm: SIMPLEC
+//! (Van Doormaal & Raithby 1984), or SIMPLE (Patankar & Spalding 1972), on
+//! the collocated, cell-centred grid with the Rhie–Chow face mass flux (D19,
+//! D27). The transient PISO algorithm on the same state is in
+//! [`crate::transient`].
 //!
 //! One outer iteration:
 //!
@@ -22,10 +23,11 @@
 //!    continuity to the tolerance of the pressure solve), u −= D^C ∇p',
 //!    p += α_p p'.
 //!
-//! The loops run on the host (CPU threads) and call the single-source bodies
-//! of `cfdcraft_kernels::flow`; the linear solves run on a backend of
-//! `cfdcraft-fv`. Each output is written by one index, so the result does
-//! not depend on the number of threads (D31).
+//! The algorithm is a sequence of operations of a [`FlowDevice`]: the CPU
+//! device runs the single-source bodies of `cfdcraft_kernels::flow` in
+//! threaded loops, the CUDA device the same bodies on the GPU. Each output
+//! is written by one index, so the result does not depend on the number of
+//! threads (D31).
 //!
 //! Residuals (dimensionless, per outer iteration, before the solves):
 //! momentum ‖b − A u_i‖₂ / ‖a_P u‖₂ per component with ‖a_P u‖ over all
@@ -33,42 +35,43 @@
 //! of the predicted fluxes over the cell throughflow).
 
 use crate::bc::BoundaryArrays;
+use crate::device::{
+    self, BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, Lsq, Mask, MomentumFaceArgs,
+    MomentumRowArgs, Setup, TimeTerms,
+};
 use anyhow::{Result, ensure};
 use cfdcraft_fv::amg::AmgSettings;
-use cfdcraft_fv::backend::{Backend, V};
 use cfdcraft_fv::disc::{Discretisation, Soa3};
 use cfdcraft_fv::problem::{Boundary, BoundaryKind, Problem};
-use cfdcraft_fv::solver::{self as linear, LimiterKind, Preconditioner, Scheme};
-use cfdcraft_kernels::flow::{self as k, FaceGeometry, VelocityGradient};
-use cfdcraft_kernels::fv::{self, SellLayout};
+use cfdcraft_fv::solver::{LimiterKind, Preconditioner, Scheme};
+use cfdcraft_kernels::flow as k;
 use cfdcraft_mesh::{Geometry, Mesh};
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
-/// Indices per task of the host loops.
-const GRAIN: usize = 1 << 12;
-
-/// Meshes with fewer cells run on one thread.
-pub const SERIAL_BELOW: usize = 20_000;
+pub use crate::device::cpu::SERIAL_BELOW;
 
 /// Pressure–velocity algorithm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum Algorithm {
-    /// SIMPLEC (Van Doormaal & Raithby 1984).
+    /// SIMPLEC (Van Doormaal & Raithby 1984), steady.
     #[default]
     Simplec,
-    /// SIMPLE (Patankar & Spalding 1972).
+    /// SIMPLE (Patankar & Spalding 1972), steady.
     Simple,
+    /// PISO (Issa 1986), transient: per time step a momentum predictor and
+    /// `correctors` pressure corrections, optionally repeated in
+    /// `outer_iterations` (a PIMPLE-type loop).
+    Piso,
 }
 
 /// `[solver]` settings of a flow case.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
-    /// Pressure–velocity algorithm.
-    pub algorithm: Algorithm,
+    /// Pressure–velocity algorithm (default SIMPLEC, PISO with `[time]`).
+    pub algorithm: Option<Algorithm>,
     /// Convection scheme of the momentum equations.
     pub scheme: Scheme,
     /// Limiter of the velocity gradients.
@@ -77,87 +80,172 @@ pub struct Settings {
     pub limiter_k: f64,
     /// Non-orthogonal correction of the viscous term (D26).
     pub nonorth_correction: bool,
-    /// Under-relaxation of the momentum equations α_u.
-    pub relaxation_velocity: f64,
-    /// Relaxation of the pressure correction α_p (default 1 for SIMPLEC,
-    /// 0.3 for SIMPLE).
+    /// Under-relaxation of the momentum equations α_u (default 0.7 steady,
+    /// 1 transient).
+    pub relaxation_velocity: Option<f64>,
+    /// Relaxation of the pressure correction α_p (default 1 for SIMPLEC and
+    /// PISO, 0.3 for SIMPLE).
     pub relaxation_pressure: Option<f64>,
-    /// Largest number of outer iterations.
+    /// Largest number of outer iterations (steady).
     pub max_iterations: usize,
-    /// Convergence: every residual below this value.
+    /// Convergence: every residual below this value (steady).
     pub tolerance: f64,
-    /// Relative tolerance of each momentum solve.
-    pub momentum_tolerance: f64,
+    /// Relative tolerance of each momentum solve (default 1e-2 steady, 1e-8
+    /// transient).
+    pub momentum_tolerance: Option<f64>,
     /// Largest number of BiCGStab iterations per momentum solve.
     pub momentum_max_iter: usize,
-    /// Relative tolerance of each pressure-correction solve.
-    pub pressure_tolerance: f64,
+    /// Relative tolerance of each pressure-correction solve (default 1e-2
+    /// steady, 1e-8 transient).
+    pub pressure_tolerance: Option<f64>,
     /// Largest number of CG iterations per pressure solve.
     pub pressure_max_iter: usize,
     /// Preconditioner of the pressure solve.
     pub pressure_preconditioner: Preconditioner,
     /// Multigrid settings.
     pub amg: AmgSettings,
-    /// Rebuild the multigrid hierarchy every N outer iterations.
+    /// Rebuild the multigrid hierarchy every N outer iterations (steady) or
+    /// N time steps (transient).
     pub amg_rebuild: usize,
-    /// Log a line every N outer iterations.
+    /// Log a line every N outer iterations or time steps.
     pub log_every: usize,
+    /// PISO: pressure corrections per outer iteration.
+    pub correctors: usize,
+    /// PISO: outer iterations per time step (1: plain PISO).
+    pub outer_iterations: usize,
+    /// PISO: an outer iteration ends the time step when the momentum and
+    /// continuity residuals of its start are below this value.
+    pub outer_tolerance: f64,
+    /// PISO: in the first outer iteration of a second-order step the
+    /// explicit quantities are extrapolated from the two old levels to the
+    /// new time: the convecting mass flux and the velocity gradients and
+    /// limiters of the deferred corrections. Without it the lag of these
+    /// terms makes plain PISO (one outer iteration) first order in time.
+    pub extrapolation: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            algorithm: Algorithm::Simplec,
+            algorithm: None,
             scheme: Scheme::LinearUpwind,
             limiter: LimiterKind::None,
             limiter_k: 5.0,
             nonorth_correction: true,
-            relaxation_velocity: 0.7,
+            relaxation_velocity: None,
             relaxation_pressure: None,
             max_iterations: 2000,
             tolerance: 1e-8,
-            momentum_tolerance: 1e-2,
+            momentum_tolerance: None,
             momentum_max_iter: 50,
-            pressure_tolerance: 1e-2,
+            pressure_tolerance: None,
             pressure_max_iter: 100,
             pressure_preconditioner: Preconditioner::Amg,
             amg: AmgSettings::default(),
             amg_rebuild: 10,
             log_every: 10,
+            correctors: 2,
+            outer_iterations: 1,
+            outer_tolerance: 1e-6,
+            extrapolation: true,
         }
     }
 }
 
 impl Settings {
-    /// α_p.
-    pub fn alpha_p(&self) -> f64 {
-        self.relaxation_pressure.unwrap_or(match self.algorithm {
-            Algorithm::Simplec => 1.0,
-            Algorithm::Simple => 0.3,
+    /// The algorithm in force: the one given, else PISO in a transient case
+    /// and SIMPLEC in a steady one.
+    pub fn algorithm(&self, transient: bool) -> Algorithm {
+        self.algorithm.unwrap_or(if transient {
+            Algorithm::Piso
+        } else {
+            Algorithm::Simplec
         })
     }
 
-    /// Checks the ranges.
-    pub fn validate(&self) -> Result<()> {
+    /// Relative tolerance of the momentum solves. A time step needs
+    /// accurate solves (their error is not iterated away), a steady outer
+    /// iteration does not.
+    pub fn momentum_tol(&self, transient: bool) -> f64 {
+        self.momentum_tolerance
+            .unwrap_or(if transient { 1e-8 } else { 1e-2 })
+    }
+
+    /// Relative tolerance of the pressure solves (see
+    /// [`momentum_tol`](Self::momentum_tol)).
+    pub fn pressure_tol(&self, transient: bool) -> f64 {
+        self.pressure_tolerance
+            .unwrap_or(if transient { 1e-8 } else { 1e-2 })
+    }
+
+    /// α_u.
+    pub fn alpha_u(&self, transient: bool) -> f64 {
+        self.relaxation_velocity
+            .unwrap_or(if transient { 1.0 } else { 0.7 })
+    }
+
+    /// α_p.
+    pub fn alpha_p(&self, transient: bool) -> f64 {
+        self.relaxation_pressure
+            .unwrap_or(match self.algorithm(transient) {
+                Algorithm::Simplec | Algorithm::Piso => 1.0,
+                Algorithm::Simple => 0.3,
+            })
+    }
+
+    /// Checks the ranges; `transient` when the case has a `[time]` table.
+    pub fn validate(&self, transient: bool) -> Result<()> {
+        let alg = self.algorithm(transient);
+        let au = self.alpha_u(transient);
         ensure!(
-            self.relaxation_velocity > 0.0 && self.relaxation_velocity <= 1.0,
+            au > 0.0 && au <= 1.0,
             "[solver] relaxation_velocity must lie in (0, 1]"
         );
-        let ap = self.alpha_p();
+        let ap = self.alpha_p(transient);
         ensure!(
             ap > 0.0 && ap <= 1.0,
             "[solver] relaxation_pressure must lie in (0, 1]"
         );
-        ensure!(
-            !(self.algorithm == Algorithm::Simplec && self.relaxation_velocity >= 1.0),
-            "[solver] SIMPLEC needs relaxation_velocity < 1 for a steady case \
-             (D^C = V/(a_P/α − Σ|a_N|) is singular at α = 1); try 0.7"
-        );
+        if transient {
+            ensure!(
+                alg == Algorithm::Piso,
+                "[solver] algorithm = \"{}\" is a steady algorithm; a case with a [time] table \
+                 runs PISO (remove `algorithm` or set it to \"piso\")",
+                match alg {
+                    Algorithm::Simple => "simple",
+                    _ => "simplec",
+                }
+            );
+            ensure!(self.correctors >= 1, "[solver] correctors must be >= 1");
+            ensure!(
+                self.outer_iterations >= 1,
+                "[solver] outer_iterations must be >= 1"
+            );
+            ensure!(
+                self.outer_tolerance > 0.0,
+                "[solver] outer_tolerance must be > 0"
+            );
+            ensure!(
+                !(self.outer_iterations == 1 && au < 1.0),
+                "[solver] relaxation_velocity < 1 needs outer_iterations > 1 in a transient case \
+                 (with one outer iteration the relaxation would lag the solution)"
+            );
+        } else {
+            ensure!(
+                alg != Algorithm::Piso,
+                "[solver] algorithm = \"piso\" is transient and needs a [time] table"
+            );
+            ensure!(
+                !(alg == Algorithm::Simplec && au >= 1.0),
+                "[solver] SIMPLEC needs relaxation_velocity < 1 for a steady case \
+                 (D^C = V/(a_P/α − Σ|a_N|) is singular at α = 1); try 0.7"
+            );
+        }
         ensure!(self.tolerance > 0.0, "[solver] tolerance must be > 0");
         ensure!(self.limiter_k >= 0.0, "[solver] limiter_k must be >= 0");
         for (name, t) in [
-            ("momentum_tolerance", self.momentum_tolerance),
-            ("pressure_tolerance", self.pressure_tolerance),
+            ("momentum_tolerance", self.momentum_tol(transient)),
+            ("pressure_tolerance", self.pressure_tol(transient)),
         ] {
             ensure!(t > 0.0 && t < 1.0, "[solver] {name} must lie in (0, 1)");
         }
@@ -181,7 +269,7 @@ pub struct Physics {
 }
 
 /// Residuals of one outer iteration.
-#[derive(Debug, Clone, Copy, Default, Serialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
 pub struct Residuals {
     /// Outer iteration (from 1).
     pub iteration: usize,
@@ -191,7 +279,7 @@ pub struct Residuals {
     pub continuity: f64,
     /// BiCGStab iterations of the three momentum solves.
     pub momentum_iterations: [usize; 3],
-    /// CG iterations of the pressure solve.
+    /// CG iterations of the pressure solve (all correctors).
     pub pressure_iterations: usize,
 }
 
@@ -234,67 +322,9 @@ impl Timings {
     }
 }
 
-#[derive(Clone, Copy)]
-struct Ptr(*mut f64);
-// SAFETY: every loop below writes disjoint entries, one index each.
-unsafe impl Send for Ptr {}
-// SAFETY: as above.
-unsafe impl Sync for Ptr {}
-impl Ptr {
-    fn of(v: &mut [f64]) -> Self {
-        Self(v.as_mut_ptr())
-    }
-    // methods (not field access) so that closures capture the whole `Ptr`
-    fn get(&self) -> *mut f64 {
-        self.0
-    }
-    unsafe fn at(&self, i: usize) -> *mut f64 {
-        // SAFETY: guaranteed by the caller (i inside the slice).
-        unsafe { self.0.add(i) }
-    }
-}
-
-/// Runs `f(i)` for `i < n` on the pool, in chunks.
-fn par_for(pool: &rayon::ThreadPool, n: usize, f: impl Fn(usize) + Sync) {
-    pool.install(|| {
-        (0..n.div_ceil(GRAIN)).into_par_iter().for_each(|ch| {
-            for i in ch * GRAIN..((ch + 1) * GRAIN).min(n) {
-                f(i);
-            }
-        })
-    });
-}
-
-/// `out[i] = f(i)`.
-fn par_vec(pool: &rayon::ThreadPool, out: &mut [f64], f: impl Fn(usize) -> f64 + Sync) {
-    pool.install(|| {
-        out.par_chunks_mut(GRAIN).enumerate().for_each(|(c, ch)| {
-            for (j, o) in ch.iter_mut().enumerate() {
-                *o = f(c * GRAIN + j);
-            }
-        })
-    });
-}
-
-/// Reproducible sum of squares (fixed blocks, fixed combination).
-fn sum_sq(v: &[f64]) -> f64 {
-    let blocks: Vec<f64> = v
-        .chunks(cfdcraft_core::repro::BLOCK)
-        .map(|b| b.iter().map(|x| x * x).sum())
-        .collect();
-    cfdcraft_core::repro::combine_block_sums(&blocks)
-}
-
-/// The flow solver state on one partition.
-pub struct Flow {
-    /// Discretisation (geometry, least-squares weights, matrix structure).
-    pub disc: Discretisation,
-    /// Boundary arrays.
-    pub bc: BoundaryArrays,
-    /// Physics.
-    pub phys: Physics,
-    /// Settings.
-    pub settings: Settings,
+/// Host copy of the solution fields.
+#[derive(Debug, Clone)]
+pub struct State {
     /// Cell velocity.
     pub u: Soa3,
     /// Cell pressure.
@@ -309,24 +339,93 @@ pub struct Flow {
     pub grad_u: [Soa3; 3],
     /// Pressure gradient.
     pub grad_p: Soa3,
-    /// Limiter of each velocity component.
+    /// Limiters of the velocity components.
     pub psi: Soa3,
-    /// D_P = V/a_P of the last momentum assembly.
-    pub d: Vec<f64>,
-    /// D^C_P of the last momentum assembly.
-    pub dc: Vec<f64>,
+}
+
+/// A host copy of the fields with the discretisation and the physics, for
+/// the output.
+pub struct Solution<'a> {
+    /// The fields.
+    pub state: State,
+    /// Discretisation.
+    pub disc: &'a Discretisation,
+    /// Physics.
+    pub phys: Physics,
+}
+
+impl std::ops::Deref for Solution<'_> {
+    type Target = State;
+    fn deref(&self) -> &State {
+        &self.state
+    }
+}
+
+/// The field buffers that carry the solution from one iteration (or time
+/// step) to the next.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Fields {
+    pub u: Buf3,
+    pub p: Buf,
+    pub mass_flux: Buf,
+    pub ub: Buf3,
+    pub ub_set: Buf3,
+    pub pb: Buf,
+    pub grad_u: [Buf3; 3],
+    pub grad_p: Buf3,
+    pub psi: Buf3,
+}
+
+/// Work buffers of one iteration.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Work {
+    pub zero_face: Buf,
+    pub relax: Buf,
+    pub cp: Buf,
+    pub cn: Buf,
+    pub bf: Buf3,
+    pub val: Buf,
+    pub rhs: Buf3,
+    pub diag: Buf3,
+    pub d: Buf,
+    pub ds: Buf,
+    pub dc: Buf,
+    pub m: Buf,
+    pub defect: Buf,
+    pub through: Buf,
+    pub cf: Buf,
+    pub pval: Buf,
+    pub prhs: Buf,
+    pub pc: Buf,
+    pub mc: Buf,
+    pub gpc: Buf3,
+    pub zero_boundary: Buf,
+}
+
+/// The flow solver state on one partition.
+pub struct Flow {
+    /// Host copy of the discretisation (geometry for the output).
+    pub disc: Discretisation,
+    /// Boundary arrays.
+    pub bc: BoundaryArrays,
+    /// Physics.
+    pub phys: Physics,
+    /// Settings.
+    pub settings: Settings,
     /// Reference cell of the pressure (no pressure boundary).
     pub reference_cell: Option<usize>,
     /// Phase timings.
     pub timings: Timings,
     /// Multigrid setups done.
     pub amg_setups: usize,
-    lsq_p: Soa3,
-    mu_face: Vec<f64>,
-    eps2: Vec<f64>,
-    pool: rayon::ThreadPool,
-    be: Box<dyn Backend>,
-    iteration: usize,
+    /// The pressure matrix of the last multigrid setup (for a restart that
+    /// continues bit-identically).
+    pub amg_matrix: Option<Vec<f64>>,
+    pub(crate) dev: Box<dyn FlowDevice>,
+    pub(crate) f: Fields,
+    pub(crate) w: Work,
+    pub(crate) transient: bool,
+    pub(crate) iteration: usize,
 }
 
 fn disc_with(
@@ -365,12 +464,33 @@ pub fn discretisation(
     Ok((d, lsq_p))
 }
 
+/// Where a flow runs.
+#[derive(Debug, Clone)]
+pub struct Target {
+    /// Device name: `cpu` or `cuda`.
+    pub device: String,
+    /// CPU threads.
+    pub threads: Option<usize>,
+    /// PTX module of the CUDA device.
+    pub ptx: std::path::PathBuf,
+}
+
+impl Default for Target {
+    fn default() -> Self {
+        Self {
+            device: "cpu".into(),
+            threads: None,
+            ptx: std::path::PathBuf::new(),
+        }
+    }
+}
+
 impl Flow {
     /// A solver with the fields at `u0`, `p0` and the fluxes of `u0`;
     /// `reference_cell` fixes the pressure level when no boundary does.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        (disc, lsq_p): (Discretisation, Soa3),
+        disc: (Discretisation, Soa3),
         bc: BoundaryArrays,
         phys: Physics,
         settings: Settings,
@@ -379,81 +499,163 @@ impl Flow {
         reference_cell: Option<usize>,
         threads: Option<usize>,
     ) -> Result<Self> {
-        settings.validate()?;
+        Self::on(
+            disc,
+            bc,
+            phys,
+            settings,
+            false,
+            reference_cell,
+            &Target {
+                threads,
+                ..Default::default()
+            },
+        )
+        .and_then(|mut s| {
+            let nc = s.disc.n_cells;
+            s.initialise(
+                &Soa3 {
+                    x: vec![u0[0]; nc],
+                    y: vec![u0[1]; nc],
+                    z: vec![u0[2]; nc],
+                },
+                &vec![p0; nc],
+            )?;
+            Ok(s)
+        })
+    }
+
+    /// A solver on `target` with zero fields; set them with
+    /// [`initialise`](Self::initialise) or [`load`](Self::load).
+    pub fn on(
+        (disc, lsq_p): (Discretisation, Soa3),
+        bc: BoundaryArrays,
+        phys: Physics,
+        settings: Settings,
+        transient: bool,
+        reference_cell: Option<usize>,
+        target: &Target,
+    ) -> Result<Self> {
+        settings.validate(transient)?;
         let nc = disc.n_cells;
         let nf = disc.n_faces;
         let nb = nf - disc.n_interior;
-        // small meshes run on one thread: the latency of waking the pool
-        // would dominate (the result is the same for any number of threads)
-        let threads = if nc < SERIAL_BELOW { Some(1) } else { threads };
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads.unwrap_or(0))
-            .build()?;
-        let be = cfdcraft_fv::backend::create("cpu", &disc, threads, std::path::Path::new(""))?;
-        let mut u = Soa3::zeros(nc);
-        u.x.fill(u0[0]);
-        u.y.fill(u0[1]);
-        u.z.fill(u0[2]);
-        let ub = Soa3 {
-            x: bc.ub[0].clone(),
-            y: bc.ub[1].clone(),
-            z: bc.ub[2].clone(),
-        };
-        let pb: Vec<f64> = (0..nb)
-            .map(|fb| {
-                if bc.pb_rule[fb] == k::PB_EXTRAPOLATE {
-                    p0
-                } else {
-                    bc.pset[fb]
-                }
-            })
-            .collect();
         let eps2 = match settings.limiter {
             LimiterKind::Venkatakrishnan => disc.venkat_eps2(settings.limiter_k),
             _ => Vec::new(),
+        };
+        let mut dev = device::create(
+            &target.device,
+            &Setup {
+                disc: &disc,
+                lsq_p: &lsq_p,
+                bc: &bc,
+                rho: phys.rho,
+                mu: phys.mu,
+                eps2: &eps2,
+                threads: target.threads,
+            },
+            &target.ptx,
+        )?;
+        let stored = disc.sell.stored();
+        let cell3 = |dev: &mut Box<dyn FlowDevice>| -> Result<Buf3> {
+            Ok(Buf3 {
+                x: dev.alloc(nc)?,
+                y: dev.alloc(nc)?,
+                z: dev.alloc(nc)?,
+            })
+        };
+        let u = cell3(&mut dev)?;
+        let grad_u = [cell3(&mut dev)?, cell3(&mut dev)?, cell3(&mut dev)?];
+        let grad_p = cell3(&mut dev)?;
+        let psi = cell3(&mut dev)?;
+        for b in psi.all() {
+            dev.fill(b, 1.0)?;
+        }
+        let ub_set = Buf3 {
+            x: dev.alloc(nb)?,
+            y: dev.alloc(nb)?,
+            z: dev.alloc(nb)?,
+        };
+        dev.upload(ub_set.x, &bc.ub[0])?;
+        dev.upload(ub_set.y, &bc.ub[1])?;
+        dev.upload(ub_set.z, &bc.ub[2])?;
+        let ub = Buf3 {
+            x: dev.alloc(nb)?,
+            y: dev.alloc(nb)?,
+            z: dev.alloc(nb)?,
+        };
+        let f = Fields {
+            u,
+            p: dev.alloc(nc)?,
+            mass_flux: dev.alloc(nf)?,
+            ub,
+            ub_set,
+            pb: dev.alloc(nb)?,
+            grad_u,
+            grad_p,
+            psi,
+        };
+        let w = Work {
+            zero_face: dev.alloc(nf)?,
+            relax: dev.alloc(nf)?,
+            cp: dev.alloc(nf)?,
+            cn: dev.alloc(nf)?,
+            bf: Buf3 {
+                x: dev.alloc(nf)?,
+                y: dev.alloc(nf)?,
+                z: dev.alloc(nf)?,
+            },
+            val: dev.alloc(stored)?,
+            rhs: cell3(&mut dev)?,
+            diag: cell3(&mut dev)?,
+            d: dev.alloc(nc)?,
+            ds: dev.alloc(nc)?,
+            dc: dev.alloc(nc)?,
+            m: dev.alloc(nf)?,
+            defect: dev.alloc(nc)?,
+            through: dev.alloc(nc)?,
+            cf: dev.alloc(nf)?,
+            pval: dev.alloc(stored)?,
+            prhs: dev.alloc(nc)?,
+            pc: dev.alloc(nc)?,
+            mc: dev.alloc(nf)?,
+            gpc: cell3(&mut dev)?,
+            zero_boundary: dev.alloc(nb)?,
         };
         let reference_cell = if bc.has_pressure() {
             None
         } else {
             Some(reference_cell.unwrap_or(0))
         };
-        let mut s = Self {
-            mu_face: vec![phys.mu; nf],
-            lsq_p,
-            eps2,
-            u,
-            p: vec![p0; nc],
-            mass_flux: vec![0.0; nf],
-            ub,
-            pb,
-            grad_u: [Soa3::zeros(nc), Soa3::zeros(nc), Soa3::zeros(nc)],
-            grad_p: Soa3::zeros(nc),
-            psi: Soa3 {
-                x: vec![1.0; nc],
-                y: vec![1.0; nc],
-                z: vec![1.0; nc],
-            },
-            d: vec![0.0; nc],
-            dc: vec![0.0; nc],
-            reference_cell,
-            timings: Timings::default(),
-            amg_setups: 0,
-            pool,
-            be,
-            iteration: 0,
+        Ok(Self {
             disc,
             bc,
             phys,
             settings,
-        };
-        s.update_boundaries();
-        s.gradients();
-        // start fluxes: the interpolated velocity, without pressure terms
-        let relax = vec![0.0; nf];
-        let mut m = vec![0.0; nf];
-        s.fluxes(&mut m, &relax, false);
-        s.mass_flux = m;
-        Ok(s)
+            reference_cell,
+            timings: Timings::default(),
+            amg_setups: 0,
+            amg_matrix: None,
+            dev,
+            f,
+            w,
+            transient,
+            iteration: 0,
+        })
+    }
+
+    /// Sets velocity and pressure and starts from the fluxes of the
+    /// interpolated velocity (no pressure terms).
+    pub fn initialise(&mut self, u: &Soa3, p: &[f64]) -> Result<()> {
+        self.dev.upload(self.f.u.x, &u.x)?;
+        self.dev.upload(self.f.u.y, &u.y)?;
+        self.dev.upload(self.f.u.z, &u.z)?;
+        self.dev.upload(self.f.p, p)?;
+        self.update_boundaries()?;
+        self.gradients()?;
+        let a = self.flux_args(None, self.w.zero_face, None);
+        self.dev.mass_flux(&a, self.f.mass_flux)
     }
 
     /// Outer iterations done.
@@ -461,496 +663,350 @@ impl Flow {
         self.iteration
     }
 
-    fn geometry(&self) -> FaceGeometry<'_, f64> {
-        let d = &self.disc;
-        FaceGeometry {
-            area: d.face_area.view(),
-            face_centroid: d.face_centroid.view(),
-            cell_centroid: d.cell_centroid.view(),
-            dgeo: &d.dgeo,
-            k: d.k.view(),
-            weight: &d.weight,
-        }
+    /// Device name and description.
+    pub fn device(&self) -> String {
+        self.dev.device()
     }
 
-    fn grad_view(&self) -> VelocityGradient<'_, f64> {
-        VelocityGradient {
-            x: self.grad_u[0].view(),
-            y: self.grad_u[1].view(),
-            z: self.grad_u[2].view(),
+    /// Host copy of the fields.
+    pub fn state(&mut self) -> Result<State> {
+        let f = self.f;
+        let mut v3 = |b: Buf3| -> Result<Soa3> {
+            Ok(Soa3 {
+                x: self.dev.download(b.x)?,
+                y: self.dev.download(b.y)?,
+                z: self.dev.download(b.z)?,
+            })
+        };
+        Ok(State {
+            u: v3(f.u)?,
+            ub: v3(f.ub)?,
+            grad_u: [v3(f.grad_u[0])?, v3(f.grad_u[1])?, v3(f.grad_u[2])?],
+            grad_p: v3(f.grad_p)?,
+            psi: v3(f.psi)?,
+            p: self.dev.download(f.p)?,
+            mass_flux: self.dev.download(f.mass_flux)?,
+            pb: self.dev.download(f.pb)?,
+        })
+    }
+
+    /// Replaces the fields by `s` (a restart).
+    pub fn load(&mut self, s: &State) -> Result<()> {
+        let f = self.f;
+        let mut put = |b: Buf3, v: &Soa3| -> Result<()> {
+            self.dev.upload(b.x, &v.x)?;
+            self.dev.upload(b.y, &v.y)?;
+            self.dev.upload(b.z, &v.z)
+        };
+        put(f.u, &s.u)?;
+        put(f.ub, &s.ub)?;
+        for i in 0..3 {
+            put(f.grad_u[i], &s.grad_u[i])?;
+        }
+        put(f.grad_p, &s.grad_p)?;
+        put(f.psi, &s.psi)?;
+        self.dev.upload(f.p, &s.p)?;
+        self.dev.upload(f.mass_flux, &s.mass_flux)?;
+        self.dev.upload(f.pb, &s.pb)
+    }
+
+    /// New prescribed boundary velocity (time-dependent conditions); faces
+    /// with another update rule ignore it.
+    pub fn set_boundary_velocity(&mut self, ub: &[Vec<f64>; 3]) -> Result<()> {
+        let s = self.f.ub_set;
+        self.dev.upload(s.x, &ub[0])?;
+        self.dev.upload(s.y, &ub[1])?;
+        self.dev.upload(s.z, &ub[2])
+    }
+
+    pub(crate) fn flux_args(
+        &self,
+        d: Option<Buf>,
+        relax: Buf,
+        time: Option<(Buf, Buf, f64)>,
+    ) -> FluxArgs {
+        let f = &self.f;
+        FluxArgs {
+            u: f.u,
+            grad_u: f.grad_u,
+            p: f.p,
+            grad_p: f.grad_p,
+            pb: f.pb,
+            ub: f.ub,
+            d,
+            relax,
+            time,
         }
     }
 
     /// Step 1: boundary values from the current fields.
-    pub fn update_boundaries(&mut self) {
-        let nb = self.disc.n_faces - self.disc.n_interior;
-        let mut ux = vec![0.0; nb];
-        let mut uy = vec![0.0; nb];
-        let mut uz = vec![0.0; nb];
-        let mut pb = vec![0.0; nb];
-        {
-            let inp = k::BoundaryInputs {
-                topo: self.disc.topology(),
-                geo: self.geometry(),
-                rho: self.phys.rho,
-                mass_flux: &self.mass_flux,
-            };
-            let (u, g, ub0) = (self.u.view(), self.grad_view(), self.ub.view());
-            let (px, py, pz) = (Ptr::of(&mut ux), Ptr::of(&mut uy), Ptr::of(&mut uz));
-            let bc = &self.bc;
-            par_for(&self.pool, nb, |fb| {
-                // SAFETY: fb < nb; the arrays were built for this mesh.
-                unsafe {
-                    let v = k::boundary_velocity(fb, &inp, bc.ub_rule[fb], ub0.at(fb), &u, &g);
-                    *px.at(fb) = v[0];
-                    *py.at(fb) = v[1];
-                    *pz.at(fb) = v[2];
-                }
-            });
-            let (p, gp) = (&self.p, self.grad_p.view());
-            par_vec(&self.pool, &mut pb, |fb| {
-                // SAFETY: as above.
-                unsafe { k::boundary_pressure(fb, &inp, bc.pb_rule[fb], bc.pset[fb], p, &gp) }
-            });
-        }
-        self.ub = Soa3 {
-            x: ux,
-            y: uy,
-            z: uz,
-        };
-        self.pb = pb;
-    }
-
-    /// Least-squares gradient of `phi` with the weights `w`; boundary face
-    /// values a φ_P + b with `a` = `zero_gradient` (1: zero normal gradient
-    /// at a projected stencil point) and b = `value` where a = 0.
-    fn gradient_of(
-        &self,
-        w: &Soa3,
-        phi: &[f64],
-        zero_gradient: &[f64],
-        value: &[f64],
-        out: &mut Soa3,
-    ) {
-        let topo = self.disc.topology();
-        let w = w.view();
-        let b: Vec<f64> = zero_gradient
-            .iter()
-            .zip(value)
-            .map(|(&a, &v)| if a == 1.0 { 0.0 } else { v })
-            .collect();
-        let bc = fv::Boundary {
-            a: zero_gradient,
-            b: &b,
-        };
-        let (px, py, pz) = (
-            Ptr::of(&mut out.x),
-            Ptr::of(&mut out.y),
-            Ptr::of(&mut out.z),
-        );
-        par_for(&self.pool, self.disc.n_cells, |c| {
-            // SAFETY: c is a local cell; the weights were built for this mesh.
-            unsafe {
-                let g = fv::lsq_gradient(c, &topo, &w, phi, &bc);
-                *px.at(c) = g[0];
-                *py.at(c) = g[1];
-                *pz.at(c) = g[2];
-            }
-        });
+    pub fn update_boundaries(&mut self) -> Result<()> {
+        let f = &self.f;
+        self.dev.boundary_values(&BoundaryArgs {
+            u: f.u,
+            grad_u: f.grad_u,
+            p: f.p,
+            grad_p: f.grad_p,
+            mass_flux: f.mass_flux,
+            ub_set: f.ub_set,
+            ub: f.ub,
+            pb: f.pb,
+        })
     }
 
     /// Step 2: gradients and limiters.
-    pub fn gradients(&mut self) {
-        let mut g = std::mem::take(&mut self.grad_u);
-        let (lu, au) = (&self.disc.lsq, &self.bc.u_zero_gradient);
-        self.gradient_of(lu, &self.u.x, au, &self.ub.x, &mut g[0]);
-        self.gradient_of(lu, &self.u.y, au, &self.ub.y, &mut g[1]);
-        self.gradient_of(lu, &self.u.z, au, &self.ub.z, &mut g[2]);
-        self.grad_u = g;
-        let mut gp = std::mem::take(&mut self.grad_p);
-        self.gradient_of(
-            &self.lsq_p,
-            &self.p,
-            &self.bc.p_zero_gradient,
-            &self.pb,
-            &mut gp,
-        );
-        self.grad_p = gp;
-        if self.settings.scheme == Scheme::Upwind || self.settings.limiter == LimiterKind::None {
-            return;
+    pub fn gradients(&mut self) -> Result<()> {
+        let f = self.f;
+        for i in 0..3 {
+            let (u, ub) = (f.u.all()[i], f.ub.all()[i]);
+            self.dev
+                .gradient(Lsq::Velocity, u, Mask::Velocity, ub, f.grad_u[i])?;
         }
-        let mut psi = std::mem::take(&mut self.psi);
-        for (i, out) in [&mut psi.x, &mut psi.y, &mut psi.z].into_iter().enumerate() {
-            let (phi, b) = match i {
-                0 => (&self.u.x, &self.ub.x),
-                1 => (&self.u.y, &self.ub.y),
-                _ => (&self.u.z, &self.ub.z),
-            };
-            let eps2 = match self.settings.limiter {
+        self.dev
+            .gradient(Lsq::Pressure, f.p, Mask::Pressure, f.pb, f.grad_p)?;
+        let s = &self.settings;
+        if s.scheme == Scheme::Upwind || s.limiter == LimiterKind::None {
+            return Ok(());
+        }
+        let (lim, kk) = (s.limiter, s.limiter_k);
+        for i in 0..3 {
+            let (u, ub, psi) = (f.u.all()[i], f.ub.all()[i], f.psi.all()[i]);
+            let eps2 = match lim {
                 LimiterKind::VenkatakrishnanWang => {
-                    let mn = phi.iter().copied().fold(f64::INFINITY, f64::min);
-                    let mx = phi.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-                    let e = self.settings.limiter_k * (mx - mn);
-                    vec![e * e]
+                    let (mn, mx) = self.dev.min_max(u)?;
+                    let e = kk * (mx - mn);
+                    Eps2::Single(e * e)
                 }
-                _ => self.eps2.clone(),
+                _ => Eps2::PerCell,
             };
-            let topo = self.disc.topology();
-            let bm: Vec<f64> = self
-                .bc
-                .u_zero_gradient
-                .iter()
-                .zip(b)
-                .map(|(&a, &v)| if a == 1.0 { 0.0 } else { v })
-                .collect();
-            let bc = fv::Boundary {
-                a: &self.bc.u_zero_gradient,
-                b: &bm,
-            };
-            let grad = self.grad_u[i].view();
-            let (cc, fc) = (
-                self.disc.cell_centroid.view(),
-                self.disc.face_centroid.view(),
-            );
-            par_vec(&self.pool, out, |c| {
-                // SAFETY: as in `gradient_of`.
-                unsafe { fv::venkat_limiter(c, &topo, phi, &bc, &grad, &cc, &fc, &eps2) }
-            });
+            self.dev.limiter(u, ub, f.grad_u[i], eps2, psi)?;
         }
-        self.psi = psi;
+        Ok(())
     }
 
-    /// Face mass fluxes into `out`; with `pressure` the Rhie–Chow terms with
-    /// the current D, otherwise the plain interpolated velocity flux.
-    fn fluxes(&self, out: &mut [f64], relax: &[f64], pressure: bool) {
-        let zero = vec![0.0; if pressure { 0 } else { self.disc.n_cells }];
-        let inp = k::FluxInputs {
-            topo: self.disc.topology(),
-            geo: self.geometry(),
-            rho: self.phys.rho,
-            u: self.u.view(),
-            grad: self.grad_view(),
-            p: &self.p,
-            grad_p: self.grad_p.view(),
-            pb: &self.pb,
-            ub: self.ub.view(),
-            flux_kind: &self.bc.flux_kind,
-            mom_kind: &self.bc.mom_kind,
-            d: if pressure { &self.d } else { &zero },
-            relax,
-        };
-        par_vec(&self.pool, out, |f| {
-            // SAFETY: f is a face; all arrays were built for this mesh.
-            unsafe { k::face_mass_flux(f, &inp) }
-        });
+    /// Step 3: the relaxation term (1 − α)(ṁ − ρ ū·S) of the current fields
+    /// into `w.relax` (and returns nothing else).
+    pub(crate) fn relaxation_term(&mut self, alpha: f64) -> Result<()> {
+        let a = self.flux_args(None, self.w.zero_face, None);
+        self.dev.mass_flux(&a, self.w.relax)?;
+        self.dev
+            .scaled_difference(self.w.relax, 1.0 - alpha, self.f.mass_flux, self.w.relax)
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn solve_linear(
+    /// Step 4 (assembly): momentum faces with the convecting flux `conv`
+    /// and the rows; returns the residual scale.
+    pub(crate) fn momentum_assembly(
         &mut self,
-        val: &[f64],
-        rhs: &[f64],
-        x: &mut [f64],
-        pc: Preconditioner,
-        cg: bool,
-        tol: f64,
-        max_iter: usize,
-    ) -> Result<(usize, f64)> {
-        let be = self.be.as_mut();
-        be.set_matrix(val)?;
-        be.upload(V::Rhs, rhs)?;
-        be.upload(V::Phi, x)?;
-        be.residual(V::Phi, V::Rhs, V::R)?;
-        let r0 = be.dot(V::R, V::R)?.sqrt();
-        let it = if r0 == 0.0 {
-            0
-        } else if cg {
-            linear::cg(be, pc, max_iter, tol, r0)?.0
-        } else {
-            linear::bicgstab(be, pc, max_iter, tol, r0)?
-        };
-        x.copy_from_slice(&be.download(V::Phi)?);
-        Ok((it, r0))
+        conv: Buf,
+        alpha: f64,
+        theta: f64,
+        time: Option<TimeTerms>,
+    ) -> Result<f64> {
+        self.momentum_assembly_faces(conv)?;
+        let (f, w) = (self.f, self.w);
+        self.dev.momentum_rows(&MomentumRowArgs {
+            cp: w.cp,
+            cn: w.cn,
+            bf: w.bf,
+            grad_p: f.grad_p,
+            body_force: self.phys.body_force,
+            u: f.u,
+            alpha,
+            theta,
+            time,
+            val: w.val,
+            rhs: w.rhs,
+            d: w.d,
+            ds: w.ds,
+            dc: w.dc,
+            diag: w.diag,
+        })?;
+        if self.settings.algorithm(self.transient) != Algorithm::Simplec {
+            self.dev.copy(w.d, w.dc)?;
+        }
+        // residual scale ‖a_P u‖ + ‖b‖ over the three components (unrelaxed
+        // a_P and b), so that it is finite also from a fluid at rest
+        self.dev.residual_scale(f.u, w.rhs, w.diag, alpha)
     }
 
-    /// One outer iteration; returns the residuals before the solves.
+    /// The momentum face coefficients of the current fields convected by
+    /// `conv` into `w.cp`, `w.cn`, `w.bf`.
+    pub(crate) fn momentum_assembly_faces(&mut self, conv: Buf) -> Result<()> {
+        let s = &self.settings;
+        let (f, w) = (self.f, self.w);
+        self.dev.momentum_faces(&MomentumFaceArgs {
+            mass_flux: conv,
+            u: f.u,
+            grad_u: f.grad_u,
+            psi: f.psi,
+            ub: f.ub,
+            blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
+            nonorth: if s.nonorth_correction { 1.0 } else { 0.0 },
+            convection: if self.phys.convection { 1.0 } else { 0.0 },
+            cp: w.cp,
+            cn: w.cn,
+            bf: w.bf,
+        })
+    }
+
+    /// Step 4 (solve): the three momentum components; residuals over
+    /// `scale` and iterations into `res`.
+    pub(crate) fn momentum_solve(&mut self, scale: f64, res: &mut Residuals) -> Result<()> {
+        let (f, w) = (self.f, self.w);
+        let sym = self.bc.mom_kind.contains(&k::MOM_SYMMETRY);
+        let s = &self.settings;
+        let (tol, max) = (s.momentum_tol(self.transient), s.momentum_max_iter);
+        for i in 0..3 {
+            if sym {
+                // the diagonal of this component (symmetry planes)
+                self.dev.set_diagonal(w.val, w.diag.all()[i])?;
+            }
+            let (it, r0) = self.dev.solve(
+                w.val,
+                w.rhs.all()[i],
+                f.u.all()[i],
+                Preconditioner::Jacobi,
+                false,
+                tol,
+                max,
+            )?;
+            res.momentum[i] = r0 / scale;
+            res.momentum_iterations[i] = it;
+        }
+        Ok(())
+    }
+
+    /// Continuity residual of the fluxes `m`.
+    pub(crate) fn continuity(&mut self, m: Buf) -> Result<f64> {
+        let w = self.w;
+        self.dev.net_outflow(m, w.defect)?;
+        self.dev.throughflow(m, w.through)?;
+        let d = self.dev.sum_sq(w.defect)?.sqrt();
+        let t = self.dev.sum_sq(w.through)?.sqrt();
+        Ok(d / t.max(f64::MIN_POSITIVE))
+    }
+
+    /// Step 6: the pressure correction of the fluxes `m` into `w.pc`
+    /// (shifted to zero in the reference cell); `rebuild` sets the
+    /// multigrid up first. Returns the CG iterations.
+    pub(crate) fn pressure_correction(&mut self, m: Buf, rebuild: bool) -> Result<usize> {
+        let t = Instant::now();
+        let w = self.w;
+        self.dev.pressure_faces(w.dc, w.cf)?;
+        self.dev.pressure_rows(w.cf, m, w.pval, w.prhs)?;
+        if let Some(r) = self.reference_cell {
+            let pos = self.disc.sell.pos(r, 0);
+            self.dev.scale_entry(w.pval, pos, 2.0)?;
+        }
+        self.dev.sync()?;
+        self.timings.pressure_assembly += t.elapsed().as_secs_f64();
+        let t = Instant::now();
+        let s = self.settings.clone();
+        if s.pressure_preconditioner == Preconditioner::Amg && (self.amg_setups == 0 || rebuild) {
+            self.dev.amg_setup(w.pval, &s.amg)?;
+            self.amg_matrix = Some(self.dev.download(w.pval)?);
+            self.amg_setups += 1;
+            self.timings.amg_setup += t.elapsed().as_secs_f64();
+        }
+        let t = Instant::now();
+        self.dev.fill(w.pc, 0.0)?;
+        let (it, _) = self.dev.solve(
+            w.pval,
+            w.prhs,
+            w.pc,
+            s.pressure_preconditioner,
+            true,
+            s.pressure_tol(self.transient),
+            s.pressure_max_iter,
+        )?;
+        if let Some(r) = self.reference_cell {
+            let shift = self.dev.value(w.pc, r)?;
+            self.dev.subtract(w.pc, shift)?;
+        }
+        self.dev.sync()?;
+        self.timings.pressure_solve += t.elapsed().as_secs_f64();
+        Ok(it)
+    }
+
+    /// Step 7: corrected fluxes `m` → `w.mc`, u −= D^C ∇p', p += α_p p'.
+    pub(crate) fn corrections(&mut self, m: Buf, alpha_p: f64) -> Result<()> {
+        let (f, w) = (self.f, self.w);
+        self.dev.correct_fluxes(w.cf, m, w.pc, w.mc)?;
+        // gradient of p': zero on pressure boundaries, zero normal gradient
+        // elsewhere
+        self.dev.gradient(
+            Lsq::Pressure,
+            w.pc,
+            Mask::PressureCorrection,
+            w.zero_boundary,
+            w.gpc,
+        )?;
+        self.dev.correct_velocity(w.dc, w.gpc, f.u)?;
+        self.dev.lincomb(f.p, 1.0, f.p, alpha_p, w.pc)
+    }
+
+    /// Rebuilds the AMG hierarchy of a restart from the stored pressure
+    /// matrix, so that the run continues bit-identically.
+    pub fn restore_amg(&mut self, m: &[f64], setups: usize) -> Result<()> {
+        let w = self.w;
+        self.dev.upload(w.pval, m)?;
+        let amg = self.settings.amg.clone();
+        self.dev.amg_setup(w.pval, &amg)?;
+        self.amg_setups = setups;
+        self.amg_matrix = Some(m.to_vec());
+        Ok(())
+    }
+
+    /// Re-validated settings that may change during a run (D40).
+    pub fn set_settings(&mut self, s: Settings) -> Result<()> {
+        s.validate(self.transient)?;
+        self.settings = s;
+        Ok(())
+    }
+
+    /// One steady outer iteration; returns the residuals before the solves.
     pub fn iterate(&mut self) -> Result<Residuals> {
         self.iteration += 1;
         let mut res = Residuals {
             iteration: self.iteration,
             ..Default::default()
         };
-        let nc = self.disc.n_cells;
-        let nf = self.disc.n_faces;
         let s = self.settings.clone();
-        let alpha = s.relaxation_velocity;
+        let alpha = s.alpha_u(false);
         let t = Instant::now();
-        self.update_boundaries();
-        self.gradients();
+        self.update_boundaries()?;
+        self.gradients()?;
+        self.dev.sync()?;
         self.timings.gradients += t.elapsed().as_secs_f64();
 
         // step 3: relaxation term of the Rhie–Chow flux
         let t = Instant::now();
-        let mut relax = vec![0.0; nf];
-        {
-            let zero = vec![0.0; nf];
-            self.fluxes(&mut relax, &zero, false);
-            let m = &self.mass_flux;
-            let r = Ptr::of(&mut relax);
-            par_for(&self.pool, nf, |f| {
-                // SAFETY: f < nf.
-                unsafe { *r.at(f) = (1.0 - alpha) * (m[f] - *r.at(f)) }
-            });
-        }
-
+        self.relaxation_term(alpha)?;
         // step 4: momentum
-        let mut cp = vec![0.0; nf];
-        let mut cn = vec![0.0; nf];
-        let mut bf = Soa3::zeros(nf);
-        {
-            let inp = k::MomentumInputs {
-                topo: self.disc.topology(),
-                geo: self.geometry(),
-                mass_flux: &self.mass_flux,
-                mu: &self.mu_face,
-                u: self.u.view(),
-                grad: self.grad_view(),
-                psi: self.psi.view(),
-                ub: self.ub.view(),
-                mom_kind: &self.bc.mom_kind,
-                blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
-                nonorth: if s.nonorth_correction { 1.0 } else { 0.0 },
-                convection: if self.phys.convection { 1.0 } else { 0.0 },
-            };
-            let (pcp, pcn) = (Ptr::of(&mut cp), Ptr::of(&mut cn));
-            let (bx, by, bz) = (Ptr::of(&mut bf.x), Ptr::of(&mut bf.y), Ptr::of(&mut bf.z));
-            par_for(&self.pool, nf, |f| {
-                // SAFETY: f is a face of the mesh.
-                unsafe {
-                    let (a, b, c) = k::momentum_face(f, &inp);
-                    *pcp.at(f) = a;
-                    *pcn.at(f) = b;
-                    *bx.at(f) = c[0];
-                    *by.at(f) = c[1];
-                    *bz.at(f) = c[2];
-                }
-            });
-        }
-        let stored = self.disc.sell.stored();
-        let mut val = vec![0.0; stored];
-        let mut rhs = Soa3::zeros(nc);
-        let mut diag = Soa3::zeros(nc);
-        {
-            let layout = SellLayout {
-                chunk: self.disc.sell.chunk,
-                slice_ptr: &self.disc.sell.slice_ptr,
-            };
-            let inp = k::MomentumRowInputs {
-                topo: self.disc.topology(),
-                cp: &cp,
-                cn: &cn,
-                bf: bf.view(),
-                grad_p: self.grad_p.view(),
-                body_force: self.phys.body_force,
-                volume: &self.disc.cell_volume,
-                u: self.u.view(),
-                alpha,
-                layout,
-                mom_kind: &self.bc.mom_kind,
-                face_area: self.disc.face_area.view(),
-            };
-            let out = (
-                Ptr::of(&mut val),
-                Ptr::of(&mut rhs.x),
-                Ptr::of(&mut rhs.y),
-                Ptr::of(&mut rhs.z),
-                Ptr::of(&mut self.d),
-                Ptr::of(&mut self.dc),
-                Ptr::of(&mut diag.x),
-                Ptr::of(&mut diag.y),
-                Ptr::of(&mut diag.z),
-            );
-            par_for(&self.pool, nc, |c| {
-                let o = k::MomentumRowOut {
-                    val: out.0.get(),
-                    rhs: [out.1.get(), out.2.get(), out.3.get()],
-                    d: out.4.get(),
-                    dc: out.5.get(),
-                    diag: [out.6.get(), out.7.get(), out.8.get()],
-                };
-                // SAFETY: c is a local cell; row c is written only here.
-                unsafe { k::momentum_row(c, &inp, &o) }
-            });
-        }
-        if s.algorithm == Algorithm::Simple {
-            self.dc.copy_from_slice(&self.d);
-        }
-        // residual scale ‖a_P u‖ + ‖b‖ over the three components (unrelaxed
-        // a_P and b), so that it is finite also from a fluid at rest
-        let scale = {
-            let mut v = vec![0.0; 3 * nc];
-            let mut w = vec![0.0; 3 * nc];
-            for c in 0..nc {
-                let u = self.u.get(c);
-                let b = [rhs.x[c], rhs.y[c], rhs.z[c]];
-                let dg = [diag.x[c], diag.y[c], diag.z[c]];
-                for i in 0..3 {
-                    let dr = dg[i];
-                    let a = dr * alpha;
-                    v[3 * c + i] = a * u[i];
-                    w[3 * c + i] = b[i] - (dr - a) * u[i];
-                }
-            }
-            (sum_sq(&v).sqrt() + sum_sq(&w).sqrt()).max(f64::MIN_POSITIVE)
-        };
+        let scale = self.momentum_assembly(self.f.mass_flux, alpha, 1.0, None)?;
+        self.dev.sync()?;
         self.timings.momentum_assembly += t.elapsed().as_secs_f64();
         let t = Instant::now();
-        let mut u = std::mem::take(&mut self.u);
-        let sym = self.bc.mom_kind.contains(&k::MOM_SYMMETRY);
-        for (i, ((x, b), dg)) in [(&mut u.x, &rhs.x), (&mut u.y, &rhs.y), (&mut u.z, &rhs.z)]
-            .into_iter()
-            .zip([&diag.x, &diag.y, &diag.z])
-            .enumerate()
-        {
-            if sym {
-                // the diagonal of this component (symmetry planes)
-                let sell = &self.disc.sell;
-                for c in 0..nc {
-                    val[sell.pos(c, 0)] = dg[c];
-                }
-            }
-            let (it, r0) = self.solve_linear(
-                &val,
-                b,
-                x,
-                Preconditioner::Jacobi,
-                false,
-                s.momentum_tolerance,
-                s.momentum_max_iter,
-            )?;
-            res.momentum[i] = r0 / scale;
-            res.momentum_iterations[i] = it;
-        }
-        self.u = u;
+        self.momentum_solve(scale, &mut res)?;
+        self.dev.sync()?;
         self.timings.momentum_solve += t.elapsed().as_secs_f64();
 
         // step 5: predicted fluxes
         let t = Instant::now();
-        let mut m = vec![0.0; nf];
-        self.fluxes(&mut m, &relax, true);
-        let topo = self.disc.topology();
-        let mut defect = vec![0.0; nc];
-        let mut through = vec![0.0; nc];
-        // SAFETY: c is a local cell, m has one entry per face.
-        par_vec(&self.pool, &mut defect, |c| unsafe {
-            k::net_outflow(c, &topo, &m)
-        });
-        // SAFETY: as above.
-        par_vec(&self.pool, &mut through, |c| unsafe {
-            k::throughflow(c, &topo, &m)
-        });
-        res.continuity = sum_sq(&defect).sqrt() / sum_sq(&through).sqrt().max(f64::MIN_POSITIVE);
+        let a = self.flux_args(Some(self.w.d), self.w.relax, None);
+        self.dev.mass_flux(&a, self.w.m)?;
+        res.continuity = self.continuity(self.w.m)?;
+        self.dev.sync()?;
+        self.timings.pressure_assembly += t.elapsed().as_secs_f64();
 
         // step 6: pressure correction
-        let mut cf = vec![0.0; nf];
-        {
-            let geo = self.geometry();
-            let (fk, dc, rho) = (&self.bc.flux_kind, &self.dc, self.phys.rho);
-            // SAFETY: f is a face.
-            par_vec(&self.pool, &mut cf, |f| unsafe {
-                k::pressure_face(f, &topo, &geo, fk, rho, dc)
-            });
-        }
-        let mut pval = vec![0.0; stored];
-        let mut prhs = vec![0.0; nc];
-        {
-            let layout = SellLayout {
-                chunk: self.disc.sell.chunk,
-                slice_ptr: &self.disc.sell.slice_ptr,
-            };
-            let (pv, pr) = (Ptr::of(&mut pval), Ptr::of(&mut prhs));
-            let (cf, m) = (&cf, &m);
-            par_for(&self.pool, nc, |c| {
-                // SAFETY: c is a local cell; row c is written only here.
-                unsafe { k::pressure_row(c, &topo, cf, m, &layout, pv.get(), pr.get()) }
-            });
-        }
-        if let Some(r) = self.reference_cell {
-            let pos = self.disc.sell.pos(r, 0);
-            pval[pos] *= 2.0;
-        }
-        self.timings.pressure_assembly += t.elapsed().as_secs_f64();
-        let t = Instant::now();
-        let use_amg = s.pressure_preconditioner == Preconditioner::Amg;
-        if use_amg && (self.amg_setups == 0 || (self.iteration - 1).is_multiple_of(s.amg_rebuild)) {
-            self.be.set_matrix(&pval)?;
-            linear::setup_amg(self.be.as_mut(), &s.amg)?;
-            self.amg_setups += 1;
-            self.timings.amg_setup += t.elapsed().as_secs_f64();
-        }
-        let t = Instant::now();
-        let mut pc = vec![0.0; nc];
-        let (it, _) = self.solve_linear(
-            &pval,
-            &prhs,
-            &mut pc,
-            s.pressure_preconditioner,
-            true,
-            s.pressure_tolerance,
-            s.pressure_max_iter,
-        )?;
-        res.pressure_iterations = it;
-        self.timings.pressure_solve += t.elapsed().as_secs_f64();
+        let rebuild = (self.iteration - 1).is_multiple_of(s.amg_rebuild);
+        res.pressure_iterations = self.pressure_correction(self.w.m, rebuild)?;
 
         // step 7: corrections
         let t = Instant::now();
-        let topo = self.disc.topology();
-        if let Some(r) = self.reference_cell {
-            let shift = pc[r];
-            pc.iter_mut().for_each(|v| *v -= shift);
-        }
-        let mut mc = vec![0.0; nf];
-        {
-            let (cf, pcr, m) = (&cf, &pc, &m);
-            // SAFETY: f is a face; cf, m have one entry per face, pc per cell.
-            par_vec(&self.pool, &mut mc, |f| unsafe {
-                k::correct_flux(f, &topo, cf, m, pcr)
-            });
-        }
-        // gradient of p': zero on pressure boundaries, zero normal gradient
-        // elsewhere
-        let nb = nf - self.disc.n_interior;
-        let pca: Vec<f64> = (0..nb)
-            .map(|fb| {
-                if self.bc.flux_kind[fb] == k::FLUX_PRESSURE {
-                    0.0
-                } else {
-                    1.0
-                }
-            })
-            .collect();
-        let mut gpc = Soa3::zeros(nc);
-        self.gradient_of(&self.lsq_p, &pc, &pca, &vec![0.0; nb], &mut gpc);
-        let alpha_p = s.alpha_p();
-        {
-            let dc = &self.dc;
-            let (ux, uy, uz) = (
-                Ptr::of(&mut self.u.x),
-                Ptr::of(&mut self.u.y),
-                Ptr::of(&mut self.u.z),
-            );
-            let pp = Ptr::of(&mut self.p);
-            let (g, pc) = (&gpc, &pc);
-            par_for(&self.pool, nc, |c| {
-                // SAFETY: c is a local cell, written once.
-                unsafe {
-                    *ux.at(c) -= dc[c] * g.x[c];
-                    *uy.at(c) -= dc[c] * g.y[c];
-                    *uz.at(c) -= dc[c] * g.z[c];
-                    *pp.at(c) += alpha_p * pc[c];
-                }
-            });
-        }
+        self.corrections(self.w.m, s.alpha_p(false))?;
+        self.dev.sync()?;
         self.timings.pressure_assembly += t.elapsed().as_secs_f64();
         anyhow::ensure!(
             res.max().is_finite(),
@@ -960,7 +1016,7 @@ impl Flow {
             res.momentum,
             res.continuity
         );
-        self.mass_flux = mc;
+        std::mem::swap(&mut self.f.mass_flux, &mut self.w.mc);
         Ok(res)
     }
 }

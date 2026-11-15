@@ -165,7 +165,9 @@ must be zero).
 ## Flow cases (`examples/cases/flow/`)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
-interpolation ([explanation](verification/stage4.md)). Run with
+interpolation ([explanation](verification/stage4.md)). Stage 5: transient
+flow with PISO, BDF2 or Crank–Nicolson, when the case has a `[time]` table
+([explanation](verification/stage5.md)). Run with
 `cfdcraft flow FILE`; `cfdcraft flow FILE --check` only checks the case file
 and the boundary conditions (D30); command-line options override the file
 (`cfdcraft flow --help`). Each run writes `flow.log` (the header says what
@@ -182,6 +184,18 @@ a check of the case fails (observed order, error, reference deviation,
 convergence, mass balance). CI runs every case on Linux and the quick ones
 on macOS and Windows (R5).
 
+A transient case also writes `history.csv` (one row per time step: time,
+Δt, Courant number, residuals, outer and CG iterations; the residuals of a
+steady case stay in `residuals.csv`), `forces.csv` (force per wall and the
+coefficients, every `output.monitor_every` steps), `probes.csv`,
+`fields_<step>.vtkhdf` on the schedule of `output.fields_every` and
+`fields_at`, `restart.h5` (D42), `coefficients.svg` (force coefficients;
+for the periodic cylinder the evaluation window) and, for a time-order
+sweep, `time_convergence.svg`. Control files in the output directory steer
+a running case (D40): `.stop` ends it with its restart file and results,
+`.result_N` writes the fields at step (or iteration) N, `.read_toml_N`
+re-reads the case file at N and applies what may change during a run.
+
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
 | `flow/couette_hex.toml` | generated hex 2D, 128 cells | plane Couette flow with convection: error at the solver tolerance (≤ 1e-9 required) | recipe 18 |
@@ -193,6 +207,13 @@ on macOS and Windows (R5).
 | `flow/cavity_re100_tet3d.toml` | generated tet 3D, 24 576 tetrahedra in a slab with symmetry planes | the cavity on fully three-dimensional tetrahedra, deviation ≤ 3 % | recipe 19 |
 | `flow/cavity_re100_poly3d.toml` | generated poly 3D, 5 445 polyhedra | the same on polyhedra | recipe 19 |
 | `flow/cavity_re1000_poly3d.toml` | generated poly 3D, 28 227 polyhedra | Re = 1000 on polyhedra, deviation ≤ 3 % | gallery 12, recipe 19 |
+| `flow/cavity_re100_transient.toml` | generated hex 2D, 64 × 64 | the cavity at Re = 100 time-stepped (PISO, BDF2, Courant number 6) to its steady state: the SIMPLEC solution, deviation from Ghia ≤ 2 % | recipe 21 |
+| `flow/taylor_green_bdf2.toml` | generated hex 2D, 64 × 64 | Taylor–Green vortex, plain PISO with BDF2 over five time steps: time order 1.8–2.3 required | gallery 14, recipe 21 |
+| `flow/taylor_green_cn.toml` | generated hex 2D, 64 × 64 | the same with Crank–Nicolson | gallery 14, recipe 21 |
+| `flow/taylor_green_space.toml` | generated hex 2D, 16² to 128² (4 levels) | Taylor–Green vortex, space order 1.8–2.2 required | gallery 14, recipe 21 |
+| `flow/taylor_green_cfl10.toml` | generated hex 2D, 64 × 64 | Taylor–Green vortex at Courant numbers 1.3 to 9 with outer iterations: time order 2 | gallery 14, recipe 21 |
+| `flow/cylinder_re20.toml` | built-in cylinder mesh, refine 1: 24 576 hexahedra | Schäfer & Turek 2D-1, steady, Re = 20: C_D, C_L, Δp within 0.5 % of the reference ranges | gallery 15, recipe 23 |
+| `flow/cylinder_re100.toml` | built-in cylinder mesh, refine 0: 6 144 hexahedra | Schäfer & Turek 2D-2, periodic, Re = 100: C_D,max, C_L,max, St, Δp within 2.5 % (about 8 minutes; Linux CI only) | gallery 15, recipe 23 |
 
 ### Flow case-file keys
 
@@ -220,9 +241,9 @@ units.
 | `solver.relaxation_pressure` | 1 (SIMPLEC), 0.3 (SIMPLE) | relaxation α_p of the pressure correction |
 | `solver.max_iterations` | 2000 | largest number of outer iterations |
 | `solver.tolerance` | 1e-8 | converged when every scaled residual (momentum, continuity) is below it |
-| `solver.momentum_tolerance` | 1e-2 | relative tolerance of each momentum solve (BiCGStab, Jacobi) |
+| `solver.momentum_tolerance` | 1e-2 steady, 1e-8 transient | relative tolerance of each momentum solve (BiCGStab, Jacobi) |
 | `solver.momentum_max_iter` | 50 | largest number of BiCGStab iterations per solve |
-| `solver.pressure_tolerance` | 1e-2 | relative tolerance of each pressure-correction solve |
+| `solver.pressure_tolerance` | 1e-2 steady, 1e-8 transient | relative tolerance of each pressure-correction solve |
 | `solver.pressure_max_iter` | 100 | largest number of CG iterations per solve |
 | `solver.pressure_preconditioner` | `"amg"` | `amg` (stage 3) or `jacobi` |
 | `solver.amg.*` | as `linear.amg.*` of the [Poisson cases](#poisson-case-file-keys) | multigrid settings |
@@ -246,13 +267,62 @@ units.
 | `output.history_every` | 1 | a row of `residuals.csv` every N outer iterations |
 | `output.wall_csv` | true | write `wall_<patch>.csv` for every wall |
 | `output.lines` | none | sampling lines `[[output.lines]]` with `name`, `from`, `to`, `points` (101) |
+| `output.fields_every` | 0 | transient: write `fields_<step>.vtkhdf` every N steps (0: only the final `fields.vtkhdf`) |
+| `output.fields_at` | none | transient: also write the fields at these steps |
+| `output.monitor_every` | 1 | a row of `forces.csv` and `probes.csv` every N steps |
+| `output.probes` | none | point probes `[[output.probes]]` with `name` and `point`: velocity and pressure in `probes.csv` |
+| `output.coefficients` | none | force coefficients C = 2F/(ρU²A) of the sum over `patches`, with `velocity` U, `area` A, `drag_direction` (x), `lift_direction` (y) |
+
+Transient cases (stage 5):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `time.scheme` | `"bdf2"` | `bdf1` (backward Euler), `bdf2` (variable steps) or `crank-nicolson`; the first step of BDF2 and Crank–Nicolson is a BDF1 step |
+| `time.time_step` | required | Δt (s); with `adaptive` the first step |
+| `time.end_time`, `time.steps` | one of them required | end time (s), number of steps |
+| `time.start_time` | 0 | time of the initial fields (s) |
+| `time.adaptive` | false | adapt Δt to the largest Courant number `max_cfl` |
+| `time.max_cfl` | 1 | target Courant number with `adaptive` |
+| `time.max_growth` | 1.2 | largest ratio of successive steps, below 1 + √2 (zero stability of BDF2) |
+| `time.min_time_step`, `time.max_time_step` | 0, none | bounds of the adaptive Δt (s) |
+| `solver.algorithm` | `"piso"` with `[time]` | PISO (Issa 1986) |
+| `solver.correctors` | 2 | pressure corrections per outer iteration (one diverges on meshes with high diffusion numbers, such as the cylinder) |
+| `solver.outer_iterations` | 1 | outer iterations per time step (1: plain PISO; more: PIMPLE-type, for large steps) |
+| `solver.outer_tolerance` | 1e-6 | ends the outer iterations of a step when the residuals at the start of one are below it |
+| `solver.extrapolation` | true | extrapolate the convecting flux, velocity gradients and limiters to the new time in the first outer iteration (keeps plain PISO second order) |
+| `solver.relaxation_velocity` | 1 transient | below 1 needs `outer_iterations` > 1 |
+| `run.restart` | none | restart file to continue from (D42) |
+| `run.restart_every` | 0 | write `restart.h5` every N steps or iterations |
+| `run.restart_at` | none | also write `restart_<N>.h5` at these steps |
+| `run.restart_final` | true | write `restart.h5` at the end |
+| `run.reread_every` | 0 | re-read the case file every N steps or iterations (0: only on `.read_toml_N`), D40 |
+| `verification.time_steps` | none | a time-order sweep on one mesh: three or more steps, largest first |
+| `verification.expected_time_order` | none | accepted range of the observed time order on the smallest steps |
+| `verification.benchmark` | none | `schafer-turek-2d1` (steady, Re 20) or `schafer-turek-2d2` (periodic, Re 100) |
+| `verification.benchmark_patch` | `"cylinder"` | patch of the cylinder |
+| `verification.benchmark_tolerance` | none | largest accepted distance from the reference ranges, relative to their midpoints |
+| `verification.evaluation_start` | half the run | start of the evaluation window of 2D-2 (s) |
+| `analytic.type = "taylor-green"` | | the decaying Taylor–Green vortex with `velocity` U (1), `length` L (1, the period) and `pressure` p₀ (0) |
+
+Built-in cylinder mesh `[mesh.cylinder]` (D34; patches `inlet`, `outlet`,
+`walls`, `cylinder`, `zmin`, `zmax`): an O-grid around the cylinder that
+fills the square 0 ≤ x, y ≤ height and a graded wake block to the outlet.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `length`, `height`, `depth` | 2.2, 0.41, 0.01 | channel length, height and the layer thickness in z (m) |
+| `center`, `diameter` | [0.2, 0.2], 0.1 | cylinder centre (x, y) and diameter (m) |
+| `n` | 32 | intervals per side of the O-grid (4n around the cylinder) |
+| `radial`, `radial_ratio` | 32, 6 | intervals from the cylinder to the square, ratio of the last to the first |
+| `wake`, `wake_ratio` | 64, 8 | intervals in x of the wake block, ratio of the last to the first |
+| `refine` | 0 | halve every interval this many times (refine 0: 6 144 cells, each level four times more) |
 
 ### Boundary conditions (D29)
 
 | `type` | Keys | Velocity | Pressure | Mass flux |
 |---|---|---|---|---|
 | `wall` | `velocity` (default 0; only the tangential part is kept) | prescribed | extrapolated | 0 |
-| `velocity-inlet` | one of `velocity`, `normal_velocity` (into the domain), `profile = "analytic"` | prescribed | extrapolated | ρ u_b·S |
+| `velocity-inlet` | one of `velocity`, `normal_velocity` (into the domain), `profile = "analytic"` (the exact solution, in a transient case at each time level), `profile = "parabolic"` with `max_velocity` and `profile_axes` (developed laminar inflow, for example `["y"]`) | prescribed | extrapolated | ρ u_b·S |
 | `mass-flow-inlet` | `mass_flow` (kg/s, spread by area) | normal, from the mass flow | extrapolated | prescribed |
 | `static-pressure-inlet` | `pressure` | normal to the face, from the flux | prescribed | Rhie–Chow |
 | `total-pressure-inlet` | `total_pressure` | normal to the face, from the flux | p₀ − ½ρu_n² | Rhie–Chow |

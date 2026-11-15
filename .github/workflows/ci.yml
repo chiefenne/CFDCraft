@@ -73,12 +73,12 @@ jobs:
             case "$f" in *_gpu.toml) continue;; esac
             cargo run --release --locked -p cfdcraft-cli -- poisson "$f"
           done
-      - name: Flow cases (stage 4; each checks its own results; all on Linux, the quick ones elsewhere)
+      - name: Flow cases (stages 4 and 5; each checks its own results; all on Linux, the quick ones elsewhere)
         shell: bash
         run: |
           for f in examples/cases/flow/*.toml; do
             if [ "$RUNNER_OS" != "Linux" ]; then
-              case "$f" in *couette_*|*cavity_re100.toml|*cavity_re100_poly3d.toml|*poiseuille_hex.toml|*poiseuille_poly.toml) ;; *) continue;; esac
+              case "$f" in *couette_*|*cavity_re100.toml|*cavity_re100_poly3d.toml|*poiseuille_hex.toml|*poiseuille_poly.toml|*taylor_green_space.toml) ;; *) continue;; esac
             fi
             cargo run --release --locked -p cfdcraft-cli -- flow "$f"
           done
@@ -126,6 +126,9 @@ jobs:
             output/poiseuille_*/convergence.svg
             output/cavity_*/flow.md
             output/cavity_*/*.svg
+            output/taylor_green_*/flow.md
+            output/cylinder_*/flow.md
+            output/cylinder_*/*.svg
 
   hypre:
     name: Pressure solver against hypre (D20)

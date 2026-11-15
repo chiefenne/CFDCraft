@@ -5,7 +5,13 @@
 //! - plane Poiseuille flow between two walls at rest, driven by a pressure
 //!   drop in x;
 //! - the lid-driven cavity centre-line velocities of Ghia, Ghia & Shin
-//!   (1982), tables I and II, Re = 100 and 1000.
+//!   (1982), tables I and II, Re = 100 and 1000;
+//! - the decaying Taylor–Green vortex in two dimensions (Taylor & Green
+//!   1937), an exact transient solution of the Navier–Stokes equations
+//!   (stage 5);
+//! - the reference ranges of the flow around a cylinder in a channel of
+//!   Schäfer & Turek (1996), cases 2D-1 (Re 20, steady) and 2D-2 (Re 100,
+//!   periodic).
 
 use serde::{Deserialize, Serialize};
 
@@ -52,6 +58,30 @@ pub enum Analytic {
         #[serde(default)]
         pressure_outlet: f64,
     },
+    /// Decaying Taylor–Green vortex in the x–y plane, period L in x and y,
+    /// k = 2π/L, F(t) = exp(−2 ν k² t):
+    /// u = −U cos(kx) sin(ky) F, v = U sin(kx) cos(ky) F,
+    /// p = p₀ − ¼ ρ U² (cos 2kx + cos 2ky) F².
+    TaylorGreen {
+        /// Velocity amplitude U (m/s).
+        #[serde(default = "one")]
+        velocity: f64,
+        /// Period L in x and y (m).
+        #[serde(default = "one")]
+        length: f64,
+        /// Mean pressure p₀ (Pa).
+        #[serde(default)]
+        pressure: f64,
+        /// Kinematic viscosity ν (m²/s), set by the case from `[fluid]`.
+        #[serde(skip, default)]
+        nu: f64,
+        /// Density (kg/m³), set by the case from `[fluid]`.
+        #[serde(skip, default)]
+        rho: f64,
+        /// Time (s) at which the solution is evaluated, set by the solver.
+        #[serde(skip, default)]
+        time: f64,
+    },
 }
 
 fn one() -> f64 {
@@ -77,6 +107,22 @@ impl Analytic {
                 let eta = (x[1] - lower) / (upper - lower);
                 [6.0 * mean_velocity * eta * (1.0 - eta), 0.0, 0.0]
             }
+            Self::TaylorGreen {
+                velocity,
+                length,
+                nu,
+                time,
+                ..
+            } => {
+                let k = 2.0 * std::f64::consts::PI / length;
+                let f = (-2.0 * nu * k * k * time).exp();
+                let (kx, ky) = (k * x[0], k * x[1]);
+                [
+                    -velocity * kx.cos() * ky.sin() * f,
+                    velocity * kx.sin() * ky.cos() * f,
+                    0.0,
+                ]
+            }
         }
     }
 
@@ -95,6 +141,61 @@ impl Analytic {
                 let h = upper - lower;
                 pressure_outlet + 12.0 * viscosity * mean_velocity / (h * h) * (x_outlet - x[0])
             }
+            Self::TaylorGreen {
+                velocity,
+                length,
+                pressure,
+                nu,
+                rho,
+                time,
+            } => {
+                let k = 2.0 * std::f64::consts::PI / length;
+                let f = (-2.0 * nu * k * k * time).exp();
+                pressure
+                    - 0.25
+                        * rho
+                        * velocity
+                        * velocity
+                        * ((2.0 * k * x[0]).cos() + (2.0 * k * x[1]).cos())
+                        * f
+                        * f
+            }
+        }
+    }
+
+    /// True for a solution that changes in time.
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::TaylorGreen { .. })
+    }
+
+    /// The solution at time `t` (steady solutions ignore it).
+    pub fn at_time(mut self, t: f64) -> Self {
+        if let Self::TaylorGreen { time, .. } = &mut self {
+            *time = t;
+        }
+        self
+    }
+
+    /// Sets the fluid properties the solution depends on.
+    pub fn with_fluid(mut self, density: f64, viscosity: f64) -> Self {
+        match &mut self {
+            Self::Poiseuille { viscosity: v, .. } => *v = viscosity,
+            Self::TaylorGreen { nu, rho, .. } => {
+                *nu = viscosity / density;
+                *rho = density;
+            }
+            Self::Couette { .. } => {}
+        }
+        self
+    }
+
+    /// Length scale of the Reynolds number (channel height or period).
+    pub fn length_scale(&self) -> f64 {
+        match *self {
+            Self::Couette { lower, upper, .. } | Self::Poiseuille { lower, upper, .. } => {
+                upper - lower
+            }
+            Self::TaylorGreen { length, .. } => length,
         }
     }
 
@@ -103,6 +204,7 @@ impl Analytic {
         match *self {
             Self::Couette { wall_velocity, .. } => wall_velocity.abs(),
             Self::Poiseuille { mean_velocity, .. } => 1.5 * mean_velocity.abs(),
+            Self::TaylorGreen { velocity, .. } => velocity.abs(),
         }
     }
 
@@ -178,6 +280,104 @@ impl Reference {
         match self {
             Self::GhiaRe100 => "Ghia et al. (1982), Re = 100",
             Self::GhiaRe1000 => "Ghia et al. (1982), Re = 1000",
+        }
+    }
+}
+
+/// A reference value of the cylinder benchmark: the range of the
+/// participants that Schäfer & Turek (1996) give as the reference
+/// solution.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct Range {
+    /// Quantity.
+    pub name: &'static str,
+    /// Lower bound.
+    pub lower: f64,
+    /// Upper bound.
+    pub upper: f64,
+}
+
+impl Range {
+    /// Relative distance of `v` from the range (0 inside), over the
+    /// midpoint.
+    pub fn deviation(&self, v: f64) -> f64 {
+        let mid = 0.5 * (self.lower + self.upper);
+        let d = if v < self.lower {
+            self.lower - v
+        } else if v > self.upper {
+            v - self.upper
+        } else {
+            0.0
+        };
+        d / mid.abs().max(f64::MIN_POSITIVE)
+    }
+}
+
+/// Benchmark data of a case, `[verification] benchmark`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Benchmark {
+    /// Schäfer & Turek (1996) 2D-1: channel 2.2 × 0.41 m, cylinder D = 0.1
+    /// m at (0.2, 0.2), parabolic inflow with U_max = 0.3 m/s, ν = 10⁻³
+    /// m²/s, Re = Ū D / ν = 20, steady.
+    #[serde(rename = "schafer-turek-2d1")]
+    SchaferTurek2d1,
+    /// Schäfer & Turek (1996) 2D-2: as 2D-1 with U_max = 1.5 m/s, Re = 100,
+    /// periodic vortex shedding.
+    #[serde(rename = "schafer-turek-2d2")]
+    SchaferTurek2d2,
+}
+
+impl Benchmark {
+    /// Mean inflow velocity Ū = 2/3 U_max (m/s).
+    pub fn mean_velocity(self) -> f64 {
+        match self {
+            Self::SchaferTurek2d1 => 0.2,
+            Self::SchaferTurek2d2 => 1.0,
+        }
+    }
+
+    /// Reynolds number Ū D / ν.
+    pub fn reynolds(self) -> f64 {
+        match self {
+            Self::SchaferTurek2d1 => 20.0,
+            Self::SchaferTurek2d2 => 100.0,
+        }
+    }
+
+    /// Cylinder diameter (m).
+    pub const DIAMETER: f64 = 0.1;
+
+    /// The points of the pressure difference Δp = p(front) − p(back).
+    pub const FRONT: [f64; 2] = [0.15, 0.2];
+    /// See [`Self::FRONT`].
+    pub const BACK: [f64; 2] = [0.25, 0.2];
+
+    /// Reference ranges (Schäfer & Turek 1996, tables 3 and 4): 2D-1
+    /// C_D, C_L, Δp; 2D-2 C_D,max, C_L,max, St, Δp at t₀ + 1/(2f) (t₀ the
+    /// time of C_L,max).
+    pub fn ranges(self) -> Vec<Range> {
+        let r = |name, lower, upper| Range { name, lower, upper };
+        match self {
+            Self::SchaferTurek2d1 => vec![
+                r("C_D", 5.57, 5.59),
+                r("C_L", 0.0104, 0.0110),
+                r("Δp (Pa)", 0.1172, 0.1176),
+            ],
+            Self::SchaferTurek2d2 => vec![
+                r("C_D,max", 3.22, 3.24),
+                r("C_L,max", 0.99, 1.01),
+                r("St", 0.295, 0.305),
+                r("Δp (Pa)", 2.46, 2.50),
+            ],
+        }
+    }
+
+    /// Label for reports.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::SchaferTurek2d1 => "Schäfer & Turek (1996) 2D-1, Re = 20",
+            Self::SchaferTurek2d2 => "Schäfer & Turek (1996) 2D-2, Re = 100",
         }
     }
 }

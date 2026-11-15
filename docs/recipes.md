@@ -25,6 +25,9 @@ the [Example gallery](gallery.md).
 18. [Verify the flow solver on Couette and Poiseuille flow](#flow-verification)
 19. [Run the lid-driven cavity and compare with Ghia et al.](#flow-cavity)
 20. [Set up the boundary conditions of a flow case](#flow-boundaries)
+21. [Run a transient flow case and check its time order](#transient-flow)
+22. [Restart a run, stop it and steer it while it runs](#restart)
+23. [Run the cylinder benchmark of Schäfer & Turek](#cylinder)
 
 ---
 
@@ -196,6 +199,16 @@ A release is a Git tag `v<stage>` (D46) plus a GitHub release. Steps:
 The workflow refuses a version without a changelog section, and creates
 only the release if the tag already exists. The assistant starts it through
 the GitHub API in the same way.
+
+The release badge of the README updates by itself: the last step of the
+workflow waits until img.shields.io reports the new tag and then purges
+GitHub's cached copies of the README images (GitHub serves them through its
+image proxy, which otherwise keeps the old badge for hours or days). If the
+badge still shows the old version, run that purge by hand:
+
+```
+curl -s https://github.com/chiefenne/CFDCraft | grep -oE 'https://camo\.githubusercontent\.com/[0-9a-f]+/[0-9a-f]+' | sort -u | xargs -n1 curl -s -X PURGE
+```
 
 ---
 
@@ -668,5 +681,138 @@ reference_value = 0.0
 The table of sensible combinations and the cases each one suits is in the
 [case catalogue](cases.md#sensible-combinations-d30); every condition and
 key is listed in [boundary conditions](cases.md#boundary-conditions-d29).
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="transient-flow"></a>
+## 21. Run a transient flow case and check its time order
+
+A case is transient when it has a `[time]` table; it then runs PISO with
+BDF2 (or Crank–Nicolson) instead of the steady SIMPLEC iterations.
+
+```
+cargo build --release -p cfdcraft-cli
+target/release/cfdcraft flow examples/cases/flow/taylor_green_bdf2.toml    # about 40 s
+target/release/cfdcraft flow examples/cases/flow/taylor_green_cn.toml
+target/release/cfdcraft flow examples/cases/flow/taylor_green_space.toml   # space order, about 30 s
+target/release/cfdcraft flow examples/cases/flow/taylor_green_cfl10.toml   # Courant 1 to 9, outer iterations
+cat output/taylor_green_bdf2/flow.md
+# plot: output/taylor_green_bdf2/time_convergence.svg, per step: history.csv
+```
+
+The smallest transient case file adds this to a steady one:
+
+```toml
+[time]
+scheme = "bdf2"          # or "crank-nicolson", "bdf1"
+time_step = 0.01         # s
+end_time = 2.0           # or steps = 200
+adaptive = true          # optional: Δt from the largest Courant number
+max_cfl = 0.8
+```
+
+Plain PISO (one outer iteration, two correctors) is second order in time
+up to Courant numbers of about 1. For larger steps add outer iterations,
+which end when the residuals of a step are below `outer_tolerance`:
+
+```toml
+[solver]
+outer_iterations = 50
+outer_tolerance = 1e-8
+relaxation_velocity = 0.9   # below 1 only with outer_iterations > 1
+```
+
+A time-order sweep runs the case once per step of
+`verification.time_steps` (largest first) on the same mesh and reports
+the order from the differences of successive solutions; with
+`expected_time_order` it fails outside that range:
+
+```toml
+[verification]
+time_steps = [0.01, 0.005, 0.0025, 0.00125]
+expected_time_order = [1.8, 2.3]
+```
+
+Keys: [transient cases](cases.md#flow-case-file-keys); the method and the
+results: [stage 5](verification/stage5.md).
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="restart"></a>
+## 22. Restart a run, stop it and steer it while it runs
+
+Every run writes `restart.h5` at its end (`run.restart_final`), and on a
+schedule if asked. A run continued from it gives bitwise the result of
+the run without the interruption (same mesh, same build):
+
+```toml
+[run]
+restart_every = 500          # restart.h5 every 500 steps
+restart_at = [2000, 4000]    # also restart_002000.h5, restart_004000.h5
+```
+
+```
+target/release/cfdcraft flow my_case.toml
+# continue to a later end time, into another directory:
+target/release/cfdcraft flow my_case.toml --restart output/my_case/restart.h5 --end-time 20 --out output/my_case_2
+```
+
+or, in the case file, `[run] restart = "output/my_case/restart.h5"` (a
+path in the case file is relative to the case file, on the command line
+to the current directory).
+
+While a case runs, files in its output directory steer it (the solver
+never deletes them; remove them before the next run):
+
+```
+touch output/my_case/.stop            # write restart.h5 and the results, then end
+touch output/my_case/.result_1500     # write fields_001500.vtkhdf at step 1500
+touch output/my_case/.read_toml_1200  # re-read my_case.toml at step 1200
+```
+
+A re-read applies the output and restart schedule, the stop criteria, the
+relaxation, the linear-solver tolerances and the time-step settings; the
+log lists each change (`key: old -> new`) and each change it cannot apply
+during a run. `run.reread_every = N` re-reads every N steps without a
+control file.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="cylinder"></a>
+## 23. Run the cylinder benchmark of Schäfer & Turek
+
+```
+target/release/cfdcraft flow examples/cases/flow/cylinder_re20.toml     # steady, Re 20, about 1 min
+target/release/cfdcraft flow examples/cases/flow/cylinder_re100.toml    # periodic, Re 100, about 8 min
+cat output/cylinder_re100/flow.md
+# C_D, C_L per step: output/cylinder_re100/forces.csv, chart: coefficients.svg
+# probes in front of and behind the cylinder: probes.csv
+pip install vtk
+python3 tools/render_mesh.py output/cylinder_re20/fields.vtkhdf cylinder.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
+```
+
+The mesh is built in (`[mesh.cylinder]`); `refine = 1` and `2` give 24 576
+and 98 304 cells. On 98 304 cells the steady case needs
+`relaxation_velocity = 0.5` and about 12 000 outer iterations:
+
+```toml
+[mesh.cylinder]
+refine = 2
+[solver]
+relaxation_velocity = 0.5
+max_iterations = 12000
+```
+
+Keys: `[verification]` `benchmark = "schafer-turek-2d1"` or
+`"schafer-turek-2d2"`, `benchmark_tolerance` (relative to the midpoints of
+the reference ranges), `evaluation_start` (2D-2). Force coefficients of
+any case: `[output.coefficients]` with `patches`, `velocity`, `area`;
+point histories: `[[output.probes]]` with `name` and `point`.
 
 [↑ back to top](#recipes)

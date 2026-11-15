@@ -1,0 +1,59 @@
+# Flow around a cylinder in a channel at Re = 20: the steady benchmark 2D-1
+# of Schäfer & Turek (1996) (stage 5).
+#
+#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/cylinder_re20.toml
+#
+# Channel 2.2 x 0.41 m, cylinder D = 0.1 m at (0.2, 0.2) m, parabolic inflow
+# with U_max = 0.3 m/s (mean Ū = 0.2 m/s), ν = 1e-3 m²/s, so Re = Ū D / ν =
+# 20; no-slip on the channel walls and the cylinder, zero static pressure at
+# the outlet. Built-in mesh [mesh.cylinder]: an O-grid around the cylinder
+# and a graded wake block, refine 1 = 24 576 hexahedra in one layer. Steady
+# SIMPLEC; the drag and lift coefficients C_D = 2 F_x / (ρ Ū² D d), C_L and
+# the pressure difference Δp between the front and back points of the
+# cylinder against the reference ranges of the benchmark. The run fails if a
+# value lies further from its range than 0.5 % of the range midpoint (C_L
+# is within 0.4 % on this mesh; docs/verification/stage5.md has the finer
+# mesh).
+
+[mesh.cylinder]
+refine = 1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[flow]
+convection = true
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 0.3
+profile_axes = ["y"]
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.walls]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+max_iterations = 4000
+tolerance = 1e-8
+log_every = 200
+
+[verification]
+benchmark = "schafer-turek-2d1"
+benchmark_tolerance = 0.005
+require_convergence = true
+
+[output]
+wall_csv = false

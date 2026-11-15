@@ -1,0 +1,61 @@
+# Lid-driven cavity at Re = 100, run in time to the steady state (stage 5).
+#
+#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/cavity_re100_transient.toml
+#
+# The case of cavity_re100.toml with a [time] table: PISO with BDF2 and a
+# time step of 0.1 s (largest Courant number about 6), 500 steps to t = 50 s.
+# The Rhie–Chow interpolation carries the time-step term of D27, so the
+# steady state of the time stepping is the SIMPLEC solution for any time
+# step (they agree to about 1e-12, docs/verification/stage5.md). The
+# velocity on the two centre lines is compared with Ghia, Ghia & Shin
+# (1982); the run fails if the largest deviation exceeds 2 % of the lid
+# speed.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.015625]
+cells = [64, 64, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+log_every = 50
+
+[time]
+scheme = "bdf2"
+time_step = 0.1
+steps = 500
+
+[verification]
+reference = "ghia-re100"
+reference_tolerance = 0.02
+lid_velocity = 1.0
+
+[[output.lines]]
+name = "vertical"            # u along x = 0.5
+from = [0.5, 0.0, 0.0078125]
+to = [0.5, 1.0, 0.0078125]
+[[output.lines]]
+name = "horizontal"          # v along y = 0.5
+from = [0.0, 0.5, 0.0078125]
+to = [1.0, 0.5, 0.0078125]

@@ -1,0 +1,57 @@
+# Taylor–Green vortex, space order of the transient solver (stage 5).
+#
+#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/taylor_green_space.toml
+#
+# The vortex of taylor_green_bdf2.toml on four nested hex meshes (16 x 16 to
+# 128 x 128) with BDF2 and Δt = 0.0025 s (time error about 1e-6, far below
+# the spatial error), to t = 0.4 s. The error against the exact solution at
+# the end; the run fails if the observed order on the finest pair is outside
+# 1.8–2.2 (stage 5 acceptance). Uniform meshes: with the exact velocity on
+# all sides the prescribed boundary flux must balance exactly, which a
+# perturbed boundary does not do (periodic boundaries follow in stage 6).
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.0625]
+cells = [16, 16, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.01         # Re = ρ U L / μ = 100
+
+[flow]
+convection = true
+
+# the exact velocity on all four sides, at the time of each step
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.xmax]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.ymin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.ymax]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[analytic]
+type = "taylor-green"    # U = 1 m/s, period L = 1 m
+
+[time]
+scheme = "bdf2"
+time_step = 0.0025
+end_time = 0.4
+
+[verification]
+levels = [0, 1, 2, 3]
+expected_order = [1.8, 2.2]
+
+[output]
+wall_csv = false
