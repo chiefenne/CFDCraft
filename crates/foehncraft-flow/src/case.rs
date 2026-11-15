@@ -134,8 +134,8 @@ pub struct RunSection {
     /// CPU threads (default: all cores; meshes below 20 000 cells run on
     /// one).
     pub threads: Option<usize>,
-    /// Where the flow loop runs: `cpu` (the `cuda` backend of the flow loop
-    /// follows with the GPU part of stage 5).
+    /// Where the flow loop runs: `cpu` or `cuda` (a build with the `cuda`
+    /// feature; the results are bitwise those of `cpu`, D31).
     pub backend: String,
     /// PTX module of the `cuda` backend.
     pub ptx: PathBuf,
@@ -884,7 +884,11 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
             case.initial.velocity,
             p0,
             reference_cell,
-            case.run.threads,
+            &crate::simplec::Target {
+                device: case.run.backend.clone(),
+                threads: case.run.threads,
+                ptx: case.run.ptx.clone(),
+            },
         )?;
         let mut csv = String::from(
             "iteration,momentum_x,momentum_y,momentum_z,continuity,bicgstab_x,bicgstab_y,bicgstab_z,cg\n",

@@ -1,6 +1,6 @@
 //! Stage 2: the finite-volume operators and the Krylov vector operations of
 //! `foehncraft_kernels::{fv, blas}` as PTX entry points, one GPU thread per
-//! output. The host side is `crates/foehncraft-fv/src/backend/cuda.rs`; the
+//! output. The host side is `crates/foehncraft-cuda/src/fv.rs`; the
 //! argument lists there must match these signatures exactly.
 //!
 //! Every pointer comes with its length (or a length from which it follows);

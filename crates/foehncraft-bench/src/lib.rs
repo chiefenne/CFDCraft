@@ -7,7 +7,7 @@
 //! CSR and SELL-C-σ form — run on a synthetic face-based mesh of 10–50
 //! million cells. The kernel bodies come from `foehncraft-kernels`, one source
 //! for the CPU and the GPU. They are timed against hand-written references:
-//! CUDA C on the GPU (`kernels/g1_reference.cu`) and idiomatic Rust loops on
+//! CUDA C on the GPU (`crates/foehncraft-cuda/kernels/g1_reference.cu`) and idiomatic Rust loops on
 //! the CPU. The verdict: the single-source route passes if it is within 10 %
 //! of the reference for every kernel.
 //!

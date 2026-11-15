@@ -497,21 +497,9 @@ impl Flow {
         u0: [f64; 3],
         p0: f64,
         reference_cell: Option<usize>,
-        threads: Option<usize>,
+        target: &Target,
     ) -> Result<Self> {
-        Self::on(
-            disc,
-            bc,
-            phys,
-            settings,
-            false,
-            reference_cell,
-            &Target {
-                threads,
-                ..Default::default()
-            },
-        )
-        .and_then(|mut s| {
+        Self::on(disc, bc, phys, settings, false, reference_cell, target).and_then(|mut s| {
             let nc = s.disc.n_cells;
             s.initialise(
                 &Soa3 {

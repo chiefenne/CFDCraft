@@ -1,0 +1,56 @@
+# The steady flow loop (SIMPLEC, stage 4) on the GPU: the lid-driven cavity
+# at Re = 100 on about one million three-dimensional polyhedra, 30 outer
+# iterations on the CPU and on the GPU (stage 5, D31). The two runs must give
+# bitwise the same fields, residuals and reports; tools/stage5_cloud.py runs
+# both and compares them with tools/compare_runs.py.
+#
+#   gpu/ptx-kernels/build.sh sm_75
+#   cargo build --release -p foehncraft-cli --features cuda
+#   target/release/foehn flow examples/cases/flow/cavity_poly3d_gpu.toml --backend cpu --out output/gpu/cpu
+#   target/release/foehn flow examples/cases/flow/cavity_poly3d_gpu.toml --backend cuda --out output/gpu/cuda
+#   python3 tools/compare_runs.py output/gpu/cpu output/gpu/cuda
+#
+# or on Google Colab: tools/stage5_colab.ipynb. Needs a GPU of compute
+# capability 7.0 or newer and about 4 GB of GPU memory. The flow is not
+# converged after 30 iterations; the case measures the time per cell and
+# iteration and checks CPU = GPU, the converged cavity is
+# cavity_re100_poly3d.toml.
+
+[mesh.generate]
+type = "poly"
+dimension = 3
+upper = [1.0, 1.0, 0.125]
+cells = [196, 196, 24]   # 921 984 hexahedra -> 970 225 polyhedra
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+relaxation_velocity = 0.9
+tolerance = 1e-8
+max_iterations = 30
+log_every = 5
+
+[verification]
+require_convergence = false
+
+[output]
+history_every = 1

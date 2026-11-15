@@ -114,7 +114,9 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked
       # the CUDA backends compile without a CUDA toolkit (driver and NVRTC
       # are loaded at run time)
-      - run: cargo clippy --workspace --all-targets --locked --features foehncraft-bench/cuda,foehncraft-fv/cuda
+      - run: cargo clippy --workspace --all-targets --locked --features foehncraft-cuda/cuda,foehncraft-cli/cuda
+      - name: CUDA only in the CUDA backend crate (D60)
+        run: python3 tools/check_backend.py
       - run: cargo doc --workspace --no-deps --locked
 
   msrv:
@@ -308,7 +310,7 @@ jobs:
           mpirun --oversubscribe -n 2 target/release/examples/mpi_halo
 
   ptx:
-    name: Single-source GPU kernels compile to PTX (G1, stages 2 and 3)
+    name: Single-source GPU kernels compile to PTX (G1, stages 2, 3 and 5)
     needs: plan
     if: needs.plan.outputs.code == 'true'
     runs-on: ubuntu-latest

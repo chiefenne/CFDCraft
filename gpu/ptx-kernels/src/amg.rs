@@ -1,7 +1,7 @@
 //! Stage 3: the multigrid V-cycle bodies of `foehncraft_kernels::amg` as PTX
 //! entry points, instantiated for float32 (`*_f32`, the mixed-precision
 //! hierarchy of D37) and float64 (`*_f64`). The host side is
-//! `crates/foehncraft-fv/src/backend/cuda.rs`; the argument lists there must
+//! `crates/foehncraft-cuda/src/fv.rs`; the argument lists there must
 //! match these signatures exactly. This is the only module with f32
 //! arithmetic (R10).
 //!

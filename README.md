@@ -25,8 +25,9 @@
 > ([stage 4](docs/verification/stage4.md)). Stage 5 is in progress: the
 > transient core is in (PISO with BDF2 and Crank–Nicolson, adaptive time
 > step, restart, control files, verified on the Taylor–Green vortex and the
-> cylinder benchmark of Schäfer & Turek, [stage 5](docs/verification/stage5.md));
-> the GPU flow loop follows.
+> cylinder benchmark of Schäfer & Turek, [stage 5](docs/verification/stage5.md)),
+> and the whole flow loop runs on NVIDIA GPUs with results bitwise equal to
+> the CPU.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
@@ -97,9 +98,10 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
 | `foehncraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
 | `foehncraft-mesh` | polyhedral mesh, geometry, quality report, Gmsh reader, test mesher (also the cylinder benchmark mesh), partitioning and halo, VTKHDF output, point location |
-| `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU and CUDA backends |
-| `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the Rhie–Chow interpolation, boundary conditions and their check, restart and control files, probes and force coefficients, the `foehn flow` case, exact solutions, reference and benchmark data |
-| `foehncraft-bench` | gate G1: kernel benchmark, CPU and CUDA backends |
+| `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU backend (the GPU backend is in `foehncraft-cuda`) |
+| `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the Rhie–Chow interpolation, boundary conditions and their check, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
+| `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |
+| `foehncraft-cuda` | all NVIDIA GPU code (D60): the flow executor, the scalar and multigrid backend, the G1 backends with the CUDA C reference |
 | `foehncraft-cli` | the `foehn` command |
 | `gpu/ptx-kernels` | the kernels compiled to NVIDIA PTX (nightly toolchain) |
 

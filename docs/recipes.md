@@ -28,6 +28,7 @@ the [Example gallery](gallery.md).
 21. [Run a transient flow case and check its time order](#transient-flow)
 22. [Restart a run, stop it and steer it while it runs](#restart)
 23. [Run the cylinder benchmark of Schäfer & Turek](#cylinder)
+24. [Run a flow case on an NVIDIA GPU and compare it with the CPU](#flow-gpu) (also: free Colab T4)
 
 ---
 
@@ -165,7 +166,8 @@ exchange) and a reproducible sum that gives the same bits on every rank.
 cargo fmt --all --check
 tools/ci_cases.sh --check                               # every flow case is in a CI set
 cargo clippy --workspace --all-targets -- -D warnings
-cargo clippy --workspace --all-targets --features foehncraft-bench/cuda,foehncraft-fv/cuda -- -D warnings
+cargo clippy --workspace --all-targets --features foehncraft-cuda/cuda,foehncraft-cli/cuda -- -D warnings
+python3 tools/check_backend.py                          # D60: CUDA only in crates/foehncraft-cuda and gpu/
 cargo test --workspace --profile ci                     # what a pull request runs (--release on main)
 cargo test -p foehncraft-mesh --no-default-features      # without HDF5 and METIS
 cargo test -p foehncraft-fv --no-default-features
@@ -827,5 +829,49 @@ Keys: `[verification]` `benchmark = "schafer-turek-2d1"` or
 the reference ranges), `evaluation_start` (2D-2). Force coefficients of
 any case: `[output.coefficients]` with `patches`, `velocity`, `area`;
 point histories: `[[output.probes]]` with `name` and `point`.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="flow-gpu"></a>
+## 24. Run a flow case on an NVIDIA GPU and compare it with the CPU
+
+Every flow case runs on the GPU as it is: the whole flow loop (gradients,
+limiters, momentum and pressure-correction assembly, Rhie–Chow fluxes,
+corrections, the BiCGStab and CG + multigrid solves) stays on the device,
+and the results are bitwise those of the CPU (D31). Needs an NVIDIA GPU of
+compute capability 7.0 or newer with its driver; the build needs no CUDA
+toolkit, the kernels need the nightly toolchain (installed by
+`rust-toolchain.toml` on first use). From the repository root:
+
+```
+gpu/ptx-kernels/build.sh sm_75                       # PTX for your GPU (sm_75: T4, sm_86: RTX 30xx, ...)
+cargo build --release -p foehncraft-cli --features cuda
+target/release/foehn info                             # features: cuda ...
+target/release/foehn flow examples/cases/flow/cavity_re100.toml --backend cuda
+```
+
+To check the GPU against the CPU, run the case twice and compare the output
+directories (`pip install h5py numpy` once):
+
+```
+target/release/foehn flow examples/cases/flow/cylinder_re100_gpu.toml --backend cpu  --out output/gpu/cpu
+target/release/foehn flow examples/cases/flow/cylinder_re100_gpu.toml --backend cuda --out output/gpu/cuda
+python3 tools/compare_runs.py output/gpu/cpu output/gpu/cuda    # "bitwise equal", exit code 0
+```
+
+`python3 tools/stage5_cloud.py` does this for eight cases, from Couette
+flow to the cavity on one million polyhedra, and writes
+`output/stage5_gpu/report.md` with the times per cell and iteration.
+**Without a GPU of your own:** open
+[`tools/stage5_colab.ipynb`](https://colab.research.google.com/github/chiefenne/Foehncraft/blob/main/tools/stage5_colab.ipynb)
+in Google Colab, choose a T4 runtime, set `BRANCH` if the stage-5 branch
+is not merged yet, and run all cells (about 15 minutes).
+
+Keys: `run.backend` (`cpu`, `cuda`), `run.ptx` (the PTX module); the
+command-line options `--backend` and `--ptx` override them. A build
+without the `cuda` feature, or a machine without the NVIDIA driver, stops
+with a message instead of running on the CPU.
 
 [↑ back to top](#recipes)

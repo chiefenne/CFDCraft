@@ -1,0 +1,747 @@
+//! The flow device written once over an executor: [`KernelFlow`] turns the
+//! operations of [`FlowDevice`] into launches of the entries of
+//! `foehncraft_kernels::entry` (argument blocks of buffer addresses and
+//! scalars), and an [`Exec`] runs them: the CPU executor
+//! ([`super::cpu::CpuExec`]) in multi-threaded loops over host memory, the
+//! GPU executor (`foehncraft-cuda`) as PTX entries on device memory. Both
+//! run the same body for an index, and the reductions use the same blocks
+//! and the same fixed tree (D31), so CPU and GPU give bitwise the same
+//! results. All field data stay where the executor keeps them; only scalars
+//! (norms, extrema, single values) and the explicit downloads of the
+//! algorithms (output, restart) reach the host.
+
+use super::{
+    BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, Lsq, Mask, MomentumFaceArgs,
+    MomentumRowArgs, Setup,
+};
+use anyhow::{Result, ensure};
+use foehncraft_core::repro::{BLOCK, combine_block_sums};
+use foehncraft_fv::amg::AmgSettings;
+use foehncraft_fv::solver::Preconditioner;
+use foehncraft_kernels::entry::{self as e, Entry, Mesh, Raw, Raw3, RawGrad};
+use foehncraft_kernels::flow as k;
+
+/// Where the entries run: storage of the buffers, launches, the linear
+/// solvers.
+pub trait Exec {
+    /// Backend name (`cpu`, `cuda`).
+    fn name(&self) -> String;
+    /// Device description.
+    fn device(&self) -> String;
+    /// A new buffer of `n` zeros.
+    fn alloc(&mut self, n: usize) -> Result<Buf>;
+    /// A static array of the run (mesh data), kept until the executor ends.
+    fn alloc_u32(&mut self, v: &[u32]) -> Result<Raw<u32>>;
+    /// The address and length of a buffer.
+    fn raw(&self, b: Buf) -> Raw<f64>;
+    /// Copies host values into a buffer.
+    fn upload(&mut self, b: Buf, v: &[f64]) -> Result<()>;
+    /// Copies a buffer to the host.
+    fn download(&mut self, b: Buf) -> Result<Vec<f64>>;
+    /// dst = src.
+    fn copy(&mut self, src: Buf, dst: Buf) -> Result<()>;
+    /// One value of a buffer.
+    fn value(&mut self, b: Buf, i: usize) -> Result<f64>;
+    /// Runs the body of `K` for the indices `0..n` (n > 0).
+    fn launch<K: Entry>(&mut self, n: usize, a: &K::Args) -> Result<()>;
+    /// Solves `val` x = `rhs` (see [`FlowDevice::solve`]).
+    #[allow(clippy::too_many_arguments)]
+    fn solve(
+        &mut self,
+        val: Buf,
+        rhs: Buf,
+        x: Buf,
+        pc: Preconditioner,
+        cg: bool,
+        tol: f64,
+        max_iter: usize,
+    ) -> Result<(usize, f64)>;
+    /// Multigrid setup on the matrix `val`.
+    fn amg_setup(&mut self, val: Buf, s: &AmgSettings) -> Result<()>;
+    /// Waits for queued work.
+    fn sync(&mut self) -> Result<()>;
+}
+
+/// A [`FlowDevice`] on an executor.
+pub struct KernelFlow<E: Exec> {
+    x: E,
+    m: Mesh,
+    rho: f64,
+    nc: usize,
+    nf: usize,
+    nb: usize,
+    lsq_u: Raw3,
+    lsq_p: Raw3,
+    /// Gradient masks: velocity, pressure, pressure correction.
+    masks: [Buf; 3],
+    eps2: Buf,
+    eps2_one: Buf,
+    scratch: Buf,
+    zero_cells: Buf,
+    /// Block sums (minima) and maxima of up to max(3 n_cells, n_faces) values.
+    blocks: Buf,
+    blocks2: Buf,
+    /// The parts of the residual scale, 3 n_cells each.
+    rs_v: Buf,
+    rs_w: Buf,
+}
+
+impl<E: Exec> KernelFlow<E> {
+    /// Uploads the static data of `s` to the executor.
+    pub fn new(mut x: E, s: &Setup) -> Result<Self> {
+        let d = s.disc;
+        let (nc, nf, ni) = (d.n_cells, d.n_faces, d.n_interior);
+        let nb = nf - ni;
+        let mut f64s = |v: &[f64]| -> Result<Raw<f64>> {
+            let b = x.alloc(v.len())?;
+            x.upload(b, v)?;
+            Ok(x.raw(b))
+        };
+        let mut soa = |v: &foehncraft_fv::disc::Soa3| -> Result<Raw3> {
+            Ok(Raw3 {
+                x: f64s(&v.x)?,
+                y: f64s(&v.y)?,
+                z: f64s(&v.z)?,
+            })
+        };
+        let area = soa(&d.face_area)?;
+        let face_centroid = soa(&d.face_centroid)?;
+        let cell_centroid = soa(&d.cell_centroid)?;
+        let kk = soa(&d.k)?;
+        let lsq_u = soa(&d.lsq)?;
+        let lsq_p = soa(s.lsq_p)?;
+        let mut f64s = |v: &[f64]| -> Result<Raw<f64>> {
+            let b = x.alloc(v.len())?;
+            x.upload(b, v)?;
+            Ok(x.raw(b))
+        };
+        let dgeo = f64s(&d.dgeo)?;
+        let weight = f64s(&d.weight)?;
+        let volume = f64s(&d.cell_volume)?;
+        let pset = f64s(&s.bc.pset)?;
+        // the viscosity is constant in laminar flow (stage 6: per face)
+        let mu_face = f64s(&vec![s.mu; nf])?;
+        let m = Mesh {
+            n_cells: nc as u64,
+            n_faces: nf as u64,
+            n_interior: ni as u64,
+            owner: x.alloc_u32(&d.owner)?,
+            neighbour: x.alloc_u32(&d.neighbour)?,
+            cell_ptr: x.alloc_u32(&d.cell_ptr)?,
+            cell_faces: x.alloc_u32(&d.cell_faces)?,
+            area,
+            face_centroid,
+            cell_centroid,
+            dgeo,
+            k: kk,
+            weight,
+            volume,
+            lsq_u,
+            lsq_p,
+            chunk: d.sell.chunk as u64,
+            slice_ptr: x.alloc_u32(&d.sell.slice_ptr)?,
+            mom_kind: x.alloc_u32(&s.bc.mom_kind)?,
+            flux_kind: x.alloc_u32(&s.bc.flux_kind)?,
+            ub_rule: x.alloc_u32(&s.bc.ub_rule)?,
+            pb_rule: x.alloc_u32(&s.bc.pb_rule)?,
+            pset,
+            mu_face,
+        };
+        let pca: Vec<f64> =
+            s.bc.flux_kind
+                .iter()
+                .map(|&kind| if kind == k::FLUX_PRESSURE { 0.0 } else { 1.0 })
+                .collect();
+        let mut buf = |v: &[f64]| -> Result<Buf> {
+            let b = x.alloc(v.len())?;
+            x.upload(b, v)?;
+            Ok(b)
+        };
+        let masks = [
+            buf(&s.bc.u_zero_gradient)?,
+            buf(&s.bc.p_zero_gradient)?,
+            buf(&pca)?,
+        ];
+        let eps2 = buf(s.eps2)?;
+        let n_blocks = (3 * nc).max(nf).div_ceil(BLOCK);
+        Ok(Self {
+            eps2,
+            eps2_one: x.alloc(1)?,
+            scratch: x.alloc(nb)?,
+            zero_cells: x.alloc(nc)?,
+            blocks: x.alloc(n_blocks)?,
+            blocks2: x.alloc(n_blocks)?,
+            rs_v: x.alloc(3 * nc)?,
+            rs_w: x.alloc(3 * nc)?,
+            masks,
+            lsq_u,
+            lsq_p,
+            rho: s.rho,
+            nc,
+            nf,
+            nb,
+            m,
+            x,
+        })
+    }
+
+    /// The executor.
+    pub fn exec(&mut self) -> &mut E {
+        &mut self.x
+    }
+
+    fn r(&self, b: Buf) -> Raw<f64> {
+        self.x.raw(b)
+    }
+
+    fn r3(&self, b: Buf3) -> Raw3 {
+        Raw3 {
+            x: self.r(b.x),
+            y: self.r(b.y),
+            z: self.r(b.z),
+        }
+    }
+
+    fn rg(&self, g: &[Buf3; 3]) -> RawGrad {
+        RawGrad {
+            g: [self.r3(g[0]), self.r3(g[1]), self.r3(g[2])],
+        }
+    }
+
+    fn mask(&self, m: Mask) -> Buf {
+        self.masks[match m {
+            Mask::Velocity => 0,
+            Mask::Pressure => 1,
+            Mask::PressureCorrection => 2,
+        }]
+    }
+
+    fn go<K: Entry>(&mut self, n: usize, a: &K::Args) -> Result<()> {
+        if n == 0 {
+            return Ok(());
+        }
+        self.x.launch::<K>(n, a)
+    }
+
+    /// Boundary constants of `value` with mask `m` into the scratch array.
+    fn constants(&mut self, m: Mask, value: Buf) -> Result<()> {
+        let a = e::ConstArgs {
+            mask: self.r(self.mask(m)),
+            value: self.r(value),
+            out: self.r(self.scratch),
+        };
+        self.go::<e::BoundaryConstants>(self.nb, &a)
+    }
+
+    /// Σ x² of the first `n` entries of the raw array in the fixed blocks.
+    fn sum_sq_raw(&mut self, x: Raw<f64>) -> Result<f64> {
+        let n = x.len as usize;
+        let nbk = n.div_ceil(BLOCK);
+        let mut out = self.r(self.blocks);
+        ensure!(
+            nbk as u64 <= out.len,
+            "sum of squares of {n} values: too long"
+        );
+        out.len = nbk as u64;
+        let a = e::BlockArgs {
+            x,
+            out,
+            out2: Raw::EMPTY,
+        };
+        self.go::<e::BlockSumSq>(nbk, &a)?;
+        let sums = self.x.download(self.blocks)?;
+        Ok(combine_block_sums(&sums[..nbk]))
+    }
+
+    fn lin<K: Entry<Args = e::LinArgs>>(&mut self, n: usize, a: e::LinArgs) -> Result<()> {
+        self.go::<K>(n, &a)
+    }
+
+    fn unary<K: Entry<Args = e::UnaryArgs>>(
+        &mut self,
+        n: usize,
+        s: f64,
+        x: Buf,
+        out: Buf,
+    ) -> Result<()> {
+        check(&[out], &[x])?;
+        let a = e::UnaryArgs {
+            m: self.m,
+            s,
+            x: self.r(x),
+            out: self.r(out),
+        };
+        self.go::<K>(n, &a)
+    }
+}
+
+/// Fails when an output is also an input or appears twice.
+fn check(outs: &[Buf], inputs: &[Buf]) -> Result<()> {
+    for (i, o) in outs.iter().enumerate() {
+        ensure!(
+            !inputs.contains(o) && !outs[..i].contains(o),
+            "flow device: output buffer {o:?} is also an input"
+        );
+    }
+    Ok(())
+}
+
+impl<E: Exec> FlowDevice for KernelFlow<E> {
+    fn name(&self) -> String {
+        self.x.name()
+    }
+
+    fn device(&self) -> String {
+        self.x.device()
+    }
+
+    fn alloc(&mut self, n: usize) -> Result<Buf> {
+        self.x.alloc(n)
+    }
+
+    fn upload(&mut self, b: Buf, v: &[f64]) -> Result<()> {
+        ensure!(
+            self.r(b).len as usize == v.len(),
+            "upload of {} values into {}",
+            v.len(),
+            self.r(b).len
+        );
+        self.x.upload(b, v)
+    }
+
+    fn download(&mut self, b: Buf) -> Result<Vec<f64>> {
+        self.x.download(b)
+    }
+
+    fn copy(&mut self, src: Buf, dst: Buf) -> Result<()> {
+        if src != dst {
+            self.x.copy(src, dst)?;
+        }
+        Ok(())
+    }
+
+    fn fill(&mut self, b: Buf, v: f64) -> Result<()> {
+        let r = self.r(b);
+        self.lin::<e::Fill>(
+            r.len as usize,
+            e::LinArgs {
+                a: v,
+                b: 0.0,
+                x: Raw::EMPTY,
+                y: Raw::EMPTY,
+                out: r,
+            },
+        )
+    }
+
+    fn scaled_difference(&mut self, out: Buf, a: f64, x: Buf, y: Buf) -> Result<()> {
+        let r = self.r(out);
+        let args = e::LinArgs {
+            a,
+            b: 0.0,
+            x: self.r(x),
+            y: self.r(y),
+            out: r,
+        };
+        self.lin::<e::ScaledDifference>(r.len as usize, args)
+    }
+
+    fn lincomb(&mut self, out: Buf, a: f64, x: Buf, b: f64, y: Buf) -> Result<()> {
+        let r = self.r(out);
+        let args = e::LinArgs {
+            a,
+            b,
+            x: self.r(x),
+            y: self.r(y),
+            out: r,
+        };
+        self.lin::<e::Lincomb>(r.len as usize, args)
+    }
+
+    fn sum_sq(&mut self, x: Buf) -> Result<f64> {
+        let r = self.r(x);
+        self.sum_sq_raw(r)
+    }
+
+    fn min_max(&mut self, x: Buf) -> Result<(f64, f64)> {
+        let r = self.r(x);
+        let nbk = (r.len as usize).div_ceil(BLOCK);
+        let (mut o1, mut o2) = (self.r(self.blocks), self.r(self.blocks2));
+        ensure!(
+            nbk as u64 <= o1.len,
+            "minimum and maximum of {} values: too long",
+            r.len
+        );
+        o1.len = nbk as u64;
+        o2.len = nbk as u64;
+        self.go::<e::BlockMinMax>(
+            nbk,
+            &e::BlockArgs {
+                x: r,
+                out: o1,
+                out2: o2,
+            },
+        )?;
+        let mins = self.x.download(self.blocks)?;
+        let maxs = self.x.download(self.blocks2)?;
+        Ok((
+            mins[..nbk].iter().copied().fold(f64::INFINITY, f64::min),
+            maxs[..nbk]
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max),
+        ))
+    }
+
+    fn value(&mut self, b: Buf, i: usize) -> Result<f64> {
+        self.x.value(b, i)
+    }
+
+    fn subtract(&mut self, b: Buf, s: f64) -> Result<()> {
+        let r = self.r(b);
+        self.lin::<e::Subtract>(
+            r.len as usize,
+            e::LinArgs {
+                a: s,
+                b: 0.0,
+                x: Raw::EMPTY,
+                y: Raw::EMPTY,
+                out: r,
+            },
+        )
+    }
+
+    fn scale_entry(&mut self, b: Buf, i: usize, s: f64) -> Result<()> {
+        let r = self.r(b);
+        ensure!(i < r.len as usize, "scale_entry: index {i} out of range");
+        self.lin::<e::ScaleEntry>(
+            1,
+            e::LinArgs {
+                a: s,
+                b: i as f64,
+                x: Raw::EMPTY,
+                y: Raw::EMPTY,
+                out: r,
+            },
+        )
+    }
+
+    fn boundary_values(&mut self, a: &BoundaryArgs) -> Result<()> {
+        let outs = [a.ub.x, a.ub.y, a.ub.z, a.pb];
+        let mut ins = vec![a.p, a.mass_flux];
+        ins.extend(a.u.all());
+        ins.extend(a.grad_p.all());
+        ins.extend(a.ub_set.all());
+        for g in &a.grad_u {
+            ins.extend(g.all());
+        }
+        check(&outs, &ins)?;
+        let args = e::BoundaryValuesArgs {
+            m: self.m,
+            rho: self.rho,
+            mass_flux: self.r(a.mass_flux),
+            u: self.r3(a.u),
+            grad_u: self.rg(&a.grad_u),
+            p: self.r(a.p),
+            grad_p: self.r3(a.grad_p),
+            ub_set: self.r3(a.ub_set),
+            ub: self.r3(a.ub),
+            pb: self.r(a.pb),
+        };
+        self.go::<e::BoundaryValues>(self.nb, &args)
+    }
+
+    fn gradient(&mut self, w: Lsq, phi: Buf, mask: Mask, value: Buf, out: Buf3) -> Result<()> {
+        check(&out.all(), &[phi, value])?;
+        self.constants(mask, value)?;
+        let args = e::GradientArgs {
+            m: self.m,
+            w: match w {
+                Lsq::Velocity => self.lsq_u,
+                Lsq::Pressure => self.lsq_p,
+            },
+            phi: self.r(phi),
+            bc_a: self.r(self.mask(mask)),
+            bc_b: self.r(self.scratch),
+            out: self.r3(out),
+        };
+        self.go::<e::Gradient>(self.nc, &args)
+    }
+
+    fn limiter(&mut self, phi: Buf, value: Buf, grad: Buf3, eps2: Eps2, out: Buf) -> Result<()> {
+        let mut ins = vec![phi, value];
+        ins.extend(grad.all());
+        check(&[out], &ins)?;
+        self.constants(Mask::Velocity, value)?;
+        let e2 = match eps2 {
+            Eps2::PerCell => self.r(self.eps2),
+            Eps2::Single(v) => {
+                self.x.upload(self.eps2_one, &[v])?;
+                self.r(self.eps2_one)
+            }
+        };
+        let args = e::LimiterArgs {
+            m: self.m,
+            phi: self.r(phi),
+            bc_a: self.r(self.mask(Mask::Velocity)),
+            bc_b: self.r(self.scratch),
+            grad: self.r3(grad),
+            eps2: e2,
+            out: self.r(out),
+        };
+        self.go::<e::Limiter>(self.nc, &args)
+    }
+
+    fn mass_flux(&mut self, a: &FluxArgs, out: Buf) -> Result<()> {
+        let mut ins = vec![a.p, a.pb, a.relax];
+        ins.extend(a.u.all());
+        ins.extend(a.grad_p.all());
+        ins.extend(a.ub.all());
+        for g in &a.grad_u {
+            ins.extend(g.all());
+        }
+        ins.extend(a.d);
+        if let Some((ds, y, _)) = a.time {
+            ins.push(ds);
+            ins.push(y);
+        }
+        check(&[out], &ins)?;
+        let (transient, ds, time, alpha) = match a.time {
+            Some((ds, y, al)) => (1, self.r(ds), self.r(y), al),
+            None => (0, Raw::EMPTY, Raw::EMPTY, 1.0),
+        };
+        let args = e::MassFluxArgs {
+            m: self.m,
+            rho: self.rho,
+            u: self.r3(a.u),
+            grad_u: self.rg(&a.grad_u),
+            p: self.r(a.p),
+            grad_p: self.r3(a.grad_p),
+            pb: self.r(a.pb),
+            ub: self.r3(a.ub),
+            d: self.r(a.d.unwrap_or(self.zero_cells)),
+            relax: self.r(a.relax),
+            transient,
+            ds,
+            time,
+            alpha,
+            out: self.r(out),
+        };
+        self.go::<e::MassFlux>(self.nf, &args)
+    }
+
+    fn momentum_faces(&mut self, a: &MomentumFaceArgs) -> Result<()> {
+        let outs = [a.cp, a.cn, a.bf.x, a.bf.y, a.bf.z];
+        let mut ins = vec![a.mass_flux];
+        ins.extend(a.u.all());
+        ins.extend(a.psi.all());
+        ins.extend(a.ub.all());
+        for g in &a.grad_u {
+            ins.extend(g.all());
+        }
+        check(&outs, &ins)?;
+        let args = e::MomentumFaceArgs {
+            m: self.m,
+            mass_flux: self.r(a.mass_flux),
+            u: self.r3(a.u),
+            grad_u: self.rg(&a.grad_u),
+            psi: self.r3(a.psi),
+            ub: self.r3(a.ub),
+            blend: a.blend,
+            nonorth: a.nonorth,
+            convection: a.convection,
+            cp: self.r(a.cp),
+            cn: self.r(a.cn),
+            bf: self.r3(a.bf),
+        };
+        self.go::<e::MomentumFaces>(self.nf, &args)
+    }
+
+    fn momentum_rows(&mut self, a: &MomentumRowArgs) -> Result<()> {
+        let outs = [
+            a.val, a.rhs.x, a.rhs.y, a.rhs.z, a.d, a.ds, a.dc, a.diag.x, a.diag.y, a.diag.z,
+        ];
+        let mut ins = vec![a.cp, a.cn];
+        ins.extend(a.bf.all());
+        ins.extend(a.grad_p.all());
+        ins.extend(a.u.all());
+        if let Some(t) = &a.time {
+            ins.extend(t.u_old.all());
+            ins.extend(t.u_old2.all());
+            ins.extend(t.explicit.1.all());
+        }
+        check(&outs, &ins)?;
+        let empty = Raw3::default();
+        let (transient, tau, c_old, u_old, u_old2, ew, ex) = match &a.time {
+            Some(t) => (
+                1,
+                t.tau,
+                t.c_old,
+                self.r3(t.u_old),
+                self.r3(t.u_old2),
+                t.explicit.0,
+                self.r3(t.explicit.1),
+            ),
+            None => (0, 0.0, [0.0; 2], empty, empty, 0.0, empty),
+        };
+        let args = e::MomentumRowArgs {
+            m: self.m,
+            cp: self.r(a.cp),
+            cn: self.r(a.cn),
+            bf: self.r3(a.bf),
+            grad_p: self.r3(a.grad_p),
+            body_force: a.body_force,
+            u: self.r3(a.u),
+            alpha: a.alpha,
+            theta: a.theta,
+            transient,
+            tau,
+            c_old,
+            u_old,
+            u_old2,
+            explicit_weight: ew,
+            explicit: ex,
+            val: self.r(a.val),
+            rhs: self.r3(a.rhs),
+            d: self.r(a.d),
+            ds: self.r(a.ds),
+            dc: self.r(a.dc),
+            diag: self.r3(a.diag),
+        };
+        self.go::<e::MomentumRows>(self.nc, &args)
+    }
+
+    fn momentum_operator(&mut self, cp: Buf, cn: Buf, bf: Buf3, u: Buf3, out: Buf3) -> Result<()> {
+        let mut ins = vec![cp, cn];
+        ins.extend(bf.all());
+        ins.extend(u.all());
+        check(&out.all(), &ins)?;
+        let args = e::OperatorArgs {
+            m: self.m,
+            cp: self.r(cp),
+            cn: self.r(cn),
+            bf: self.r3(bf),
+            u: self.r3(u),
+            out: self.r3(out),
+        };
+        self.go::<e::MomentumOperator>(self.nc, &args)
+    }
+
+    fn residual_scale(&mut self, u: Buf3, rhs: Buf3, diag: Buf3, alpha: f64) -> Result<f64> {
+        let args = e::ResidualScaleArgs {
+            u: self.r3(u),
+            rhs: self.r3(rhs),
+            diag: self.r3(diag),
+            alpha,
+            v: self.r(self.rs_v),
+            w: self.r(self.rs_w),
+        };
+        self.go::<e::ResidualScale>(self.nc, &args)?;
+        let (v, w) = (self.r(self.rs_v), self.r(self.rs_w));
+        let a = self.sum_sq_raw(v)?;
+        let b = self.sum_sq_raw(w)?;
+        Ok((a.sqrt() + b.sqrt()).max(f64::MIN_POSITIVE))
+    }
+
+    fn set_diagonal(&mut self, val: Buf, diag: Buf) -> Result<()> {
+        self.unary::<e::SetDiagonal>(self.nc, 0.0, diag, val)
+    }
+
+    fn net_outflow(&mut self, m: Buf, out: Buf) -> Result<()> {
+        self.unary::<e::NetOutflow>(self.nc, 0.0, m, out)
+    }
+
+    fn throughflow(&mut self, m: Buf, out: Buf) -> Result<()> {
+        self.unary::<e::Throughflow>(self.nc, 0.0, m, out)
+    }
+
+    fn courant(&mut self, m: Buf, dt: f64, out: Buf) -> Result<()> {
+        let factor = dt / (2.0 * self.rho);
+        self.unary::<e::Courant>(self.nc, factor, m, out)
+    }
+
+    fn pressure_faces(&mut self, dc: Buf, out: Buf) -> Result<()> {
+        let rho = self.rho;
+        self.unary::<e::PressureFaces>(self.nf, rho, dc, out)
+    }
+
+    fn pressure_rows(&mut self, cf: Buf, m: Buf, val: Buf, rhs: Buf) -> Result<()> {
+        check(&[val, rhs], &[cf, m])?;
+        let args = e::PressureRowArgs {
+            m: self.m,
+            cf: self.r(cf),
+            mass_flux: self.r(m),
+            val: self.r(val),
+            rhs: self.r(rhs),
+        };
+        self.go::<e::PressureRows>(self.nc, &args)
+    }
+
+    fn correct_fluxes(&mut self, cf: Buf, m: Buf, pc: Buf, out: Buf) -> Result<()> {
+        check(&[out], &[cf, m, pc])?;
+        let args = e::CorrectFluxArgs {
+            m: self.m,
+            cf: self.r(cf),
+            mass_flux: self.r(m),
+            pc: self.r(pc),
+            out: self.r(out),
+        };
+        self.go::<e::CorrectFluxes>(self.nf, &args)
+    }
+
+    fn correct_velocity(&mut self, dc: Buf, grad: Buf3, u: Buf3) -> Result<()> {
+        let mut ins = vec![dc];
+        ins.extend(grad.all());
+        check(&u.all(), &ins)?;
+        let args = e::CorrectVelocityArgs {
+            dc: self.r(dc),
+            grad: self.r3(grad),
+            u: self.r3(u),
+        };
+        self.go::<e::CorrectVelocity>(self.nc, &args)
+    }
+
+    fn neighbour_correction(&mut self, val: Buf, x: Buf, diag: Buf, out: Buf) -> Result<()> {
+        check(&[out], &[val, x, diag])?;
+        let args = e::NeighbourArgs {
+            m: self.m,
+            val: self.r(val),
+            x: self.r(x),
+            diag: self.r(diag),
+            out: self.r(out),
+        };
+        self.go::<e::NeighbourCorrection>(self.nc, &args)
+    }
+
+    fn delta_flux(&mut self, delta: Buf3, out: Buf) -> Result<()> {
+        check(&[out], &delta.all())?;
+        let args = e::DeltaFluxArgs {
+            m: self.m,
+            rho: self.rho,
+            delta: self.r3(delta),
+            out: self.r(out),
+        };
+        self.go::<e::DeltaFlux>(self.nf, &args)
+    }
+
+    fn solve(
+        &mut self,
+        val: Buf,
+        rhs: Buf,
+        x: Buf,
+        pc: Preconditioner,
+        cg: bool,
+        tol: f64,
+        max_iter: usize,
+    ) -> Result<(usize, f64)> {
+        self.x.solve(val, rhs, x, pc, cg, tol, max_iter)
+    }
+
+    fn amg_setup(&mut self, val: Buf, s: &AmgSettings) -> Result<()> {
+        self.x.amg_setup(val, s)
+    }
+
+    fn sync(&mut self) -> Result<()> {
+        self.x.sync()
+    }
+}

@@ -215,6 +215,8 @@ re-reads the case file at N and applies what may change during a run.
 | `flow/taylor_green_cfl10.toml` | generated hex 2D, 64 × 64 | Taylor–Green vortex at Courant numbers 1.3 to 9 with outer iterations: time order 2 | gallery 14, recipe 21 |
 | `flow/cylinder_re20.toml` | built-in cylinder mesh, refine 1: 24 576 hexahedra | Schäfer & Turek 2D-1, steady, Re = 20: C_D, C_L, Δp within 0.5 % of the reference ranges | gallery 15, recipe 23 |
 | `flow/cylinder_re100.toml` | built-in cylinder mesh, refine 0: 6 144 hexahedra | Schäfer & Turek 2D-2, periodic, Re = 100: C_D,max, C_L,max, St, Δp within 2.5 % (about 8 minutes; Linux, on main, nightly and with the label `full-ci`) | gallery 15, recipe 23 |
+| `flow/cavity_poly3d_gpu.toml` | generated poly 3D, 970 225 polyhedra | the steady flow loop on the GPU: 30 SIMPLEC iterations of the cavity at Re = 100 on the CPU and the GPU, bitwise equal, time per cell and iteration (GPU; not run by CI) | gallery 16, recipe 24 |
+| `flow/cylinder_re100_gpu.toml` | built-in cylinder mesh, refine 2: 98 304 hexahedra | the transient flow loop on the GPU: 200 adaptive BDF2 steps of the Re = 100 cylinder on the CPU and the GPU, bitwise equal (GPU; not run by CI) | gallery 16, recipe 24 |
 
 ### Flow case-file keys
 
@@ -263,6 +265,8 @@ units.
 | `verification.lid_velocity` | 1 | lid speed for the reference comparison and the Reynolds number |
 | `verification.require_convergence` | none | fail unless the outer iterations converge |
 | `run.threads` | all cores | CPU threads (meshes below 20 000 cells run on one; the results are bitwise the same) |
+| `run.backend` | `cpu` | where the flow loop runs: `cpu`, or `cuda` in a build with the `cuda` feature (NVIDIA GPU of compute capability 7.0 or newer); the results are bitwise those of `cpu` (D31). `foehn flow --backend` overrides it |
+| `run.ptx` | `target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx` | PTX module of the `cuda` backend (`gpu/ptx-kernels/build.sh`); `foehn flow --ptx` overrides it |
 | `output.directory` | `output/<case name>` | output directory |
 | `output.vtkhdf` | true | write `fields.vtkhdf` |
 | `output.history_every` | 1 | a row of `residuals.csv` every N outer iterations |

@@ -168,6 +168,12 @@ struct FlowArgs {
     /// `time.steps`).
     #[arg(long)]
     end_time: Option<f64>,
+    /// Where the flow loop runs: cpu or cuda (overrides `run.backend`).
+    #[arg(long)]
+    backend: Option<String>,
+    /// PTX module of the cuda backend (overrides `run.ptx`).
+    #[arg(long)]
+    ptx: Option<PathBuf>,
     /// Output directory (overrides `output.directory`).
     #[arg(long)]
     out: Option<PathBuf>,
@@ -201,6 +207,8 @@ struct G1Args {
 }
 
 fn main() -> Result<()> {
+    // GPU backends (feature `cuda`; nothing without it)
+    foehncraft_cuda::register();
     match Cli::parse().command {
         Command::Info => info(),
         Command::Mesh(a) => mesh(a),
@@ -355,6 +363,12 @@ fn flow(a: FlowArgs) -> Result<()> {
     }
     if a.no_vtkhdf {
         case.output.vtkhdf = false;
+    }
+    if let Some(b) = a.backend {
+        case.run.backend = b;
+    }
+    if let Some(p) = a.ptx {
+        case.run.ptx = p;
     }
     if a.restart.is_some() {
         case.run.restart = a.restart;

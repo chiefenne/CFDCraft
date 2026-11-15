@@ -605,7 +605,7 @@ impl LevelOps for CpuBackend {
 }
 
 /// 1 / diagonal of a matrix in the sliced-ELL slots of `d` (slot 0).
-pub(crate) fn diagonal_inverse(d: &Discretisation, val: &[f64]) -> Vec<f64> {
+pub fn diagonal_inverse(d: &Discretisation, val: &[f64]) -> Vec<f64> {
     (0..d.n_cells)
         .map(|c| 1.0 / val[d.sell.pos(c, 0)])
         .collect()
