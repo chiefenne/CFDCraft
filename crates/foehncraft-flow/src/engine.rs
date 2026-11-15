@@ -964,7 +964,8 @@ pub fn estimate(case: &FlowCase, dir: &Path, build: &BuildInfo) -> Result<Estima
         let (mesh, _, _) = crate::case::mesh_for(case, *l)?;
         let (nc, nf) = (mesh.n_cells as f64, mesh.n_faces() as f64);
         let ni = mesh.n_interior_faces() as f64;
-        let per_faces = HOST_BYTES_PER_INTERIOR_FACE * ni + HOST_BYTES_PER_BOUNDARY_FACE * (nf - ni);
+        let per_faces =
+            HOST_BYTES_PER_INTERIOR_FACE * ni + HOST_BYTES_PER_BOUNDARY_FACE * (nf - ni);
         level_cells.push(mesh.n_cells);
         faces = faces.max(mesh.n_faces());
         interior_faces = interior_faces.max(mesh.n_interior_faces());
