@@ -66,7 +66,8 @@ complete. The first part, the transient core and its benchmarks
   (Crank–Nicolson) on the finest pair, space order 2.09, order 2 at
   Courant numbers up to 9 with outer iterations; cylinder Re 20 inside all
   reference ranges on 98 304 cells; Re 100 on 6 144 cells with C_D,max,
-  St and Δp inside the ranges.
+  St and Δp inside the ranges, on 24 576 cells C_L,max 0.5 % below its
+  range and the others inside.
 - `cfdcraft flow --restart FILE --end-time T`; seven new case files,
   gallery 14–15, recipes 21–23. The Release workflow now refreshes the
   cached README badges (recipe 6).
