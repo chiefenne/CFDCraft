@@ -16,6 +16,7 @@
 //! the algorithm and addressed by handle.
 
 pub mod cpu;
+pub mod kernel;
 
 use crate::bc::BoundaryArrays;
 use anyhow::Result;
@@ -26,6 +27,19 @@ use foehncraft_fv::solver::Preconditioner;
 /// Handle of a device buffer of f64 values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Buf(pub(crate) u32);
+
+impl Buf {
+    /// The handle of the `i`-th buffer of an executor (executors number
+    /// their buffers from 0 in the order of allocation).
+    pub fn new(i: usize) -> Self {
+        Self(i as u32)
+    }
+
+    /// Index of the buffer in its executor.
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
 
 /// Three buffers, one per component.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,15 +325,31 @@ pub enum Mask {
     PressureCorrection,
 }
 
-/// Creates a device: `cpu` (the GPU device of the flow loop follows; `ptx`
-/// will name its kernel module, from `gpu/ptx-kernels`).
+/// Builds a GPU flow device from the static data and the kernel module
+/// (for CUDA the PTX file of `gpu/ptx-kernels/build.sh`).
+pub type GpuFactory = fn(&Setup, &std::path::Path) -> Result<Box<dyn FlowDevice>>;
+
+static GPU: std::sync::OnceLock<(&'static str, GpuFactory)> = std::sync::OnceLock::new();
+
+/// Registers the GPU flow device of this build under `name` (`cuda`);
+/// called once by the front end (`foehncraft_cuda::register`, D60: no
+/// vendor code in this crate).
+pub fn register_gpu(name: &'static str, f: GpuFactory) {
+    let _ = GPU.set((name, f));
+}
+
+/// Creates a device: `cpu`, or `cuda` when the build registered it (`ptx`
+/// names its kernel module, from `gpu/ptx-kernels`).
 pub fn create(name: &str, s: &Setup, ptx: &std::path::Path) -> Result<Box<dyn FlowDevice>> {
-    let _ = ptx;
     match name {
-        "cpu" => Ok(Box::new(cpu::CpuFlow::new(s)?)),
-        "cuda" => anyhow::bail!(
-            "the flow solver runs on the CPU in this version; the GPU flow loop follows in stage 5"
-        ),
-        other => anyhow::bail!("unknown backend `{other}` (cpu)"),
+        "cpu" => Ok(Box::new(cpu::CpuFlow::cpu(s)?)),
+        "cuda" => match GPU.get() {
+            Some((n, f)) if *n == name => f(s, ptx),
+            _ => anyhow::bail!(
+                "this build has no GPU backend; build with `--features cuda` \
+                 (cargo build --release -p foehncraft-cli --features cuda)"
+            ),
+        },
+        other => anyhow::bail!("unknown backend `{other}` (cpu, cuda)"),
     }
 }

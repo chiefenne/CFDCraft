@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Builds the single-source kernels (G1, stage 2 and stage 3) as a PTX module for
+# Builds the single-source kernels (G1, stages 2, 3 and 5) as a PTX module for
 # NVIDIA GPUs.
 #
 #   gpu/ptx-kernels/build.sh            # PTX for sm_70 (Volta), JIT-compiled for newer GPUs
@@ -29,7 +29,14 @@ for k in g1_face_flux g1_cell_gather g1_spmv_csr g1_spmv_sell \
     amg_smooth_first_f32 amg_smooth_step_f32 amg_add_f32 amg_residual_f32 amg_spmv_f32 \
     amg_prolong_f32 amg_dense_f32 amg_to_f32 amg_from_f32 \
     amg_smooth_first_f64 amg_smooth_step_f64 amg_add_f64 amg_residual_f64 amg_spmv_f64 \
-    amg_prolong_f64 amg_dense_f64 amg_to_f64 amg_from_f64; do
+    amg_prolong_f64 amg_dense_f64 amg_to_f64 amg_from_f64 \
+    flow_lincomb flow_scaled_difference flow_fill flow_subtract flow_scale_entry \
+    flow_block_sum_sq flow_block_min_max flow_boundary_constants flow_boundary_values \
+    flow_gradient flow_limiter flow_mass_flux flow_momentum_faces flow_momentum_rows \
+    flow_momentum_operator flow_residual_scale flow_set_diagonal flow_diagonal_inverse \
+    flow_net_outflow flow_throughflow flow_courant flow_pressure_faces \
+    flow_pressure_rows flow_correct_fluxes flow_correct_velocity \
+    flow_neighbour_correction flow_delta_flux; do
     grep -q ".entry $k" "$ptx" || { echo "missing entry point $k in $ptx" >&2; exit 1; }
 done
 echo "wrote $ptx ($(grep -m1 '^\.target' "$ptx"))"

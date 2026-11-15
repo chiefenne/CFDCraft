@@ -7,7 +7,7 @@
 //! The wrappers only compute the thread index, build slices from the raw
 //! device pointers and their sizes, and call the body that the CPU backends
 //! also call. Argument lists are identical to the hand-written CUDA C
-//! reference (`crates/foehncraft-bench/kernels/g1_reference.cu`).
+//! reference (`crates/foehncraft-cuda/kernels/g1_reference.cu`).
 //!
 //! Needs the nightly toolchain: the `ptx-kernel` ABI and the NVPTX
 //! intrinsics are not stable yet. This is the open point of D11 that gate G1
@@ -17,6 +17,7 @@
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 mod amg;
+mod flow;
 mod fv;
 
 use foehncraft_kernels::{face, spmv};

@@ -1,0 +1,58 @@
+# The transient flow loop (PISO with BDF2, stage 5) on the GPU: the start of
+# the Schäfer–Turek 2D-2 cylinder flow at Re = 100 on 98 304 cells
+# (refine 2), 200 adaptive time steps on the CPU and on the GPU. The two
+# runs must give bitwise the same fields, forces, histories and restart
+# file (D31); tools/stage5_cloud.py runs both and compares them with
+# tools/compare_runs.py.
+#
+#   gpu/ptx-kernels/build.sh sm_75
+#   cargo build --release -p foehncraft-cli --features cuda
+#   target/release/foehn flow examples/cases/flow/cylinder_re100_gpu.toml --backend cpu --out output/gpu/cpu
+#   target/release/foehn flow examples/cases/flow/cylinder_re100_gpu.toml --backend cuda --out output/gpu/cuda
+#   python3 tools/compare_runs.py output/gpu/cpu output/gpu/cuda
+#
+# The vortex street needs about 5 s of simulated time to develop; the full
+# benchmark is cylinder_re100.toml.
+
+[mesh.cylinder]
+refine = 2
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[flow]
+convection = true
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 1.5
+profile_axes = ["y"]
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.walls]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+log_every = 20
+
+[time]
+scheme = "bdf2"
+time_step = 0.0005
+steps = 200
+adaptive = true
+max_cfl = 0.8
+
+[output]
+fields_every = 0

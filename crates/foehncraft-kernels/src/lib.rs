@@ -32,6 +32,7 @@
 
 pub mod amg;
 pub mod blas;
+pub mod entry;
 pub mod face;
 pub mod flow;
 pub mod fv;

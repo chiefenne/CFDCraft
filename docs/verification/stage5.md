@@ -11,8 +11,9 @@ transient with a `[time]` table; without it, it runs as before (the 13
 case files of stage 4 give bitwise the results of v0.4). This page covers
 the first part of stage 5 (the transient core and its benchmarks); the GPU
 flow loop and the further items of the stage follow in their own pull
-requests and are added here. The commands are in
-[recipes 21–23](../recipes.md#transient-flow), the pictures in
+requests and are added here. Part 2 is the GPU flow loop
+([below](#gpu-flow-loop-part-2)). The commands are in
+[recipes 21–24](../recipes.md#transient-flow), the pictures in
 [gallery 14–15](../gallery.md#taylor-green), the case files in the
 [case catalogue](../cases.md#flow-cases-examplescasesflow).
 
@@ -213,17 +214,77 @@ evaluation window of a periodic benchmark).
 - Extrapolating the pressure along with the flux was tried and dropped
   (see Methods).
 
+## GPU flow loop (part 2)
+
+The whole flow loop runs on an NVIDIA GPU with `run.backend = "cuda"` (or
+`foehn flow --backend cuda`), steady and transient, with results bitwise
+equal to the CPU (D31).
+
+**One source for both, down to the argument lists.** Every operation of
+the flow loop (27 of them: gradients, limiter, boundary values, Rhie–Chow
+fluxes, momentum faces and rows, the Crank–Nicolson operator, pressure
+faces and rows, corrections, the neighbour correction of PISO, Courant
+numbers, block reductions, element-wise updates) is an *entry* in
+`foehncraft_kernels::entry`: a `#[repr(C)]` argument block of array
+addresses with their lengths and scalars, and a body for one index that
+calls the kernel bodies of stage 4. The flow device is written once over
+an executor (`foehncraft_flow::device::kernel::KernelFlow`): it fills the
+argument blocks from its buffers and asks the executor to run the entry.
+The CPU executor runs the body in a multi-threaded loop over host memory;
+the CUDA executor (crate `foehncraft-cuda`) launches the PTX entry
+`flow_<name>` (`gpu/ptx-kernels/src/flow.rs`) with the same block passed
+by value as a kernel parameter (the NVPTX back end passes an aggregate as
+CUDA C does, `.param .align 8 .b8 [N]`; the largest block, the momentum
+rows, has 1 104 bytes of the 4 096 allowed). Host and device compile one
+struct definition, so an argument list cannot be wrong on one side only.
+The PTX has no fused multiply-adds and IEEE division (R10,
+`tools/check_kernels.sh`), and the norms, extrema and dot products use the
+fixed blocks of 256 and the fixed tree of D31 on both.
+
+**Data stay on the device.** All fields, old time levels, matrices and
+right-hand sides live in GPU memory for the whole run; a step reads back
+only scalars (residual norms, the largest Courant number, the limiter range
+of Venkatakrishnan–Wang, the pressure level of the reference cell). The
+momentum and pressure solves use the GPU backend of stage 2 and 3 with
+device-to-device copies; the multigrid hierarchy is built on the host from
+a download of the matrix, only when it is rebuilt. The output and restart
+files download the fields at their times.
+
+**CUDA in one crate (D60).** The CUDA host code of the whole code base (the
+flow executor, the scalar and multigrid backend of stages 2–3, the G1
+backends and the hand-written CUDA C reference) is in
+`crates/foehncraft-cuda`; the solver crates register no vendor code and
+find the GPU through factories that the front end installs
+(`foehncraft_cuda::register`). `tools/check_backend.py` fails CI when a
+CUDA type, call, header or source appears anywhere else.
+
+**The CPU path is unchanged.** All 19 flow cases of the catalogue give, on
+the CPU, bitwise the files of v0.4 and part 1 (fields, histories, forces,
+restart files, reports; `tools/compare_runs.py` against the previous
+build).
+
+| Check | Result | Where |
+|---|---|---|
+| CPU results unchanged by the executor | all 19 flow cases bitwise equal to the previous build | `tools/compare_runs.py` |
+| GPU = CPU, bitwise | *pending: Colab T4 run of `tools/stage5_colab.ipynb`* | `tools/stage5_cloud.py`, cases `cavity_poly3d_gpu`, `cylinder_re100_gpu` and six catalogue cases |
+| Time per cell and iteration on the GPU | *pending* | as above |
+
+**Not yet (D76):** the Krylov solvers still read a dot product back per
+iteration (the BiCGStab and CG of stage 2 and 3), a step reads its
+residual norms at once instead of one step late, and steps are not yet
+captured as CUDA graphs. These follow with the GPU work of the later
+stage-5 pull requests and of stage 7 (multi-GPU), behind the same
+executor interface.
+
 ## Limits of this part of stage 5
 
-- CPU only; the GPU flow loop and `tools/stage5_colab.ipynb` follow in the
-  next pull request of stage 5.
 - The further stage-5 items (the bounded central scheme, the new boundary
   conditions, potential-flow initialisation, expressions, the Python
-  package, adjoint-ready kernels, the backend lint, `--set` and the result
-  summary) follow in their own pull requests.
+  package, adjoint-ready kernels, `--set` and the result summary) follow
+  in their own pull requests.
 - Restart files need the `hdf5` feature (on by default); a build without
   it runs transient cases but writes no restart file.
-- One partition only, as in stage 4.
+- One partition only, as in stage 4, and one GPU.
 
 ## References
 

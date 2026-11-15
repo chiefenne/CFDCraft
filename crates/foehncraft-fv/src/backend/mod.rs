@@ -4,18 +4,19 @@
 //! fixed set of named vectors ([`V`]); the solver drives it through the
 //! operations of [`Backend`] and never touches the data directly. The CPU
 //! backend runs the bodies of `foehncraft_kernels` in (multi-threaded) loops,
-//! the CUDA backend (feature `cuda`) launches the same bodies compiled to
-//! PTX (`gpu/ptx-kernels`). Every operation writes each output from one
+//! the CUDA backend (crate `foehncraft-cuda`, D60) launches the same bodies
+//! compiled to PTX (`gpu/ptx-kernels`). GPU backends live in their own
+//! crates and register with [`register_gpu`]: this crate has no vendor
+//! code. Every operation writes each output from one
 //! index only, and dot products use fixed blocks, so the results do not
 //! depend on the number of threads, and CPU and GPU agree (D31).
 
 pub mod cpu;
-#[cfg(feature = "cuda")]
-pub mod cuda;
 
 use crate::amg::Hierarchy;
 use crate::amg::cycle::LevelOps;
 use crate::disc::Discretisation;
+use std::sync::OnceLock;
 
 /// The named vectors of a backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -174,22 +175,40 @@ pub trait Backend: LevelOps {
     fn discretisation(&self) -> Option<&Discretisation>;
 }
 
+/// Builds a GPU backend on device `ordinal` from the discretisation and the
+/// kernel module (for CUDA the PTX file of `gpu/ptx-kernels/build.sh`).
+pub type GpuFactory =
+    fn(&Discretisation, usize, &std::path::Path) -> anyhow::Result<Box<dyn Backend>>;
+
+static GPU: OnceLock<(&'static str, GpuFactory)> = OnceLock::new();
+
+/// Registers the GPU backend of this build under `name` (`cuda`); called
+/// once by the front end (`foehncraft_cuda::register`). Later calls are
+/// ignored.
+pub fn register_gpu(name: &'static str, f: GpuFactory) {
+    let _ = GPU.set((name, f));
+}
+
+/// The name of the registered GPU backend, if any.
+pub fn gpu_backend() -> Option<&'static str> {
+    GPU.get().map(|g| g.0)
+}
+
 /// Builds a backend by name: `cpu` (all threads), `cpu-serial`, or `cuda`
-/// (feature `cuda`; `ptx` is the module built by `gpu/ptx-kernels/build.sh`).
+/// (when registered; `ptx` is the module built by `gpu/ptx-kernels/build.sh`).
 pub fn create(
     name: &str,
     disc: &Discretisation,
     threads: Option<usize>,
     ptx: &std::path::Path,
 ) -> anyhow::Result<Box<dyn Backend>> {
-    let _ = ptx;
     match name {
         "cpu" => Ok(Box::new(cpu::CpuBackend::new(disc.clone(), threads)?)),
         "cpu-serial" => Ok(Box::new(cpu::CpuBackend::new(disc.clone(), Some(1))?)),
-        #[cfg(feature = "cuda")]
-        "cuda" => Ok(Box::new(cuda::CudaBackend::new(disc, 0, ptx)?)),
-        #[cfg(not(feature = "cuda"))]
-        "cuda" => anyhow::bail!("this build has no GPU backend; build with `--features cuda`"),
+        "cuda" => match GPU.get() {
+            Some((n, f)) if *n == name => f(disc, 0, ptx),
+            _ => anyhow::bail!("this build has no GPU backend; build with `--features cuda`"),
+        },
         other => anyhow::bail!("unknown backend `{other}` (cpu, cpu-serial, cuda)"),
     }
 }

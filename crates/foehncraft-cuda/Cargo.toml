@@ -1,0 +1,27 @@
+[package]
+name = "foehncraft-cuda"
+description = "Foehncraft NVIDIA GPU backends: the single-source kernels as PTX launched through the CUDA driver, for the flow loop, the scalar operators and the AMG, and the G1 benchmark with its hand-written CUDA C reference. The only crate with CUDA code (D60)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+# The GPU backends. Without it the crate is empty and `register` does
+# nothing, so the workspace builds on every platform. The CUDA driver and
+# NVRTC are loaded at run time: a build needs no CUDA toolkit.
+cuda = ["dep:cudarc"]
+
+[dependencies]
+foehncraft-core.workspace = true
+foehncraft-kernels.workspace = true
+foehncraft-fv.workspace = true
+foehncraft-flow.workspace = true
+foehncraft-bench.workspace = true
+anyhow = "1"
+cudarc = { workspace = true, optional = true, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-12000"] }
+
+[lints]
+workspace = true

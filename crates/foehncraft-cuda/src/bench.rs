@@ -12,18 +12,18 @@
 //! CUDA driver and NVRTC are loaded dynamically: a build needs no CUDA
 //! toolkit, a run needs the NVIDIA driver (and NVRTC for the reference).
 
-use super::Backend;
-use crate::workload::{Kernel, Workload};
 use anyhow::Context as _;
 use cudarc::driver::{
     CudaContext, CudaFunction, CudaSlice, CudaStream, LaunchConfig, PushKernelArg,
 };
 use cudarc::nvrtc::{CompileOptions, Ptx};
+use foehncraft_bench::backend::Backend;
+use foehncraft_bench::workload::{Kernel, Workload};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-const REFERENCE_SRC: &str = include_str!("../../kernels/g1_reference.cu");
+const REFERENCE_SRC: &str = include_str!("../kernels/g1_reference.cu");
 
 /// Threads per block. 256 is a good default on every NVIDIA architecture
 /// since Maxwell for memory-bound one-thread-per-output kernels.

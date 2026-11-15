@@ -55,6 +55,31 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
 
+## Unreleased – stage 5: GPU flow loop (part 2)
+
+- **The flow loop on the GPU:** `run.backend = "cuda"` or
+  `foehn flow --backend cuda` runs every flow case, steady and transient,
+  on an NVIDIA GPU (compute capability 7.0 or newer), with all fields,
+  matrices and old levels in GPU memory; results bitwise equal to the CPU
+  (D31).
+- **One source down to the argument lists:** the 27 operations of the flow
+  loop are entries of `foehncraft_kernels::entry` (a `#[repr(C)]` argument
+  block and a body per index). The CPU loops and the PTX entries `flow_*`
+  run the same body with the same block; the flow device is written once
+  over an executor (`device::kernel`).
+- **CUDA in one crate (D60):** new crate `foehncraft-cuda` holds all CUDA
+  code (flow executor, the scalar and multigrid backend, the G1 backends
+  and the CUDA C reference, moved from `foehncraft-fv` and
+  `foehncraft-bench`); the solver crates find it through registered
+  factories. CI lint `tools/check_backend.py`. The feature is now
+  `foehncraft-cuda/cuda` (the CLI's `cuda` feature is unchanged).
+- New tools `tools/compare_runs.py` (bitwise comparison of two runs),
+  `tools/stage5_cloud.py` and `tools/stage5_colab.ipynb` (CPU against GPU
+  on eight cases up to one million polyhedra); new cases
+  `cavity_poly3d_gpu.toml`, `cylinder_re100_gpu.toml`; recipe 24.
+- The CPU results of all flow cases are bitwise those of part 1. A missing
+  NVIDIA driver now gives a message instead of a panic.
+
 ## Unreleased – stage 5: transient laminar flow (part 1)
 
 Stage 5 comes in several pull requests and is released as 0.5 when it is

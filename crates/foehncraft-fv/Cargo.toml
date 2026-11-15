@@ -17,9 +17,6 @@ default = ["hdf5"]
 hdf5 = ["foehncraft-mesh/hdf5"]
 # METIS available for the mesh case (not needed by the operators).
 metis = ["foehncraft-mesh/metis"]
-# NVIDIA GPU backend: the kernel bodies as PTX (gpu/ptx-kernels), loaded at
-# run time through the CUDA driver; a build needs no CUDA toolkit.
-cuda = ["dep:cudarc"]
 # hypre (BoomerAMG with PCG) as the reference solver of `foehn poisson`
 # (D20): needs HYPRE_DIR, the install prefix of a sequential hypre build.
 hypre = ["dep:cc"]
@@ -33,7 +30,6 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 anyhow = "1"
-cudarc = { workspace = true, optional = true, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-12000"] }
 
 [build-dependencies]
 cc = { version = "1", optional = true }

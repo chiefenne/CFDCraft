@@ -1,10 +1,21 @@
-//! Backends: who runs the kernel bodies, and where.
+//! Backends: who runs the kernel bodies, and where. The GPU backends live
+//! in `foehncraft-cuda` (D60) and register with [`register_gpu`].
 
 pub mod cpu;
-#[cfg(feature = "cuda")]
-pub mod cuda;
 
 use crate::workload::{Kernel, Workload};
+use std::sync::OnceLock;
+
+/// Builds a GPU backend by name with the options.
+pub type GpuFactory = fn(&str, &BackendOptions) -> anyhow::Result<Box<dyn Backend>>;
+
+static GPU: OnceLock<(&'static [&'static str], GpuFactory)> = OnceLock::new();
+
+/// Registers the GPU backends of this build (names and factory); called once
+/// by the front end (`foehncraft_cuda::register`).
+pub fn register_gpu(names: &'static [&'static str], f: GpuFactory) {
+    let _ = GPU.set((names, f));
+}
 
 /// A way to run the G1 kernels.
 pub trait Backend {
@@ -25,8 +36,8 @@ pub trait Backend {
 /// Names of the backends compiled into this build.
 pub fn available() -> Vec<&'static str> {
     let mut v = vec!["cpu-serial", "cpu-threads", "cpu-native"];
-    if cfg!(feature = "cuda") {
-        v.extend(["cuda-reference", "cuda-rust"]);
+    if let Some((names, _)) = GPU.get() {
+        v.extend(names.iter().copied());
     }
     v
 }
@@ -46,22 +57,17 @@ pub fn create(name: &str, opts: &BackendOptions) -> anyhow::Result<Box<dyn Backe
             cpu::Mode::Native,
             opts.threads,
         )?)),
-        #[cfg(feature = "cuda")]
-        "cuda-reference" => Ok(Box::new(cuda::CudaBackend::reference(opts.device)?)),
-        #[cfg(feature = "cuda")]
-        "cuda-rust" => Ok(Box::new(cuda::CudaBackend::rust(
-            opts.device,
-            &opts.rust_ptx,
-        )?)),
-        #[cfg(not(feature = "cuda"))]
-        "cuda-reference" | "cuda-rust" => anyhow::bail!(
-            "backend `{name}` needs a build with the `cuda` feature: \
-             cargo build --release -p foehncraft-cli --features cuda"
-        ),
-        _ => anyhow::bail!(
-            "unknown backend `{name}`; available: {}",
-            available().join(", ")
-        ),
+        other => match GPU.get() {
+            Some((names, f)) if names.contains(&other) => f(other, opts),
+            _ if matches!(other, "cuda-reference" | "cuda-rust") => anyhow::bail!(
+                "backend `{other}` needs a build with the `cuda` feature: \
+                 cargo build --release -p foehncraft-cli --features cuda"
+            ),
+            _ => anyhow::bail!(
+                "unknown backend `{other}`; available: {}",
+                available().join(", ")
+            ),
+        },
     }
 }
 

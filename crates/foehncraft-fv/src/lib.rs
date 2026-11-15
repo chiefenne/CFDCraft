@@ -6,7 +6,7 @@
 //! - [`disc`]: the host-side discretisation (geometry factors,
 //!   least-squares weights, sliced-ELL structure);
 //! - [`backend`]: where the kernel bodies of `foehncraft_kernels` run: CPU
-//!   threads or the NVIDIA GPU (feature `cuda`);
+//!   threads or the NVIDIA GPU (crate `foehncraft-cuda`, feature `cuda`);
 //! - [`amg`]: smoothed-aggregation algebraic multigrid, the pressure
 //!   preconditioner (stage 3);
 //! - [`solver`]: outer deferred-correction iterations, BiCGStab and CG;

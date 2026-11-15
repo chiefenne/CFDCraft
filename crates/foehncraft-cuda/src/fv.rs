@@ -1,4 +1,4 @@
-//! NVIDIA GPU backend (feature `cuda`): the kernel bodies of
+//! NVIDIA GPU backend of `foehncraft-fv` (feature `cuda`): the kernel bodies of
 //! `foehncraft_kernels` compiled by rustc to PTX (`gpu/ptx-kernels`, entry
 //! points `fv_*` and `blas_*`), launched through the CUDA driver. All data
 //! stay on the GPU; only dot products (one value per block of 256) and the
@@ -9,10 +9,6 @@
 //! agree bitwise (checked by `foehn scalar` with `backends = ["cpu",
 //! "cuda"]`).
 
-use super::{Backend, FaceSettings, Limiter, V};
-use crate::amg::cycle::LevelOps;
-use crate::amg::{Hierarchy, Precision, SellMatrix};
-use crate::disc::Discretisation;
 use anyhow::Context as _;
 use cudarc::driver::{
     CudaContext, CudaFunction, CudaModule, CudaSlice, CudaStream, DeviceRepr, LaunchConfig,
@@ -21,6 +17,10 @@ use cudarc::driver::{
 use cudarc::nvrtc::Ptx;
 use foehncraft_core::Real;
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
+use foehncraft_fv::amg::cycle::LevelOps;
+use foehncraft_fv::amg::{Hierarchy, Precision, SellMatrix};
+use foehncraft_fv::backend::{Backend, FaceSettings, Limiter, V};
+use foehncraft_fv::disc::Discretisation;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -386,7 +386,7 @@ impl CudaBackend {
         }
         let stream = ctx.default_stream();
         let s = &stream;
-        let soa = |v: &crate::disc::Soa3| -> anyhow::Result<Soa> {
+        let soa = |v: &foehncraft_fv::disc::Soa3| -> anyhow::Result<Soa> {
             Ok(Soa {
                 x: s.clone_htod(&v.x)?,
                 y: s.clone_htod(&v.y)?,
@@ -450,6 +450,27 @@ impl CudaBackend {
         be.upload(V::Psi, &vec![1.0; nc])?;
         be.stream.synchronize()?;
         Ok(be)
+    }
+
+    /// The stream all work of the backend runs on.
+    pub(crate) fn stream(&self) -> &Arc<CudaStream> {
+        &self.stream
+    }
+
+    /// A named vector on the device.
+    pub(crate) fn vector(&self, v: V) -> &CudaSlice<f64> {
+        &self.vecs[v.index()]
+    }
+
+    /// A named vector on the device, for writing.
+    pub(crate) fn vector_mut(&mut self, v: V) -> &mut CudaSlice<f64> {
+        &mut self.vecs[v.index()]
+    }
+
+    /// The matrix values (sliced-ELL slots of the discretisation), for
+    /// writing. The caller also sets `Dinv`.
+    pub(crate) fn matrix_mut(&mut self) -> &mut CudaSlice<f64> {
+        &mut self.d.val
     }
 
     fn func(&self, name: &str) -> &CudaFunction {
@@ -877,7 +898,7 @@ impl Backend for CudaBackend {
         );
         let s = self.stream.clone();
         s.memcpy_htod(val, &mut self.d.val)?;
-        let dinv = super::cpu::diagonal_inverse(&self.host, val);
+        let dinv = foehncraft_fv::backend::cpu::diagonal_inverse(&self.host, val);
         self.upload(V::Dinv, &dinv)
     }
 

@@ -1,0 +1,54 @@
+//! Stage 5: the operations of the flow loop as PTX entry points `flow_*`,
+//! one GPU thread per index. Each entry takes the number of indices and the
+//! argument block of `foehncraft_kernels::entry` by value, and runs the
+//! body that the CPU loops of `foehncraft-flow` (`device::kernel`) also
+//! run. The host side is `crates/foehncraft-cuda/src/flow.rs`; the argument
+//! blocks are one definition for both, so the argument lists cannot differ.
+
+use crate::tid;
+use foehncraft_kernels::entry::{self as e, Entry};
+
+macro_rules! entries {
+    ($($name:ident => $op:ty),* $(,)?) => {$(
+        #[unsafe(no_mangle)]
+        pub unsafe extern "ptx-kernel" fn $name(n: u64, a: <$op as Entry>::Args) {
+            let i = tid();
+            if (i as u64) < n {
+                // SAFETY: i < n; the host built every array of `a` for the
+                // mesh and keeps outputs distinct from inputs (see the
+                // module docs of `foehncraft_kernels::entry`).
+                unsafe { <$op as Entry>::run(i, &a) }
+            }
+        }
+    )*};
+}
+
+entries! {
+    flow_lincomb => e::Lincomb,
+    flow_scaled_difference => e::ScaledDifference,
+    flow_fill => e::Fill,
+    flow_subtract => e::Subtract,
+    flow_scale_entry => e::ScaleEntry,
+    flow_block_sum_sq => e::BlockSumSq,
+    flow_block_min_max => e::BlockMinMax,
+    flow_boundary_constants => e::BoundaryConstants,
+    flow_boundary_values => e::BoundaryValues,
+    flow_gradient => e::Gradient,
+    flow_limiter => e::Limiter,
+    flow_mass_flux => e::MassFlux,
+    flow_momentum_faces => e::MomentumFaces,
+    flow_momentum_rows => e::MomentumRows,
+    flow_momentum_operator => e::MomentumOperator,
+    flow_residual_scale => e::ResidualScale,
+    flow_set_diagonal => e::SetDiagonal,
+    flow_diagonal_inverse => e::DiagonalInverse,
+    flow_net_outflow => e::NetOutflow,
+    flow_throughflow => e::Throughflow,
+    flow_courant => e::Courant,
+    flow_pressure_faces => e::PressureFaces,
+    flow_pressure_rows => e::PressureRows,
+    flow_correct_fluxes => e::CorrectFluxes,
+    flow_correct_velocity => e::CorrectVelocity,
+    flow_neighbour_correction => e::NeighbourCorrection,
+    flow_delta_flux => e::DeltaFlux,
+}

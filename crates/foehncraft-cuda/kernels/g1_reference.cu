@@ -11,7 +11,7 @@
 // (gpu/ptx-kernels); the size arguments that the Rust side needs to build
 // its slices are unused here.
 //
-// Compiled at run time by NVRTC (crates/foehncraft-bench/src/backend/cuda.rs).
+// Compiled at run time by NVRTC (crates/foehncraft-cuda/src/bench.rs).
 
 #define FLAG_BIT 0x80000000u
 
