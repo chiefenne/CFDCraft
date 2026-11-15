@@ -402,6 +402,33 @@ impl Discretisation {
         crate::amg::Csr::from_rows(self.n_cells, rows)
     }
 
+    /// Transpose map of the matrix storage (D59, see
+    /// `foehncraft_kernels::adjoint`): for every slot the slot of the
+    /// mirrored entry, a_PN ↔ a_NP of each interior face; the diagonal and
+    /// the padding slots map to themselves.
+    pub fn transpose_map(&self) -> Vec<u32> {
+        let s = &self.sell;
+        let mut map: Vec<u32> = (0..s.stored() as u32).collect();
+        // slot of each interior face in the owner row and the neighbour row
+        let mut slot = vec![[u32::MAX; 2]; self.n_interior];
+        for c in 0..self.n_cells {
+            let mut j = 1;
+            for &e in &self.cell_faces[self.cell_ptr[c] as usize..self.cell_ptr[c + 1] as usize] {
+                let (f, is_nb) = unpack_face(e);
+                if f < self.n_interior {
+                    slot[f][is_nb as usize] = s.pos(c, j) as u32;
+                    j += 1;
+                }
+            }
+        }
+        for [a, b] in slot {
+            debug_assert!(a != u32::MAX && b != u32::MAX);
+            map[a as usize] = b;
+            map[b as usize] = a;
+        }
+        map
+    }
+
     /// Borrowed boundary coefficients.
     pub fn boundary(&self) -> foehncraft_kernels::fv::Boundary<'_, f64> {
         foehncraft_kernels::fv::Boundary {

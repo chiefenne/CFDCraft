@@ -15,38 +15,72 @@
 //! divergence theorem). Geometry is always computed in float64, whatever the
 //! floating-point type of the solver (D7).
 //!
+//! The functions are generic over [`Coord`], so the same source also runs
+//! on dual numbers (`foehncraft_core::Dual`) and gives the exact derivatives
+//! of areas, centroids and volumes with respect to the node coordinates
+//! (D59, item 5: shape sensitivities, mesh morphing L4).
+//!
 //! The same decomposition is used by point location ([`crate::locate`]).
 
 use crate::mesh::Mesh;
+use foehncraft_core::{Dual, Real};
 use rayon::prelude::*;
+
+/// A coordinate type: [`Real`] with a square root (`f64`, or dual numbers
+/// for derivatives with respect to the nodes).
+pub trait Coord: Real {
+    /// Square root.
+    fn sqrt(self) -> Self;
+}
+
+impl Coord for f64 {
+    #[inline(always)]
+    fn sqrt(self) -> Self {
+        f64::sqrt(self)
+    }
+}
+
+impl<const N: usize> Coord for Dual<N> {
+    /// √x with the derivatives d/(2√x).
+    #[inline(always)]
+    fn sqrt(self) -> Self {
+        let r = self.v.sqrt();
+        let s = 0.5 / r;
+        let mut d = [0.0; N];
+        for (o, i) in d.iter_mut().zip(self.d) {
+            *o = s * i;
+        }
+        Dual::new(r, d)
+    }
+}
 
 /// Vector sum.
 #[inline(always)]
-pub fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub fn add<T: Coord>(a: [T; 3], b: [T; 3]) -> [T; 3] {
     [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
 }
 
 /// Vector difference.
 #[inline(always)]
-pub fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub fn sub<T: Coord>(a: [T; 3], b: [T; 3]) -> [T; 3] {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
 /// Scaled vector.
 #[inline(always)]
-pub fn scale(a: [f64; 3], s: f64) -> [f64; 3] {
+pub fn scale<T: Coord>(a: [T; 3], s: T) -> [T; 3] {
     [a[0] * s, a[1] * s, a[2] * s]
 }
 
 /// Dot product.
 #[inline(always)]
-pub fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+pub fn dot<T: Coord>(a: [T; 3], b: [T; 3]) -> T {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
 /// Cross product.
 #[inline(always)]
-pub fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+pub fn cross<T: Coord>(a: [T; 3], b: [T; 3]) -> [T; 3] {
     [
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
@@ -56,22 +90,22 @@ pub fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 
 /// Euclidean norm.
 #[inline(always)]
-pub fn norm(a: [f64; 3]) -> f64 {
+pub fn norm<T: Coord>(a: [T; 3]) -> T {
     dot(a, a).sqrt()
 }
 
 /// Average of the nodes of a polygon.
 #[inline]
-pub fn node_average(points: &[[f64; 3]], nodes: &[u32]) -> [f64; 3] {
-    let mut c = [0.0; 3];
+pub fn node_average<T: Coord>(points: &[[T; 3]], nodes: &[u32]) -> [T; 3] {
+    let mut c = [T::ZERO; 3];
     for &n in nodes {
         c = add(c, points[n as usize]);
     }
-    scale(c, 1.0 / nodes.len() as f64)
+    scale(c, T::from_f64(1.0 / nodes.len() as f64))
 }
 
 /// Area vector and centroid of a (possibly non-planar) polygon.
-pub fn polygon_area_centroid(points: &[[f64; 3]], nodes: &[u32]) -> ([f64; 3], [f64; 3]) {
+pub fn polygon_area_centroid<T: Coord>(points: &[[T; 3]], nodes: &[u32]) -> ([T; 3], [T; 3]) {
     let k = nodes.len();
     if k == 3 {
         let (a, b, c) = (
@@ -79,17 +113,17 @@ pub fn polygon_area_centroid(points: &[[f64; 3]], nodes: &[u32]) -> ([f64; 3], [
             points[nodes[1] as usize],
             points[nodes[2] as usize],
         );
-        let s = scale(cross(sub(b, a), sub(c, a)), 0.5);
-        return (s, scale(add(add(a, b), c), 1.0 / 3.0));
+        let s = scale(cross(sub(b, a), sub(c, a)), T::from_f64(0.5));
+        return (s, scale(add(add(a, b), c), T::from_f64(1.0 / 3.0)));
     }
     let m = node_average(points, nodes);
-    let mut s = [0.0; 3];
-    let mut tri_s = [[0.0; 3]; 32];
-    let mut big: Vec<[f64; 3]> = Vec::new();
+    let mut s = [T::ZERO; 3];
+    let mut tri_s = [[T::ZERO; 3]; 32];
+    let mut big: Vec<[T; 3]> = Vec::new();
     for i in 0..k {
         let p = points[nodes[i] as usize];
         let q = points[nodes[(i + 1) % k] as usize];
-        let t = scale(cross(sub(p, m), sub(q, m)), 0.5);
+        let t = scale(cross(sub(p, m), sub(q, m)), T::from_f64(0.5));
         s = add(s, t);
         if k <= 32 {
             tri_s[i] = t;
@@ -98,21 +132,21 @@ pub fn polygon_area_centroid(points: &[[f64; 3]], nodes: &[u32]) -> ([f64; 3], [
         }
     }
     let ns = norm(s);
-    if ns == 0.0 {
+    if ns == T::ZERO {
         return (s, m);
     }
-    let n = scale(s, 1.0 / ns);
-    let mut c = [0.0; 3];
-    let mut w = 0.0;
+    let n = scale(s, T::ONE / ns);
+    let mut c = [T::ZERO; 3];
+    let mut w = T::ZERO;
     for i in 0..k {
         let p = points[nodes[i] as usize];
         let q = points[nodes[(i + 1) % k] as usize];
         let t = if k <= 32 { tri_s[i] } else { big[i] };
         let a = dot(t, n);
-        c = add(c, scale(add(add(p, q), m), a / 3.0));
+        c = add(c, scale(add(add(p, q), m), a / T::from_f64(3.0)));
         w += a;
     }
-    (s, scale(c, 1.0 / w))
+    (s, scale(c, T::ONE / w))
 }
 
 /// Geometry of a mesh, for the local cells and faces.
@@ -177,21 +211,33 @@ impl Geometry {
 
 /// Interior point of a local cell used for its tetrahedral decomposition:
 /// the average of its face centroids.
-pub fn cell_apex(mesh: &Mesh, face_centroid: &[[f64; 3]], c: usize) -> [f64; 3] {
-    let mut x = [0.0; 3];
-    let mut k = 0.0;
+pub fn cell_apex<T: Coord>(mesh: &Mesh, face_centroid: &[[T; 3]], c: usize) -> [T; 3] {
+    let mut x = [T::ZERO; 3];
+    let mut k = T::ZERO;
     for (f, _) in mesh.cell_face_iter(c) {
         x = add(x, face_centroid[f]);
-        k += 1.0;
+        k += T::ONE;
     }
-    scale(x, 1.0 / k)
+    scale(x, T::ONE / k)
 }
 
 /// Volume and centroid of local cell `c`.
 pub fn cell_volume_centroid(mesh: &Mesh, face_centroid: &[[f64; 3]], c: usize) -> (f64, [f64; 3]) {
+    cell_volume_centroid_of(mesh, &mesh.points, face_centroid, c)
+}
+
+/// Volume and centroid of local cell `c` of `mesh` with the node
+/// coordinates `points` (of any [`Coord`] type; `face_centroid` from the
+/// same points).
+pub fn cell_volume_centroid_of<T: Coord>(
+    mesh: &Mesh,
+    points: &[[T; 3]],
+    face_centroid: &[[T; 3]],
+    c: usize,
+) -> (T, [T; 3]) {
     let apex = cell_apex(mesh, face_centroid, c);
-    let mut vol = 0.0;
-    let mut cen = [0.0; 3];
+    let mut vol = T::ZERO;
+    let mut cen = [T::ZERO; 3];
     for (f, is_nb) in mesh.cell_face_iter(c) {
         let nodes = mesh.face(f);
         let k = nodes.len();
@@ -199,22 +245,22 @@ pub fn cell_volume_centroid(mesh: &Mesh, face_centroid: &[[f64; 3]], c: usize) -
         let fc = if k == 3 {
             face_centroid[f]
         } else {
-            node_average(&mesh.points, nodes)
+            node_average(points, nodes)
         };
         for i in 0..k {
-            let p = mesh.points[nodes[i] as usize];
-            let q = mesh.points[nodes[(i + 1) % k] as usize];
+            let p = points[nodes[i] as usize];
+            let q = points[nodes[(i + 1) % k] as usize];
             // tetrahedron (apex, fc, p, q), outward orientation of (fc, p, q)
-            let mut v = dot(sub(fc, apex), cross(sub(p, apex), sub(q, apex))) / 6.0;
+            let mut v = dot(sub(fc, apex), cross(sub(p, apex), sub(q, apex))) / T::from_f64(6.0);
             if is_nb {
                 v = -v;
             }
             vol += v;
-            let tc = scale(add(add(apex, fc), add(p, q)), 0.25);
+            let tc = scale(add(add(apex, fc), add(p, q)), T::from_f64(0.25));
             cen = add(cen, scale(tc, v));
         }
     }
-    (vol, scale(cen, 1.0 / vol))
+    (vol, scale(cen, T::ONE / vol))
 }
 
 #[cfg(test)]
@@ -240,5 +286,114 @@ mod tests {
         let (s, c) = polygon_area_centroid(&pts, &[0, 1, 3]);
         assert!((s[2] - 0.5).abs() < 1e-15);
         assert!((c[0] - 1.0 / 3.0).abs() < 1e-15);
+    }
+
+    /// D59, item 5: areas, centroids and volumes on dual numbers give the
+    /// exact derivatives with respect to the node coordinates (against
+    /// central differences), the values are the f64 values bit for bit, and
+    /// moving an interior node leaves the total volume unchanged.
+    #[test]
+    fn shape_derivatives_of_the_geometry() {
+        type D = Dual<3>;
+        let sec: crate::case::MeshSection = toml::from_str(
+            "[generate]\ntype = \"mixed\"\ndimension = 3\ncells = [3, 3, 2]\nperturb = 0.2\nseed = 5\n",
+        )
+        .unwrap();
+        let (mesh, _, _) = crate::case::build_mesh(&sec).unwrap();
+        let nf = mesh.n_faces();
+        let geometry = |pts: &[[f64; 3]]| -> Vec<f64> {
+            let fa: Vec<_> = (0..nf)
+                .map(|f| polygon_area_centroid(pts, mesh.face(f)))
+                .collect();
+            let fc: Vec<_> = fa.iter().map(|a| a.1).collect();
+            let mut out = Vec::new();
+            for (s, c) in &fa {
+                out.extend(s.iter().chain(c));
+            }
+            for c in 0..mesh.n_cells {
+                let (v, x) = cell_volume_centroid_of(&mesh, pts, &fc, c);
+                out.push(v);
+                out.extend(x);
+            }
+            out
+        };
+        let base = geometry(&mesh.points);
+        // the generic code on f64 is the code of Geometry::compute
+        let g = Geometry::compute(&mesh);
+        assert_eq!(base[..6], [g.face_area[0], g.face_centroid[0]].concat()[..]);
+        let boundary: std::collections::BTreeSet<u32> = (mesh.n_interior_faces()..nf)
+            .flat_map(|f| mesh.face(f).iter().copied())
+            .collect();
+        let h = 1e-6;
+        let mut checked = 0;
+        let mut worst = 0.0f64;
+        for j in 0..mesh.points.len() {
+            let pts: Vec<[D; 3]> = mesh
+                .points
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    std::array::from_fn(|k| {
+                        if i == j {
+                            D::variable(p[k], k)
+                        } else {
+                            D::constant(p[k])
+                        }
+                    })
+                })
+                .collect();
+            let fa: Vec<_> = (0..nf)
+                .map(|f| polygon_area_centroid(&pts, mesh.face(f)))
+                .collect();
+            let fc: Vec<_> = fa.iter().map(|a| a.1).collect();
+            let mut dual = Vec::new();
+            for (s, c) in &fa {
+                dual.extend(s.iter().chain(c).copied());
+            }
+            let mut dvol = [0.0; 3];
+            for c in 0..mesh.n_cells {
+                let (v, x) = cell_volume_centroid_of(&mesh, &pts, &fc, c);
+                dual.push(v);
+                dual.extend(x);
+                for (s, d) in dvol.iter_mut().zip(v.d) {
+                    *s += d;
+                }
+            }
+            for (a, b) in dual.iter().zip(&base) {
+                assert!(a.v == *b);
+            }
+            for k in 0..3 {
+                let mut p = mesh.points.clone();
+                p[j][k] += h;
+                let gp = geometry(&p);
+                p[j][k] -= 2.0 * h;
+                let gm = geometry(&p);
+                for (i, a) in dual.iter().enumerate() {
+                    let fd = (gp[i] - gm[i]) / (2.0 * h);
+                    // round-off of the differences: about 1e-10 (coordinates of size 1)
+                    let scale = a.d[k].abs().max(fd.abs()).max(1e-3);
+                    worst = worst.max((a.d[k] - fd).abs() / scale);
+                    assert!(
+                        (a.d[k] - fd).abs() < 1e-6 * scale,
+                        "node {j}, direction {k}, output {i}: dual {:e}, central difference {fd:e}",
+                        a.d[k]
+                    );
+                    checked += 1;
+                }
+                if !boundary.contains(&(j as u32)) {
+                    assert!(
+                        dvol[k].abs() < 1e-14,
+                        "interior node {j}: dV/dx = {:e}",
+                        dvol[k]
+                    );
+                }
+            }
+        }
+        println!(
+            "{} cells, {} nodes: {checked} derivatives, largest relative difference {worst:.1e}",
+            mesh.n_cells,
+            mesh.points.len()
+        );
+        assert!(checked > 10_000);
     }
 }

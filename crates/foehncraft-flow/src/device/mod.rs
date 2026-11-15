@@ -292,6 +292,13 @@ pub trait FlowDevice {
     fn neighbour_correction(&mut self, val: Buf, x: Buf, diag: Buf, out: Buf) -> Result<()>;
     /// Mass flux of a cell velocity increment.
     fn delta_flux(&mut self, delta: Buf3, out: Buf) -> Result<()>;
+    /// out = Aᵀ in the storage of A = `val` (D59: the same solvers and the
+    /// multigrid then work on Aᵀ).
+    fn transpose(&mut self, val: Buf, out: Buf) -> Result<()>;
+    /// out = A x for the matrix `val`.
+    fn matrix_product(&mut self, val: Buf, x: Buf, out: Buf) -> Result<()>;
+    /// out = Aᵀ x for the matrix `val`, without storing Aᵀ (D59).
+    fn transposed_product(&mut self, val: Buf, x: Buf, out: Buf) -> Result<()>;
 
     /// Solves `val` x = `rhs` (x holds the start value): CG with `pc`
     /// when `cg`, else BiCGStab. Returns the iterations and ‖b − A x₀‖.

@@ -18,6 +18,7 @@
 //! where an entry says that an output may be an input (element-wise
 //! updates, which read index i before they write it, through raw pointers).
 
+use crate::adjoint;
 use crate::flow::{self as k, FaceGeometry, VelocityGradient};
 use crate::fv::{self, Boundary, SellLayout, Topology, Vec3};
 use crate::{blas, ld};
@@ -202,6 +203,8 @@ pub struct Mesh {
     pub chunk: u64,
     /// SELL slice starts.
     pub slice_ptr: Raw<u32>,
+    /// Transpose map of the SELL storage (D59; see [`crate::adjoint`]).
+    pub transpose: Raw<u32>,
     /// Momentum kind per boundary face.
     pub mom_kind: Raw<u32>,
     /// Flux kind per boundary face.
@@ -1127,6 +1130,71 @@ impl Entry for NeighbourCorrection {
     }
 }
 
+/// Slot `k` of Aᵀ in the storage of A: `out[k] = x[transpose[k]]`, for
+/// every stored slot (D59).
+pub struct Transpose;
+impl Entry for Transpose {
+    type Args = UnaryArgs;
+    const NAME: &'static str = "transpose";
+    #[inline(always)]
+    unsafe fn run(k: usize, a: &UnaryArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            *a.out.out().add(k) = adjoint::transposed_value(k, a.m.transpose.get(), a.x.get())
+        }
+    }
+}
+
+/// Arguments of [`MatrixProduct`] and [`TransposedProduct`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ProductArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// Matrix values.
+    pub val: Raw<f64>,
+    /// Cell values.
+    pub x: Raw<f64>,
+    /// Output.
+    pub out: Raw<f64>,
+}
+
+/// Row `c` of A x.
+pub struct MatrixProduct;
+impl Entry for MatrixProduct {
+    type Args = ProductArgs;
+    const NAME: &'static str = "matrix_product";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &ProductArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            *a.out.out().add(c) =
+                adjoint::row_product(c, &a.m.topo(), &a.m.layout(), a.val.get(), a.x.get())
+        }
+    }
+}
+
+/// Row `c` of Aᵀ x, without storing Aᵀ (D59).
+pub struct TransposedProduct;
+impl Entry for TransposedProduct {
+    type Args = ProductArgs;
+    const NAME: &'static str = "transposed_product";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &ProductArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            *a.out.out().add(c) = adjoint::transposed_row_product(
+                c,
+                &a.m.topo(),
+                &a.m.layout(),
+                a.m.transpose.get(),
+                a.val.get(),
+                a.x.get(),
+            )
+        }
+    }
+}
+
 /// Arguments of [`DeltaFlux`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -1179,11 +1247,12 @@ send_sync!(
     CorrectFluxArgs,
     CorrectVelocityArgs,
     NeighbourArgs,
-    DeltaFluxArgs
+    DeltaFluxArgs,
+    ProductArgs
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 27] = [
+pub const NAMES: [&str; 30] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     Fill::NAME,
@@ -1211,6 +1280,9 @@ pub const NAMES: [&str; 27] = [
     CorrectVelocity::NAME,
     NeighbourCorrection::NAME,
     DeltaFlux::NAME,
+    Transpose::NAME,
+    MatrixProduct::NAME,
+    TransposedProduct::NAME,
 ];
 
 #[cfg(test)]
@@ -1241,6 +1313,7 @@ mod tests {
             size_of::<CorrectVelocityArgs>(),
             size_of::<NeighbourArgs>(),
             size_of::<DeltaFluxArgs>(),
+            size_of::<ProductArgs>(),
         ];
         for s in sizes {
             assert!(s + 8 <= 4096, "argument block of {s} bytes");
@@ -1257,7 +1330,7 @@ mod tests {
         assert_eq!(size_of::<Raw3>(), 48);
         assert_eq!(
             size_of::<Mesh>(),
-            3 * 8 + 4 * 16 + 3 * 48 + 16 + 48 + 16 + 16 + 2 * 48 + 8 + 16 + 4 * 16 + 16 + 16
+            3 * 8 + 4 * 16 + 3 * 48 + 16 + 48 + 16 + 16 + 2 * 48 + 8 + 2 * 16 + 4 * 16 + 16 + 16
         );
     }
 
@@ -1280,6 +1353,6 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 27);
+        assert_eq!(NAMES.len(), 30);
     }
 }

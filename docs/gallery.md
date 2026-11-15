@@ -26,6 +26,7 @@ All commands run from the repository root. Case files are in
 | 14 | [Taylor–Green vortex: second order in time and space](#taylor-green) | 5 | PISO, variable-step BDF2, Crank–Nicolson, extrapolation, outer iterations at large steps |
 | 15 | [Cylinder in a channel: the Schäfer & Turek benchmark](#cylinder) | 5 | built-in O-grid, steady Re 20, vortex street at Re 100, adaptive time step, force coefficients |
 | 16 | [The flow loop on a GPU](#gpu-flow) | 5 | single-source flow kernels, CPU = GPU bitwise, time per cell on a Tesla T4 |
+| 17 | [Adjoint-ready kernels: derivatives and checkpointing](#adjoint-ready) | 5 | dual numbers through the kernel bodies, transposed matrices, binomial checkpointing |
 
 ---
 
@@ -625,5 +626,48 @@ python3 tools/gpu_chart.py output/stage5_gpu/report.md gpu_flow_times.svg
 
 Without a GPU of your own: `tools/stage5_colab.ipynb` on a free Colab T4
 (recipe 24).
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="adjoint-ready"></a>
+## 17. Adjoint-ready kernels: derivatives and checkpointing
+
+![Primal steps per time step of a reverse sweep against the snapshots in memory](figures/gallery/checkpoint_steps.svg)
+
+Preparation for a discrete adjoint solver (D59, L17). The kernel bodies are
+generic over the floating-point type, so they also run on dual numbers and
+return the exact derivatives of their results; matrices can be applied
+transposed as a gather; and a transient run can be reversed with few
+states in memory.
+
+The chart shows the cost of reversing a transient run with binomial
+checkpointing (Griewank & Walther 2000): with 20 snapshots, the reverse
+sweep of 10 000 time steps runs each step 3.8 times on average and never
+more than 4 times; with 40 snapshots, 100 000 steps cost 3.9 primal steps
+each (values above 12 drawn at 12). The schedule is optimal: its count of
+recomputed steps equals that of a dynamic program over all positions of
+the snapshots.
+
+| Check | Result |
+|---|---|
+| Jacobians of 11 face, cell and boundary kernels from dual numbers, every input array, against central differences | 320 580 derivatives, largest relative difference 5.0e-7 |
+| Shape derivatives of areas, centroids and volumes from the node coordinates | 165 024 derivatives, 2.8e-7; total volume unchanged by interior nodes |
+| ⟨Av, w⟩ = ⟨v, Aᵀw⟩ on the momentum and pressure matrices of a SIMPLEC solve | to 10⁻¹⁴; Aᵀ without storing it equals the stored Aᵀ bit for bit, on 1 and 4 threads |
+| CG + multigrid and BiCGStab on Aᵀ | converged to 10⁻¹⁰ |
+| Reverse sweep of 13 BDF2 steps with 2 snapshots | every level bitwise equal to the forward run, 24 primal steps (the optimum) |
+
+| | |
+|---|---|
+| Code | `foehncraft_core::Dual`, `foehncraft_kernels::adjoint`, `foehncraft_flow::checkpoint`, `foehncraft_mesh::geometry` (generic over `Coord`) |
+| Tests | `crates/foehncraft-flow/tests/adjoint.rs`, `crates/foehncraft-flow/src/adjoint_tests.rs`, `checkpoint.rs`, `geometry.rs` |
+| Report | [stage 5, part 3](verification/stage5.md#adjoint-ready-kernels-part-3) |
+
+```
+cargo test --release -p foehncraft-flow --test adjoint -- --nocapture   # Jacobians, one line per kernel
+cargo test --release -p foehncraft-flow --lib -- adjoint_tests checkpoint   # transposed matrices, checkpointing
+python3 tools/checkpoint_chart.py checkpoint_steps.svg
+```
 
 [↑ back to top](#example-gallery)

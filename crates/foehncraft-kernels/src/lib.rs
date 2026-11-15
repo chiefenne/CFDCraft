@@ -7,6 +7,7 @@
 //!   rows, Rhie–Chow mass flux, pressure correction, boundary values;
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
+//! - [`adjoint`]: the transposed matrix and product for the adjoint (D59);
 //! - [`amg`]: the smoothers, transfers and coarse solve of the algebraic
 //!   multigrid V-cycle (stage 3), generic over float32 and float64.
 //!
@@ -30,6 +31,7 @@
 //! callers guarantee that every index lies inside its array.
 #![no_std]
 
+pub mod adjoint;
 pub mod amg;
 pub mod blas;
 pub mod entry;

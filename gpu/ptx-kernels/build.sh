@@ -36,7 +36,8 @@ for k in g1_face_flux g1_cell_gather g1_spmv_csr g1_spmv_sell \
     flow_momentum_operator flow_residual_scale flow_set_diagonal flow_diagonal_inverse \
     flow_net_outflow flow_throughflow flow_courant flow_pressure_faces \
     flow_pressure_rows flow_correct_fluxes flow_correct_velocity \
-    flow_neighbour_correction flow_delta_flux; do
+    flow_neighbour_correction flow_delta_flux flow_transpose flow_matrix_product \
+    flow_transposed_product; do
     grep -q ".entry $k" "$ptx" || { echo "missing entry point $k in $ptx" >&2; exit 1; }
 done
 echo "wrote $ptx ($(grep -m1 '^\.target' "$ptx"))"

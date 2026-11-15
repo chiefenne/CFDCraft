@@ -1,0 +1,282 @@
+//! Transposed matrices of the flow solver (requirement D59, item 4): Aᵀ in
+//! the storage of A and the product Aᵀx without storing Aᵀ, both gathers
+//! without atomics, on the momentum and pressure-correction matrices of a
+//! running SIMPLEC solve; the linear solvers and the multigrid on Aᵀ.
+
+use crate::case::{FlowCase, mesh_for};
+use crate::checkpoint::{FlowRun, reverse};
+use crate::device::Buf;
+use crate::simplec::{Flow, Physics, Target};
+use crate::transient::Transient;
+use crate::{bc, simplec};
+use foehncraft_fv::solver::Preconditioner;
+use std::path::Path;
+
+/// A lid-driven cavity at Re 100 on perturbed polygons after a few outer
+/// iterations, so the momentum matrix carries convection (non-symmetric).
+fn cavity(threads: Option<usize>) -> Flow {
+    let (case, mesh, geo) = cavity_case("");
+    let phys = physics(&case);
+    let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, None).unwrap();
+    let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
+    let mut fl = Flow::new(
+        disc,
+        arrays,
+        phys,
+        case.solver.clone(),
+        [0.0; 3],
+        0.0,
+        Some(0),
+        &Target {
+            device: "cpu".into(),
+            threads,
+            ptx: Default::default(),
+        },
+    )
+    .unwrap();
+    for _ in 0..5 {
+        fl.iterate().unwrap();
+    }
+    fl
+}
+
+fn physics(case: &FlowCase) -> Physics {
+    Physics {
+        rho: case.fluid.density,
+        mu: case.fluid.viscosity,
+        body_force: [0.0; 3],
+        convection: true,
+    }
+}
+
+fn cavity_case(extra: &str) -> (FlowCase, foehncraft_mesh::Mesh, foehncraft_mesh::Geometry) {
+    let text = format!(
+        r#"
+[mesh.generate]
+type = "poly"
+dimension = 2
+upper = [1.0, 1.0, 0.05]
+cells = [14, 14, 1]
+perturb = 0.15
+seed = 59
+[fluid]
+viscosity = 0.01
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+{extra}
+"#
+    );
+    let case = FlowCase::from_toml(&text, Path::new(".")).unwrap();
+    let (mesh, geo, _) = mesh_for(&case, None).unwrap();
+    (case, mesh, geo)
+}
+
+/// Deterministic values in [−1, 1).
+fn values(n: usize, seed: u64) -> Vec<f64> {
+    let mut s = seed;
+    (0..n)
+        .map(|_| {
+            s = s
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (s >> 11) as f64 / (1u64 << 52) as f64 - 1.0
+        })
+        .collect()
+}
+
+fn dot(a: &[f64], b: &[f64]) -> f64 {
+    a.iter().zip(b).map(|(x, y)| x * y).sum()
+}
+
+/// Aᵀ of `val` as a new buffer, with the identities of the transpose.
+fn transposed(fl: &mut Flow, val: Buf) -> Buf {
+    let nc = fl.disc.n_cells;
+    let stored = fl.disc.sell.stored();
+    let dev = &mut fl.dev;
+    let t = dev.alloc(stored).unwrap();
+    dev.transpose(val, t).unwrap();
+    // transposing twice gives A back, bit for bit
+    let tt = dev.alloc(stored).unwrap();
+    dev.transpose(t, tt).unwrap();
+    assert_eq!(dev.download(tt).unwrap(), dev.download(val).unwrap());
+    // ⟨A v, w⟩ = ⟨v, Aᵀ w⟩ to round-off
+    let (v, w) = (dev.alloc(nc).unwrap(), dev.alloc(nc).unwrap());
+    let (hv, hw) = (values(nc, 1), values(nc, 2));
+    dev.upload(v, &hv).unwrap();
+    dev.upload(w, &hw).unwrap();
+    let (av, atw, atw2) = (
+        dev.alloc(nc).unwrap(),
+        dev.alloc(nc).unwrap(),
+        dev.alloc(nc).unwrap(),
+    );
+    dev.matrix_product(val, v, av).unwrap();
+    dev.transposed_product(val, w, atw).unwrap();
+    dev.matrix_product(t, w, atw2).unwrap();
+    let (av, atw, atw2) = (
+        dev.download(av).unwrap(),
+        dev.download(atw).unwrap(),
+        dev.download(atw2).unwrap(),
+    );
+    // the product without storing Aᵀ is the product with the stored Aᵀ, bit
+    // for bit (same entries, same order)
+    assert_eq!(atw, atw2);
+    let (l, r) = (dot(&av, &hw), dot(&hv, &atw));
+    let size: f64 = av.iter().zip(&hw).map(|(a, b)| (a * b).abs()).sum();
+    assert!(
+        (l - r).abs() <= 1e-14 * size,
+        "<Av, w> = {l:e}, <v, A^T w> = {r:e}"
+    );
+    t
+}
+
+#[test]
+fn transposed_matrices_of_a_simplec_solve() {
+    let mut fl = cavity(None);
+    let (val, pval) = (fl.w.val, fl.w.pval);
+    // momentum: convection makes A non-symmetric
+    let t = transposed(&mut fl, val);
+    assert_ne!(fl.dev.download(t).unwrap(), fl.dev.download(val).unwrap());
+    // pressure correction: symmetric, Aᵀ = A bit for bit
+    let tp = transposed(&mut fl, pval);
+    assert_eq!(fl.dev.download(tp).unwrap(), fl.dev.download(pval).unwrap());
+}
+
+#[test]
+fn transposed_products_do_not_depend_on_the_threads() {
+    let run = |threads| {
+        let mut fl = cavity(Some(threads));
+        let nc = fl.disc.n_cells;
+        let val = fl.w.val;
+        let x = fl.dev.alloc(nc).unwrap();
+        fl.dev.upload(x, &values(nc, 3)).unwrap();
+        let out = fl.dev.alloc(nc).unwrap();
+        fl.dev.transposed_product(val, x, out).unwrap();
+        fl.dev.download(out).unwrap()
+    };
+    let a = run(1);
+    let b = run(4);
+    assert!(a.iter().zip(&b).all(|(x, y)| x.to_bits() == y.to_bits()));
+}
+
+/// The solvers of the primal run on Aᵀ unchanged: CG with the multigrid on
+/// the transposed pressure-correction matrix (symmetric, the multigrid of
+/// stage 3 needs symmetry), BiCGStab with Jacobi on the transposed momentum
+/// matrix. The residual is checked with the product that never stores Aᵀ.
+#[test]
+fn the_linear_solvers_solve_the_transposed_systems() {
+    let mut fl = cavity(None);
+    let nc = fl.disc.n_cells;
+    let amg = fl.settings.amg.clone();
+    let cases = [
+        (fl.w.pval, Preconditioner::Amg, true),
+        (fl.w.val, Preconditioner::Jacobi, false),
+    ];
+    for (val, pc, cg) in cases {
+        let t = transposed(&mut fl, val);
+        let dev = &mut fl.dev;
+        let (b, x, r) = (
+            dev.alloc(nc).unwrap(),
+            dev.alloc(nc).unwrap(),
+            dev.alloc(nc).unwrap(),
+        );
+        let hb = values(nc, 4);
+        dev.upload(b, &hb).unwrap();
+        if pc == Preconditioner::Amg {
+            dev.amg_setup(t, &amg).unwrap();
+        }
+        let (it, r0) = dev.solve(t, b, x, pc, cg, 1e-10, 500).unwrap();
+        assert!(it > 0 && it < 500, "{it} iterations on A^T");
+        dev.transposed_product(val, x, r).unwrap();
+        let hr = dev.download(r).unwrap();
+        let res: f64 = hr
+            .iter()
+            .zip(&hb)
+            .map(|(a, b)| (a - b) * (a - b))
+            .sum::<f64>()
+            .sqrt();
+        assert!(res <= 1e-9 * r0, "|b - A^T x| = {res:e}, |b| = {r0:e}");
+    }
+}
+
+/// Binomial checkpointing of a transient run (D59, item 6): the reverse
+/// sweep of 13 BDF2 steps with 2 snapshots meets every level with the
+/// bits of the plain forward run, so a step recomputed from a snapshot is
+/// the step of the run.
+#[test]
+fn checkpointed_reverse_sweep_meets_the_forward_levels_bitwise() {
+    let (case, mesh, geo) =
+        cavity_case("[time]\nscheme = \"bdf2\"\ntime_step = 0.05\nsteps = 13\n");
+    let time = case.time.unwrap();
+    let make = || {
+        let phys = physics(&case);
+        let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, None).unwrap();
+        let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
+        let mut fl = Flow::on(
+            disc,
+            arrays,
+            phys,
+            case.solver.clone(),
+            true,
+            Some(0),
+            &Target {
+                device: "cpu".into(),
+                threads: None,
+                ptx: Default::default(),
+            },
+        )
+        .unwrap();
+        let mut tr = Transient::new(&mut fl, time.scheme, 0.0).unwrap();
+        let nc = mesh.n_cells;
+        fl.initialise(&foehncraft_fv::disc::Soa3::zeros(nc), &vec![0.0; nc])
+            .unwrap();
+        tr.start(&mut fl).unwrap();
+        (fl, tr)
+    };
+    let n = 13;
+    let fields = |fl: &mut Flow| {
+        let s = fl.state().unwrap();
+        let mut v = s.u.x.clone();
+        v.extend(&s.u.y);
+        v.extend(&s.p);
+        v.extend(&s.mass_flux);
+        v.iter().map(|x| x.to_bits()).collect::<Vec<u64>>()
+    };
+    let (mut fl, mut tr) = make();
+    let mut levels = vec![fields(&mut fl)];
+    for _ in 0..n {
+        tr.step(&mut fl, time.time_step).unwrap();
+        levels.push(fields(&mut fl));
+    }
+    let (mut fl, mut tr) = make();
+    let mut run = FlowRun {
+        fl: &mut fl,
+        tr: &mut tr,
+        dt: time.time_step,
+    };
+    let mut met = 0;
+    let st = reverse(&mut run, n, 2, |r, i| {
+        assert!(
+            fields(r.fl) == levels[i],
+            "level {i} differs from the forward run"
+        );
+        assert_eq!(r.tr.clock.step, i);
+        met += 1;
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(met, n);
+    assert!(st.max_snapshots <= 2);
+    // 13 steps with 2 snapshots: t = 3, 3·13 − β(4, 2) = 24 primal steps
+    assert_eq!(st.steps, 24);
+}

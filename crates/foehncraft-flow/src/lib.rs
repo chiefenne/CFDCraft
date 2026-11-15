@@ -15,13 +15,18 @@
 //!   PISO correctors, outer iterations;
 //! - [`unsteady`]: the transient case driver with the adaptive time step;
 //! - [`restart`]: restart files (D42);
+//! - [`checkpoint`]: binomial checkpointing of transient runs for the
+//!   reverse sweep of an adjoint (D59);
 //! - [`control`]: control files and re-reading the case file (D40);
 //! - [`monitor`]: probes, force coefficients, histories, benchmarks (D43);
 //! - [`plot`]: small SVG charts of the reports.
 
+#[cfg(test)]
+mod adjoint_tests;
 pub mod analytic;
 pub mod bc;
 pub mod case;
+pub mod checkpoint;
 pub mod control;
 pub mod device;
 pub mod monitor;

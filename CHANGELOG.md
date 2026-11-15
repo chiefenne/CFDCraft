@@ -55,6 +55,37 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
 
 ---
 
+## Unreleased – stage 5: adjoint-ready kernels (part 3)
+
+Preparation for a discrete adjoint solver (D59; the solver itself is L17).
+No result changes: all flow cases give bitwise the files of part 2.
+
+- **Dual numbers:** `foehncraft_core::Dual<N>` implements `Real`, so every
+  kernel body also runs on dual numbers and returns the exact derivatives
+  of its results, from the same source. Switches (upwind direction,
+  limiter branch, clipping) follow the values, i.e. they are frozen at the
+  linearisation state; the limiter array ψ can be held constant.
+  **Jacobians of 11 face, cell and boundary kernels agree with central
+  differences in every input array (320 580 derivatives, largest relative
+  difference 5e-7).**
+- **Shape derivatives:** the geometry of `foehncraft-mesh` (face areas and
+  centroids, cell volumes and centroids) is generic over the coordinate
+  type, so derivatives with respect to the node coordinates come from the
+  same code (165 024 derivatives against central differences, 2.8e-7).
+- **Transposed matrices:** a transpose map of the matrix storage gives Aᵀ
+  in the storage of A and the product Aᵀx without storing it, both gathers
+  without atomics (`foehncraft_kernels::adjoint`; flow-device calls
+  `transpose`, `matrix_product`, `transposed_product`; PTX entries
+  `flow_transpose`, `flow_matrix_product`, `flow_transposed_product`).
+  ⟨Av, w⟩ = ⟨v, Aᵀw⟩ to 1e-14 on the matrices of a SIMPLEC solve; CG with
+  the multigrid and BiCGStab solve the transposed systems.
+- **Binomial checkpointing** (`foehncraft_flow::checkpoint`, Griewank &
+  Walther 2000): an optimal schedule (checked against a dynamic program),
+  a driver for any primal run and the in-memory snapshot of the flow
+  solver; the reverse sweep of a BDF2 run meets every level bitwise.
+- Gallery 17, recipe 25, `tools/checkpoint_chart.py`, report
+  [stage 5, part 3](docs/verification/stage5.md#adjoint-ready-kernels-part-3).
+
 ## Unreleased – stage 5: GPU flow loop (part 2)
 
 - **The flow loop on the GPU:** `run.backend = "cuda"` or

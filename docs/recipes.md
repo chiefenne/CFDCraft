@@ -29,6 +29,7 @@ the [Example gallery](gallery.md).
 22. [Restart a run, stop it and steer it while it runs](#restart)
 23. [Run the cylinder benchmark of Schäfer & Turek](#cylinder)
 24. [Run a flow case on an NVIDIA GPU and compare it with the CPU](#flow-gpu) (also: free Colab T4)
+25. [Check the derivatives of the kernels (adjoint readiness)](#adjoint-ready)
 
 ---
 
@@ -873,5 +874,45 @@ Keys: `run.backend` (`cpu`, `cuda`), `run.ptx` (the PTX module); the
 command-line options `--backend` and `--ptx` override them. A build
 without the `cuda` feature, or a machine without the NVIDIA driver, stops
 with a message instead of running on the CPU.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="adjoint-ready"></a>
+## 25. Check the derivatives of the kernels (adjoint readiness)
+
+The kernels are prepared for a discrete adjoint solver (D59): they run on
+dual numbers, matrices apply transposed, and transient runs reverse with
+binomial checkpointing. The checks are tests; from the repository root:
+
+```
+cargo test --release -p foehncraft-flow --test adjoint -- --nocapture
+cargo test --release -p foehncraft-flow --lib -- adjoint_tests checkpoint
+cargo test --release -p foehncraft-mesh shape_derivatives -- --nocapture
+```
+
+The first prints one line per kernel, for example
+`momentum_face: 101700 derivatives, largest relative difference 5.28e-8`.
+
+**Derivatives of a kernel in your own code.** Instantiate the body on
+`foehncraft_core::Dual<N>` instead of `f64`: give the inputs you
+differentiate by the derivative 1 in one of the N directions
+(`Dual::variable(x, k)`), all others as constants (`Dual::constant(x)`),
+and read the N derivatives of each result from its `.d` (the value is
+`.v`, the same bits as the `f64` result). Leave the limiter array ψ
+constant for the frozen-limiter linearisation; switches such as the upwind
+direction follow the values.
+
+**Transposed matrices** on a flow device: `transpose(val, out)` writes Aᵀ
+in the storage of A (for the solvers and the multigrid),
+`transposed_product(val, x, out)` computes Aᵀx without storing it.
+
+**Reversing a transient run**: implement `foehncraft_flow::checkpoint::Primal`
+(or use `FlowRun` for the flow solver with a fixed time step) and call
+`checkpoint::reverse(run, steps, snapshots, adjoint)`; the adjoint step i
+is called for i = n − 1, …, 0 with level i current. `schedule(n, s)` lists
+the actions, `python3 tools/checkpoint_chart.py out.svg` draws the cost
+against the snapshots.
 
 [↑ back to top](#recipes)
