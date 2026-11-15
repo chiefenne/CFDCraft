@@ -1,20 +1,48 @@
 # Continuous integration (D22): CPU build and tests on GitHub's free hosted
-# runners, on every pull request and every push to main. GPU tests run on
-# the maintainer's machine and are not part of these checks.
+# runners. GPU tests run on the maintainer's machine and are not part of
+# these checks.
+#
+# Two tiers, one workflow:
+#   fast PR gate   pull requests: everything except the long cases, built
+#                  with the `ci` profile (release optimisation, no LTO, 16
+#                  codegen units), test cases sharded over parallel jobs.
+#                  Target: under 5 minutes with a warm cache.
+#   full tier      push to main, the nightly schedule, workflow_dispatch, and
+#                  pull requests with the label `full-ci`: the shipped
+#                  `release` profile, every case on every platform, the long
+#                  cases, and the tests marked slow.
+# The bitwise-reproducibility tests (thread counts, AMG, G1 backends) are in
+# both tiers.
+#
+# Branch protection needs only one required check: "CI OK" (last job).
 name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   push:
     branches: [main]
+  schedule:
+    # nightly on main: 01:07 UTC = 02:07 in Vienna in winter (03:07 in
+    # summer); GitHub cron is UTC only, and minute 7 avoids the top-of-hour
+    # queue of scheduled runs
+    - cron: "7 1 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# One run per PR (a new push cancels the old run); runs on main are never
+# cancelled, so every merge commit is verified.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# bash everywhere, also on Windows (Git Bash), so that "$BUILD_PROFILE" means
+# the same in every step
+defaults:
+  run:
+    shell: bash
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,8 +50,53 @@ env:
   RUSTDOCFLAGS: -D warnings
 
 jobs:
+  # ---------------------------------------------------------------------
+  # Decides what this run does: skip code jobs for docs-only changes, pick
+  # the tier, the build profile and the case shards.
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code || 'true' }}
+      full: ${{ steps.tier.outputs.full }}
+      profile: ${{ steps.tier.outputs.profile }}
+      cases: ${{ steps.tier.outputs.cases }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          # "code" is everything that can change a build or a result; a PR
+          # that only touches docs/, *.md, assets/ or LICENSE skips the
+          # code jobs (CI OK still reports, so the PR can be merged).
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!assets/**'
+              - '!LICENSE'
+      - id: tier
+        env:
+          FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+        run: |
+          if [ "$FULL" = "true" ]; then
+            echo "full=true"         >> "$GITHUB_OUTPUT"
+            echo "profile=release"   >> "$GITHUB_OUTPUT"
+            echo 'cases=[{"os":"ubuntu-latest","set":"linux-1"},{"os":"ubuntu-latest","set":"linux-2"},{"os":"ubuntu-latest","set":"linux-3"},{"os":"ubuntu-latest","set":"long"},{"os":"macos-latest","set":"quick"},{"os":"windows-latest","set":"quick"}]' >> "$GITHUB_OUTPUT"
+          else
+            echo "full=false"        >> "$GITHUB_OUTPUT"
+            echo "profile=ci"        >> "$GITHUB_OUTPUT"
+            echo 'cases=[{"os":"ubuntu-latest","set":"linux-1"},{"os":"ubuntu-latest","set":"linux-2"},{"os":"ubuntu-latest","set":"linux-3"},{"os":"macos-latest","set":"quick"},{"os":"windows-latest","set":"quick"}]' >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------
   lint:
     name: Format, clippy, docs
+    needs: plan
+    if: needs.plan.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,66 +104,63 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          # PRs restore main's cache but never write their own: the 10 GB
+          # repository cache stays warm instead of evicting main's entries.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
+      - name: Every flow case is in a CI case set
+        run: tools/ci_cases.sh --check
       - run: cargo clippy --workspace --all-targets --locked
       # the CUDA backends compile without a CUDA toolkit (driver and NVRTC
       # are loaded at run time)
       - run: cargo clippy --workspace --all-targets --locked --features foehncraft-bench/cuda,foehncraft-fv/cuda
       - run: cargo doc --workspace --no-deps --locked
 
+  msrv:
+    name: Minimum Rust version
+    needs: plan
+    if: needs.plan.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.89
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo check --workspace --all-targets --locked
+
+  # ---------------------------------------------------------------------
+  # Unit and integration tests, including every bitwise-reproducibility
+  # test, and the G1 smoke run (all CPU backends bitwise equal).
   test:
     name: Test (${{ matrix.os }})
+    needs: plan
+    if: needs.plan.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      BUILD_PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --locked
-      - run: cargo test --workspace --locked --release
-      - name: G1 smoke run (CPU backends, results bitwise equal)
-        run: cargo run --release --locked -p foehncraft-cli -- bench g1 examples/cases/bench/g1_ci_small.toml
-      - name: Mesh cases (generated meshes, quality report, VTKHDF)
-        shell: bash
-        run: |
-          for f in examples/cases/mesh/*_box.toml examples/cases/mesh/*_2d.toml examples/cases/mesh/poly_partition.toml; do
-            cargo run --release --locked -p foehncraft-cli -- mesh "$f"
-          done
-      - name: Scalar cases of the gallery and the case catalogue (R5; each checks its own results)
-        shell: bash
-        run: |
-          for f in examples/cases/scalar/*.toml; do
-            case "$f" in *_gpu.toml) continue;; esac
-            cargo run --release --locked -p foehncraft-cli -- scalar "$f"
-          done
-      - name: Poisson studies of the pressure solver (stage 3; each checks its own results)
-        shell: bash
-        run: |
-          for f in examples/cases/poisson/*.toml; do
-            case "$f" in *_gpu.toml) continue;; esac
-            cargo run --release --locked -p foehncraft-cli -- poisson "$f"
-          done
-      - name: Flow cases (stages 4 and 5; each checks its own results; all on Linux, the quick ones elsewhere)
-        shell: bash
-        run: |
-          for f in examples/cases/flow/*.toml; do
-            if [ "$RUNNER_OS" != "Linux" ]; then
-              case "$f" in *couette_*|*cavity_re100.toml|*cavity_re100_poly3d.toml|*poiseuille_hex.toml|*poiseuille_poly.toml|*taylor_green_space.toml) ;; *) continue;; esac
-            fi
-            cargo run --release --locked -p foehncraft-cli -- flow "$f"
-          done
-      - uses: actions/setup-python@v5
-        if: runner.os == 'Linux'
         with:
-          python-version: "3.12"
-      - name: VTKHDF files load with VTK's reader (the reader of ParaView)
-        if: runner.os == 'Linux'
-        run: |
-          pip install vtk numpy
-          python3 tools/check_vtkhdf.py output/*/mesh.vtkhdf output/*/fields.vtkhdf output/*/*/fields.vtkhdf
+          key: ${{ needs.plan.outputs.profile }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # debug build: debug assertions and overflow checks (full tier only;
+      # the PR gate relies on the optimised run below)
+      - if: needs.plan.outputs.full == 'true'
+        run: cargo test --workspace --locked
+      - run: cargo test --workspace --locked --profile "$BUILD_PROFILE"
+      - name: Slow tests (marked #[ignore]; nightly only)
+        if: github.event_name == 'schedule'
+        run: cargo test --workspace --locked --profile "$BUILD_PROFILE" -- --ignored
+      - name: G1 smoke run (CPU backends, results bitwise equal)
+        run: cargo run --locked --profile "$BUILD_PROFILE" -p foehncraft-cli -- bench g1 examples/cases/bench/g1_ci_small.toml
       - name: Without HDF5 and METIS
         if: runner.os == 'Linux'
         run: |
@@ -101,46 +171,80 @@ jobs:
         with:
           name: g1-ci-small-${{ matrix.os }}
           path: output/g1_ci_small/
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mesh-reports-${{ matrix.os }}
-          path: output/*/mesh_report.md
-      - uses: actions/upload-artifact@v4
-        with:
-          name: scalar-reports-${{ matrix.os }}
-          path: |
-            output/*/scalar.md
-            output/*/*.svg
-      - uses: actions/upload-artifact@v4
-        with:
-          name: poisson-reports-${{ matrix.os }}
-          path: |
-            output/poisson_*/poisson.md
-            output/poisson_*/iterations.svg
-      - uses: actions/upload-artifact@v4
-        with:
-          name: flow-reports-${{ matrix.os }}
-          path: |
-            output/couette_*/flow.md
-            output/poiseuille_*/flow.md
-            output/poiseuille_*/convergence.svg
-            output/cavity_*/flow.md
-            output/cavity_*/*.svg
-            output/taylor_green_*/flow.md
-            output/cylinder_*/flow.md
-            output/cylinder_*/*.svg
 
+  # ---------------------------------------------------------------------
+  # The case catalogue (R5; each case checks its own results), sharded.
+  # The lists live in tools/ci_cases.sh so that CI and recipe 5 run the
+  # same cases.
+  cases:
+    name: Cases ${{ matrix.set }} (${{ matrix.os }})
+    needs: plan
+    if: needs.plan.outputs.code == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.plan.outputs.cases) }}
+    env:
+      BUILD_PROFILE: ${{ needs.plan.outputs.profile }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # all shards of one OS share one cache entry (same binary)
+          shared-key: cases-${{ needs.plan.outputs.profile }}
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.set != 'long' }}
+      - run: cargo build --locked --profile "$BUILD_PROFILE" -p foehncraft-cli
+      - name: Run the cases of set ${{ matrix.set }}
+        shell: bash
+        run: tools/ci_cases.sh "${{ matrix.set }}" "target/$BUILD_PROFILE/foehn"
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Linux'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: tools/requirements-ci.txt
+      - name: VTKHDF files load with VTK's reader (the reader of ParaView)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          pip install -r tools/requirements-ci.txt
+          shopt -s nullglob
+          files=(output/*/mesh.vtkhdf output/*/fields.vtkhdf output/*/*/fields.vtkhdf)
+          if [ ${#files[@]} -gt 0 ]; then python3 tools/check_vtkhdf.py "${files[@]}"; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: case-reports-${{ matrix.set }}-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            output/*/mesh_report.md
+            output/*/scalar.md
+            output/*/poisson.md
+            output/*/flow.md
+            output/*/*.svg
+            output/*/*/*.svg
+            output/*/convergence.svg
+
+  # ---------------------------------------------------------------------
   hypre:
     name: Pressure solver against hypre (D20)
+    needs: plan
+    if: needs.plan.outputs.code == 'true'
     runs-on: ubuntu-latest
     env:
       HYPRE_DIR: ${{ github.workspace }}/hypre-install
+      BUILD_PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ needs.plan.outputs.profile }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Cache the hypre build
         id: hypre-cache
         uses: actions/cache@v4
@@ -152,14 +256,14 @@ jobs:
         run: tools/build_hypre.sh "$HYPRE_DIR"
       - run: cargo clippy -p foehncraft-fv -p foehncraft-cli --all-targets --locked --features foehncraft-fv/hypre,foehncraft-cli/hypre
       - name: Stage-3 tests including the agreement with hypre
-        run: cargo test --release --locked -p foehncraft-fv --features hypre --test stage3
+        run: cargo test --locked --profile "$BUILD_PROFILE" -p foehncraft-fv --features hypre --test stage3
       - name: Poisson studies with hypre as the reference
         shell: bash
         run: |
-          cargo build --release --locked -p foehncraft-cli --features hypre
+          cargo build --locked --profile "$BUILD_PROFILE" -p foehncraft-cli --features hypre
           for f in examples/cases/poisson/*_box.toml; do
             n=$(basename "$f" .toml)
-            target/release/foehn poisson "$f" --solvers amg,amg-double,jacobi,hypre \
+            "target/$BUILD_PROFILE/foehn" poisson "$f" --solvers amg,amg-double,jacobi,hypre \
               --backends cpu,cpu-serial --out "output/${n}_hypre"
           done
       - uses: actions/upload-artifact@v4
@@ -169,17 +273,11 @@ jobs:
             output/*_hypre/poisson.md
             output/*_hypre/iterations.svg
 
-  msrv:
-    name: Minimum Rust version
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.89
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace --all-targets --locked
-
+  # ---------------------------------------------------------------------
   mpi:
     name: MPI, 4 ranks on one machine (${{ matrix.os }})
+    needs: plan
+    if: needs.plan.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -189,6 +287,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Install Open MPI (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin libclang-dev
@@ -209,6 +309,8 @@ jobs:
 
   ptx:
     name: Single-source GPU kernels compile to PTX (G1, stages 2 and 3)
+    needs: plan
+    if: needs.plan.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -217,6 +319,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: gpu/ptx-kernels -> ../../target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: gpu/ptx-kernels/build.sh
       - name: No atomics, no f32, no contracted f64 arithmetic in the kernels (R10)
         run: tools/check_kernels.sh
@@ -225,3 +328,21 @@ jobs:
         with:
           name: g1-ptx
           path: target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx
+
+  # ---------------------------------------------------------------------
+  # The single required check. Green when every job above passed or was
+  # skipped on purpose (docs-only PR); red when any failed or was cancelled.
+  ci-ok:
+    name: CI OK
+    if: always()
+    needs: [plan, lint, msrv, test, cases, hypre, mpi, ptx]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed or were skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) exit 1;; esac
+          done

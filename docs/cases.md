@@ -182,7 +182,8 @@ charts `residuals.svg`, `convergence.svg` (sweeps) and `centreline_u.svg`,
 `centreline_v.svg` (cavity against the reference data). The run fails when
 a check of the case fails (observed order, error, reference deviation,
 convergence, mass balance). CI runs every case on Linux and the quick ones
-on macOS and Windows (R5).
+on macOS and Windows (R5); the sets are in `tools/ci_cases.sh`, and the
+long cylinder at Re 100 runs on main, nightly and with the label `full-ci`.
 
 A transient case also writes `history.csv` (one row per time step: time,
 Δt, Courant number, residuals, outer and CG iterations; the residuals of a
@@ -213,7 +214,7 @@ re-reads the case file at N and applies what may change during a run.
 | `flow/taylor_green_space.toml` | generated hex 2D, 16² to 128² (4 levels) | Taylor–Green vortex, space order 1.8–2.2 required | gallery 14, recipe 21 |
 | `flow/taylor_green_cfl10.toml` | generated hex 2D, 64 × 64 | Taylor–Green vortex at Courant numbers 1.3 to 9 with outer iterations: time order 2 | gallery 14, recipe 21 |
 | `flow/cylinder_re20.toml` | built-in cylinder mesh, refine 1: 24 576 hexahedra | Schäfer & Turek 2D-1, steady, Re = 20: C_D, C_L, Δp within 0.5 % of the reference ranges | gallery 15, recipe 23 |
-| `flow/cylinder_re100.toml` | built-in cylinder mesh, refine 0: 6 144 hexahedra | Schäfer & Turek 2D-2, periodic, Re = 100: C_D,max, C_L,max, St, Δp within 2.5 % (about 8 minutes; Linux CI only) | gallery 15, recipe 23 |
+| `flow/cylinder_re100.toml` | built-in cylinder mesh, refine 0: 6 144 hexahedra | Schäfer & Turek 2D-2, periodic, Re = 100: C_D,max, C_L,max, St, Δp within 2.5 % (about 8 minutes; Linux, on main, nightly and with the label `full-ci`) | gallery 15, recipe 23 |
 
 ### Flow case-file keys
 

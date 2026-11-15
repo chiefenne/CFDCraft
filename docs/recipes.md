@@ -163,24 +163,35 @@ exchange) and a reproducible sum that gives the same bits on every rank.
 
 ```
 cargo fmt --all --check
+tools/ci_cases.sh --check                               # every flow case is in a CI set
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --workspace --all-targets --features foehncraft-bench/cuda,foehncraft-fv/cuda -- -D warnings
-cargo test --workspace --release
+cargo test --workspace --profile ci                     # what a pull request runs (--release on main)
 cargo test -p foehncraft-mesh --no-default-features      # without HDF5 and METIS
 cargo test -p foehncraft-fv --no-default-features
 gpu/ptx-kernels/build.sh && tools/check_kernels.sh     # PTX, and R10: no atomics, no f32, no FMA
-for f in examples/cases/mesh/*_box.toml examples/cases/mesh/*_2d.toml; do
-  target/release/foehn mesh "$f" || break
+cargo build --profile ci -p foehncraft-cli
+for s in linux-1 linux-2 linux-3; do                    # add "long" for the cylinder at Re 100
+  tools/ci_cases.sh "$s" target/ci/foehn || break
 done
-for f in examples/cases/scalar/*.toml; do
-  case "$f" in *_gpu.toml) continue;; esac
-  target/release/foehn scalar "$f" || break
-done
-pip install vtk numpy && python3 tools/check_vtkhdf.py output/*/mesh.vtkhdf output/*/fields.vtkhdf output/*/*/fields.vtkhdf
+pip install -r tools/requirements-ci.txt
+python3 tools/check_vtkhdf.py output/*/mesh.vtkhdf output/*/fields.vtkhdf output/*/*/fields.vtkhdf
 ```
 
-The workflow is `.github/workflows/ci.yml`; it runs on every pull request on
-Linux, macOS and Windows.
+The workflow is `.github/workflows/ci.yml`. It has two tiers:
+
+- **Pull requests** (fast gate, about 5 minutes): the `ci` profile (release
+  optimisation without LTO, results bitwise equal to `release`), all tests
+  including the bitwise-reproducibility tests on Linux, macOS and Windows,
+  the case catalogue in three parallel Linux jobs, the quick cases on macOS
+  and Windows, hypre, MPI and PTX. Code jobs are skipped when only `docs/`,
+  Markdown files, `assets/` or `LICENSE` change.
+- **Full tier**: every push to main, every night at 02:07 Vienna time (01:07
+  UTC), a pull request with the label `full-ci`, or by hand (Actions, CI,
+  *Run workflow*): the `release` profile, debug tests, the cylinder at
+  Re 100, and at night also the tests marked slow (`--ignored`).
+
+The check "CI OK" sums up all jobs.
 
 [↑ back to top](#recipes)
 

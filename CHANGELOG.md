@@ -8,6 +8,15 @@ confused with other projects. Crates are now `foehncraft-*`, the command is `foe
 environment variables are `FOEHNCRAFT_*`, and the repository is
 `chiefenne/Foehncraft`. Entries below keep the names of their time.
 
+**Faster CI.** Pull requests get a fast gate (about 5 minutes instead of
+about 25): a `ci` build profile (release optimisation without LTO, results
+bitwise equal), the case catalogue split over parallel jobs
+(`tools/ci_cases.sh`), and a VTKHDF check that no longer computes unused
+volumes of field files (11.5 minutes to seconds). Push to main, a nightly run
+at 02:07 Vienna time and pull requests with the label `full-ci` run the full
+tier: `release` profile, debug tests, every case including the cylinder at
+Re 100, and the slow tests. One summary check, "CI OK".
+
 ## Summary
 
 | Version | Stage | Highlights |
