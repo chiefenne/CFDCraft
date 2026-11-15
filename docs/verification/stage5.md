@@ -12,9 +12,10 @@ case files of stage 4 give bitwise the results of v0.4). This page covers
 the first part of stage 5 (the transient core and its benchmarks); the GPU
 flow loop and the further items of the stage follow in their own pull
 requests and are added here. Part 2 is the GPU flow loop
-([below](#gpu-flow-loop-part-2)). The commands are in
-[recipes 21–24](../recipes.md#transient-flow), the pictures in
-[gallery 14–15](../gallery.md#taylor-green), the case files in the
+([below](#gpu-flow-loop-part-2)), part 3 the adjoint-ready kernels
+([below](#adjoint-ready-kernels-part-3)). The commands are in
+[recipes 21–25](../recipes.md#transient-flow), the pictures in
+[gallery 14–17](../gallery.md#taylor-green), the case files in the
 [case catalogue](../cases.md#flow-cases-examplescasesflow).
 
 ## Acceptance checks and results
@@ -286,17 +287,111 @@ captured as CUDA graphs. These follow with the GPU work of the later
 stage-5 pull requests and of stage 7 (multi-GPU), behind the same
 executor interface.
 
+## Adjoint-ready kernels (part 3)
+
+Requirement D59 asks that the discretisation can later be differentiated
+and run backwards for a discrete adjoint solver (L17: surface
+sensitivities, shape optimisation, adjoint error indicators), at little
+cost if followed from stage 5. This part reviews the kernels of stages 2
+to 5 against its six items and adds what was missing. No result of a run
+changes: the 20 flow cases of the catalogue that run on the CPU give
+bitwise the files of part 2 (160 files, `tools/compare_runs.py` against
+the build of `main`).
+
+| D59 item | How Foehncraft meets it | Check |
+|---|---|---|
+| (1) pure kernels | Every face, cell and boundary body is a function of its argument block (states, gradients, geometry, parameters) with no state between calls; the entries of part 2 make the inputs explicit down to the argument lists. Reviewed: all bodies of `foehncraft_kernels::{fv, flow, blas, amg}` | review; the Jacobian tests below call the bodies outside the solver |
+| (2) dual numbers from the same source | `foehncraft_core::Dual<N>` (a value and N directional derivatives) implements `Real`, so every kernel body instantiates on dual numbers and returns its exact derivatives next to its result | 11 kernels against central differences (table below) |
+| (3) non-differentiable parts | Comparisons, `max_of`, `min_of` and `abs` on dual numbers follow the value, so switches (upwind direction, limiter branch, clipping) are frozen at the state of the linearisation. The limiter value ψ is an input array of the face kernels: holding it constant is the frozen limiter; seeding it differentiates through the Venkatakrishnan function, which is smooth away from its clipping | limiter Jacobian against central differences |
+| (4) transposed matrices | A transpose map of the matrix storage (each interior face couples two mirrored slots) gives Aᵀ in the storage of A, and the product Aᵀx without storing Aᵀ, both as gathers without atomics (`foehncraft_kernels::adjoint`, entries `flow_transpose`, `flow_matrix_product`, `flow_transposed_product` on CPU and GPU). The solvers and the multigrid run on the stored Aᵀ unchanged | ⟨Av, w⟩ = ⟨v, Aᵀw⟩ to 1e-14 on the momentum and pressure-correction matrices of a SIMPLEC solve; CG + AMG and BiCGStab solve Aᵀx = b to 1e-10 |
+| (5) explicit parameters | Boundary values, properties (ρ, μ, Γ per face) and the geometry (areas, centroids, volumes, interpolation weights, least-squares weights) are inputs of the kernels. The geometry functions of `foehncraft-mesh` are generic over the coordinate type, so the derivatives of areas, centroids and volumes with respect to the node coordinates come from the same source | node-coordinate Jacobian of the geometry against central differences |
+| (6) checkpointing | `foehncraft_flow::checkpoint`: the binomial schedule of Griewank & Walther (2000) with the least recomputation, a driver for any primal run, and the in-memory snapshot of the flow solver (the content of a restart file) | schedules equal the optimum of a dynamic program; the reverse sweep of a BDF2 run meets every level bitwise |
+
+**Jacobians against central differences.** On a perturbed mixed mesh
+(hexahedra, prisms, tetrahedra and polyhedra; 120 cells, 339 faces of
+which 114 on the boundary) with random values in all 59 input arrays, every
+boundary kind and every boundary update rule, each input array gets a
+random direction scaled to its size. The derivative of every output of
+every face (cell, boundary face) from the dual numbers is compared with
+the central difference of the same body on `f64` (step 10⁻⁶ of the size
+of each array), once per input array and once for all arrays together;
+the dual value equals the `f64` value. The geometry is checked on a mixed
+mesh of 54 cells and 48 nodes, for each coordinate of each node.
+
+| Kernel | Outputs per index | Derivatives compared | Largest relative difference |
+|---|---:|---:|---:|
+| least-squares gradient (`fv::lsq_gradient`) | 3 | 21 600 | 3.4e-8 |
+| Venkatakrishnan limiter (`fv::venkat_limiter`) | 1 | 7 200 | 1.3e-7 |
+| scalar face flux (`fv::face_coefficients`) | 3 | 61 020 | 6.2e-8 |
+| momentum face flux (`flow::momentum_face`) | 5 | 101 700 | 5.3e-8 |
+| Rhie–Chow mass flux, steady (`flow::face_mass_flux`) | 1 | 20 340 | 4.0e-7 |
+| Rhie–Chow mass flux in a time step | 1 | 20 340 | 5.0e-7 |
+| pressure-correction coefficient (`flow::pressure_face`) | 1 | 20 340 | 4.4e-8 |
+| flux correction (`flow::correct_flux`) | 1 | 20 340 | 1.8e-7 |
+| flux of a velocity increment (`flow::delta_flux`) | 1 | 20 340 | 1.0e-7 |
+| boundary velocity, four rules (`flow::boundary_velocity`) | 3 | 20 520 | 1.4e-7 |
+| boundary pressure, three rules (`flow::boundary_pressure`) | 1 | 6 840 | 7.6e-8 |
+| geometry from the node coordinates (`geometry::polygon_area_centroid`, `cell_volume_centroid_of`) | 6 per face, 4 per cell | 165 024 | 2.8e-7 |
+
+The differences are those of the central differences (truncation 10⁻¹²
+and round-off 10⁻¹⁰ relative); the dual derivatives are exact up to
+rounding. Moving an interior node leaves the total volume unchanged
+(Σ_c ∂V_c/∂x = 0 to 10⁻¹⁴).
+
+**Transposed matrices.** On the lid-driven cavity at Re 100 (perturbed
+polygons, after five SIMPLEC iterations, so the momentum matrix carries
+convection and is not symmetric): transposing twice gives A back bit for
+bit; the product Aᵀx without storing Aᵀ is the product with the stored Aᵀ
+bit for bit, and the same on 1 and 4 threads; ⟨Av, w⟩ = ⟨v, Aᵀw⟩ to 10⁻¹⁴
+of Σ|(Av)_i w_i|; the pressure-correction matrix is its own transpose bit
+for bit; CG with the multigrid solves the transposed pressure system and
+BiCGStab the transposed momentum system to 10⁻¹⁰, the residual checked
+with the product that never stores Aᵀ. The multigrid of stage 3 needs a
+symmetric matrix, where Aᵀ = A; a multigrid for non-symmetric matrices (a
+coupled solver) will take Aᵀ from the same transpose.
+
+**Checkpointing.** With s snapshots besides the start and at most t
+recomputations of a step, β(s + 1, t) = C(s + 1 + t, t) steps can be
+reversed (Griewank 1992). The schedule places the first snapshot of a
+range of n steps at m = max(1, n − β(s, t), β(s + 1, t − 2)) for the
+smallest t with β(s + 1, t) ≥ n and recurses; the reverse sweep then runs
+t n − β(s + 2, t − 1) primal steps, the least possible: for every n up to
+90 and s up to 6 the count equals the optimum of a dynamic program over
+all positions of the first snapshot, every adjoint step meets its level,
+and no more than s snapshots are held. 10 000 steps with 20 snapshots
+need at most four runs of each step. On the flow solver a snapshot is the
+content of a restart file kept in memory; the reverse sweep of 13 BDF2
+steps of the cavity with 2 snapshots (24 primal steps) meets every level
+with the bits of the plain forward run.
+
+![Primal steps per time step of a reverse sweep against the snapshots](../figures/gallery/checkpoint_steps.svg)
+
+**Not yet:** the derived geometry of the discretisation (the factor
+|S|²/(d·S), the vector k, the interpolation and least-squares weights) is
+still computed in `f64` only; making it generic, which completes the chain
+from the node coordinates to the residual, comes with mesh morphing (L4).
+The adjoint solver itself is L17.
+
 ## Limits of this part of stage 5
 
 - The further stage-5 items (the bounded central scheme, the new boundary
   conditions, potential-flow initialisation, expressions, the Python
-  package, adjoint-ready kernels, `--set` and the result summary) follow
-  in their own pull requests.
+  package, `--set` and the result summary) follow in their own pull
+  requests.
 - Restart files need the `hdf5` feature (on by default); a build without
   it runs transient cases but writes no restart file.
 - One partition only, as in stage 4, and one GPU.
 
 ## References
+
+- A. Griewank, *Achieving logarithmic growth of temporal and spatial
+  complexity in reverse automatic differentiation*, Optim. Methods Softw.
+  1, 35–54 (1992)
+- A. Griewank, A. Walther, *Algorithm 799: revolve: an implementation of
+  checkpointing for the reverse or adjoint mode of computational
+  differentiation*, ACM Trans. Math. Softw. 26, 19–45 (2000)
+- M. B. Giles, N. A. Pierce, *An introduction to the adjoint approach to
+  design*, Flow Turbul. Combust. 65, 393–415 (2000)
 
 - R. I. Issa, *Solution of the implicitly discretised fluid flow equations
   by operator-splitting*, J. Comput. Phys. 62, 40–65 (1986)

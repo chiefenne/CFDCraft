@@ -175,6 +175,17 @@ pub struct OldLevels {
     pub g_old: Vec<Vec<f64>>,
 }
 
+impl OldLevels {
+    /// Bytes held.
+    pub fn bytes(&self) -> usize {
+        8 * (self.u_old.iter().map(Vec::len).sum::<usize>()
+            + self.m_old.len()
+            + self.x_cur.len()
+            + self.x_old.len()
+            + self.g_old.iter().map(Vec::len).sum::<usize>())
+    }
+}
+
 impl Transient {
     /// Buffers on the device of `fl`, the clock at `start_time`. Call
     /// [`start`](Self::start) for new start fields, or

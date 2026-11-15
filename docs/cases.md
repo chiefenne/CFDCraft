@@ -218,6 +218,9 @@ re-reads the case file at N and applies what may change during a run.
 | `flow/cavity_poly3d_gpu.toml` | generated poly 3D, 970 225 polyhedra | the steady flow loop on the GPU: 30 SIMPLEC iterations of the cavity at Re = 100 on the CPU and the GPU, bitwise equal, time per cell and iteration (GPU; not run by CI) | gallery 16, recipe 24 |
 | `flow/cylinder_re100_gpu.toml` | built-in cylinder mesh, refine 2: 98 304 hexahedra | the transient flow loop on the GPU: 200 adaptive BDF2 steps of the Re = 100 cylinder on the CPU and the GPU, bitwise equal (GPU; not run by CI) | gallery 16, recipe 24 |
 
+The adjoint-ready kernels of stage 5 (D59) have no case file: their
+checks are tests on generated meshes (gallery 17, recipe 25).
+
 ### Flow case-file keys
 
 `[mesh]`, `[mesh.generate]` as in the [mesh cases](#mesh-case-file-keys).

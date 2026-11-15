@@ -51,4 +51,7 @@ entries! {
     flow_correct_velocity => e::CorrectVelocity,
     flow_neighbour_correction => e::NeighbourCorrection,
     flow_delta_flux => e::DeltaFlux,
+    flow_transpose => e::Transpose,
+    flow_matrix_product => e::MatrixProduct,
+    flow_transposed_product => e::TransposedProduct,
 }

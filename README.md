@@ -26,8 +26,9 @@
 > transient core is in (PISO with BDF2 and Crank–Nicolson, adaptive time
 > step, restart, control files, verified on the Taylor–Green vortex and the
 > cylinder benchmark of Schäfer & Turek, [stage 5](docs/verification/stage5.md)),
-> and the whole flow loop runs on NVIDIA GPUs with results bitwise equal to
-> the CPU.
+> the whole flow loop runs on NVIDIA GPUs with results bitwise equal to
+> the CPU, and the kernels are ready for a discrete adjoint (dual-number
+> derivatives, transposed matrices, binomial checkpointing).
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)

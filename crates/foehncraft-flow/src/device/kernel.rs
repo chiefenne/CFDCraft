@@ -140,6 +140,7 @@ impl<E: Exec> KernelFlow<E> {
             lsq_p,
             chunk: d.sell.chunk as u64,
             slice_ptr: x.alloc_u32(&d.sell.slice_ptr)?,
+            transpose: x.alloc_u32(&d.transpose_map())?,
             mom_kind: x.alloc_u32(&s.bc.mom_kind)?,
             flux_kind: x.alloc_u32(&s.bc.flux_kind)?,
             ub_rule: x.alloc_u32(&s.bc.ub_rule)?,
@@ -272,6 +273,24 @@ impl<E: Exec> KernelFlow<E> {
             out: self.r(out),
         };
         self.go::<K>(n, &a)
+    }
+}
+
+impl<E: Exec> KernelFlow<E> {
+    fn product<K: Entry<Args = e::ProductArgs>>(
+        &mut self,
+        val: Buf,
+        x: Buf,
+        out: Buf,
+    ) -> Result<()> {
+        check(&[out], &[val, x])?;
+        let args = e::ProductArgs {
+            m: self.m,
+            val: self.r(val),
+            x: self.r(x),
+            out: self.r(out),
+        };
+        self.go::<K>(self.nc, &args)
     }
 }
 
@@ -722,6 +741,23 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             out: self.r(out),
         };
         self.go::<e::DeltaFlux>(self.nf, &args)
+    }
+
+    fn transpose(&mut self, val: Buf, out: Buf) -> Result<()> {
+        let n = self.m.transpose.len as usize;
+        ensure!(
+            self.r(val).len as usize == n && self.r(out).len as usize == n,
+            "transpose: matrices of {n} slots expected"
+        );
+        self.unary::<e::Transpose>(n, 0.0, val, out)
+    }
+
+    fn matrix_product(&mut self, val: Buf, x: Buf, out: Buf) -> Result<()> {
+        self.product::<e::MatrixProduct>(val, x, out)
+    }
+
+    fn transposed_product(&mut self, val: Buf, x: Buf, out: Buf) -> Result<()> {
+        self.product::<e::TransposedProduct>(val, x, out)
     }
 
     fn solve(
