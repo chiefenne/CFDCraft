@@ -1,6 +1,6 @@
 # Example gallery
 
-What Ennecraft computes, one picture per case, with the commands that
+What Foehncraft computes, one picture per case, with the commands that
 reproduce it. Command sequences for everyday tasks are in
 [Recipes](recipes.md); all case files are listed in the
 [Case catalogue](cases.md).
@@ -49,8 +49,8 @@ bytes that must move over the median time. Procedure, numbers and reading:
 | Case file | `bench/g1_cpu_10m.toml` |
 
 ```
-cargo build --release -p ennecraft-cli
-target/release/ennecraft bench g1 examples/cases/bench/g1_cpu_10m.toml
+cargo build --release -p foehncraft-cli
+target/release/foehn bench g1 examples/cases/bench/g1_cpu_10m.toml
 # picture: output/g1_cpu_10m/g1.svg, numbers: g1.md and g1.json
 ```
 
@@ -114,9 +114,9 @@ volumes. All four meshes have the exact volume 2 and closure below 1e-15.
 | Case files | `mesh/hex_box.toml`, `mesh/tet_box.toml`, `mesh/poly_box.toml`, `mesh/mixed_box.toml` |
 
 ```
-cargo build --release -p ennecraft-cli
+cargo build --release -p foehncraft-cli
 for t in hex tet poly mixed; do
-  target/release/ennecraft mesh examples/cases/mesh/${t}_box.toml
+  target/release/foehn mesh examples/cases/mesh/${t}_box.toml
 done
 # output/<case>/mesh_report.md, mesh_report.json, mesh.vtkhdf (open in ParaView)
 python3 tools/render_mesh.py output/poly_box/mesh.vtkhdf poly_box.png --cut
@@ -147,8 +147,8 @@ through the faces; all 5 000 are found in the right cell.
 | Case file | `mesh/poly_partition.toml` |
 
 ```
-target/release/ennecraft mesh examples/cases/mesh/poly_partition.toml
-target/release/ennecraft mesh examples/cases/mesh/poly_partition.toml --method rcb --parts 6
+target/release/foehn mesh examples/cases/mesh/poly_partition.toml
+target/release/foehn mesh examples/cases/mesh/poly_partition.toml --method rcb --parts 6
 python3 tools/render_mesh.py output/poly_partition/mesh.vtkhdf part.png --cut --field rank --categorical
 ```
 
@@ -175,7 +175,7 @@ perturbed in x and y. The case files rename the generator's patches
 
 ```
 for t in hex tet poly mixed; do
-  target/release/ennecraft mesh examples/cases/mesh/${t}_2d.toml
+  target/release/foehn mesh examples/cases/mesh/${t}_2d.toml
 done
 python3 tools/render_mesh.py output/poly_2d/mesh.vtkhdf poly_2d.png --top
 ```
@@ -210,8 +210,8 @@ finds those, none lands in a wrong cell.
 
 ```
 gmsh -3 examples/meshes/tjunction.geo -format msh41 -o examples/meshes/tjunction.msh
-target/release/ennecraft mesh examples/cases/mesh/tjunction_tet.toml
-target/release/ennecraft mesh examples/cases/mesh/tjunction_poly.toml
+target/release/foehn mesh examples/cases/mesh/tjunction_tet.toml
+target/release/foehn mesh examples/cases/mesh/tjunction_poly.toml
 python3 tools/render_mesh.py output/tjunction_poly/mesh.vtkhdf tj.png \
     --field rank --categorical --half --top --crop 0.2 0.8 -0.06 0.31
 ```
@@ -250,9 +250,9 @@ the mesh is renumbered by reverse Cuthill-McKee on input (example 6).
 | Case files | `bench/g1_cpu_poly_2m.toml`, `bench/g1_cpu_poly_2m_shuffled.toml`, `bench/g1_cpu_tet_2m.toml`, `bench/g1_gpu_poly_4m.toml` |
 
 ```
-target/release/ennecraft bench g1 examples/cases/bench/g1_cpu_poly_2m.toml
-target/release/ennecraft bench g1 examples/cases/bench/g1_cpu_poly_2m_shuffled.toml
-target/release/ennecraft bench g1 examples/cases/bench/g1_cpu_tet_2m.toml
+target/release/foehn bench g1 examples/cases/bench/g1_cpu_poly_2m.toml
+target/release/foehn bench g1 examples/cases/bench/g1_cpu_poly_2m_shuffled.toml
+target/release/foehn bench g1 examples/cases/bench/g1_cpu_tet_2m.toml
 ```
 
 [↑ back to top](#example-gallery)
@@ -291,8 +291,8 @@ recipe 14).
 | Case files | `scalar/mms_poly_box.toml`, `mms_hex_box.toml`, `mms_tet_box.toml`, `mms_mixed_box.toml`, `mms_poly_2d.toml` |
 
 ```
-cargo build --release -p ennecraft-cli
-target/release/ennecraft scalar examples/cases/scalar/mms_poly_box.toml
+cargo build --release -p foehncraft-cli
+target/release/foehn scalar examples/cases/scalar/mms_poly_box.toml
 # report: output/mms_poly_box/scalar.md, plot: convergence.svg, fields: fields.vtkhdf
 python3 tools/render_mesh.py output/mms_poly_box/fields.vtkhdf mms_poly_error.png --field error --cut
 ```
@@ -324,7 +324,7 @@ The run checks the bounds of every limited variant and fails if one leaves
 | Case file | `scalar/oblique_step_2d.toml` (four `[[variants]]`) |
 
 ```
-target/release/ennecraft scalar examples/cases/scalar/oblique_step_2d.toml
+target/release/foehn scalar examples/cases/scalar/oblique_step_2d.toml
 # report: output/oblique_step_2d/scalar.md, profiles: profile.svg,
 # fields per variant: output/oblique_step_2d/<variant>/fields.vtkhdf
 python3 tools/render_mesh.py output/oblique_step_2d/venkatakrishnan/fields.vtkhdf step.png --field phi --top --range -0.08 1.08
@@ -358,13 +358,13 @@ tetrahedra and mixed meshes (10 to 13 iterations; table in
 | Case files | `poisson/poisson_poly_box.toml`, `poisson_hex_box.toml`, `poisson_tet_box.toml`, `poisson_mixed_box.toml` |
 
 ```
-cargo build --release -p ennecraft-cli
-target/release/ennecraft poisson examples/cases/poisson/poisson_poly_box.toml
+cargo build --release -p foehncraft-cli
+target/release/foehn poisson examples/cases/poisson/poisson_poly_box.toml
 # report: output/poisson_poly_box/poisson.md, plot: iterations.svg
 # with hypre as the reference (recipe 17):
 tools/build_hypre.sh target/hypre
-HYPRE_DIR=$PWD/target/hypre cargo build --release -p ennecraft-cli --features hypre
-target/release/ennecraft poisson examples/cases/poisson/poisson_poly_box.toml \
+HYPRE_DIR=$PWD/target/hypre cargo build --release -p foehncraft-cli --features hypre
+target/release/foehn poisson examples/cases/poisson/poisson_poly_box.toml \
     --solvers amg,amg-double,amg-plain,jacobi,hypre
 ```
 
@@ -375,7 +375,7 @@ target/release/ennecraft poisson examples/cases/poisson/poisson_poly_box.toml \
 <a id="poisson-amg-mms"></a>
 ## 11. Poisson manufactured solution with the multigrid
 
-The pressure solver inside the outer iterations of `ennecraft scalar`: the
+The pressure solver inside the outer iterations of `foehn scalar`: the
 Poisson equation with the manufactured solution of gallery 8, Γ = 1, on
 polyhedra with the non-orthogonal correction as a deferred correction,
 solved with `linear_solver = "cg"` and `preconditioner = "amg"` and, as a
@@ -400,7 +400,7 @@ BiCGStab with Jacobi, and the time per outer iteration drops from 2 357 to
 | Case file | `scalar/poisson_amg_poly_box.toml` (two `[[variants]]`) |
 
 ```
-target/release/ennecraft scalar examples/cases/scalar/poisson_amg_poly_box.toml
+target/release/foehn scalar examples/cases/scalar/poisson_amg_poly_box.toml
 # report: output/poisson_amg_poly_box/scalar.md (linear iterations, time per phase incl. multigrid setup)
 ```
 
@@ -413,7 +413,7 @@ target/release/ennecraft scalar examples/cases/scalar/poisson_amg_poly_box.toml
 
 ![Speed in the lid-driven cavity at Re = 1000 on 128 x 128 hexahedra](figures/gallery/cavity_re1000_speed.png)
 
-The first flow of Ennecraft: the unit cavity with the lid sliding at 1 m/s,
+The first flow of Foehncraft: the unit cavity with the lid sliding at 1 m/s,
 steady and laminar, solved with SIMPLEC and the relaxation-independent
 Rhie–Chow interpolation of stage 4. No boundary fixes the pressure, so a
 reference cell holds its level. At Re = 1000 the primary vortex moves
@@ -440,8 +440,8 @@ tetrahedra. Re = 100 on 64 × 64 hexahedra: 0.44 % / 0.95 %
 | Case files | `flow/cavity_re1000.toml`, `cavity_re100.toml`, `cavity_re100_poly3d.toml`, `cavity_re100_tet3d.toml`, `cavity_re1000_poly3d.toml` |
 
 ```
-cargo build --release -p ennecraft-cli
-target/release/ennecraft flow examples/cases/flow/cavity_re1000.toml
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cavity_re1000.toml
 # report: output/cavity_re1000/flow.md, charts: centreline_u.svg, centreline_v.svg, residuals.svg
 python3 tools/render_mesh.py output/cavity_re1000/fields.vtkhdf cavity.png --field speed --top --no-edges
 ```
@@ -475,7 +475,7 @@ linear profile must.
 | Case files | `flow/poiseuille_hex.toml`, `poiseuille_tet.toml`, `poiseuille_poly.toml`, `poiseuille_mixed.toml` |
 
 ```
-target/release/ennecraft flow examples/cases/flow/poiseuille_poly.toml
+target/release/foehn flow examples/cases/flow/poiseuille_poly.toml
 # report: output/poiseuille_poly/flow.md, plot: convergence.svg
 ```
 
@@ -515,10 +515,10 @@ In space, at a fixed small step, the error falls from 2.6e-2 on 16² to
 | Case files | `flow/taylor_green_bdf2.toml`, `taylor_green_cn.toml`, `taylor_green_space.toml`, `taylor_green_cfl10.toml` |
 
 ```
-cargo build --release -p ennecraft-cli
-target/release/ennecraft flow examples/cases/flow/taylor_green_bdf2.toml
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/taylor_green_bdf2.toml
 # report: output/taylor_green_bdf2/flow.md, plot: time_convergence.svg
-target/release/ennecraft flow examples/cases/flow/taylor_green_space.toml
+target/release/foehn flow examples/cases/flow/taylor_green_space.toml
 # report: output/taylor_green_space/flow.md, plot: convergence.svg
 ```
 
@@ -566,8 +566,8 @@ after the lift maximum.
 | Case files | `flow/cylinder_re20.toml`, `cylinder_re100.toml` |
 
 ```
-target/release/ennecraft flow examples/cases/flow/cylinder_re20.toml
-target/release/ennecraft flow examples/cases/flow/cylinder_re100.toml
+target/release/foehn flow examples/cases/flow/cylinder_re20.toml
+target/release/foehn flow examples/cases/flow/cylinder_re100.toml
 # report: output/cylinder_re100/flow.md, chart: coefficients.svg, histories: forces.csv, probes.csv
 python3 tools/render_mesh.py output/cylinder_re20/fields.vtkhdf cylinder.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
 ```

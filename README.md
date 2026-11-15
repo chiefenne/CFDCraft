@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo/ennecraft.svg" alt="Ennecraft logo: a peregrine falcon" width="180">
+  <img src="assets/logo/foehncraft.svg" alt="Foehncraft logo: a peregrine falcon" width="180">
 </p>
 
-<h1 align="center">Ennecraft</h1>
+<h1 align="center">Foehncraft</h1>
 
 <p align="center">
   An open-source, industry-strength, general purpose CFD solver, written in Rust and built for modern GPUs.
@@ -28,14 +28,14 @@
 > cylinder benchmark of Schäfer & Turek, [stage 5](docs/verification/stage5.md));
 > the GPU flow loop follows.
 
-[![CI](https://github.com/chiefenne/Ennecraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Ennecraft/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/chiefenne/Ennecraft)](https://github.com/chiefenne/Ennecraft/releases)
+[![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
 [![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](Cargo.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Goal
 
-Ennecraft aims to be a general purpose computational fluid dynamics solver of
+Foehncraft aims to be a general purpose computational fluid dynamics solver of
 industry strength: the class of tool that engineers rely on every day for
 fluid flow, heat and mass transfer, species transport and reacting flows, on real
 geometries and at real problem sizes. It is free and open source under the MIT
@@ -69,14 +69,14 @@ from source on the first build; recipe 1 has the details).
 
 ```
 cargo test --workspace
-cargo build --release -p ennecraft-cli
-target/release/ennecraft info
-target/release/ennecraft bench g1 examples/cases/bench/g1_ci_small.toml
-target/release/ennecraft mesh examples/cases/mesh/poly_partition.toml
-target/release/ennecraft scalar examples/cases/scalar/mms_poly_box.toml
-target/release/ennecraft poisson examples/cases/poisson/poisson_poly_box.toml
-target/release/ennecraft flow examples/cases/flow/cavity_re100.toml
-target/release/ennecraft flow examples/cases/flow/taylor_green_bdf2.toml
+cargo build --release -p foehncraft-cli
+target/release/foehn info
+target/release/foehn bench g1 examples/cases/bench/g1_ci_small.toml
+target/release/foehn mesh examples/cases/mesh/poly_partition.toml
+target/release/foehn scalar examples/cases/scalar/mms_poly_box.toml
+target/release/foehn poisson examples/cases/poisson/poisson_poly_box.toml
+target/release/foehn flow examples/cases/flow/cavity_re100.toml
+target/release/foehn flow examples/cases/flow/taylor_green_bdf2.toml
 ```
 
 ## Documentation
@@ -93,19 +93,19 @@ The [changelog](CHANGELOG.md) lists every release.
 
 | Crate | Content |
 |---|---|
-| `ennecraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
-| `ennecraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
-| `ennecraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
-| `ennecraft-mesh` | polyhedral mesh, geometry, quality report, Gmsh reader, test mesher (also the cylinder benchmark mesh), partitioning and halo, VTKHDF output, point location |
-| `ennecraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU and CUDA backends |
-| `ennecraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the Rhie–Chow interpolation, boundary conditions and their check, restart and control files, probes and force coefficients, the `ennecraft flow` case, exact solutions, reference and benchmark data |
-| `ennecraft-bench` | gate G1: kernel benchmark, CPU and CUDA backends |
-| `ennecraft-cli` | the `ennecraft` command |
+| `foehncraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
+| `foehncraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
+| `foehncraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
+| `foehncraft-mesh` | polyhedral mesh, geometry, quality report, Gmsh reader, test mesher (also the cylinder benchmark mesh), partitioning and halo, VTKHDF output, point location |
+| `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU and CUDA backends |
+| `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the Rhie–Chow interpolation, boundary conditions and their check, restart and control files, probes and force coefficients, the `foehn flow` case, exact solutions, reference and benchmark data |
+| `foehncraft-bench` | gate G1: kernel benchmark, CPU and CUDA backends |
+| `foehncraft-cli` | the `foehn` command |
 | `gpu/ptx-kernels` | the kernels compiled to NVIDIA PTX (nightly toolchain) |
 
 ## How it is built
 
-Ennecraft follows the paradigm of the
+Foehncraft follows the paradigm of the
 [ArtCraft Crafting Apps](https://getartcraft.com/apps/craft-anything): open
 source software in Rust, one engine with thin front ends on top, and
 development carried out together with a coding agent in a loop of exploring,
@@ -130,6 +130,30 @@ Three rules follow from this:
 
 The peregrine falcon is the fastest animal there is, and its shape is the work
 of the flow around it.
+
+## Why the name
+
+**Foehn** (German *Föhn*) is pronounced [føːn]
+[🔊](https://github.com/chiefenne/Foehncraft/raw/main/assets/pronunciation/foehn.mp3) in German, a long "ö" as in
+French *feu*, followed by "n"; English speakers say /fɜːn/ ("fern") or /feɪn/. The recordings are by the
+maintainer, a native speaker from Innsbruck.
+Foehncraft is therefore [ˈføːnkraft]
+[🔊](https://github.com/chiefenne/Foehncraft/raw/main/assets/pronunciation/foehncraft.mp3).
+
+The foehn is the warm, dry wind that falls down the lee side of a mountain
+range. Innsbruck, the home of this project, is one of the best-known foehn
+places in the world. With a southerly flow, air crosses the main Alpine ridge
+at the Brenner Pass, the lowest gap at about 1370 m, runs down the Wipp valley
+past Mount Patscherkofel and breaks into the Inn valley at Innsbruck, often in
+strong gusts. Sinking without cloud, the air warms by about 1 °C per 100 m of
+descent; when the foehn reaches the valley floor at about 580 m, the
+temperature in town can rise by 5 to 10 °C within an hour, and the cold air
+pooled in the valley is swept away.
+
+Gap flow, a downslope windstorm, stratified flow over complex terrain and a
+moving front between warm and cold air: the foehn is computational fluid
+dynamics in the open air, and it has been studied at the University of
+Innsbruck since the early twentieth century. The command is `foehn`.
 
 ## Contributing
 

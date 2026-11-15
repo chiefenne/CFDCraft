@@ -1,7 +1,7 @@
 # Flow around a cylinder in a channel at Re = 100: the periodic benchmark
 # 2D-2 of Schäfer & Turek (1996) (stage 5).
 #
-#   cargo run --release -p ennecraft-cli -- flow examples/cases/flow/cylinder_re100.toml
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cylinder_re100.toml
 #
 # The geometry of cylinder_re20.toml with U_max = 1.5 m/s (Ū = 1 m/s, Re =
 # 100). Transient PISO with variable-step BDF2, the time step adapted to a

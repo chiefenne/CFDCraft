@@ -3,20 +3,20 @@
 version = 4
 
 [[package]]
-name = "ennecraft-core"
+name = "foehncraft-core"
 version = "0.4.0"
 
 [[package]]
-name = "ennecraft-kernels"
+name = "foehncraft-kernels"
 version = "0.4.0"
 dependencies = [
- "ennecraft-core",
+ "foehncraft-core",
 ]
 
 [[package]]
-name = "ennecraft-ptx-kernels"
+name = "foehncraft-ptx-kernels"
 version = "0.4.0"
 dependencies = [
- "ennecraft-core",
- "ennecraft-kernels",
+ "foehncraft-core",
+ "foehncraft-kernels",
 ]

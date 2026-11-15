@@ -1,14 +1,14 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/ennecraft-core",
-    "crates/ennecraft-kernels",
-    "crates/ennecraft-parallel",
-    "crates/ennecraft-mesh",
-    "crates/ennecraft-fv",
-    "crates/ennecraft-flow",
-    "crates/ennecraft-bench",
-    "crates/ennecraft-cli",
+    "crates/foehncraft-core",
+    "crates/foehncraft-kernels",
+    "crates/foehncraft-parallel",
+    "crates/foehncraft-mesh",
+    "crates/foehncraft-fv",
+    "crates/foehncraft-flow",
+    "crates/foehncraft-bench",
+    "crates/foehncraft-cli",
 ]
 # Built separately with the nightly toolchain for the NVIDIA PTX target
 # (see gpu/ptx-kernels/README.md).
@@ -19,17 +19,17 @@ version = "0.4.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
-repository = "https://github.com/chiefenne/Ennecraft"
+repository = "https://github.com/chiefenne/Foehncraft"
 authors = ["Andreas Ennemoser"]
 
 [workspace.dependencies]
-ennecraft-core = { path = "crates/ennecraft-core", version = "0.4.0" }
-ennecraft-kernels = { path = "crates/ennecraft-kernels", version = "0.4.0" }
-ennecraft-parallel = { path = "crates/ennecraft-parallel", version = "0.4.0" }
-ennecraft-mesh = { path = "crates/ennecraft-mesh", version = "0.4.0", default-features = false }
-ennecraft-fv = { path = "crates/ennecraft-fv", version = "0.4.0", default-features = false }
-ennecraft-flow = { path = "crates/ennecraft-flow", version = "0.4.0", default-features = false }
-ennecraft-bench = { path = "crates/ennecraft-bench", version = "0.4.0" }
+foehncraft-core = { path = "crates/foehncraft-core", version = "0.4.0" }
+foehncraft-kernels = { path = "crates/foehncraft-kernels", version = "0.4.0" }
+foehncraft-parallel = { path = "crates/foehncraft-parallel", version = "0.4.0" }
+foehncraft-mesh = { path = "crates/foehncraft-mesh", version = "0.4.0", default-features = false }
+foehncraft-fv = { path = "crates/foehncraft-fv", version = "0.4.0", default-features = false }
+foehncraft-flow = { path = "crates/foehncraft-flow", version = "0.4.0", default-features = false }
+foehncraft-bench = { path = "crates/foehncraft-bench", version = "0.4.0" }
 rayon = "1.12"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }

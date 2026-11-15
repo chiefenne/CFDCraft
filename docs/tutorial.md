@@ -1,6 +1,6 @@
 # Tutorial: your first mesh
 
-This takes about ten minutes. You build Ennecraft, generate a small
+This takes about ten minutes. You build Foehncraft, generate a small
 polyhedral mesh, check it, partition it and look at it in ParaView. It is the
 shortest path through the code; the [example gallery](gallery.md) shows the
 results and the [recipes](recipes.md) give the other tasks.
@@ -11,15 +11,15 @@ You need Rust 1.89 or newer, a C compiler and CMake (see
 [recipe 1](recipes.md#g1-cpu)).
 
 ```
-git clone https://github.com/chiefenne/Ennecraft.git && cd Ennecraft
-cargo build --release -p ennecraft-cli
-target/release/ennecraft info
+git clone https://github.com/chiefenne/Foehncraft.git && cd Foehncraft
+cargo build --release -p foehncraft-cli
+target/release/foehn info
 ```
 
 ## 2. Generate, check and write a mesh
 
 ```
-target/release/ennecraft mesh examples/cases/mesh/poly_partition.toml
+target/release/foehn mesh examples/cases/mesh/poly_partition.toml
 ```
 
 This makes a polyhedral mesh of the unit cube (2 197 cells), splits it into
@@ -35,7 +35,7 @@ python3 tools/check_vtkhdf.py output/poly_partition/mesh.vtkhdf
 ```
 
 The check reads the file with VTK, the library ParaView uses, and compares
-the cell volumes with those written by Ennecraft. A relative difference near
+the cell volumes with those written by Foehncraft. A relative difference near
 1e-15 means the file is right.
 
 ## 4. Look at it in ParaView

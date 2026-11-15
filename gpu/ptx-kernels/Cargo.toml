@@ -1,6 +1,6 @@
 [package]
-name = "ennecraft-ptx-kernels"
-description = "G1 single-source route: the ennecraft-kernels bodies as NVIDIA PTX entry points"
+name = "foehncraft-ptx-kernels"
+description = "G1 single-source route: the foehncraft-kernels bodies as NVIDIA PTX entry points"
 version = "0.4.0"
 edition = "2024"
 license = "MIT"
@@ -14,11 +14,11 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-ennecraft-kernels = { path = "../../crates/ennecraft-kernels" }
-ennecraft-core = { path = "../../crates/ennecraft-core" }
+foehncraft-kernels = { path = "../../crates/foehncraft-kernels" }
+foehncraft-core = { path = "../../crates/foehncraft-core" }
 
 [features]
-checked-indexing = ["ennecraft-kernels/checked-indexing"]
+checked-indexing = ["foehncraft-kernels/checked-indexing"]
 
 [profile.release]
 opt-level = 3

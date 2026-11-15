@@ -35,7 +35,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked
       # the CUDA backends compile without a CUDA toolkit (driver and NVRTC
       # are loaded at run time)
-      - run: cargo clippy --workspace --all-targets --locked --features ennecraft-bench/cuda,ennecraft-fv/cuda
+      - run: cargo clippy --workspace --all-targets --locked --features foehncraft-bench/cuda,foehncraft-fv/cuda
       - run: cargo doc --workspace --no-deps --locked
 
   test:
@@ -52,26 +52,26 @@ jobs:
       - run: cargo test --workspace --locked
       - run: cargo test --workspace --locked --release
       - name: G1 smoke run (CPU backends, results bitwise equal)
-        run: cargo run --release --locked -p ennecraft-cli -- bench g1 examples/cases/bench/g1_ci_small.toml
+        run: cargo run --release --locked -p foehncraft-cli -- bench g1 examples/cases/bench/g1_ci_small.toml
       - name: Mesh cases (generated meshes, quality report, VTKHDF)
         shell: bash
         run: |
           for f in examples/cases/mesh/*_box.toml examples/cases/mesh/*_2d.toml examples/cases/mesh/poly_partition.toml; do
-            cargo run --release --locked -p ennecraft-cli -- mesh "$f"
+            cargo run --release --locked -p foehncraft-cli -- mesh "$f"
           done
       - name: Scalar cases of the gallery and the case catalogue (R5; each checks its own results)
         shell: bash
         run: |
           for f in examples/cases/scalar/*.toml; do
             case "$f" in *_gpu.toml) continue;; esac
-            cargo run --release --locked -p ennecraft-cli -- scalar "$f"
+            cargo run --release --locked -p foehncraft-cli -- scalar "$f"
           done
       - name: Poisson studies of the pressure solver (stage 3; each checks its own results)
         shell: bash
         run: |
           for f in examples/cases/poisson/*.toml; do
             case "$f" in *_gpu.toml) continue;; esac
-            cargo run --release --locked -p ennecraft-cli -- poisson "$f"
+            cargo run --release --locked -p foehncraft-cli -- poisson "$f"
           done
       - name: Flow cases (stages 4 and 5; each checks its own results; all on Linux, the quick ones elsewhere)
         shell: bash
@@ -80,7 +80,7 @@ jobs:
             if [ "$RUNNER_OS" != "Linux" ]; then
               case "$f" in *couette_*|*cavity_re100.toml|*cavity_re100_poly3d.toml|*poiseuille_hex.toml|*poiseuille_poly.toml|*taylor_green_space.toml) ;; *) continue;; esac
             fi
-            cargo run --release --locked -p ennecraft-cli -- flow "$f"
+            cargo run --release --locked -p foehncraft-cli -- flow "$f"
           done
       - uses: actions/setup-python@v5
         if: runner.os == 'Linux'
@@ -94,9 +94,9 @@ jobs:
       - name: Without HDF5 and METIS
         if: runner.os == 'Linux'
         run: |
-          cargo test -p ennecraft-mesh --no-default-features --locked
-          cargo test -p ennecraft-fv --no-default-features --locked
-          cargo test -p ennecraft-flow --no-default-features --locked
+          cargo test -p foehncraft-mesh --no-default-features --locked
+          cargo test -p foehncraft-fv --no-default-features --locked
+          cargo test -p foehncraft-flow --no-default-features --locked
       - uses: actions/upload-artifact@v4
         with:
           name: g1-ci-small-${{ matrix.os }}
@@ -150,16 +150,16 @@ jobs:
       - name: Build hypre (sequential, shared)
         if: steps.hypre-cache.outputs.cache-hit != 'true'
         run: tools/build_hypre.sh "$HYPRE_DIR"
-      - run: cargo clippy -p ennecraft-fv -p ennecraft-cli --all-targets --locked --features ennecraft-fv/hypre,ennecraft-cli/hypre
+      - run: cargo clippy -p foehncraft-fv -p foehncraft-cli --all-targets --locked --features foehncraft-fv/hypre,foehncraft-cli/hypre
       - name: Stage-3 tests including the agreement with hypre
-        run: cargo test --release --locked -p ennecraft-fv --features hypre --test stage3
+        run: cargo test --release --locked -p foehncraft-fv --features hypre --test stage3
       - name: Poisson studies with hypre as the reference
         shell: bash
         run: |
-          cargo build --release --locked -p ennecraft-cli --features hypre
+          cargo build --release --locked -p foehncraft-cli --features hypre
           for f in examples/cases/poisson/*_box.toml; do
             n=$(basename "$f" .toml)
-            target/release/ennecraft poisson "$f" --solvers amg,amg-double,jacobi,hypre \
+            target/release/foehn poisson "$f" --solvers amg,amg-double,jacobi,hypre \
               --backends cpu,cpu-serial --out "output/${n}_hypre"
           done
       - uses: actions/upload-artifact@v4
@@ -195,13 +195,13 @@ jobs:
       - name: Install Open MPI (macOS)
         if: runner.os == 'macOS'
         run: brew install open-mpi
-      - run: cargo test -p ennecraft-parallel --features mpi --locked
-      - run: cargo build --release -p ennecraft-parallel --features mpi --example mpi_smoke --locked
+      - run: cargo test -p foehncraft-parallel --features mpi --locked
+      - run: cargo build --release -p foehncraft-parallel --features mpi --example mpi_smoke --locked
       - name: Run with 4 ranks
         run: mpirun --oversubscribe -n 4 target/release/examples/mpi_smoke
       - name: Run with 2 ranks
         run: mpirun --oversubscribe -n 2 target/release/examples/mpi_smoke
-      - run: cargo build --release -p ennecraft-mesh --features mpi --example mpi_halo --locked
+      - run: cargo build --release -p foehncraft-mesh --features mpi --example mpi_halo --locked
       - name: Halo exchange of a partitioned mesh, 4 and 2 ranks
         run: |
           mpirun --oversubscribe -n 4 target/release/examples/mpi_halo
@@ -224,4 +224,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: g1-ptx
-          path: target/nvptx64-nvidia-cuda/release/ennecraft_ptx_kernels.ptx
+          path: target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx

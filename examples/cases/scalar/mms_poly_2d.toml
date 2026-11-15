@@ -2,7 +2,7 @@
 # (one cell thick, D3): order-of-accuracy sweep over four nested
 # refinements (stage 2).
 #
-#   cargo run --release -p ennecraft-cli -- scalar examples/cases/scalar/mms_poly_2d.toml
+#   cargo run --release -p foehncraft-cli -- scalar examples/cases/scalar/mms_poly_2d.toml
 #
 # The planar solution φ = 1 + sin(πx + 0.5) cos(πy + 0.3) does not depend on
 # z; the two z patches take the zero-gradient (symmetry) condition, which

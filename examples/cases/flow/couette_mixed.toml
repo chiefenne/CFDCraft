@@ -1,6 +1,6 @@
 # Plane Couette flow on perturbed mixed cells, Stokes flow (stage 4).
 #
-#   cargo run --release -p ennecraft-cli -- flow examples/cases/flow/couette_mixed.toml
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/couette_mixed.toml
 #
 # Channel 0 < y < 1 of length 2, lower wall at rest, upper wall moving at
 # 1 m/s, the exact linear velocity at the inlet and a static pressure outlet.

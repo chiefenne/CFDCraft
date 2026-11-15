@@ -3,7 +3,7 @@
 # The patches zmin and zmax take the symmetry condition in a 2D case.
 # Gallery example 5.
 #
-#   ennecraft mesh examples/cases/mesh/poly_2d.toml
+#   foehn mesh examples/cases/mesh/poly_2d.toml
 
 [mesh.generate]
 type = "poly"

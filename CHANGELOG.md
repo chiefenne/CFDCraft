@@ -2,10 +2,11 @@
 
 ## Unreleased
 
-**Renamed from CFDCraft to Ennecraft**, so that the name cannot be confused with
-other projects. Crates are now `ennecraft-*`, the command is `ennecraft`, the
-environment variables are `ENNECRAFT_*`, and the repository is
-`chiefenne/Ennecraft`. Entries below keep the names of their time.
+**Renamed from CFDCraft (and the short-lived Ennecraft) to Foehncraft**, after
+the foehn wind of Innsbruck (see the README), so that the name cannot be
+confused with other projects. Crates are now `foehncraft-*`, the command is `foehn`, the
+environment variables are `FOEHNCRAFT_*`, and the repository is
+`chiefenne/Foehncraft`. Entries below keep the names of their time.
 
 ## Summary
 

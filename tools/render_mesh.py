@@ -1,4 +1,4 @@
-"""Renders a Ennecraft VTKHDF mesh file to a PNG picture for the gallery,
+"""Renders a Foehncraft VTKHDF mesh file to a PNG picture for the gallery,
 with VTK (the library under ParaView), off screen.
 
     pip install vtk

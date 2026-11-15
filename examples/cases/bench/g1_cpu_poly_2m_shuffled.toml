@@ -4,7 +4,7 @@
 # docs/benchmarks/g1.md: uneven rows, twice the faces per cell of the
 # hexahedral box.
 #
-#   ennecraft bench g1 examples/cases/bench/g1_cpu_poly_2m_shuffled.toml
+#   foehn bench g1 examples/cases/bench/g1_cpu_poly_2m_shuffled.toml
 #
 # Needs about 3 GB of memory (the generator dominates).
 

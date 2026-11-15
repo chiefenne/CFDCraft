@@ -1,4 +1,4 @@
-//! The single-source GPU route: the kernel bodies of `ennecraft-kernels`
+//! The single-source GPU route: the kernel bodies of `foehncraft-kernels`
 //! wrapped as PTX entry points, one GPU thread per output. The `g1_*`
 //! entries are the kernels of gate G1 (stage 0); the `fv_*` and `blas_*`
 //! entries in [`fv`] are the scalar operators of stage 2, the `amg_*`
@@ -7,7 +7,7 @@
 //! The wrappers only compute the thread index, build slices from the raw
 //! device pointers and their sizes, and call the body that the CPU backends
 //! also call. Argument lists are identical to the hand-written CUDA C
-//! reference (`crates/ennecraft-bench/kernels/g1_reference.cu`).
+//! reference (`crates/foehncraft-bench/kernels/g1_reference.cu`).
 //!
 //! Needs the nightly toolchain: the `ptx-kernel` ABI and the NVPTX
 //! intrinsics are not stable yet. This is the open point of D11 that gate G1
@@ -19,7 +19,7 @@
 mod amg;
 mod fv;
 
-use ennecraft_kernels::{face, spmv};
+use foehncraft_kernels::{face, spmv};
 use core::arch::nvptx::{_block_dim_x, _block_idx_x, _thread_idx_x};
 use core::slice::{from_raw_parts as sl, from_raw_parts_mut as sl_mut};
 
