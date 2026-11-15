@@ -55,6 +55,7 @@ fn steady(d: &Path) -> PathBuf {
 }
 
 /// A transient cavity on 16 x 16 cells.
+#[cfg(unix)]
 fn transient(d: &Path, steps: usize) -> PathBuf {
     let p = d.join("cavity_transient.toml");
     let text = format!(
