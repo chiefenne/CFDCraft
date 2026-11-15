@@ -84,7 +84,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "CFDCraft $TAG"
+          git tag -a "$TAG" -m "Inncraft $TAG"
           git push origin "refs/tags/$TAG"
 
       - name: Create GitHub release
@@ -96,7 +96,7 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG exists already"
           else
-            gh release create "$TAG" --title "CFDCraft $TAG" --notes-file notes.md --verify-tag
+            gh release create "$TAG" --title "Inncraft $TAG" --notes-file notes.md --verify-tag
           fi
 
       # The README release badge is an image of img.shields.io that GitHub

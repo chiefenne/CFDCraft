@@ -1,6 +1,6 @@
 # Taylor–Green vortex at Courant number 9 with outer correctors (stage 5).
 #
-#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/taylor_green_cfl10.toml
+#   cargo run --release -p inncraft-cli -- flow examples/cases/flow/taylor_green_cfl10.toml
 #
 # The iterative transient of D28: per time step SIMPLE-type outer iterations
 # around the PISO corrections (velocity relaxation 0.9), converged to 1e-9,

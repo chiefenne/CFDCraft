@@ -1,6 +1,6 @@
 # Tutorial: your first mesh
 
-This takes about ten minutes. You build CFDCraft, generate a small
+This takes about ten minutes. You build Inncraft, generate a small
 polyhedral mesh, check it, partition it and look at it in ParaView. It is the
 shortest path through the code; the [example gallery](gallery.md) shows the
 results and the [recipes](recipes.md) give the other tasks.
@@ -11,15 +11,15 @@ You need Rust 1.89 or newer, a C compiler and CMake (see
 [recipe 1](recipes.md#g1-cpu)).
 
 ```
-git clone https://github.com/chiefenne/CFDCraft.git && cd CFDCraft
-cargo build --release -p cfdcraft-cli
-target/release/cfdcraft info
+git clone https://github.com/chiefenne/Inncraft.git && cd Inncraft
+cargo build --release -p inncraft-cli
+target/release/inncraft info
 ```
 
 ## 2. Generate, check and write a mesh
 
 ```
-target/release/cfdcraft mesh examples/cases/mesh/poly_partition.toml
+target/release/inncraft mesh examples/cases/mesh/poly_partition.toml
 ```
 
 This makes a polyhedral mesh of the unit cube (2 197 cells), splits it into
@@ -35,7 +35,7 @@ python3 tools/check_vtkhdf.py output/poly_partition/mesh.vtkhdf
 ```
 
 The check reads the file with VTK, the library ParaView uses, and compares
-the cell volumes with those written by CFDCraft. A relative difference near
+the cell volumes with those written by Inncraft. A relative difference near
 1e-15 means the file is right.
 
 ## 4. Look at it in ParaView

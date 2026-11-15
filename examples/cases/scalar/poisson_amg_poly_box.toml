@@ -5,7 +5,7 @@
 # nested refinements; the variant solves the same case with BiCGStab and
 # Jacobi, for comparison of the work per outer iteration.
 #
-#   cargo run --release -p cfdcraft-cli -- scalar examples/cases/scalar/poisson_amg_poly_box.toml
+#   cargo run --release -p inncraft-cli -- scalar examples/cases/scalar/poisson_amg_poly_box.toml
 #
 # −∇·(Γ∇φ) = s with Γ = 1, no convection,
 # φ = 1 + sin(πx + 0.5) cos(πy + 0.3) cos(πz/2 + 0.2), fixed values of the

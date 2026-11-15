@@ -1,0 +1,434 @@
+//! Local meshes with halo cells, and the halo exchange.
+//!
+//! Local order of a rank's [`LocalMesh`] (owner's recommendation R1 of the
+//! MFC assessment, refining D23 and D38):
+//!
+//! - **cells**: inner cells (all face neighbours on this rank), then the own
+//!   cells that touch the halo, then the halo cells, grouped by the rank
+//!   that owns them, so a halo exchange receives one contiguous block per
+//!   neighbouring rank and needs no unpacking; the inner and the outer cells
+//!   are each ordered by reverse Cuthill–McKee for locality, the halo cells
+//!   of one rank by layer, then by their order on that rank;
+//! - **faces**: inner faces (both cells on this rank), then processor faces
+//!   (own cell to halo cell, normal out of the own cell, grouped by
+//!   neighbouring rank), then the boundary faces with the same patches, in
+//!   the same order, on every rank.
+//!
+//! A solver step can therefore launch the inner faces and inner cells, wait
+//! for the halo, then do the processor faces and outer cells, with plain
+//! index ranges (D38).
+//!
+//! Every local cell, face and node keeps its global identity, the position
+//! in the input mesh (R2), so output and restart do not depend on the
+//! decomposition.
+//!
+//! The halo exchange (R3) gathers the send values of all fields for one
+//! neighbouring rank into one buffer, sends one message per neighbour and
+//! copies the received block into the contiguous halo range of each field.
+//! The [`Transport`] is chosen at run time: host-staged now; GPU-aware MPI,
+//! with send lists and buffers resident on the device, comes with the
+//! device fields of stage 2 and is tested locally (D22). The halo depth is a
+//! parameter, one layer by default: enough for the face-neighbour
+//! least-squares gradients (D24) and for particles, which are handed over at
+//! processor faces (D47).
+//!
+//! In stage 1 every rank holds the whole mesh (generated or read on every
+//! rank) and extracts its part with [`extract`]; distributing a mesh read on
+//! one rank follows with the parallel I/O of later stages.
+
+use crate::geometry::Geometry;
+use crate::mesh::{Mesh, Patch};
+use crate::renumber::rcm_order;
+use inncraft_parallel::Communicator;
+use serde::{Deserialize, Serialize};
+
+/// What a rank exchanges with one neighbouring rank.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Neighbour {
+    /// The neighbouring rank.
+    pub rank: usize,
+    /// Own cells (local indices) the neighbour holds as halo cells, in the
+    /// order of its halo: the gather list of the pack step.
+    pub send: Vec<u32>,
+    /// Halo cells (local indices) owned by the neighbour: a contiguous
+    /// range, filled without unpacking.
+    pub recv: std::ops::Range<usize>,
+}
+
+/// The halo exchange plan of one rank.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HaloPlan {
+    /// Neighbouring ranks, ascending.
+    pub neighbours: Vec<Neighbour>,
+}
+
+/// How halo buffers travel between ranks; chosen at run time (R3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum Transport {
+    /// Pack on the host (or copy device buffers to the host), MPI, copy
+    /// back. Always available; tested in CI.
+    #[default]
+    HostStaged,
+    /// Device buffers handed to a GPU-aware MPI library. Needs device fields
+    /// (stage 2 onward); tested locally (D22).
+    GpuAware,
+}
+
+/// The part of a mesh held by one rank.
+#[derive(Debug, Clone)]
+pub struct LocalMesh {
+    /// The rank.
+    pub rank: usize,
+    /// The local mesh: inner cells, outer cells, halo cells; its
+    /// `cell_id`, `face_id` and `point_id` are the global identities.
+    pub mesh: Mesh,
+    /// Halo layer of each halo cell (1 = face neighbour of an own cell).
+    pub halo_layer: Vec<u8>,
+    /// Number of processor faces per neighbour, in the order of
+    /// `halo.neighbours`.
+    pub processor_faces: Vec<usize>,
+    /// The halo exchange plan.
+    pub halo: HaloPlan,
+}
+
+/// Own cells of `rank` in local order (inner cells by RCM, then outer cells
+/// by RCM), the number of inner cells, and the halo cells (owner rank,
+/// layer, cell), all as positions in `global`.
+#[allow(clippy::type_complexity)]
+fn local_cells(
+    global: &Mesh,
+    part: &[u32],
+    rank: u32,
+    layers: usize,
+) -> (Vec<u32>, usize, Vec<(u32, u8, u32)>) {
+    let n = global.n_cells;
+    let mut layer = vec![0u8; n]; // 0: not reached, MAX: own
+    let own: Vec<u32> = (0..n as u32)
+        .filter(|&c| part[c as usize] == rank)
+        .collect();
+    for &c in &own {
+        layer[c as usize] = u8::MAX;
+    }
+    let mut halo = Vec::new();
+    let mut front = own.clone();
+    for l in 1..=layers {
+        let mut next = Vec::new();
+        for &c in &front {
+            for (f, _) in global.cell_face_iter(c as usize) {
+                if let Some(d) = global.across(f, c as usize)
+                    && layer[d] == 0
+                {
+                    layer[d] = l as u8;
+                    next.push(d as u32);
+                    halo.push((part[d], l as u8, d as u32));
+                }
+            }
+        }
+        front = next;
+    }
+    // inner (no face neighbour in the halo) and outer own cells, each in RCM
+    // order on the subgraph of own cells
+    let mut local = vec![u32::MAX; n];
+    let (mut inner, mut outer) = (Vec::new(), Vec::new());
+    for &c in &own {
+        let touches = global
+            .cell_face_iter(c as usize)
+            .any(|(f, _)| global.across(f, c as usize).is_some_and(|d| layer[d] == 1));
+        if touches {
+            outer.push(c);
+        } else {
+            inner.push(c);
+        }
+    }
+    let mut ordered = Vec::with_capacity(own.len());
+    for group in [&inner, &outer] {
+        for (i, &c) in group.iter().enumerate() {
+            local[c as usize] = i as u32;
+        }
+        let order = rcm_order(group.len(), |i, out| {
+            let c = group[i] as usize;
+            for (f, _) in global.cell_face_iter(c) {
+                if let Some(d) = global.across(f, c)
+                    && local[d] != u32::MAX
+                    && group.get(local[d] as usize) == Some(&(d as u32))
+                {
+                    out.push(local[d] as usize);
+                }
+            }
+        });
+        ordered.extend(order.into_iter().map(|i| group[i]));
+        for &c in group.iter() {
+            local[c as usize] = u32::MAX;
+        }
+    }
+    halo.sort_unstable();
+    (ordered, inner.len(), halo)
+}
+
+/// The local mesh of `rank` from the global mesh and the partition.
+pub fn extract(
+    global: &Mesh,
+    part: &[u32],
+    rank: usize,
+    layers: usize,
+) -> Result<LocalMesh, String> {
+    if global.n_halo != 0 {
+        return Err("the global mesh must not have halo cells".into());
+    }
+    if layers == 0 || layers > 8 {
+        return Err("halo layers must lie in 1..=8".into());
+    }
+    let r = rank as u32;
+    let n = global.n_cells;
+    let (own, n_inner, halo) = local_cells(global, part, r, layers);
+    if own.is_empty() {
+        return Err(format!("rank {rank} has no cells"));
+    }
+    let mut local = vec![u32::MAX; n];
+    for (i, &c) in own.iter().enumerate() {
+        local[c as usize] = i as u32;
+    }
+    let n_own = own.len();
+    for (i, &(_, _, c)) in halo.iter().enumerate() {
+        local[c as usize] = (n_own + i) as u32;
+    }
+
+    // faces of own cells: (class, key, local owner, local neighbour, global
+    // face, reverse); class 0 inner, 1 processor (key = neighbour rank),
+    // 2 + patch for boundary faces
+    let ni = global.n_interior_faces();
+    let mut faces: Vec<(u32, u32, u32, u32, u32, bool)> = Vec::new();
+    for f in 0..global.n_faces() {
+        let p = global.owner[f] as usize;
+        if f < ni {
+            let q = global.neighbour[f] as usize;
+            let (lp, lq) = (local[p], local[q]);
+            match (part[p] == r, part[q] == r) {
+                (true, true) => {
+                    let (a, b, rev) = if lp < lq {
+                        (lp, lq, false)
+                    } else {
+                        (lq, lp, true)
+                    };
+                    faces.push((0, 0, a, b, f as u32, rev));
+                }
+                (true, false) => faces.push((1, part[q], lp, lq, f as u32, false)),
+                (false, true) => faces.push((1, part[p], lq, lp, f as u32, true)),
+                (false, false) => {}
+            }
+        } else if part[p] == r {
+            let patch = global.patch_of(f).unwrap() as u32;
+            faces.push((2 + patch, 0, local[p], 0, f as u32, false));
+        }
+    }
+    faces.sort_unstable();
+
+    // nodes, in global order
+    let mut node_local = vec![u32::MAX; global.n_points()];
+    let mut used: Vec<u32> = Vec::new();
+    for x in &faces {
+        for &v in global.face(x.4 as usize) {
+            if node_local[v as usize] == u32::MAX {
+                node_local[v as usize] = 0;
+                used.push(v);
+            }
+        }
+    }
+    used.sort_unstable();
+    for (i, &v) in used.iter().enumerate() {
+        node_local[v as usize] = i as u32;
+    }
+
+    let mut cell_id: Vec<u64> = own.iter().map(|&c| global.cell_id[c as usize]).collect();
+    cell_id.extend(halo.iter().map(|h| global.cell_id[h.2 as usize]));
+    let mut mesh = Mesh {
+        points: used.iter().map(|&v| global.points[v as usize]).collect(),
+        point_id: used.iter().map(|&v| global.point_id[v as usize]).collect(),
+        n_cells: n_own,
+        n_inner_cells: n_inner,
+        n_halo: halo.len(),
+        cell_zone: own.iter().map(|&c| global.cell_zone[c as usize]).collect(),
+        zones: global.zones.clone(),
+        cell_id,
+        ..Default::default()
+    };
+    mesh.face_ptr.push(0);
+    let mut processor_faces: Vec<(u32, usize)> = Vec::new();
+    for &(class, key, a, b, f, rev) in &faces {
+        let nodes = global.face(f as usize);
+        if rev {
+            mesh.face_nodes.push(node_local[nodes[0] as usize]);
+            mesh.face_nodes
+                .extend(nodes[1..].iter().rev().map(|&v| node_local[v as usize]));
+        } else {
+            mesh.face_nodes
+                .extend(nodes.iter().map(|&v| node_local[v as usize]));
+        }
+        mesh.face_ptr.push(mesh.face_nodes.len() as u32);
+        mesh.face_id.push(global.face_id[f as usize]);
+        mesh.owner.push(a);
+        match class {
+            0 => mesh.neighbour.push(b),
+            1 => {
+                mesh.neighbour.push(b);
+                match processor_faces.last_mut() {
+                    Some(x) if x.0 == key => x.1 += 1,
+                    _ => processor_faces.push((key, 1)),
+                }
+            }
+            _ => {}
+        }
+    }
+    mesh.n_inner_faces = faces.iter().filter(|x| x.0 == 0).count();
+    let mut start = mesh.neighbour.len();
+    for (i, p) in global.patches.iter().enumerate() {
+        let len = faces.iter().filter(|x| x.0 == 2 + i as u32).count();
+        mesh.patches.push(Patch {
+            name: p.name.clone(),
+            start,
+            len,
+        });
+        start += len;
+    }
+    mesh.build_cell_faces();
+
+    // exchange plan: for each neighbouring rank, the own cells in its halo,
+    // in its halo order
+    let mut neighbours: Vec<Neighbour> = Vec::new();
+    let mut i = 0;
+    while i < halo.len() {
+        let s = halo[i].0;
+        let j = i + halo[i..].iter().take_while(|h| h.0 == s).count();
+        let (_, _, their_halo) = local_cells(global, part, s, layers);
+        let send = their_halo
+            .into_iter()
+            .filter(|h| h.0 == r)
+            .map(|h| local[h.2 as usize])
+            .collect();
+        neighbours.push(Neighbour {
+            rank: s as usize,
+            send,
+            recv: n_own + i..n_own + j,
+        });
+        i = j;
+    }
+    let processor_faces = neighbours
+        .iter()
+        .map(|nb| {
+            processor_faces
+                .iter()
+                .find(|x| x.0 as usize == nb.rank)
+                .map_or(0, |x| x.1)
+        })
+        .collect();
+
+    Ok(LocalMesh {
+        rank,
+        mesh,
+        halo_layer: halo.iter().map(|h| h.1).collect(),
+        processor_faces,
+        halo: HaloPlan { neighbours },
+    })
+}
+
+/// The local meshes of all ranks.
+pub fn decompose(
+    global: &Mesh,
+    part: &[u32],
+    parts: usize,
+    layers: usize,
+) -> Result<Vec<LocalMesh>, String> {
+    (0..parts)
+        .map(|r| extract(global, part, r, layers))
+        .collect()
+}
+
+impl HaloPlan {
+    /// Fills the halo entries of all `fields` (each one value per own and
+    /// halo cell) from the neighbouring ranks: one message per neighbour
+    /// carries all fields.
+    pub fn exchange_fields(
+        &self,
+        comm: &dyn Communicator,
+        transport: Transport,
+        fields: &mut [&mut [f64]],
+    ) -> Result<(), String> {
+        if transport == Transport::GpuAware {
+            return Err(
+                "the GPU-aware halo transport needs device fields (stage 2 onward); \
+                 use host-staged"
+                    .into(),
+            );
+        }
+        let mut send = Vec::new();
+        let mut recv = Vec::new();
+        for nb in &self.neighbours {
+            // pack: one contiguous buffer, field by field
+            send.clear();
+            for f in fields.iter() {
+                send.extend(nb.send.iter().map(|&c| f[c as usize]));
+            }
+            let n = nb.recv.len();
+            recv.clear();
+            recv.resize(n * fields.len(), 0.0);
+            comm.send_recv_f64(&send, nb.rank, &mut recv, nb.rank);
+            // contiguous halo range per field: a copy, no unpack
+            for (k, f) in fields.iter_mut().enumerate() {
+                f[nb.recv.clone()].copy_from_slice(&recv[k * n..(k + 1) * n]);
+            }
+        }
+        Ok(())
+    }
+
+    /// One field, host-staged.
+    pub fn exchange(&self, comm: &dyn Communicator, field: &mut [f64]) {
+        self.exchange_fields(comm, Transport::HostStaged, &mut [field])
+            .expect("host-staged exchange");
+    }
+
+    /// The exchange for all ranks of a decomposition held in one process
+    /// (tests and tools): `fields[r]` is the field of rank `r`.
+    pub fn exchange_all(plans: &[&HaloPlan], fields: &mut [Vec<f64>]) {
+        for r in 0..plans.len() {
+            for nb in &plans[r].neighbours {
+                let other = plans[nb.rank]
+                    .neighbours
+                    .iter()
+                    .find(|x| x.rank == r)
+                    .expect("halo plans are symmetric");
+                let vals: Vec<f64> = other
+                    .send
+                    .iter()
+                    .map(|&c| fields[nb.rank][c as usize])
+                    .collect();
+                fields[r][nb.recv.clone()].copy_from_slice(&vals);
+            }
+        }
+    }
+}
+
+impl LocalMesh {
+    /// Geometry of the local mesh, with the halo volumes and centroids
+    /// filled by one exchange of four fields.
+    pub fn geometry(&self, comm: &dyn Communicator) -> Geometry {
+        let mut g = Geometry::compute(&self.mesh);
+        let mut x: Vec<Vec<f64>> = (0..3)
+            .map(|d| g.cell_centroid.iter().map(|c| c[d]).collect())
+            .collect();
+        let [x0, x1, x2] = &mut x[..] else {
+            unreachable!()
+        };
+        self.halo
+            .exchange_fields(
+                comm,
+                Transport::HostStaged,
+                &mut [&mut g.cell_volume, x0, x1, x2],
+            )
+            .expect("host-staged exchange");
+        for (c, cen) in g.cell_centroid.iter_mut().enumerate() {
+            *cen = [x[0][c], x[1][c], x[2][c]];
+        }
+        g
+    }
+}

@@ -1,7 +1,7 @@
 # Flow around a cylinder in a channel at Re = 20: the steady benchmark 2D-1
 # of Schäfer & Turek (1996) (stage 5).
 #
-#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/cylinder_re20.toml
+#   cargo run --release -p inncraft-cli -- flow examples/cases/flow/cylinder_re20.toml
 #
 # Channel 2.2 x 0.41 m, cylinder D = 0.1 m at (0.2, 0.2) m, parabolic inflow
 # with U_max = 0.3 m/s (mean Ū = 0.2 m/s), ν = 1e-3 m²/s, so Re = Ū D / ν =

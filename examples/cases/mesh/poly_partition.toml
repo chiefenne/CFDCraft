@@ -2,7 +2,7 @@
 # perturbed), split into 4 parts with METIS, one halo layer, with the
 # point-location test of D47. Gallery example 4.
 #
-#   cfdcraft mesh examples/cases/mesh/poly_partition.toml
+#   inncraft mesh examples/cases/mesh/poly_partition.toml
 
 [mesh.generate]
 type = "poly"          # hex | tet | poly | mixed

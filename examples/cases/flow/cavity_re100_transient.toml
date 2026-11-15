@@ -1,6 +1,6 @@
 # Lid-driven cavity at Re = 100, run in time to the steady state (stage 5).
 #
-#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/cavity_re100_transient.toml
+#   cargo run --release -p inncraft-cli -- flow examples/cases/flow/cavity_re100_transient.toml
 #
 # The case of cavity_re100.toml with a [time] table: PISO with BDF2 and a
 # time step of 0.1 s (largest Courant number about 6), 500 steps to t = 50 s.

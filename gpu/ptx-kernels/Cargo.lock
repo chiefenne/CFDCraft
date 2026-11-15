@@ -3,20 +3,20 @@
 version = 4
 
 [[package]]
-name = "cfdcraft-core"
+name = "inncraft-core"
 version = "0.4.0"
 
 [[package]]
-name = "cfdcraft-kernels"
+name = "inncraft-kernels"
 version = "0.4.0"
 dependencies = [
- "cfdcraft-core",
+ "inncraft-core",
 ]
 
 [[package]]
-name = "cfdcraft-ptx-kernels"
+name = "inncraft-ptx-kernels"
 version = "0.4.0"
 dependencies = [
- "cfdcraft-core",
- "cfdcraft-kernels",
+ "inncraft-core",
+ "inncraft-kernels",
 ]

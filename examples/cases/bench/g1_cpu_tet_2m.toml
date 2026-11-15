@@ -2,7 +2,7 @@
 # tetrahedra (each hexahedron of a 70^3 grid split into six), 4 faces per
 # cell: the other end of the faces-per-cell range from the polyhedra.
 #
-#   cfdcraft bench g1 examples/cases/bench/g1_cpu_tet_2m.toml
+#   inncraft bench g1 examples/cases/bench/g1_cpu_tet_2m.toml
 
 [mesh]
 type = "tet"

@@ -91,7 +91,7 @@ stops with a message.
 
 ### Inside the outer iterations
 
-`cfdcraft scalar` uses the same solver with `[solver] linear_solver = "cg"`
+`inncraft scalar` uses the same solver with `[solver] linear_solver = "cg"`
 and `preconditioner = "amg"`. On the Poisson manufactured solution with the
 non-orthogonal correction (case `poisson_amg_poly_box`) the outer
 deferred-correction iterations, the solution and the observed order
@@ -160,7 +160,7 @@ the classical CG; it stays robust when the preconditioner is symmetric only
 up to the float32 rounding. Four dot products per iteration, all in the
 fixed block order of stage 2, so CPU and GPU give the same scalars.
 
-**Kernels.** The cycle has eight kernel bodies in `cfdcraft-kernels::amg`
+**Kernels.** The cycle has eight kernel bodies in `inncraft-kernels::amg`
 (smoother step, first smoother step, update, residual, product with a
 rectangular matrix, prolongation and correction, dense row, precision
 conversion), generic over the floating-point type and instantiated as PTX
@@ -170,10 +170,10 @@ division and flush-to-zero in f32 as in f64, so the CPU and GPU results
 are expected to be bitwise equal in both precisions.
 
 **hypre (D20).** Optional (cargo feature `hypre`): a C shim
-(`crates/cfdcraft-fv/hypre/shim.c`) calls only hypre's documented user
+(`crates/inncraft-fv/hypre/shim.c`) calls only hypre's documented user
 interface (IJ matrix and vectors, ParCSR PCG, BoomerAMG) on the CSR matrix
 that the in-house setup also starts from. hypre is licensed under MIT or
-Apache-2.0, so linking it is compatible with CFDCraft's MIT licence; no
+Apache-2.0, so linking it is compatible with Inncraft's MIT licence; no
 hypre code is copied (D21), and a build without the feature does not need
 it. `tools/build_hypre.sh` builds it from source (sequential, shared, CPU
 or CUDA) for CI, Colab and local machines; no binary is redistributed.

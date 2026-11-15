@@ -1,6 +1,6 @@
 [package]
-name = "cfdcraft-ptx-kernels"
-description = "G1 single-source route: the cfdcraft-kernels bodies as NVIDIA PTX entry points"
+name = "inncraft-ptx-kernels"
+description = "G1 single-source route: the inncraft-kernels bodies as NVIDIA PTX entry points"
 version = "0.4.0"
 edition = "2024"
 license = "MIT"
@@ -14,11 +14,11 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-cfdcraft-kernels = { path = "../../crates/cfdcraft-kernels" }
-cfdcraft-core = { path = "../../crates/cfdcraft-core" }
+inncraft-kernels = { path = "../../crates/inncraft-kernels" }
+inncraft-core = { path = "../../crates/inncraft-core" }
 
 [features]
-checked-indexing = ["cfdcraft-kernels/checked-indexing"]
+checked-indexing = ["inncraft-kernels/checked-indexing"]
 
 [profile.release]
 opt-level = 3

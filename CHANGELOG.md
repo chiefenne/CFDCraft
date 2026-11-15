@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+**Renamed from CFDCraft to Inncraft**, so that the name cannot be confused with
+other projects. Crates are now `inncraft-*`, the command is `inncraft`, the
+environment variables are `INNCRAFT_*`, and the repository is
+`chiefenne/Inncraft`. Entries below keep the names of their time.
+
 ## Summary
 
 | Version | Stage | Highlights |

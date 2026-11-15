@@ -1,4 +1,4 @@
-"""Renders a CFDCraft VTKHDF mesh file to a PNG picture for the gallery,
+"""Renders a Inncraft VTKHDF mesh file to a PNG picture for the gallery,
 with VTK (the library under ParaView), off screen.
 
     pip install vtk

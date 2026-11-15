@@ -1,14 +1,14 @@
 [workspace]
 resolver = "3"
 members = [
-    "crates/cfdcraft-core",
-    "crates/cfdcraft-kernels",
-    "crates/cfdcraft-parallel",
-    "crates/cfdcraft-mesh",
-    "crates/cfdcraft-fv",
-    "crates/cfdcraft-flow",
-    "crates/cfdcraft-bench",
-    "crates/cfdcraft-cli",
+    "crates/inncraft-core",
+    "crates/inncraft-kernels",
+    "crates/inncraft-parallel",
+    "crates/inncraft-mesh",
+    "crates/inncraft-fv",
+    "crates/inncraft-flow",
+    "crates/inncraft-bench",
+    "crates/inncraft-cli",
 ]
 # Built separately with the nightly toolchain for the NVIDIA PTX target
 # (see gpu/ptx-kernels/README.md).
@@ -19,17 +19,17 @@ version = "0.4.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT"
-repository = "https://github.com/chiefenne/CFDCraft"
+repository = "https://github.com/chiefenne/Inncraft"
 authors = ["Andreas Ennemoser"]
 
 [workspace.dependencies]
-cfdcraft-core = { path = "crates/cfdcraft-core", version = "0.4.0" }
-cfdcraft-kernels = { path = "crates/cfdcraft-kernels", version = "0.4.0" }
-cfdcraft-parallel = { path = "crates/cfdcraft-parallel", version = "0.4.0" }
-cfdcraft-mesh = { path = "crates/cfdcraft-mesh", version = "0.4.0", default-features = false }
-cfdcraft-fv = { path = "crates/cfdcraft-fv", version = "0.4.0", default-features = false }
-cfdcraft-flow = { path = "crates/cfdcraft-flow", version = "0.4.0", default-features = false }
-cfdcraft-bench = { path = "crates/cfdcraft-bench", version = "0.4.0" }
+inncraft-core = { path = "crates/inncraft-core", version = "0.4.0" }
+inncraft-kernels = { path = "crates/inncraft-kernels", version = "0.4.0" }
+inncraft-parallel = { path = "crates/inncraft-parallel", version = "0.4.0" }
+inncraft-mesh = { path = "crates/inncraft-mesh", version = "0.4.0", default-features = false }
+inncraft-fv = { path = "crates/inncraft-fv", version = "0.4.0", default-features = false }
+inncraft-flow = { path = "crates/inncraft-flow", version = "0.4.0", default-features = false }
+inncraft-bench = { path = "crates/inncraft-bench", version = "0.4.0" }
 rayon = "1.12"
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }

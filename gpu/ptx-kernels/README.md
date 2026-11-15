@@ -1,14 +1,14 @@
 # Single-source GPU kernels
 
-The kernel bodies of [`cfdcraft-kernels`](../../crates/cfdcraft-kernels),
+The kernel bodies of [`inncraft-kernels`](../../crates/inncraft-kernels),
 wrapped as PTX entry points for NVIDIA GPUs. The same bodies run in the CPU
 backends. Entry points: `g1_*` (gate G1, stage 0; `src/lib.rs`) and `fv_*`,
 `blas_*` (the scalar operators and Krylov vector operations of stage 2,
-`src/fv.rs`, launched by `crates/cfdcraft-fv/src/backend/cuda.rs`).
+`src/fv.rs`, launched by `crates/inncraft-fv/src/backend/cuda.rs`).
 
 For G1, this crate is the "single-source Rust" half of
 gate G1 (requirements D8, D11); the other half is the hand-written CUDA C
-reference in [`crates/cfdcraft-bench/kernels/g1_reference.cu`](../../crates/cfdcraft-bench/kernels/g1_reference.cu).
+reference in [`crates/inncraft-bench/kernels/g1_reference.cu`](../../crates/inncraft-bench/kernels/g1_reference.cu).
 
 ```
 gpu/ptx-kernels/build.sh          # sm_70 PTX, runs on Volta and every newer GPU

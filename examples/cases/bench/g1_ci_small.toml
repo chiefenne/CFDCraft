@@ -2,7 +2,7 @@
 # all kernels. Checks that the harness runs and that every backend gives the
 # reference results bitwise; the timings of a shared CI runner mean little.
 #
-#   cfdcraft bench g1 examples/cases/bench/g1_ci_small.toml
+#   inncraft bench g1 examples/cases/bench/g1_ci_small.toml
 
 [mesh]
 cells = 200_000        # near-cubic periodic box, 58 x 58 x 59

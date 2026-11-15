@@ -2,7 +2,7 @@
 # (hexahedra, prisms, tetrahedra and transitional polyhedra):
 # order-of-accuracy sweep over three nested refinements (stage 2).
 #
-#   cargo run --release -p cfdcraft-cli -- scalar examples/cases/scalar/mms_mixed_box.toml
+#   cargo run --release -p inncraft-cli -- scalar examples/cases/scalar/mms_mixed_box.toml
 #
 # φ = 1 + sin(πx + 0.5) cos(πy + 0.3) cos(πz/2 + 0.2) on the unit box,
 # u = (1, 0.6, 0.3) m/s, ρ = 1 kg/m³, Γ = 0.2 kg/(m s) (Péclet number about

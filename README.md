@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo/cfdcraft.svg" alt="CFDCraft logo: a peregrine falcon" width="180">
+  <img src="assets/logo/inncraft.svg" alt="Inncraft logo: a peregrine falcon" width="180">
 </p>
 
-<h1 align="center">CFDCraft</h1>
+<h1 align="center">Inncraft</h1>
 
 <p align="center">
   An open-source, industry-strength, general purpose CFD solver, written in Rust and built for modern GPUs.
@@ -28,14 +28,14 @@
 > cylinder benchmark of Schäfer & Turek, [stage 5](docs/verification/stage5.md));
 > the GPU flow loop follows.
 
-[![CI](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/CFDCraft/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/chiefenne/CFDCraft)](https://github.com/chiefenne/CFDCraft/releases)
+[![CI](https://github.com/chiefenne/Inncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Inncraft/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/chiefenne/Inncraft)](https://github.com/chiefenne/Inncraft/releases)
 [![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](Cargo.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ## Goal
 
-CFDCraft aims to be a general purpose computational fluid dynamics solver of
+Inncraft aims to be a general purpose computational fluid dynamics solver of
 industry strength: the class of tool that engineers rely on every day for
 fluid flow, heat and mass transfer, species transport and reacting flows, on real
 geometries and at real problem sizes. It is free and open source under the MIT
@@ -69,14 +69,14 @@ from source on the first build; recipe 1 has the details).
 
 ```
 cargo test --workspace
-cargo build --release -p cfdcraft-cli
-target/release/cfdcraft info
-target/release/cfdcraft bench g1 examples/cases/bench/g1_ci_small.toml
-target/release/cfdcraft mesh examples/cases/mesh/poly_partition.toml
-target/release/cfdcraft scalar examples/cases/scalar/mms_poly_box.toml
-target/release/cfdcraft poisson examples/cases/poisson/poisson_poly_box.toml
-target/release/cfdcraft flow examples/cases/flow/cavity_re100.toml
-target/release/cfdcraft flow examples/cases/flow/taylor_green_bdf2.toml
+cargo build --release -p inncraft-cli
+target/release/inncraft info
+target/release/inncraft bench g1 examples/cases/bench/g1_ci_small.toml
+target/release/inncraft mesh examples/cases/mesh/poly_partition.toml
+target/release/inncraft scalar examples/cases/scalar/mms_poly_box.toml
+target/release/inncraft poisson examples/cases/poisson/poisson_poly_box.toml
+target/release/inncraft flow examples/cases/flow/cavity_re100.toml
+target/release/inncraft flow examples/cases/flow/taylor_green_bdf2.toml
 ```
 
 ## Documentation
@@ -93,29 +93,40 @@ The [changelog](CHANGELOG.md) lists every release.
 
 | Crate | Content |
 |---|---|
-| `cfdcraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
-| `cfdcraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
-| `cfdcraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
-| `cfdcraft-mesh` | polyhedral mesh, geometry, quality report, Gmsh reader, test mesher (also the cylinder benchmark mesh), partitioning and halo, VTKHDF output, point location |
-| `cfdcraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU and CUDA backends |
-| `cfdcraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the Rhie–Chow interpolation, boundary conditions and their check, restart and control files, probes and force coefficients, the `cfdcraft flow` case, exact solutions, reference and benchmark data |
-| `cfdcraft-bench` | gate G1: kernel benchmark, CPU and CUDA backends |
-| `cfdcraft-cli` | the `cfdcraft` command |
+| `inncraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
+| `inncraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
+| `inncraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
+| `inncraft-mesh` | polyhedral mesh, geometry, quality report, Gmsh reader, test mesher (also the cylinder benchmark mesh), partitioning and halo, VTKHDF output, point location |
+| `inncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU and CUDA backends |
+| `inncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the Rhie–Chow interpolation, boundary conditions and their check, restart and control files, probes and force coefficients, the `inncraft flow` case, exact solutions, reference and benchmark data |
+| `inncraft-bench` | gate G1: kernel benchmark, CPU and CUDA backends |
+| `inncraft-cli` | the `inncraft` command |
 | `gpu/ptx-kernels` | the kernels compiled to NVIDIA PTX (nightly toolchain) |
 
 ## How it is built
 
-CFDCraft follows the paradigm of the
+Inncraft follows the paradigm of the
 [ArtCraft Crafting Apps](https://getartcraft.com/apps/craft-anything): open
 source software in Rust, one engine with thin front ends on top, and
 development carried out together with a coding agent in a loop of exploring,
 building, checking and refining. The falcon joins the animals of that family.
 
 What the agent builds is decided by a person. The development is driven by the
-expert knowledge of the maintainer, Andreas Ennemoser, from 40 years in
-computational fluid dynamics: the requirements, the choice of methods, the
-test cases and the judgement of every result come from that experience. The
-agent writes and checks code; it does not decide what a CFD solver has to be.
+expert knowledge of the maintainer, from 40 years in computational fluid
+dynamics: the requirements, the choice of methods, the test cases and the
+judgement of every result come from that experience. The agent writes and
+checks code; it does not decide what a CFD solver has to be.
+
+### Why Inncraft
+
+The maintainer comes from Innsbruck, the city "at the bridge over the Inn".
+The Inn is an Alpine river that runs from the Engadin through Tyrol and Bavaria
+to the Danube, and it is a lesson in fluid flow that anyone who grows up beside
+it can watch every day: fast, turbulent water over a rough bed, eddies and
+recirculation behind bridge piers, glacier silt carried in suspension, and
+flood waves after heavy rain or snowmelt. The name carries that river into
+the craft family of the
+[ArtCraft Crafting Apps](https://getartcraft.com/apps/craft-anything).
 
 Three rules follow from this:
 

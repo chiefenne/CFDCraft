@@ -1,6 +1,6 @@
 # Taylor–Green vortex, time order of BDF2 with plain PISO (stage 5).
 #
-#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/taylor_green_bdf2.toml
+#   cargo run --release -p inncraft-cli -- flow examples/cases/flow/taylor_green_bdf2.toml
 #
 # The decaying vortex u = −U cos kx sin ky F, v = U sin kx cos ky F,
 # F = exp(−2νk²t), on the unit square (one period) with the exact velocity on

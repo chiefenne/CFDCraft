@@ -3,7 +3,7 @@
 # mesh.cells to what the GPU holds (each million cells needs about 0.35 GB on
 # the GPU and 0.4 GB on the host).
 #
-#   target/release/cfdcraft bench g1 examples/cases/bench/g1_gpu_50m.toml
+#   target/release/inncraft bench g1 examples/cases/bench/g1_gpu_50m.toml
 
 [mesh]
 cells = 50_000_000

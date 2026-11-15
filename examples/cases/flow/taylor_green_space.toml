@@ -1,6 +1,6 @@
 # Taylor–Green vortex, space order of the transient solver (stage 5).
 #
-#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/taylor_green_space.toml
+#   cargo run --release -p inncraft-cli -- flow examples/cases/flow/taylor_green_space.toml
 #
 # The vortex of taylor_green_bdf2.toml on four nested hex meshes (16 x 16 to
 # 128 x 128) with BDF2 and Δt = 0.0025 s (time error about 1e-6, far below

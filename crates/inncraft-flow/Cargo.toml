@@ -1,0 +1,29 @@
+[package]
+name = "inncraft-flow"
+description = "Inncraft incompressible flow solver: SIMPLEC with Rhie–Chow interpolation on polyhedral meshes, boundary conditions with a combination check, the flow case file, log and CSV output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["hdf5"]
+# VTKHDF output of the fields (HDF5 built from source).
+hdf5 = ["inncraft-fv/hdf5", "inncraft-mesh/hdf5", "dep:hdf5-metno"]
+
+[dependencies]
+inncraft-core.workspace = true
+inncraft-kernels.workspace = true
+inncraft-mesh.workspace = true
+inncraft-fv.workspace = true
+rayon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+anyhow = "1"
+hdf5-metno = { workspace = true, optional = true }
+
+[lints]
+workspace = true

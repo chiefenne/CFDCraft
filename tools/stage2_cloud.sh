@@ -36,13 +36,13 @@ echo "== Single-source kernels -> PTX for sm_$cc"
 gpu/ptx-kernels/build.sh "sm_$cc"
 
 echo "== CLI with CUDA"
-cargo build --release --locked -p cfdcraft-cli --features cuda
-target/release/cfdcraft info
+cargo build --release --locked -p inncraft-cli --features cuda
+target/release/inncraft info
 
 status=0
 run() {
-    echo "== cfdcraft scalar $*"
-    target/release/cfdcraft scalar "$@" || status=1
+    echo "== inncraft scalar $*"
+    target/release/inncraft scalar "$@" || status=1
 }
 run examples/cases/scalar/mms_poly_gpu.toml --out output/stage2_gpu_mms
 run examples/cases/scalar/oblique_step_2d.toml --backends cpu,cuda --out output/stage2_gpu_oblique

@@ -1,0 +1,39 @@
+[package]
+name = "inncraft-cli"
+description = "Inncraft command line"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "inncraft"
+path = "src/main.rs"
+
+[features]
+default = ["hdf5", "metis"]
+# VTKHDF output (HDF5 built from source; needs CMake and a C compiler).
+hdf5 = ["inncraft-mesh/hdf5", "inncraft-fv/hdf5", "inncraft-flow/hdf5"]
+# METIS partitioning (built from source).
+metis = ["inncraft-mesh/metis"]
+cuda = ["inncraft-bench/cuda", "inncraft-fv/cuda"]
+# hypre as the reference solver of `inncraft poisson` (needs HYPRE_DIR).
+hypre = ["inncraft-fv/hypre"]
+mpi = ["inncraft-parallel/mpi"]
+checked-indexing = ["inncraft-bench/checked-indexing"]
+
+[dependencies]
+inncraft-core.workspace = true
+inncraft-bench.workspace = true
+inncraft-mesh.workspace = true
+inncraft-fv.workspace = true
+inncraft-flow.workspace = true
+inncraft-parallel.workspace = true
+clap.workspace = true
+anyhow = "1"
+rayon.workspace = true
+
+[lints]
+workspace = true

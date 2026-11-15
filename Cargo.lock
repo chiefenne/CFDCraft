@@ -135,104 +135,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cfdcraft-bench"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "cfdcraft-core",
- "cfdcraft-kernels",
- "cfdcraft-mesh",
- "cudarc",
- "rayon",
- "serde",
- "serde_json",
- "toml",
-]
-
-[[package]]
-name = "cfdcraft-cli"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "cfdcraft-bench",
- "cfdcraft-core",
- "cfdcraft-flow",
- "cfdcraft-fv",
- "cfdcraft-mesh",
- "cfdcraft-parallel",
- "clap",
- "rayon",
-]
-
-[[package]]
-name = "cfdcraft-core"
-version = "0.4.0"
-
-[[package]]
-name = "cfdcraft-flow"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "cfdcraft-core",
- "cfdcraft-fv",
- "cfdcraft-kernels",
- "cfdcraft-mesh",
- "hdf5-metno",
- "rayon",
- "serde",
- "serde_json",
- "toml",
-]
-
-[[package]]
-name = "cfdcraft-fv"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "cc",
- "cfdcraft-core",
- "cfdcraft-kernels",
- "cfdcraft-mesh",
- "cudarc",
- "rayon",
- "serde",
- "serde_json",
- "toml",
-]
-
-[[package]]
-name = "cfdcraft-kernels"
-version = "0.4.0"
-dependencies = [
- "cfdcraft-core",
-]
-
-[[package]]
-name = "cfdcraft-mesh"
-version = "0.4.0"
-dependencies = [
- "anyhow",
- "cfdcraft-core",
- "cfdcraft-kernels",
- "cfdcraft-parallel",
- "hdf5-metno",
- "metis",
- "rayon",
- "serde",
- "serde_json",
- "toml",
-]
-
-[[package]]
-name = "cfdcraft-parallel"
-version = "0.4.0"
-dependencies = [
- "cfdcraft-core",
- "mpi",
- "rayon",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -474,6 +376,104 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown",
+]
+
+[[package]]
+name = "inncraft-bench"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "cudarc",
+ "inncraft-core",
+ "inncraft-kernels",
+ "inncraft-mesh",
+ "rayon",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "inncraft-cli"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "inncraft-bench",
+ "inncraft-core",
+ "inncraft-flow",
+ "inncraft-fv",
+ "inncraft-mesh",
+ "inncraft-parallel",
+ "rayon",
+]
+
+[[package]]
+name = "inncraft-core"
+version = "0.4.0"
+
+[[package]]
+name = "inncraft-flow"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "hdf5-metno",
+ "inncraft-core",
+ "inncraft-fv",
+ "inncraft-kernels",
+ "inncraft-mesh",
+ "rayon",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "inncraft-fv"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "cc",
+ "cudarc",
+ "inncraft-core",
+ "inncraft-kernels",
+ "inncraft-mesh",
+ "rayon",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "inncraft-kernels"
+version = "0.4.0"
+dependencies = [
+ "inncraft-core",
+]
+
+[[package]]
+name = "inncraft-mesh"
+version = "0.4.0"
+dependencies = [
+ "anyhow",
+ "hdf5-metno",
+ "inncraft-core",
+ "inncraft-kernels",
+ "inncraft-parallel",
+ "metis",
+ "rayon",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
+name = "inncraft-parallel"
+version = "0.4.0"
+dependencies = [
+ "inncraft-core",
+ "mpi",
+ "rayon",
 ]
 
 [[package]]

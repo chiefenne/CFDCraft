@@ -1,0 +1,77 @@
+//! Compute kernels of Inncraft, written once for every target.
+//!
+//! - [`face`], [`spmv`]: the kernels of gate G1 (stage 0);
+//! - [`fv`]: the finite-volume operators on a scalar (stage 2): gradient,
+//!   limiter, face flux coefficients, row assembly;
+//! - [`flow`]: the incompressible flow solver (stage 4): momentum faces and
+//!   rows, Rhie–Chow mass flux, pressure correction, boundary values;
+//! - [`blas`]: vector operations and reproducible block dot products of the
+//!   Krylov solvers;
+//! - [`amg`]: the smoothers, transfers and coarse solve of the algebraic
+//!   multigrid V-cycle (stage 3), generic over float32 and float64.
+//!
+//! Each kernel is a *body*: a function that computes the result for one
+//! index (one face, one cell, one matrix row). A backend supplies the loop:
+//! a sequential or multi-threaded loop on the CPU (`inncraft-bench`), or one
+//! GPU thread per index (`gpu/ptx-kernels`, compiled for
+//! `nvptx64-nvidia-cuda`). This is the single-source route measured by gate
+//! G1 (requirements D8, D11) against a hand-written CUDA reference.
+//!
+//! Every body is a gather: it reads its inputs and writes one output, with no
+//! atomics and a fixed summation order, so results are bitwise reproducible
+//! from run to run (D31).
+//!
+//! # Safety
+//!
+//! Inside the bodies, loads are unchecked unless the `checked-indexing`
+//! feature is on. The connectivity and matrix structures are validated once
+//! on the host when they are built (`inncraft-bench`: `FaceMesh::validate`,
+//! `Csr::validate`, `SellCs::validate`); the bodies are `unsafe fn` and their
+//! callers guarantee that every index lies inside its array.
+#![no_std]
+
+pub mod amg;
+pub mod blas;
+pub mod face;
+pub mod flow;
+pub mod fv;
+pub mod spmv;
+
+use inncraft_core::index::FLAG_BIT;
+
+/// Loads `s[i]`; unchecked unless the `checked-indexing` feature is on.
+///
+/// # Safety
+/// `i < s.len()`.
+#[inline(always)]
+pub(crate) unsafe fn ld<T: Copy>(s: &[T], i: usize) -> T {
+    #[cfg(feature = "checked-indexing")]
+    {
+        s[i]
+    }
+    #[cfg(not(feature = "checked-indexing"))]
+    {
+        debug_assert!(i < s.len());
+        // SAFETY: guaranteed by the caller.
+        unsafe { *s.get_unchecked(i) }
+    }
+}
+
+/// Splits a packed cell-to-face entry into the face index and the
+/// orientation: `true` when the cell is the neighbour of the face, so the
+/// face flux leaves the cell with a negative sign.
+#[inline(always)]
+pub fn unpack_face(entry: u32) -> (usize, bool) {
+    ((entry & !FLAG_BIT) as usize, entry & FLAG_BIT != 0)
+}
+
+/// Packs a face index and its orientation seen from a cell.
+#[inline(always)]
+pub fn pack_face(face: u32, cell_is_neighbour: bool) -> u32 {
+    debug_assert!(face & FLAG_BIT == 0);
+    if cell_is_neighbour {
+        face | FLAG_BIT
+    } else {
+        face
+    }
+}
