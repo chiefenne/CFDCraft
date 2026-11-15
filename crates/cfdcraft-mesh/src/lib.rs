@@ -7,6 +7,7 @@
 //!   centroids;
 //! - [`quality`]: the mesh quality report;
 //! - [`generate`]: the built-in generator for canonical test meshes (D34);
+//! - [`cylinder`]: the built-in channel with a cylinder (Schäfer & Turek);
 //! - [`gmsh`]: the Gmsh `.msh` 4.1 reader (D33);
 //! - [`renumber`]: reverse Cuthill–McKee renumbering of the cells;
 //! - [`locate`]: point location and cell-to-cell particle tracking (D47);
@@ -16,6 +17,7 @@
 
 pub mod builder;
 pub mod case;
+pub mod cylinder;
 pub mod decompose;
 pub mod generate;
 pub mod geometry;

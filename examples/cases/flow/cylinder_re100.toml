@@ -1,0 +1,65 @@
+# Flow around a cylinder in a channel at Re = 100: the periodic benchmark
+# 2D-2 of Schäfer & Turek (1996) (stage 5).
+#
+#   cargo run --release -p cfdcraft-cli -- flow examples/cases/flow/cylinder_re100.toml
+#
+# The geometry of cylinder_re20.toml with U_max = 1.5 m/s (Ū = 1 m/s, Re =
+# 100). Transient PISO with variable-step BDF2, the time step adapted to a
+# largest Courant number of 0.8, from rest to t = 8 s; the vortex street is
+# periodic from about t = 4 s. Evaluated from t = 5 s: the largest drag and
+# lift coefficients C_D,max and C_L,max, the Strouhal number St = f D / Ū
+# from the lift period and the pressure difference Δp at the end of the
+# period of the largest lift. The run fails if a value lies further from its
+# reference range than 2.5 % of the range midpoint: on this coarse mesh
+# (refine 0, 6144 cells, about 8500 steps) C_D,max, St and Δp are inside
+# their ranges and C_L,max is 1.9 % low (docs/verification/stage5.md).
+
+[mesh.cylinder]
+refine = 0
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[flow]
+convection = true
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 1.5
+profile_axes = ["y"]
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.walls]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+log_every = 500
+
+[time]
+scheme = "bdf2"
+time_step = 0.0005
+end_time = 8.0
+adaptive = true
+max_cfl = 0.8
+
+[verification]
+benchmark = "schafer-turek-2d2"
+benchmark_tolerance = 0.025
+evaluation_start = 5.0
+
+[output]
+vtkhdf = false
+fields_every = 0
+wall_csv = false

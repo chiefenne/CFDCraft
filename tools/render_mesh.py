@@ -10,6 +10,8 @@ with VTK (the library under ParaView), off screen.
 --half  remove the cells above the mid plane z = zc (use with --top)
 --crop X0 X1 Y0 Y1   keep only the cells inside this x-y window
 --no-edges  do not draw the cell edges (fine meshes, flow fields)
+--zoom F    zoom factor of the camera (default 1.25 with --top, else 1.1;
+            long thin domains such as a channel need more)
 """
 import argparse
 import vtk
@@ -27,6 +29,7 @@ ap.add_argument("--size", default="900x700")
 ap.add_argument("--range", nargs=2, type=float, default=None)
 ap.add_argument("--categorical", action="store_true")
 ap.add_argument("--no-edges", action="store_true")
+ap.add_argument("--zoom", type=float, default=None)
 a = ap.parse_args()
 
 r = vtk.vtkHDFReader()
@@ -141,7 +144,7 @@ else:
     cam.SetViewUp(0, 0, 1)
 cam.SetFocalPoint(0, 0, 0)
 ren.ResetCamera()
-cam.Zoom(1.25 if a.top else 1.1)
+cam.Zoom(a.zoom if a.zoom else (1.25 if a.top else 1.1))
 w, h = (int(x) for x in a.size.split("x"))
 win = vtk.vtkRenderWindow()
 win.SetOffScreenRendering(1)
