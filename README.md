@@ -133,16 +133,11 @@ of the flow around it.
 
 ## Why the name
 
-**Foehn** (German *Föhn*) is pronounced [føːn]
-[🔊](https://github.com/chiefenne/Foehncraft/raw/main/assets/pronunciation/foehn.mp3) in German, a long "ö" as in
-French *feu*, followed by "n"; English speakers say /fɜːn/ ("fern") or /feɪn/. The recordings are by the
-maintainer, a native speaker from Innsbruck.
-Foehncraft is therefore [ˈføːnkraft]
-[🔊](https://github.com/chiefenne/Foehncraft/raw/main/assets/pronunciation/foehncraft.mp3).
+**Foehn** (German *Föhn*) is pronounced [føːn], with a long "ö" as in French *feu*, followed by "n". English speakers say /fɜːn/ ("fern") or /feɪn/. Foehncraft is therefore [ˈføːnkraft].
 
 The foehn is the warm, dry wind that falls down the lee side of a mountain
-range. Innsbruck, the home of this project, is one of the best-known foehn
-places in the world. With a southerly flow, air crosses the main Alpine ridge
+range. Innsbruck, where the maintainer grew up and where the name comes from,
+is one of the best-known foehn places in the world. With a southerly flow, air crosses the main Alpine ridge
 at the Brenner Pass, the lowest gap at about 1370 m, runs down the Wipp valley
 past Mount Patscherkofel and breaks into the Inn valley at Innsbruck, often in
 strong gusts. Sinking without cloud, the air warms by about 1 °C per 100 m of
