@@ -4,8 +4,8 @@
 # Checks the CUDA path end to end (driver, NVRTC, transfers) and that the
 # GPU results equal the CPU results bitwise.
 #
-#   cargo build --release -p ennecraft-cli --features cuda
-#   target/release/ennecraft bench g1 examples/cases/bench/g1_gpu_reference_4m.toml
+#   cargo build --release -p foehncraft-cli --features cuda
+#   target/release/foehn bench g1 examples/cases/bench/g1_gpu_reference_4m.toml
 #
 # Needs about 1.4 GB of GPU memory and 2 GB of host memory.
 

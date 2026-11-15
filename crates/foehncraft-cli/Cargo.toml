@@ -1,0 +1,39 @@
+[package]
+name = "foehncraft-cli"
+description = "Foehncraft command line"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "foehn"
+path = "src/main.rs"
+
+[features]
+default = ["hdf5", "metis"]
+# VTKHDF output (HDF5 built from source; needs CMake and a C compiler).
+hdf5 = ["foehncraft-mesh/hdf5", "foehncraft-fv/hdf5", "foehncraft-flow/hdf5"]
+# METIS partitioning (built from source).
+metis = ["foehncraft-mesh/metis"]
+cuda = ["foehncraft-bench/cuda", "foehncraft-fv/cuda"]
+# hypre as the reference solver of `foehn poisson` (needs HYPRE_DIR).
+hypre = ["foehncraft-fv/hypre"]
+mpi = ["foehncraft-parallel/mpi"]
+checked-indexing = ["foehncraft-bench/checked-indexing"]
+
+[dependencies]
+foehncraft-core.workspace = true
+foehncraft-bench.workspace = true
+foehncraft-mesh.workspace = true
+foehncraft-fv.workspace = true
+foehncraft-flow.workspace = true
+foehncraft-parallel.workspace = true
+clap.workspace = true
+anyhow = "1"
+rayon.workspace = true
+
+[lints]
+workspace = true

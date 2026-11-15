@@ -36,12 +36,12 @@ echo "== Single-source kernels -> PTX for sm_$cc"
 gpu/ptx-kernels/build.sh "sm_$cc"
 
 echo "== CLI with CUDA"
-cargo build --release --locked -p ennecraft-cli --features cuda
-target/release/ennecraft info
+cargo build --release --locked -p foehncraft-cli --features cuda
+target/release/foehn info
 
 for run in 1 2; do
     echo "== G1 run $run of 2: $case_file"
-    target/release/ennecraft bench g1 "$case_file" --out "output/g1_cloud_run$run"
+    target/release/foehn bench g1 "$case_file" --out "output/g1_cloud_run$run"
 done
 
 echo

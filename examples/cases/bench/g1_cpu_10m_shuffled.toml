@@ -2,7 +2,7 @@
 # Real unstructured meshes after renumbering lie between this case and
 # g1_cpu_10m.toml.
 #
-#   ennecraft bench g1 examples/cases/bench/g1_cpu_10m_shuffled.toml
+#   foehn bench g1 examples/cases/bench/g1_cpu_10m_shuffled.toml
 
 [mesh]
 cells = 10_000_000

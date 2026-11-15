@@ -7,8 +7,8 @@
 #
 #   tools/build_hypre.sh target/hypre-cuda 75
 #   gpu/ptx-kernels/build.sh sm_75
-#   HYPRE_DIR=target/hypre-cuda cargo build --release -p ennecraft-cli --features cuda,hypre
-#   target/release/ennecraft poisson examples/cases/poisson/poisson_poly_gpu.toml
+#   HYPRE_DIR=target/hypre-cuda cargo build --release -p foehncraft-cli --features cuda,hypre
+#   target/release/foehn poisson examples/cases/poisson/poisson_poly_gpu.toml
 #
 # or on Google Colab: tools/stage3_colab.ipynb. Needs a GPU of compute
 # capability 7.0 or newer and about 2 GB of GPU memory. The run fails if a

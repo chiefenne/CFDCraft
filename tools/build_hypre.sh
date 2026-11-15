@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds hypre (https://github.com/hypre-space/hypre, MIT or Apache-2.0),
-# the optional reference solver of `ennecraft poisson` (D20), from source:
+# the optional reference solver of `foehn poisson` (D20), from source:
 # sequential (no MPI), shared library, release.
 #
 #   tools/build_hypre.sh                 # CPU build into target/hypre
@@ -8,9 +8,9 @@
 #   tools/build_hypre.sh PREFIX 75       # CUDA build for sm_75 (Tesla T4)
 #
 # Needs git, CMake 3.21 or newer and a C compiler (and the CUDA toolkit for
-# a GPU build). Then build Ennecraft with
+# a GPU build). Then build Foehncraft with
 #
-#   HYPRE_DIR=PREFIX cargo build --release -p ennecraft-cli --features hypre
+#   HYPRE_DIR=PREFIX cargo build --release -p foehncraft-cli --features hypre
 #
 # HYPRE_VERSION selects the release tag (default v3.2.1).
 set -euo pipefail

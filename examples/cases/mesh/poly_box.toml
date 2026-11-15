@@ -2,7 +2,7 @@
 # y = 1 and perturbed nodes: one of the four mesh types of the built-in
 # generator (D34). Gallery example 3.
 #
-#   ennecraft mesh examples/cases/mesh/poly_box.toml
+#   foehn mesh examples/cases/mesh/poly_box.toml
 
 [mesh.generate]
 type = "poly"

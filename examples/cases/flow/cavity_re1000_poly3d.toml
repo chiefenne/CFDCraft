@@ -1,6 +1,6 @@
 # Lid-driven cavity at Re = 1000 on three-dimensional polyhedra (stage 4).
 #
-#   cargo run --release -p ennecraft-cli -- flow examples/cases/flow/cavity_re1000_poly3d.toml
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cavity_re1000_poly3d.toml
 #
 # Unit square cavity, the lid (ymax) slides at 1 m/s, the other walls are at
 # rest; ρ = 1 kg/m³, μ = 0.001 Pa s, so Re = ρ U L / μ = 1000. A slab of

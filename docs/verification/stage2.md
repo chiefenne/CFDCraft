@@ -45,8 +45,8 @@ volume-weighted L2 norm of φ − φ_exact at the cell centroids; h = (V/N)^(1/3
 | mixed 2D | 384, 1536, 6144 | 1.508e-4 | 1.82, 1.97 | 17 | 7662 |
 
 Machine: Intel Xeon @ 2.10 GHz, 4 virtual cores (shared cloud machine).
-Reproduce with `cargo run --release -p ennecraft-fv --example sweep_table`;
-one level finer with `cargo test --release -p ennecraft-fv -- --ignored`.
+Reproduce with `cargo run --release -p foehncraft-fv --example sweep_table`;
+one level finer with `cargo test --release -p foehncraft-fv -- --ignored`.
 
 **Why Γ = 0.2.** Convection alone (Γ → 0) and diffusion alone (u = 0) each
 converge with order 2.0 on the uniform hexahedral mesh. Combined at

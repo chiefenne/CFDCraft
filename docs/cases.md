@@ -18,9 +18,9 @@ How to read the **Mesh** column:
 
 Stage 1: build or read a mesh, check it, renumber and partition it, write
 the quality report (`mesh_report.md`, `mesh_report.json`) and `mesh.vtkhdf`
-for ParaView. Run with `ennecraft mesh FILE`; a Gmsh file can be given
-directly instead of a case file (`ennecraft mesh pipe.msh`), command-line
-options override the file (`ennecraft mesh --help`).
+for ParaView. Run with `foehn mesh FILE`; a Gmsh file can be given
+directly instead of a case file (`foehn mesh pipe.msh`), command-line
+options override the file (`foehn mesh --help`).
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
@@ -37,8 +37,8 @@ options override the file (`ennecraft mesh --help`).
 
 Stage 2: steady convection–diffusion of a scalar, ∇·(ρuφ) − ∇·(Γ∇φ) = s,
 with the operators of stage 2 ([explanation](verification/stage2.md)). Run
-with `ennecraft scalar FILE`; command-line options override the file
-(`ennecraft scalar --help`). Each run writes `scalar.md` and `scalar.json`
+with `foehn scalar FILE`; command-line options override the file
+(`foehn scalar --help`). Each run writes `scalar.md` and `scalar.json`
 (per solve: iterations, residual, error norms, φ range, time per phase, ns
 per cell and iteration, comparison with the first backend), `fields.vtkhdf`
 (φ, limiter, error), `convergence.svg` for a sweep and `profile.svg` for a
@@ -86,7 +86,7 @@ A boundary condition is required for every patch.
 | `solver.amg` | defaults | multigrid settings, the keys of [`linear.amg`](#poisson-case-file-keys) |
 | `run.backends` | `["cpu"]` | `cpu`, `cpu-serial`, `cuda`; later backends are compared with the first |
 | `run.threads` | all cores | CPU threads |
-| `run.rust_ptx` | `target/nvptx64-nvidia-cuda/release/ennecraft_ptx_kernels.ptx` | PTX module of the GPU backend |
+| `run.rust_ptx` | `target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx` | PTX module of the GPU backend |
 | `verification.levels` | none | refinement levels of `[mesh.generate]`; two or more: order-of-accuracy sweep |
 | `verification.expected_order` | none | `[lo, hi]`: fail if the order on the finest pair is outside |
 | `verification.bounds` | none | `[lo, hi]`: fail if φ leaves this range (by more than 1e-6) |
@@ -98,8 +98,8 @@ A boundary condition is required for every patch.
 ## Poisson studies (`examples/cases/poisson/`)
 
 Stage 3: the pressure solver on the Poisson equation −∇·(Γ∇φ) = s
-([explanation](verification/stage3.md)). Run with `ennecraft poisson FILE`;
-command-line options override the file (`ennecraft poisson --help`). Each
+([explanation](verification/stage3.md)). Run with `foehn poisson FILE`;
+command-line options override the file (`foehn poisson --help`). Each
 level is assembled once and solved from φ = 0 by every solver of
 `study.solvers` on every backend of `study.backends` (hypre once per
 level, on its own device). Each run writes `poisson.md` and `poisson.json`
@@ -145,7 +145,7 @@ must be zero).
 | `study.solvers` | `["amg", "jacobi"]` | `amg` (`linear.amg`), `amg-double`, `amg-plain`, `jacobi`, `hypre` (feature `hypre`) |
 | `study.backends` | `["cpu"]` | `cpu`, `cpu-serial`, `cuda` for the in-house solvers |
 | `study.threads` | all cores | CPU threads |
-| `study.rust_ptx` | `target/nvptx64-nvidia-cuda/release/ennecraft_ptx_kernels.ptx` | PTX module of the GPU backend |
+| `study.rust_ptx` | `target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx` | PTX module of the GPU backend |
 | `study.max_iteration_ratio` | none | fail if iterations on the finest / coarsest level exceed it |
 | `study.check_iterations` | `["amg", "amg-double"]` | solvers whose iteration growth is checked |
 | `study.max_difference` | 1e-6 | fail if max \|φ − φ_ref\| / max \|φ_ref\| exceeds it (reference: hypre if listed, else the first solve) |
@@ -168,9 +168,9 @@ Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](verification/stage4.md)). Stage 5: transient
 flow with PISO, BDF2 or Crank–Nicolson, when the case has a `[time]` table
 ([explanation](verification/stage5.md)). Run with
-`ennecraft flow FILE`; `ennecraft flow FILE --check` only checks the case file
+`foehn flow FILE`; `foehn flow FILE --check` only checks the case file
 and the boundary conditions (D30); command-line options override the file
-(`ennecraft flow --help`). Each run writes `flow.log` (the header says what
+(`foehn flow --help`). Each run writes `flow.log` (the header says what
 is written and how large it is), `residuals.csv` (one row per outer
 iteration; `residuals_level<N>.csv` per level of a sweep), `patches.csv`
 (per patch: area, mass flow, mean pressure, force), `wall_<patch>.csv` (per
@@ -358,8 +358,8 @@ flow; unused turbulence values; a symmetry patch that is not planar).
 ## Benchmarks (`examples/cases/bench/`)
 
 Gate G1, the kernel benchmark of stage 0 ([G1](benchmarks/g1.md)). Run with
-`ennecraft bench g1 FILE`; every key is optional, command-line options
-override the file (`ennecraft bench g1 --help`).
+`foehn bench g1 FILE`; every key is optional, command-line options
+override the file (`foehn bench g1 --help`).
 
 | Case file | Backends | Mesh | Shows | Where |
 |---|---|---|---|---|
@@ -383,13 +383,13 @@ override the file (`ennecraft bench g1 --help`).
 | `mesh.nx`, `mesh.ny`, `mesh.nz` | – | exact box dimensions (all three, at least 3 each) |
 | `mesh.ordering` | `"natural"` | `"natural"` or `"shuffled"` cell numbering |
 | `mesh.seed` | 2026 | seed of the fields and of the shuffle |
-| `run.backends` | the three CPU backends | see `ennecraft bench backends` |
+| `run.backends` | the three CPU backends | see `foehn bench backends` |
 | `run.kernels` | all four | `face-flux`, `cell-gather`, `spmv-csr`, `spmv-sell` |
 | `run.repeat` | 10 | timed runs per kernel (median and minimum reported) |
 | `run.warmup` | 2 | untimed runs first |
 | `run.threads` | all cores | CPU threads |
 | `run.device` | 0 | CUDA device ordinal |
-| `run.rust_ptx` | `target/nvptx64-nvidia-cuda/release/ennecraft_ptx_kernels.ptx` | PTX of the single-source GPU kernels |
+| `run.rust_ptx` | `target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx` | PTX of the single-source GPU kernels |
 | `run.tolerance` | 1e-12 | allowed relative difference to `cpu-serial` |
 | `sell.chunk` | 32 | SELL slice height C |
 | `sell.sigma` | 1 | SELL sorting window σ |

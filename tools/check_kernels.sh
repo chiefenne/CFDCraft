@@ -14,9 +14,9 @@
 #   arithmetic (.ftz).
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
-ptx=${1:-$root/target/nvptx64-nvidia-cuda/release/ennecraft_ptx_kernels.ptx}
+ptx=${1:-$root/target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx}
 fail=0
-src="$root/crates/ennecraft-kernels/src $root/gpu/ptx-kernels/src"
+src="$root/crates/foehncraft-kernels/src $root/gpu/ptx-kernels/src"
 if grep -rnE 'Atomic|atomic_|core::intrinsics::atomic' $src; then
     echo "R10: atomics in the kernel sources (above)" >&2; fail=1
 fi

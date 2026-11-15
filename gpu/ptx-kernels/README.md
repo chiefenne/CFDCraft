@@ -1,14 +1,14 @@
 # Single-source GPU kernels
 
-The kernel bodies of [`ennecraft-kernels`](../../crates/ennecraft-kernels),
+The kernel bodies of [`foehncraft-kernels`](../../crates/foehncraft-kernels),
 wrapped as PTX entry points for NVIDIA GPUs. The same bodies run in the CPU
 backends. Entry points: `g1_*` (gate G1, stage 0; `src/lib.rs`) and `fv_*`,
 `blas_*` (the scalar operators and Krylov vector operations of stage 2,
-`src/fv.rs`, launched by `crates/ennecraft-fv/src/backend/cuda.rs`).
+`src/fv.rs`, launched by `crates/foehncraft-fv/src/backend/cuda.rs`).
 
 For G1, this crate is the "single-source Rust" half of
 gate G1 (requirements D8, D11); the other half is the hand-written CUDA C
-reference in [`crates/ennecraft-bench/kernels/g1_reference.cu`](../../crates/ennecraft-bench/kernels/g1_reference.cu).
+reference in [`crates/foehncraft-bench/kernels/g1_reference.cu`](../../crates/foehncraft-bench/kernels/g1_reference.cu).
 
 ```
 gpu/ptx-kernels/build.sh          # sm_70 PTX, runs on Volta and every newer GPU
