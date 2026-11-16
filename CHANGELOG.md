@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **CI: shorter waits with parallel work.** Pull requests run on Linux
+  only (about 5 minutes); macOS and Windows join when a pull request touches
+  build files, the toolchain, the workflow, the command line, MPI, VTKHDF,
+  restart, run control or the console. Pushes to main run only what the
+  gate did not (macOS and Windows tests and quick cases, MPI on macOS, the
+  long cases, debug tests), skip docs-only merges, and a newer merge
+  cancels the older run. The full tier runs nightly, by hand and with the
+  label `full-ci`. HDF5 file locking is off in CI (flaky on macOS).
 - **Banner font.** The name of the code on top of the log is set in the
   "Alpha" figlet font by Lennert Stock ("Foehn" over "craft", 133 columns
   with the box), as in the owner's example; the glyphs are in

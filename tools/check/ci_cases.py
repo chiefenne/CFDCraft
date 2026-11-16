@@ -10,7 +10,7 @@ Sets (times are the Linux CI runner, main run of 2026-11-15):
   linux-2  cylinder Re 20, cavity Re 1000, Poiseuille       about 2.7 min
   linux-3  Taylor-Green, transient cavity, the rest         about 2.2 min
   long     cylinder Re 100 (long and short channels) and the
-           cylinder Re 20 on three meshes                   full tier only
+           cylinder Re 20 on three meshes                   main, nightly and full-ci only
   quick    macOS and Windows: mesh, scalar, poisson and the quick flows
 
 Run from the repository root. Each case writes output/<case>/.
