@@ -625,6 +625,11 @@ pub struct FlowCase {
     pub balance: crate::balance::BalanceSection,
     /// How the console and `flow.log` look.
     pub log: crate::console::LogSection,
+    /// Settings that change at prepared iterations, steps or times
+    /// (D128): `[[schedule]]` entries, each with one trigger and a `set`
+    /// table of dotted keys.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub schedule: Vec<crate::schedule::ScheduleEntry>,
     /// The case file (for re-reading it during a run).
     #[serde(skip)]
     pub source: Option<PathBuf>,
@@ -1058,6 +1063,7 @@ impl FlowCase {
         let transient = self.time.is_some();
         self.solver.validate(transient)?;
         self.run.limits.validate()?;
+        crate::schedule::validate(self)?;
         self.balance.validate()?;
         crate::logcols::validate(self)?;
         if let Some(t) = &self.time {
@@ -1748,7 +1754,14 @@ pub fn run_steered(
     }
     let mut histories: Vec<(String, Vec<(f64, f64)>)> = Vec::new();
     let mut stopped = false;
+    let case_at_start = (!case.schedule.is_empty()).then(|| case.clone());
     for (li, level) in levels.iter().enumerate() {
+        // every level of a sweep runs the whole schedule from the start
+        if li > 0
+            && let Some(c) = &case_at_start
+        {
+            case = c.clone();
+        }
         let (mesh, geo, desc) = mesh_for(&case, *level)?;
         let mesh_hash = crate::engine::mesh_hash(&mesh);
         let nc = mesh.n_cells;
@@ -1915,7 +1928,17 @@ pub fn run_steered(
         )));
         lg.line("");
         lg.sync(&mut steer.record);
+        let mut sched = crate::schedule::Runner::default();
         loop {
+            if !case.schedule.is_empty() {
+                let restarted = case.run.restart.is_some();
+                let p = crate::schedule::Position {
+                    n: fl.iteration() + 1,
+                    time: 0.0,
+                    tol: 0.0,
+                };
+                schedule_step(&mut case, &mut fl, &mut lg, steer, &mut sched, p, restarted)?;
+            }
             if fl.iteration() >= case.solver.max_iterations {
                 break;
             }
@@ -2122,6 +2145,7 @@ pub fn run_steered(
                     &mut rep.warnings,
                     it,
                     out,
+                    sched.fired,
                 )?;
             }
             if let Some(s) = steer.poll(&case.run.limits, it - first, false, req.stop) {
@@ -2454,9 +2478,59 @@ pub fn run_steered(
     Ok(rep)
 }
 
+/// Applies the `[[schedule]]` entries (D128) that are due before iteration
+/// or step `p.n`: logs every change (` [I]` line and an `event` row of the
+/// run record) and hands the new settings to the flow. Returns the case as
+/// it was when something was applied.
+pub(crate) fn schedule_step<F: FnMut(&str)>(
+    case: &mut FlowCase,
+    fl: &mut Flow,
+    lg: &mut Log<F>,
+    steer: &mut Steer,
+    runner: &mut crate::schedule::Runner,
+    p: crate::schedule::Position,
+    restart: bool,
+) -> Result<Option<FlowCase>> {
+    let what = if case.time.is_some() {
+        "step"
+    } else {
+        "iteration"
+    };
+    let Some((new, changes)) = runner.fire(case, p)? else {
+        return Ok(None);
+    };
+    for c in &changes {
+        let m = format!(
+            "{what} {}: schedule ({}): {}: {} -> {}{}",
+            p.n,
+            c.when,
+            c.key,
+            c.old,
+            c.new,
+            if restart { " (at the restart)" } else { "" }
+        );
+        lg.note(&m);
+        if steer.record.on() {
+            steer.record.row(&serde_json::json!({
+                "type": "event",
+                "code": diag::RUN_SCHEDULED,
+                "severity": "note",
+                "message": m,
+                "at": p.n,
+                "key": c.key,
+                "old": c.old,
+                "new": c.new,
+            }));
+        }
+    }
+    fl.set_settings(new.solver.clone())?;
+    Ok(Some(std::mem::replace(case, new)))
+}
+
 /// Re-reads the case file at iteration or step `n` (D40) and applies what
 /// may change during a run; returns the case as it was when something was
 /// applied.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn reread_case<F: FnMut(&str)>(
     case: &mut FlowCase,
     fl: &mut Flow,
@@ -2465,6 +2539,7 @@ pub(crate) fn reread_case<F: FnMut(&str)>(
     warnings: &mut Vec<diag::Diagnostic>,
     n: usize,
     out: &Path,
+    fired: usize,
 ) -> Result<Option<FlowCase>> {
     let what = if case.time.is_some() {
         "step"
@@ -2475,7 +2550,7 @@ pub(crate) fn reread_case<F: FnMut(&str)>(
         lg.note(&format!("{what} {n}: no case file to re-read"));
         return Ok(None);
     };
-    match control::reread(&src, case) {
+    match control::reread(&src, case, fired) {
         Ok(rr) => {
             if rr.applied.is_empty() && rr.not_applied.is_empty() {
                 lg.note(&format!("{what} {n}: case file re-read, nothing changed"));

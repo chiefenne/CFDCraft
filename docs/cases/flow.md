@@ -91,6 +91,7 @@ Limits, exit codes, restart and the energy ledger.
 |---|---|---|---|
 | `flow/cavity_re100_budget.toml` | generated hex 2D, 64 × 64 | the cavity at Re = 100 with `[run.limits]` (wall time, iterations, output volume), run the way a script or an agent runs it; a tighter limit stops it with exit code 3 and `--restart latest` continues bitwise | [gallery 18](../gallery/runs.md#run-contract), [recipe 26](../recipes/runs.md#run-contract) |
 | `flow/cavity_re100_columns.toml` | generated hex 2D, 64 × 64 | the cavity at Re = 100 with `[log] columns`: residuals, a probe in the lower-left vortex, one cell, the largest velocity and lowest pressure with their cells, the lid mass flow; bitwise the results of `cavity_re100.toml` | [gallery 28](../gallery/runs.md#log-columns), [recipe 38](../recipes/runs.md#log-columns) |
+| `flow/cavity_re100_schedule.toml` | generated hex 2D, 64 × 64 | the cavity at Re = 100 started with momentum under-relaxation 0.5; `[[schedule]]` raises it to 0.9 from iteration 100 and thins the log from iteration 200; every change is in the log and in `run.jsonl` | [gallery 29](../gallery/runs.md#schedule), [recipe 39](../recipes/runs.md#schedule) |
 | `flow/cavity_re100_energy.toml` | generated hex 2D, 64 × 64 | the cavity at Re = 100 with the balance table every 100 iterations: the lid power goes into viscous and numerical dissipation, the numerical part positive (D90 part 4) | [gallery 19](../gallery/runs.md#health), [recipe 27](../recipes/runs.md#health) |
 
 ## The flow loop on a GPU

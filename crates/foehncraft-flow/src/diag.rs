@@ -69,6 +69,7 @@ codes! {
     CASE_SYNTAX = "CASE001", Error, "The case file is not valid TOML.";
     CASE_UNKNOWN_KEY = "CASE002", Error, "A key that the case file does not have (with the nearest key as a hint).";
     CASE_BAD_VALUE = "CASE003", Error, "A value of the wrong type or an unknown choice.";
+    SCHED_ENTRY = "SCHED001", Error, "An entry of `[[schedule]]` that is not valid: its trigger, its order, a key that cannot change during a run, or a value that does not validate (D128).";
     CASE_RANGE = "CASE004", Error, "A value outside its range.";
     CASE_INCONSISTENT = "CASE005", Error, "Settings that do not fit together.";
     CASE_FILE = "CASE006", Error, "A file that cannot be read: the case, the mesh or the restart file.";
@@ -133,6 +134,7 @@ codes! {
     RUN_NO_RESTART = "RUN011", Error, "`--restart latest` found no restart file in the output directory.";
     RUN_NO_BENCHMARK = "RUN012", Note, "No benchmark of this hardware: the estimate has no wall time.";
     RUN_IO = "RUN013", Error, "An output file could not be written.";
+    RUN_SCHEDULED = "RUN015", Note, "A setting changed by an entry of `[[schedule]]` (D128): key, old and new value.";
     RUN_DIVERGED = "RUN014", Error, "The solution diverged (a value that is not finite); see `divergence.md` (D63).";
     // the causes of a divergence (D63)
     DIV_TIME_STEP = "DIV001", Note, "Divergence cause: the Courant number near the failing cells is large; reduce the time step.";
@@ -352,7 +354,7 @@ mod tests {
                 .split_at(c.code.find(|ch: char| ch.is_ascii_digit()).unwrap());
             assert!(
                 [
-                    "CASE", "BC", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT", "REG", "MESH"
+                    "CASE", "SCHED", "BC", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT", "REG", "MESH"
                 ]
                 .contains(&p),
                 "{}",

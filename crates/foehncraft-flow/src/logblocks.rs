@@ -201,6 +201,10 @@ fn cadence(f: &mut Frame, case: &FlowCase, unit: &str) {
         );
     }
     f.push_kv("Control files", ".stop, .result_N, .read_toml_N");
+    // the changes prepared in `[[schedule]]` (D128)
+    for (when, list) in crate::schedule::rows(case) {
+        f.push_kv(&format!("Scheduled: {when}"), list);
+    }
 }
 
 /// What a run of a transient case does.

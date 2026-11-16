@@ -84,7 +84,7 @@ The limits may change during a run (a re-read of the case file, D40).
 | `columns` | (1.1) `table` (`iteration` or `step`), `first` (name of the counter column), `columns`: per column `id`, `name`, `group`, `unit`; one row per table, before its first `table_row` |
 | `table_row` | (1.1) `table`, `index` (iteration or step), `values`: column id to value (a number, `null` for a column without a value, a string for NaN or Inf; an extreme carries `{"cell", "x"}`) |
 | `section` | (1.1) `title`, `rows` with `label`, `value`, `unit`: one framed block of the log (files, run control, mesh, fluid, settings, boundaries, balances, results, run time) |
-| `event` | `code`, `severity`, `message`, `at` (iteration or step) |
+| `event` | `code`, `severity`, `message`, `at` (iteration or step); a change by `[[schedule]]` (`RUN015`) also has `key`, `old`, `new` (1.1) |
 | `balance` | `iteration` (steady) or `step` and `time` (transient), `mass_outflow`, `mass_relative`, `kinetic_energy`, `storage`, `boundary_power`, `body_force_power`, `viscous_dissipation`, `numerical_dissipation`, `numerical_relative`, `pressure_dissipation`, `scheme_dissipation` |
 | `balance_run` | the same fields for the whole transient run (time integrals: kg, J) |
 | `timings` | `seconds`, `cells`, `steps`, `ns_per_cell_step`, `solves` (per solve: `mesh`, `device`, `timings`, `ns_per_cell_iteration`, `ns_per_cell_step`) |
@@ -240,6 +240,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `CASE007` | error | A path outside the read roots or the write roots (D82). |
 | `CASE008` | error | A `--set key=value` that cannot be applied. |
 | `CASE009` | error | A key that the case needs is missing. |
+| `SCHED001` | error | An entry of `[[schedule]]` that is not valid: its trigger, its order, a key that cannot change during a run, or a value that does not validate (D128). |
 | `BC001` | error | A mesh boundary without a boundary condition. |
 | `BC002` | error | A boundary condition for a boundary the mesh does not have. |
 | `BC003` | error | A condition that a later stage brings. |
@@ -294,6 +295,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `RUN012` | note | No benchmark of this hardware: the estimate has no wall time. |
 | `RUN013` | error | An output file could not be written. |
 | `RUN014` | error | The solution diverged (a value that is not finite); see `divergence.md` (D63). |
+| `RUN015` | note | A setting changed by an entry of `[[schedule]]` (D128): key, old and new value. |
 | `DIV001` | note | Divergence cause: the Courant number near the failing cells is large; reduce the time step. |
 | `DIV002` | note | Divergence cause: under-relaxation factors too large for the case. |
 | `DIV003` | note | Divergence cause: poor cells (skewness, non-orthogonality, volume ratio) at the failing cells. |

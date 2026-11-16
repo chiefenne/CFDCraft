@@ -1,0 +1,74 @@
+# Lid-driven cavity at Re = 100 with settings prepared for the run (stage 5).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cavity_re100_schedule.toml
+#
+# The cavity of cavity_re100.toml, started with a cautious momentum
+# under-relaxation (0.5) and a log line every iteration. `[[schedule]]` says
+# what changes and from where on: from iteration 100 the momentum
+# under-relaxation is 0.9, from iteration 200 the log shows every 10th iteration. The whole
+# run is set up before it starts; every change is a line in flow.log and
+# an event in run.jsonl, and the "Run control" frame lists them. Only keys
+# that may change during a run are accepted; a wrong key stops `--check`
+# with the reason.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.015625]
+cells = [64, 64, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 3000
+log_every = 1
+
+[solver.momentum]
+relaxation = 0.5               # cautious start
+
+[verification]
+reference = "ghia-re100"
+reference_tolerance = 0.02
+lid_velocity = 1.0
+require_convergence = true
+
+[[output.lines]]
+name = "vertical"            # u along x = 0.5
+from = [0.5, 0.0, 0.0078125]
+to = [0.5, 1.0, 0.0078125]
+[[output.lines]]
+name = "horizontal"          # v along y = 0.5
+from = [0.0, 0.5, 0.0078125]
+to = [1.0, 0.5, 0.0078125]
+
+# From iteration 100 the value of the entry holds (until another entry
+# sets the key again); before it the value above holds.
+[[schedule]]
+at_iteration = 100
+set = { solver.momentum.relaxation = 0.9 }
+
+[[schedule]]
+at_iteration = 200
+set = { solver.log_every = 10 }

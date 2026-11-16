@@ -1030,7 +1030,25 @@ fn run_one<F: FnMut(&str)>(
     let (mut outer_sum, mut cg_sum, mut nsteps) = (0usize, 0usize, 0usize);
     let mut rejected = 0usize;
     let mut last_rep = StepReport::default();
+    let mut sched = crate::schedule::Runner::default();
     loop {
+        // [[schedule]] (D128): the entries due before this step
+        if !case.schedule.is_empty() {
+            let restarted = case.run.restart.is_some();
+            let p = crate::schedule::Position {
+                n: tr.clock.step + 1,
+                time: tr.clock.time,
+                tol: 1e-6 * dt,
+            };
+            if let Some(old) =
+                crate::case::schedule_step(&mut case, &mut fl, lg, steer, &mut sched, p, restarted)?
+                && let (Some(a), Some(b)) = (old.time, case.time)
+                && a.time_step != b.time_step
+                && !b.adaptive
+            {
+                dt = b.time_step;
+            }
+        }
         let t = case.time.context("[time]")?;
         let step = tr.clock.step;
         if t.steps.is_some_and(|n| step >= n) {
@@ -1047,6 +1065,15 @@ fn run_one<F: FnMut(&str)>(
             .filter_map(|s| s.next(t0, tol))
             .reduce(f64::min)
         {
+            let rest = te - t0;
+            if rest <= h + tol {
+                h = rest;
+            } else if rest < 2.0 * h {
+                h = 0.5 * rest;
+            }
+        }
+        // D128: land on the time of the next scheduled change as well
+        if let Some(te) = sched.next_time(&case, t0, tol) {
             let rest = te - t0;
             if rest <= h + tol {
                 h = rest;
@@ -1446,8 +1473,16 @@ fn run_one<F: FnMut(&str)>(
             }
         }
         if req.reread
-            && let Some(old) =
-                crate::case::reread_case(&mut case, &mut fl, lg, steer, warnings, n, out)?
+            && let Some(old) = crate::case::reread_case(
+                &mut case,
+                &mut fl,
+                lg,
+                steer,
+                warnings,
+                n,
+                out,
+                sched.fired,
+            )?
             && let (Some(a), Some(b)) = (old.time, case.time)
             && a.time_step != b.time_step
             && !b.adaptive

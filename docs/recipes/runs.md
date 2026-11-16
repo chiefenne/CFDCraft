@@ -9,6 +9,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 27 | [Check the balances and read a divergence report](#health) |
 | 37 | [Read the log and upgrade a case file](#log) |
 | 38 | [Choose the columns of the log table](#log-columns) |
+| 39 | [Prepare changes of settings before the run](#schedule) |
 
 ---
 
@@ -270,3 +271,36 @@ Keys: `log.columns`, `log.digits`, `log.header_every`, `solver.log_every`, `outp
 
 [↑ back to top](#run-control-and-health)
 
+---
+
+<a id="schedule"></a>
+## 39. Prepare changes of settings before the run
+
+Start with cautious settings and let them change at fixed points, instead of editing the case file during the run (gallery 29):
+
+```toml
+[solver.momentum]
+relaxation = 0.5
+
+[[schedule]]
+at_iteration = 100                 # steady: iteration; transient: at_step or at_time
+set = { solver.momentum.relaxation = 0.9, solver.tolerance = 1e-9 }
+
+[[schedule]]
+at_time = 0.05                     # transient: the run lands a step on this time
+set = { time.time_step = 0.005 }
+```
+
+(One case uses one kind of trigger: the second entry belongs to a transient case.) The value of an entry holds from its point on, until a later entry sets the same key. List the entries in ascending order. Keys are dotted paths of the case file; the table `set = { solver.momentum.relaxation = 0.9 }` and the quoted form `{ "solver.momentum.relaxation" = 0.9 }` are the same. `foehn flow --check` reads the whole schedule and stops with the entry and the reason when a trigger, a key or a value is wrong (code `SCHED001`): a key that cannot change during a run (mesh, boundaries, schemes, fluid) names the key, a misspelled key the nearest one, a value that does not validate (a relaxation above 1) the entry.
+
+During the run each change is a ` [I]` line and an `event` row `RUN015` of `run.jsonl`. A re-read of the case file (`.read_toml_N`, `[run] reread_every`) keeps the entries that have fired in force over the values of the file; the schedule itself cannot be re-read: change it by stopping the run and restarting (`--restart latest` applies the entries that lie before the restart point at once). Without `[[schedule]]` the run, its files and its log are bitwise those of a run without the table.
+
+```
+target/release/foehn flow examples/cases/flow/cavity_re100_schedule.toml
+target/release/foehn flow examples/cases/flow/cavity_re100_schedule.toml --check
+grep schedule output/cavity_re100_schedule/flow.log
+```
+
+Keys: `schedule[].at_iteration`, `schedule[].at_step`, `schedule[].at_time`, `schedule[].set`.
+
+[↑ back to top](#run-control-and-health)

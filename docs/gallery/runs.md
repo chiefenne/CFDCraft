@@ -9,6 +9,7 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 | 19 | [Balances and the divergence report](#health) | 5 | mass and kinetic-energy ledger, numerical dissipation of the schemes (second law), divergence report with ranked causes |
 | 27 | [A log that can be circulated](#log) | 5 | frames, blocks of settings, tables with headers, summaries, closing frame with exit code (D125) |
 | 28 | [A table with the columns you choose](#log-columns) | 5 | `[log] columns`: probes, cells, extremes with their cells, boundary mass flow; the same content in `run.jsonl` (D125) |
+| 29 | [Settings that change during the run](#schedule) | 5 | `[[schedule]]`: under-relaxation, tolerances and cadences change at prepared iterations, steps or times; every change in the log and in `run.jsonl` (D128) |
 
 ---
 
@@ -290,6 +291,51 @@ The same content goes to `run.jsonl` (format 1.1): a `columns` row describes the
 ```
 target/release/foehn flow examples/cases/flow/cavity_re100_columns.toml
 tail -f output/cavity_re100_columns/run.jsonl      # the rows of a monitor
+```
+
+[↑ back to top](#run-control-health-and-adjoint-readiness)
+
+---
+
+<a id="schedule"></a>
+## 29. Settings that change during the run
+
+A whole run can be set up before it starts (D128). `[[schedule]]` lists the settings that change and the iteration, step or time from which the new value holds (`examples/cases/flow/cavity_re100_schedule.toml`):
+
+```toml
+[solver.momentum]
+relaxation = 0.5               # cautious start
+
+[[schedule]]
+at_iteration = 100
+set = { solver.momentum.relaxation = 0.9 }
+
+[[schedule]]
+at_iteration = 200
+set = { solver.log_every = 10 }
+```
+
+The "Run control" frame lists the changes before the run, and every change is a line in the log when it takes effect:
+
+```
+ Scheduled: iteration 100          solver.momentum.relaxation = 0.9
+ Scheduled: iteration 200          solver.log_every = 10
+ ...
+ [I] iteration 100: schedule (iteration 100): solver.momentum.relaxation: 0.5 -> 0.9
+```
+
+The same change is an `event` row of `run.jsonl` with the code `RUN015` and the fields `key`, `old` and `new`, so a monitor marks the iteration where the setting changed. The case file alone says what was run (the entries are part of the resolved case and of its hash), and a restart continues the schedule: entries before the restart point apply at once.
+
+Which keys may be scheduled: those that a re-read of the case file may change during a run (D40) - relaxation factors, linear-solver tolerances and iteration limits, the stop and convergence criteria, the time step and its adaptive controls, the output, restart and balance cadences, `solver.log_every` - without the guard rails `run.limits.*` and `run.reread_every`. Anything that belongs to the state the run starts from (mesh, boundary values, schemes, fluid) is refused when the case is read, with the reason. A transient case uses `at_step` or `at_time` (the run lands a step on the time); steady `at_iteration`.
+
+| | |
+|---|---|
+| Code | `crates/foehncraft-flow/src/schedule.rs`, `case.rs` (`schedule_step`), `unsteady.rs`, `control.rs` |
+| Tests | `crates/foehncraft-flow/tests/schedule.rs`, `crates/foehncraft-cli/tests/run_contract.rs` (`schedule_changes_are_events_of_the_run_record`) |
+| Case files | `flow/cavity_re100_schedule.toml` |
+
+```
+target/release/foehn flow examples/cases/flow/cavity_re100_schedule.toml
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)
