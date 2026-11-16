@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+**Material property requirements (D94–D103, L23–L25).** Requirements for a
+material database and the handling of properties: database, case materials
+and a resolved, hashed property program; property forms (constant,
+polynomial, NASA-7 and NASA-9, Sutherland, tables with linear or monotone
+cubic interpolation, polynomial c_p expressions, mixing rules, kinetic
+theory, equations of state); checks; GPU evaluation; SI only; no property
+changes at run time; a built-in starter set with IAPWS water and steam;
+importers, table generators and a generic interface for external property
+sources. Implementation starts in stage 5 PR 6 (μ and ρ) and continues with L1.
+
 **Renamed from CFDCraft (and the short-lived Ennecraft) to Foehncraft**, after
 the foehn wind of Innsbruck (see the README), so that the name cannot be
 confused with other projects. Crates are now `foehncraft-*`, the command is `foehn`, the
@@ -15,7 +25,8 @@ bitwise equal), the case catalogue split over parallel jobs
 volumes of field files (11.5 minutes to seconds). Push to main, a nightly run
 at 02:07 Vienna time and pull requests with the label `full-ci` run the full
 tier: `release` profile, debug tests, every case including the cylinder at
-Re 100, and the slow tests. One summary check, "CI OK".
+Re 100, and the slow tests. One summary check, "CI OK". Main warms the `ci`-profile cache that pull
+requests read (without it every PR compiled its dependencies from scratch).
 
 **Run contract for scripts and agents (stage 5, part 4a).** `foehn flow`
 can be driven by a program: `--set key=value` overrides (TOML values),
