@@ -180,11 +180,19 @@ python3 -m tools.plot.energy_budget_chart energy_budget.svg
 <a id="log"></a>
 ## 27. A log that can be circulated
 
-Part of what a run says about itself (D125): the log shows what the case file set, so a log mailed on its own is enough to see the run. Every block is framed by asterisk rules (80 columns, no colour); the console and `flow.log` are identical. Excerpt of the transient cavity (Re 100, 64 x 64, BDF2), blocks between the banner and the table left out:
+Part of what a run says about itself (D125): the log shows what the case file set, so a log mailed on its own is enough to see the run. The log opens with the name of the code in slanted block letters; every block is framed by asterisk rules (80 columns, no colour); the console and `flow.log` are identical. Excerpt of the transient cavity (Re 100, 64 x 64, BDF2), blocks between the banner and the table left out:
 
 ```
 ********************************************************************************
-  Foehncraft  -  general purpose CFD solver
+           _____                 _                                     ___   _
+         /::___/               /:/                                   /::_/ /:/
+        /:/    _____   _____  /:/___   _____   _____   ___   _____  /:/_  /:/_
+       /:/_  /::_::/ /::_::/ /::_::/ /::_::/ /::___/ /::_/ /___::/ /::_/ /::_/
+      /::_/ /:/ /:/ /:/_/:/ /:/ /:/ /:/ /:/ /:/     /:/    ___/:/ /:/   /:/
+     /:/   /:/ /:/ /::___/ /:/ /:/ /:/ /:/ /:/     /:/   /::_::/ /:/   /:/
+    /:/   /:/_/:/ /:/___  /:/ /:/ /:/ /:/ /:/___  /:/   /:/_/:/ /:/   /:/_
+   /_/   /_____/ /_____/ /_/ /_/ /_/ /_/ /_____/ /_/   /_____/ /_/   /___/
+
   Version                       0.5.0  (build a1b2c3d)
   Date and time                 2026-11-16 12:00:00 UTC
   Host name                     vm

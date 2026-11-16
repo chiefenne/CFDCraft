@@ -110,6 +110,8 @@ pub enum Row {
 #[derive(Debug, Clone, Default)]
 pub struct Frame {
     title: String,
+    /// Lines drawn, centred, in place of the title line (the banner).
+    art: Vec<String>,
     rows: Vec<Row>,
 }
 
@@ -118,8 +120,30 @@ impl Frame {
     pub fn new(title: impl Into<String>) -> Self {
         Self {
             title: title.into(),
+            art: Vec::new(),
             rows: Vec::new(),
         }
+    }
+
+    /// Draws `art`, centred and followed by a blank line, in place of the
+    /// title line; the title stays the name of the frame in the run record.
+    #[must_use]
+    pub fn art(mut self, art: &[&str]) -> Self {
+        self.art = art.iter().map(|l| l.trim_end().to_string()).collect();
+        self
+    }
+
+    /// The title line, or the centred art and a blank line.
+    fn heading(&self) -> Vec<String> {
+        if self.art.is_empty() {
+            return vec![self.title.clone()];
+        }
+        let inner = WIDTH - 4;
+        let w = self.art.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+        let pad = " ".repeat(inner.saturating_sub(w) / 2);
+        let mut out: Vec<String> = self.art.iter().map(|l| format!("{pad}{l}")).collect();
+        out.push(String::new());
+        out
     }
 
     /// A label and a value.
@@ -228,7 +252,14 @@ impl Frame {
             Style::Asterisk => {
                 let rule = "*".repeat(WIDTH);
                 out.push(rule.clone());
-                out.push(format!("  {}", self.title));
+                for h in self.heading() {
+                    let l = format!("  {h}");
+                    out.push(if self.art.is_empty() {
+                        l
+                    } else {
+                        l.trim_end().to_string()
+                    });
+                }
                 if rows.is_empty() {
                     return out;
                 }
@@ -247,9 +278,14 @@ impl Frame {
                     format!("│  {l}{}│", " ".repeat((WIDTH - 4).saturating_sub(n)))
                 };
                 out.push(format!("┌{bar}┐"));
-                out.push(row(&self.title));
+                let heading = self.heading();
+                for h in &heading {
+                    out.push(row(h));
+                }
                 if rows.is_empty() {
-                    out.pop();
+                    for _ in &heading {
+                        out.pop();
+                    }
                     out.push(format!("└{bar}┘"));
                     return out;
                 }
@@ -509,6 +545,22 @@ mod tests {
         assert_eq!(sci3(f64::NAN), "NaN");
         assert_eq!(sci5(1.0 / 3.0), "3.3333E-01");
         assert_eq!(sci3(1.0e-100), "1.00E-100");
+    }
+
+    #[test]
+    fn art_replaces_the_title_line_and_fits_the_frame() {
+        let f = Frame::new("Foehncraft")
+            .art(&crate::logblocks::BANNER_ART)
+            .kv("Version", "0.5.0");
+        assert_eq!(f.title(), "Foehncraft");
+        for s in [Style::Asterisk, Style::Box] {
+            let l = f.render(s);
+            assert!(l.iter().all(|x| x.chars().count() <= WIDTH), "{l:?}");
+            assert!(!l.iter().any(|x| x.contains("Foehncraft")), "{l:?}");
+            assert!(l.iter().any(|x| x.contains("/::_::/")), "{l:?}");
+        }
+        let l = f.render(Style::Asterisk);
+        assert!(l[9].is_empty() && l[10].starts_with("  Version"), "{l:?}");
     }
 
     #[test]

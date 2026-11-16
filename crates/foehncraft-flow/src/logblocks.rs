@@ -27,9 +27,22 @@ pub fn spelled<T: Serialize>(v: &T) -> String {
         .unwrap_or_default()
 }
 
+/// The name of the code drawn in slanted block letters (76 columns, the
+/// inner width of a frame), the first lines of every log.
+pub const BANNER_ART: [&str; 8] = [
+    r"         _____                 _                                     ___   _",
+    r"       /::___/               /:/                                   /::_/ /:/",
+    r"      /:/    _____   _____  /:/___   _____   _____   ___   _____  /:/_  /:/_",
+    r"     /:/_  /::_::/ /::_::/ /::_::/ /::_::/ /::___/ /::_/ /___::/ /::_/ /::_/",
+    r"    /::_/ /:/ /:/ /:/_/:/ /:/ /:/ /:/ /:/ /:/     /:/    ___/:/ /:/   /:/   ",
+    r"   /:/   /:/ /:/ /::___/ /:/ /:/ /:/ /:/ /:/     /:/   /::_::/ /:/   /:/    ",
+    r"  /:/   /:/_/:/ /:/___  /:/ /:/ /:/ /:/ /:/___  /:/   /:/_/:/ /:/   /:/_    ",
+    r" /_/   /_____/ /_____/ /_/ /_/ /_/ /_/ /_____/ /_/   /_____/ /_/   /___/    ",
+];
+
 /// The version, the date and the host.
 pub fn banner(build: Option<&BuildInfo>, case: &FlowCase) -> Frame {
-    let mut f = Frame::new("Foehncraft  -  general purpose CFD solver").kv(
+    let mut f = Frame::new("Foehncraft").art(&BANNER_ART).kv(
         "Version",
         match build {
             Some(b) => format!(

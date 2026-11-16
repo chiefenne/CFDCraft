@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Log banner.** The first frame of the log (console and `flow.log`)
+  shows the name of the code in slanted block letters, centred in the
+  80-column frame, instead of the line "Foehncraft - general purpose CFD
+  solver". Only text changes; the `section` row of `run.jsonl` names the
+  frame "Foehncraft". Gallery 27 updated.
 - **Cell-quality remediation (D50).** Steady runs on tetrahedra with skewed
   faces (Gmsh meshes without `Mesh.OptimizeNetgen = 1`) diverged with the
   least-squares pressure gradient. The solver now measures the face
