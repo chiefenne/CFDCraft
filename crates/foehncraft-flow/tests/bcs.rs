@@ -24,8 +24,12 @@ fn run_case(case: &FlowCase, name: &str) -> FlowReport {
     rep
 }
 
+/// A case file with `\n` line ends (a Windows checkout has `\r\n`), so
+/// the edits of the tests match.
 fn text(file: &str) -> String {
-    std::fs::read_to_string(cases().join(file)).unwrap()
+    std::fs::read_to_string(cases().join(file))
+        .unwrap()
+        .replace("\r\n", "\n")
 }
 
 fn parse(text: &str) -> FlowCase {
