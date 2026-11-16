@@ -10,13 +10,17 @@
   long cases, debug tests), skip docs-only merges, and a newer merge
   cancels the older run. The full tier runs nightly, by hand and with the
   label `full-ci`. HDF5 file locking is off in CI (flaky on macOS).
+- **Banner font.** The name of the code on top of the log is set in the
+  "Alpha" figlet font by Lennert Stock ("Foehn" over "craft", 133 columns
+  with the box), as in the owner's example; the glyphs are in
+  `banner_art.rs` with the credit. Only text changes.
 - **Outer iterations in the log.** Every logged time step shows the
   residuals and the linear iterations of each outer iteration under its
   box. New `docs/sayings.md` (*Residuen-gaffen*), linked from the README.
 - **Log look (D125).** The log opens with "Foehncraft" in block letters
-  with depth, on one row. Every block is a box of asterisks as wide as its
+  (see the banner font entry above). Every block is a box of asterisks as wide as its
   content and centred on the page, which has no fixed width any more
-  (the banner is 141 columns). Summaries have blank rows, a heading and
+  (the banner is 133 columns). Summaries have blank rows, a heading and
   dashed rules; a logged time step starts with a box (step, time, dt,
   Courant number, outer iterations). Messages read
   `%FOEHN-I-CASE, text`: severity and the capitalised name of the source
