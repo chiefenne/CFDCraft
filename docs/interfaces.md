@@ -81,6 +81,9 @@ The limits may change during a run (a re-read of the case file, D40).
 | `header` | `format`, `format_version`, `case`, `date`, `provenance`, `threads`, `overrides`, `case_file`, `settings` (the resolved case) |
 | `iteration` | `iteration`, `momentum` (3), `continuity`, `bicgstab` (3), `cg` |
 | `step` | `step`, `time`, `dt`, `cfl`, `momentum` (3), `continuity`, `outer`, `cg`; with the error estimate of the time step (D65) also `error`, the estimated local error over the tolerance |
+| `columns` | (1.1) `table` (`iteration` or `step`), `first` (name of the counter column), `columns`: per column `id`, `name`, `group`, `unit`; one row per table, before its first `table_row` |
+| `table_row` | (1.1) `table`, `index` (iteration or step), `values`: column id to value (a number, `null` for a column without a value, a string for NaN or Inf; an extreme carries `{"cell", "x"}`) |
+| `section` | (1.1) `title`, `rows` with `label`, `value`, `unit`: one framed block of the log (files, run control, mesh, fluid, settings, boundaries, balances, results, run time) |
 | `event` | `code`, `severity`, `message`, `at` (iteration or step) |
 | `balance` | `iteration` (steady) or `step` and `time` (transient), `mass_outflow`, `mass_relative`, `kinetic_energy`, `storage`, `boundary_power`, `body_force_power`, `viscous_dissipation`, `numerical_dissipation`, `numerical_relative`, `pressure_dissipation`, `scheme_dissipation` |
 | `balance_run` | the same fields for the whole transient run (time integrals: kg, J) |

@@ -20,7 +20,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30 |
-| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log and case upgrades | 22, 26, 27, 37 |
+| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log and case upgrades | 22, 26, 27, 37, 38 |
 
 ## All recipes by number
 
@@ -63,6 +63,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="manual"></a>35 | [Regenerate the verification manual](recipes/verification.md#manual) | [Verification](recipes/verification.md) |
 | <a id="skewed-tets"></a>36 | [Run a flow on raw Gmsh tetrahedra (skewed faces)](recipes/meshes.md#skewed-tets) | [Meshes](recipes/meshes.md) |
 | <a id="log"></a>37 | [Read the log and upgrade a case file](recipes/runs.md#log) | [Run control and health](recipes/runs.md) |
+| <a id="log-columns"></a>38 | [Choose the columns of the log table](recipes/runs.md#log-columns) | [Run control and health](recipes/runs.md) |
 
 ## Adding a feature
 

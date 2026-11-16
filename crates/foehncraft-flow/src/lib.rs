@@ -45,6 +45,7 @@ pub mod divergence;
 pub mod engine;
 pub mod expr;
 pub mod logblocks;
+pub mod logcols;
 pub mod materials;
 pub mod monitor;
 pub mod plot;

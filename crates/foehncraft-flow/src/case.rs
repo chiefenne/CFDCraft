@@ -64,7 +64,6 @@
 use crate::analytic::{Analytic, Benchmark, Reference};
 use crate::balance::{self, BalanceSummary};
 use crate::bc::{self, BoundaryCondition, Level};
-use crate::console::{Col, Group};
 use crate::control::{self, Control};
 use crate::diag;
 use crate::divergence;
@@ -1060,6 +1059,7 @@ impl FlowCase {
         self.solver.validate(transient)?;
         self.run.limits.validate()?;
         self.balance.validate()?;
+        crate::logcols::validate(self)?;
         if let Some(t) = &self.time {
             t.validate()?;
         }
@@ -1458,6 +1458,9 @@ pub(crate) struct Log<'a, F: FnMut(&str)> {
     pub(crate) out: &'a mut F,
     pub(crate) text: String,
     pub(crate) style: crate::console::Style,
+    /// The frames printed since the last [`sync`](Self::sync), as rows of
+    /// the run record.
+    pending: Vec<serde_json::Value>,
 }
 
 impl<'a, F: FnMut(&str)> Log<'a, F> {
@@ -1466,6 +1469,7 @@ impl<'a, F: FnMut(&str)> Log<'a, F> {
             out,
             text: String::new(),
             style,
+            pending: Vec::new(),
         }
     }
 
@@ -1487,9 +1491,20 @@ impl<'a, F: FnMut(&str)> Log<'a, F> {
 
     /// A blank line and a frame.
     pub(crate) fn frame(&mut self, f: &crate::console::Frame) {
+        self.pending.push(f.record());
         self.line("");
         for l in f.render(self.style) {
             self.line(&l);
+        }
+    }
+}
+
+impl<F: FnMut(&str)> Log<'_, F> {
+    /// Hands the frames printed so far to the run record as `section`
+    /// rows, so that a GUI shows the same blocks as the console.
+    pub(crate) fn sync(&mut self, rec: &mut crate::engine::Record) {
+        for v in self.pending.drain(..) {
+            rec.row(&v);
         }
     }
 }
@@ -1886,36 +1901,17 @@ pub fn run_steered(
         let mut converged = false;
         let mut res = Residuals::default();
         let ts = Instant::now();
-        let mut table = crate::console::Table::new(
-            Col::int("Iter", 6),
-            vec![
-                Group::new(
-                    "scaled residuals",
-                    vec![
-                        Col::num("ResU"),
-                        Col::num("ResV"),
-                        Col::num("ResW"),
-                        Col::num("ResM"),
-                    ],
-                ),
-                Group::new(
-                    "linear iterations",
-                    vec![
-                        Col::int("U", 4),
-                        Col::int("V", 4),
-                        Col::int("W", 4),
-                        Col::int("P", 5),
-                    ],
-                ),
-            ],
-            case.log.style,
-            case.log.header_every,
-        );
+        let mut cols = crate::logcols::Columns::build(&case, &mesh, &geo, &loc, false)?;
+        let mut table = cols.table("Iter", case.log.style, case.log.header_every);
+        if steer.record.on() {
+            steer.record.row(&cols.record_header("iteration", "Iter"));
+        }
         lg.frame(&crate::console::Frame::new(format!(
             "Iterations ({}, steady)",
             crate::logblocks::spelled(&case.solver.algorithm(false)).to_uppercase()
         )));
         lg.line("");
+        lg.sync(&mut steer.record);
         loop {
             if fl.iteration() >= case.solver.max_iterations {
                 break;
@@ -1977,6 +1973,7 @@ pub fn run_steered(
                         case.log.style,
                         &mut |l| lg.line(l),
                     );
+                    lg.sync(&mut steer.record);
                     steer.record.flush();
                     std::fs::write(out.join("flow.log"), &lg.text)?;
                     return Err(e);
@@ -2012,23 +2009,34 @@ pub fn run_steered(
                 }
             }
             if it == first + 1 || it % case.solver.log_every == 0 || done {
+                lg.sync(&mut steer.record);
                 steer.record.flush();
-                let cells: Vec<String> = res
-                    .momentum
-                    .iter()
-                    .copied()
-                    .chain([res.continuity])
-                    .map(crate::console::sci3)
-                    .chain(
-                        res.momentum_iterations
-                            .iter()
-                            .copied()
-                            .chain([res.pressure_iterations])
-                            .map(|n| n.to_string()),
-                    )
-                    .collect();
+                let sol = if cols.needs_state() {
+                    Some(Solution {
+                        state: fl.state()?,
+                        disc: &fl.disc,
+                        phys: fl.phys.clone(),
+                    })
+                } else {
+                    None
+                };
+                let entries = cols.eval(
+                    &crate::logcols::RowCtx {
+                        index: it,
+                        res: &res,
+                        time: None,
+                        sol: sol.as_ref(),
+                    },
+                    &geo,
+                );
+                let cells: Vec<String> = entries.iter().map(|e| e.text.clone()).collect();
                 for l in table.row(it, &cells) {
                     lg.line(&l);
+                }
+                if steer.record.on() {
+                    steer
+                        .record
+                        .row(&cols.record_row("iteration", it, &entries));
                 }
             }
             if done {
@@ -2435,6 +2443,8 @@ pub fn run_steered(
     )?;
     rep.seconds = t0.elapsed().as_secs_f64();
     end_frames(&mut lg, &rep);
+    lg.sync(&mut steer.record);
+    steer.record.flush();
     std::fs::write(out.join("flow.log"), &lg.text)?;
     std::fs::write(out.join("flow.json"), serde_json::to_string_pretty(&rep)?)?;
     std::fs::write(out.join("flow.md"), rep.to_markdown())?;

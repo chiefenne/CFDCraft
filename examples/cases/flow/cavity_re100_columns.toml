@@ -1,0 +1,82 @@
+# Lid-driven cavity at Re = 100 with a chosen iteration table (stage 5).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cavity_re100_columns.toml
+#
+# The cavity of cavity_re100.toml with `[log] columns`: the table shows the
+# momentum and continuity residuals, the velocity and pressure at a probe
+# in the lower-left vortex, the pressure in one cell, the largest velocity
+# and the lowest pressure of the domain with the cell where each occurs, and
+# the mass flow through the lid. The same columns reach `run.jsonl` (the
+# `columns` row and a `table_row` row per line of the table), so a monitor
+# draws what the terminal shows. The columns change no result: this run is
+# bitwise the one of cavity_re100.toml.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.015625]
+cells = [64, 64, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.9
+
+[verification]
+reference = "ghia-re100"
+reference_tolerance = 0.02
+lid_velocity = 1.0
+require_convergence = true
+
+[[output.lines]]
+name = "vertical"            # u along x = 0.5
+from = [0.5, 0.0, 0.0078125]
+to = [0.5, 1.0, 0.0078125]
+[[output.lines]]
+name = "horizontal"          # v along y = 0.5
+from = [0.0, 0.5, 0.0078125]
+to = [1.0, 0.5, 0.0078125]
+
+[[output.probes]]
+name = "vortex"                # the lower-left secondary vortex
+point = [0.08, 0.08, 0.0078125]
+
+[log]
+digits = 3                     # significant digits of the numbers in the table
+header_every = 40
+columns = [
+  "residual.momentum",         # ResU ResV ResW
+  "residual.continuity",       # ResM
+  "probe.vortex.velocity_x",   # a named [[output.probes]] point
+  "probe.vortex.pressure",
+  "cell.2000.pressure",        # the value in one cell
+  "max.velocity_magnitude",    # largest value and its cell
+  "min.pressure",              # lowest value and its cell
+  "boundary.ymax.mass_flow",   # mass flow out of one boundary
+  "time.per_iteration",        # wall-clock seconds per iteration
+]

@@ -485,3 +485,89 @@ fn post_derive_from_the_restart_file() {
         assert_eq!(json(&o)["diagnostics"][0]["code"], code, "{a:?}");
     }
 }
+
+/// `[log] columns` (D125): selectable columns with extremes and cells, the
+/// same content in `flow.log` and `run.jsonl`, and no change of any result.
+#[test]
+fn configurable_log_columns_change_no_result() {
+    let d = dir("log_columns");
+    let plain = steady(&d);
+    let custom = d.join("columns").join("cavity.toml");
+    let mut text = std::fs::read_to_string(&plain).unwrap();
+    // the case name is part of the files, so both cases have one name; the
+    // probe is in both, because the columns refer to it
+    text.push_str("\n[[output.probes]]\nname = \"mid\"\npoint = [0.5, 0.5, 0.03]\n");
+    std::fs::write(&plain, &text).unwrap();
+    let d2 = d.join("columns");
+    std::fs::create_dir_all(&d2).unwrap();
+    text.push_str(
+        "\n[log]\ndigits = 4\ncolumns = [\n  \"residual.momentum\",\n  \"residual.continuity\",\n  \"probe.mid.velocity_x\",\n  \"cell.100.pressure\",\n  \"max.velocity_magnitude\",\n  \"min.pressure\",\n  \"boundary.ymax.mass_flow\",\n  \"time.per_iteration\",\n]\n",
+    );
+    std::fs::write(&custom, &text).unwrap();
+    let (a, b) = (d.join("a"), d.join("b"));
+    for (case, out) in [(&plain, &a), (&custom, &b)] {
+        let o = foehn(&["--json", "--quiet", "flow", s(case), "--out", s(out)]);
+        assert_eq!(
+            o.status.code(),
+            Some(0),
+            "{}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+    }
+    // the results are the same bytes with and without the columns
+    for f in ["fields.vtkhdf", "residuals.csv", "balance.csv"] {
+        if a.join(f).exists() {
+            assert!(bytes(&a.join(f)) == bytes(&b.join(f)), "{f} differs");
+        }
+    }
+    let log = std::fs::read_to_string(b.join("flow.log")).unwrap();
+    assert!(log.contains("probe mid"), "{log}");
+    assert!(log.contains("extremes"), "{log}");
+    assert!(log.contains("Umax") && log.contains("Pmin"), "{log}");
+    let rec = std::fs::read_to_string(b.join("run.jsonl")).unwrap();
+    let rows: Vec<Value> = rec
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(rows[0]["format_version"], "1.1");
+    let cols = rows
+        .iter()
+        .find(|r| r["type"] == "columns")
+        .expect("a columns row");
+    let ids: Vec<&str> = cols["columns"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["id"].as_str().unwrap())
+        .collect();
+    assert!(ids.contains(&"max.velocity_magnitude.cell"), "{ids:?}");
+    let row = rows
+        .iter()
+        .find(|r| r["type"] == "table_row")
+        .expect("a table_row row");
+    assert!(row["values"]["max.velocity_magnitude.cell"]["cell"].is_u64());
+    let sections: Vec<&str> = rows
+        .iter()
+        .filter(|r| r["type"] == "section")
+        .map(|r| r["title"].as_str().unwrap())
+        .collect();
+    assert!(sections.contains(&"Fluid properties"), "{sections:?}");
+    // the default table gets its columns row as well
+    let rec = std::fs::read_to_string(a.join("run.jsonl")).unwrap();
+    assert!(rec.contains("\"type\":\"columns\""));
+    // a wrong name is refused before the run
+    let bad = d.join("bad.toml");
+    std::fs::write(
+        &bad,
+        format!("{text}\n").replace("min.pressure", "min.speed"),
+    )
+    .unwrap();
+    let o = foehn(&["flow", s(&bad), "--check"]);
+    assert_ne!(o.status.code(), Some(0));
+    let err = format!(
+        "{}{}",
+        String::from_utf8_lossy(&o.stdout),
+        String::from_utf8_lossy(&o.stderr)
+    );
+    assert!(err.contains("`min.speed`: unknown quantity"), "{err}");
+}

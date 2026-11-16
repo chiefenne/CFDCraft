@@ -8,6 +8,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 26 | [Drive runs from a script or an agent](#run-contract) |
 | 27 | [Check the balances and read a divergence report](#health) |
 | 37 | [Read the log and upgrade a case file](#log) |
+| 38 | [Choose the columns of the log table](#log-columns) |
 
 ---
 
@@ -230,3 +231,42 @@ A case file without `case_format` is read as 0.5: its flat solver keys (`solver.
 Keys: `case_format`, `log.style`, `solver.log_every`, `balance.every`.
 
 [↑ back to top](#run-control-and-health)
+
+---
+
+<a id="log-columns"></a>
+## 38. Choose the columns of the log table
+
+Which residuals, which monitoring values and which extremes the table shows is a list in the case file (gallery 28):
+
+```toml
+[[output.probes]]
+name = "vortex"
+point = [0.08, 0.08, 0.0078125]
+
+[log]
+digits = 3                       # significant digits of the numbers
+columns = [
+  "residual.momentum",           # ResU ResV ResW
+  "residual.continuity",         # ResM
+  "probe.vortex.velocity_x",     # a named probe
+  "cell.2000.pressure",          # the value in one cell (debugging)
+  "max.velocity_magnitude",      # the largest value and its cell
+  "min.pressure",                # the lowest value and its cell
+  "boundary.ymax.mass_flow",     # mass flow out of a boundary (kg/s)
+  "time.per_iteration",          # wall-clock seconds per iteration
+]
+```
+
+Names are `<kind>.<target>.<quantity>`; the quantities are `velocity_x`, `velocity_y`, `velocity_z`, `velocity_magnitude` and `pressure`. Linear iterations: `linear.momentum`, `linear.pressure`. Transient runs add `time.simulated`, `time.dt`, `time.courant`, `time.outer` and `time.error`. A wrong name stops `--check` with the list of valid names (code `CASE003`); a cell that the mesh does not have stops the run before the first iteration. Probe values are reconstructed with the cell gradients of the last iteration, as the probes of a transient run; they need the fields from the device at every table line, which costs a download each. Without `[log] columns` the default table is shown.
+
+```
+target/release/foehn flow examples/cases/flow/cavity_re100_columns.toml
+target/release/foehn flow examples/cases/flow/cavity_re100.toml --set 'log.columns=["residual.momentum","max.velocity_magnitude"]'
+target/release/foehn schema --markdown | grep '^| `log\.'
+```
+
+Keys: `log.columns`, `log.digits`, `log.header_every`, `solver.log_every`, `output.probes`.
+
+[↑ back to top](#run-control-and-health)
+
