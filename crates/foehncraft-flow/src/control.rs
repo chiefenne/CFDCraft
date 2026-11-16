@@ -21,7 +21,9 @@
 //! the case it started with; stop the run and restart from the restart file
 //! to change those). A case file that no longer validates leaves everything
 //! as it was. The log lists every change (`key: old -> new`) and
-//! `case.read_toml_N.toml` holds the settings in force afterwards.
+//! `case.read_toml_N.toml` holds the settings in force afterwards. The
+//! entries of `[[schedule]]` that have fired stay in force over the file's
+//! values; the schedule itself cannot be re-read (D128).
 
 use crate::case::FlowCase;
 use anyhow::{Result, bail};
@@ -136,7 +138,7 @@ impl Control {
     }
 }
 
-fn flatten(prefix: &str, v: &toml::Value, out: &mut BTreeMap<String, toml::Value>) {
+pub(crate) fn flatten(prefix: &str, v: &toml::Value, out: &mut BTreeMap<String, toml::Value>) {
     match v {
         toml::Value::Table(t) => {
             for (k, x) in t {
@@ -154,7 +156,7 @@ fn flatten(prefix: &str, v: &toml::Value, out: &mut BTreeMap<String, toml::Value
     }
 }
 
-fn set(v: &mut toml::Value, key: &str, x: Option<&toml::Value>) {
+pub(crate) fn set(v: &mut toml::Value, key: &str, x: Option<&toml::Value>) {
     let mut parts: Vec<&str> = key.split('.').collect();
     let last = parts.pop().unwrap_or_default();
     let mut cur = v;
@@ -187,15 +189,20 @@ pub struct Reread {
     pub not_applied: Vec<String>,
 }
 
-fn show(v: Option<&toml::Value>) -> String {
+pub(crate) fn show(v: Option<&toml::Value>) -> String {
     v.map_or("(default)".into(), |v| v.to_string())
 }
 
 /// Reads the case file `path` again and applies its run-time settings to
 /// `current`. An unreadable or invalid file is an error (the caller keeps
 /// `current`).
-pub fn reread(path: &Path, current: &FlowCase) -> Result<Reread> {
-    let new = FlowCase::from_file_with(path, &current.overrides)?;
+pub fn reread(path: &Path, current: &FlowCase, fired: usize) -> Result<Reread> {
+    let mut new = FlowCase::from_file_with(path, &current.overrides)?;
+    // the entries of `[[schedule]]` that have fired stay in force over the
+    // values of the file (D128)
+    if fired > 0 {
+        new = crate::schedule::apply_fired(&new, current, fired)?;
+    }
     let old_v = toml::Value::try_from(current)?;
     let new_v = toml::Value::try_from(&new)?;
     let (mut a, mut b) = (BTreeMap::new(), BTreeMap::new());
