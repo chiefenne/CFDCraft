@@ -13,9 +13,9 @@ discretised exactly as the diffusion part of stage 2 (orthogonal part
 implicit, non-orthogonal correction deferred), so the matrix is symmetric
 positive definite and has the structure of the pressure-correction
 equation of SIMPLE. This page explains the method, the checks and the
-results. The commands are in [recipes 15–17](../recipes.md#poisson-study),
-the pictures in [gallery 10–11](../gallery.md#poisson-iterations), the case
-files in the [case catalogue](../cases.md#poisson-studies-examplescasespoisson).
+results. The commands are in [recipes 15–17](../recipes/scalar-pressure.md#poisson-study),
+the pictures in [gallery 10–11](../gallery/scalar-pressure.md#poisson-iterations), the case
+files in the [case catalogue](../cases/poisson.md#poisson-studies-examplescasespoisson).
 
 ## Acceptance checks and results
 

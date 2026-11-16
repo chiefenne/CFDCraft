@@ -19,7 +19,7 @@ checks ([below](#health-checks-conservation-ledger-and-divergence-report-part-4b
 part 5a the numerics ([below](#numerics-part-5a)). The commands are in
 [recipes 21–28](../recipes.md#transient-flow), the pictures in
 [gallery 14–20](../gallery.md#taylor-green), the case files in the
-[case catalogue](../cases.md#flow-cases-examplescasesflow).
+[case catalogue](../cases/flow.md#flow-cases-examplescasesflow).
 
 ## Acceptance checks and results
 
