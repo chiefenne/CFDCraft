@@ -30,6 +30,9 @@ line (recipe 26).
 | `solver.limiter` | `"none"` | gradient limiter: `none`, `venkatakrishnan`, `venkatakrishnan-wang` |
 | `solver.limiter_k` | 5 | constant K of the limiter |
 | `solver.nonorth_correction` | true | deferred non-orthogonal and skewness correction of the viscous term |
+| `solver.pressure_gradient` | `"least-squares"` | gradient of the pressure in the momentum source, the Rhie–Chow flux and the wall pressure: `least-squares` (second order on every mesh) or `gauss` (the face sum of the face pressures; robust on skewed faces) |
+| `solver.remediation` | `"auto"` | cell-quality remediation (D50): `auto` switches to the `gauss` pressure gradient and the Venkatakrishnan limiter when a face of the mesh is skewed beyond `skewness_limit`, and reports it (`MESH001`, `MESH002`, the report); `off` keeps the schemes as set. A mesh without such faces runs unchanged ([recipe 36](../recipes/meshes.md#skewed-tets)) |
+| `solver.skewness_limit` | 0.9 | faces with a larger skewness (distance of the face centroid from the line through the two cell centroids, over the centroid distance) are poor |
 | `solver.relaxation_velocity` | 0.7 | under-relaxation α_u of the momentum equations (implicit, Patankar 1980) |
 | `solver.relaxation_pressure` | 1 (SIMPLEC), 0.3 (SIMPLE) | relaxation α_p of the pressure correction |
 | `solver.max_iterations` | 2000 | largest number of outer iterations |

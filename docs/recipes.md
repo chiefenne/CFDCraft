@@ -11,7 +11,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 |---|---|---|
 | [Kernel benchmark G1](recipes/benchmarks.md) | build and run gate G1 on a CPU, on Windows and on an NVIDIA GPU, and rerun it on unstructured meshes | 1, 2, 3, 10 |
 | [Development: tests, CI and releases](recipes/development.md) | MPI tests, checking a change the way CI does, releases, derivative checks of the kernels | 4, 5, 6, 25 |
-| [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values | 7, 8, 9, 11 |
+| [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes | 7, 8, 9, 11, 36 |
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28 |
@@ -61,6 +61,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="python"></a>33 | [Build, run and study cases from Python](recipes/python.md#python) | [Python](recipes/python.md) |
 | <a id="gci"></a>34 | [Estimate the discretisation uncertainty of a mesh or time-step sweep](recipes/verification.md#gci) | [Verification](recipes/verification.md) |
 | <a id="manual"></a>35 | [Regenerate the verification manual](recipes/verification.md#manual) | [Verification](recipes/verification.md) |
+| <a id="skewed-tets"></a>36 | [Run a flow on raw Gmsh tetrahedra (skewed faces)](recipes/meshes.md#skewed-tets) | [Meshes](recipes/meshes.md) |
 
 ## Adding a feature
 

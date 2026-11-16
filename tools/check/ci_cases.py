@@ -31,6 +31,7 @@ FLOW = {
         "cavity_re100", "cavity_re100_energy", "cavity_re1000_poly3d", "couette_hex",
         "couette_mixed", "couette_poly", "couette_tet", "channel_slip", "poiseuille_table",
         "couette_derived", "couette_viscosity", "couette_transpiration", "poiseuille_water",
+        "pipe_gmsh_raw",
     ],
     "linux-2": [
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
@@ -47,7 +48,7 @@ FLOW = {
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",
         "cavity_re100", "cavity_re100_poly3d", "poiseuille_hex", "poiseuille_poly",
         "taylor_green_space", "channel_slip", "poiseuille_table", "pipe_wedge", "couette_derived",
-        "couette_viscosity", "poiseuille_water",
+        "couette_viscosity", "poiseuille_water", "pipe_gmsh_raw",
     ],
 }
 LINUX = ("linux-1", "linux-2", "linux-3", "long")

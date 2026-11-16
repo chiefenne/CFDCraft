@@ -68,6 +68,129 @@ pub enum Algorithm {
     Piso,
 }
 
+/// Gradient of the pressure (D24, D50), used in the momentum source
+/// −∇p V, the Rhie–Chow flux, the extrapolated boundary pressures and the
+/// velocity correction.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum PressureGradient {
+    /// Weighted least squares (D24), the stencil points of walls and
+    /// symmetry planes projected onto the face normal (zero normal
+    /// gradient there).
+    #[default]
+    LeastSquares,
+    /// Gauss: the face sum (1/V) Σ_f p_f S_f, p_f = w p_P + (1 − w) p_N on
+    /// interior faces and the boundary pressure on boundary faces. Robust on
+    /// tetrahedra with skewed faces, where least squares can make the steady
+    /// iteration diverge; exact for a linear pressure only where faces are
+    /// not skewed.
+    Gauss,
+}
+
+impl PressureGradient {
+    /// Name used in case files.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::LeastSquares => "least-squares",
+            Self::Gauss => "gauss",
+        }
+    }
+}
+
+/// Cell-quality remediation (D50).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Remediation {
+    /// On a mesh with faces whose skewness exceeds `skewness_limit`: the
+    /// Gauss pressure gradient and, for a second-order convection scheme
+    /// without a limiter, the Venkatakrishnan limiter; reported in the log,
+    /// `flow.md` and `result.json`. A mesh without such faces runs the
+    /// schemes as set.
+    #[default]
+    Auto,
+    /// Run the schemes as set on every mesh.
+    Off,
+}
+
+/// The cell-quality remediation of a run (D50): what the mesh check found
+/// and what was changed.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct RemediationReport {
+    /// The skewness limit of the check.
+    pub skewness_limit: f64,
+    /// Interior faces whose skewness exceeds the limit.
+    pub skewed_faces: usize,
+    /// Cells with such a face.
+    pub poor_cells: usize,
+    /// Largest face skewness of the mesh.
+    pub max_skewness: f64,
+    /// Changes of the schemes, `key: old -> new`; empty with
+    /// `remediation = "off"` or when the case already uses them.
+    pub changes: Vec<String>,
+}
+
+/// Face skewness (D50, as the mesh quality report): the distance between
+/// the face centroid and the point where the line through the two cell
+/// centroids crosses the face plane, over that distance; per interior
+/// face.
+pub fn face_skewness(d: &Discretisation) -> Vec<f64> {
+    let c = &d.cell_centroid;
+    let fc = &d.face_centroid;
+    let a = &d.face_area;
+    (0..d.n_interior)
+        .map(|f| {
+            let (p, n) = (d.owner[f] as usize, d.neighbour[f] as usize);
+            let xp = [c.x[p], c.y[p], c.z[p]];
+            let dd = [c.x[n] - xp[0], c.y[n] - xp[1], c.z[n] - xp[2]];
+            let r = [fc.x[f] - xp[0], fc.y[f] - xp[1], fc.z[f] - xp[2]];
+            let s = [a.x[f], a.y[f], a.z[f]];
+            let t = (r[0] * s[0] + r[1] * s[1] + r[2] * s[2])
+                / (dd[0] * s[0] + dd[1] * s[1] + dd[2] * s[2]);
+            let e = [t * dd[0] - r[0], t * dd[1] - r[1], t * dd[2] - r[2]];
+            ((e[0] * e[0] + e[1] * e[1] + e[2] * e[2])
+                / (dd[0] * dd[0] + dd[1] * dd[1] + dd[2] * dd[2]))
+                .sqrt()
+        })
+        .collect()
+}
+
+/// The weights of the Gauss gradient in the form of the least-squares
+/// weights (D24), so the same gradient body computes it:
+/// ∇φ_c = Σ_k w_k (φ_k − φ_c) with w_k = (1 − w_f) S_f / V_c for the owner
+/// of an interior face, w_f (−S_f) / V_c for its neighbour and S_f / V_c on
+/// a boundary face (φ_k the boundary value). With Σ_f S_f = 0 this is
+/// (1/V) Σ_f φ_f S_f, φ_f = w_f φ_P + (1 − w_f) φ_N.
+pub fn gauss_weights(d: &Discretisation) -> Soa3 {
+    let ni = d.n_interior;
+    let mut out = Soa3::zeros(d.cell_faces.len());
+    for c in 0..d.n_cells {
+        let v = d.cell_volume[c];
+        for k in d.cell_ptr[c] as usize..d.cell_ptr[c + 1] as usize {
+            let (f, is_nb) = foehncraft_kernels::unpack_face(d.cell_faces[k]);
+            let g = if f >= ni {
+                1.0 / v
+            } else if is_nb {
+                -d.weight[f] / v
+            } else {
+                (1.0 - d.weight[f]) / v
+            };
+            out.set(
+                k,
+                [
+                    g * d.face_area.x[f],
+                    g * d.face_area.y[f],
+                    g * d.face_area.z[f],
+                ],
+            );
+        }
+    }
+    out
+}
+
 /// `[solver]` settings of a flow case.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -87,6 +210,19 @@ pub struct Settings {
     pub limiter: LimiterKind,
     /// Constant K of the limiter.
     pub limiter_k: f64,
+    /// Gradient of the pressure (D24, D50): `least-squares`, or `gauss`,
+    /// the face sum of the face pressures (robust on tetrahedra with skewed
+    /// faces).
+    pub pressure_gradient: PressureGradient,
+    /// Cell-quality remediation (D50): `auto` switches to the Gauss pressure
+    /// gradient and the Venkatakrishnan limiter on a mesh with faces whose
+    /// skewness exceeds `skewness_limit`, and reports it; `off` keeps the
+    /// schemes as set.
+    pub remediation: Remediation,
+    /// Faces with a larger skewness (distance of the face centroid from the
+    /// line through the two cell centroids, over the centroid distance) are
+    /// poor (D50).
+    pub skewness_limit: f64,
     /// Non-orthogonal correction of the viscous term (D26).
     pub nonorth_correction: bool,
     /// Under-relaxation of the momentum equations α_u (default 0.7 steady,
@@ -140,6 +276,9 @@ impl Default for Settings {
             scheme: Scheme::LinearUpwind,
             limiter: LimiterKind::None,
             limiter_k: 5.0,
+            pressure_gradient: PressureGradient::LeastSquares,
+            remediation: Remediation::Auto,
+            skewness_limit: 0.9,
             central_blending: 1.0,
             central_bounding: 0.1,
             nonorth_correction: true,
@@ -202,6 +341,27 @@ impl Settings {
                 Algorithm::Simplec | Algorithm::Piso => 1.0,
                 Algorithm::Simple => 0.3,
             })
+    }
+
+    /// The settings with the cell-quality remediation (D50) applied to a
+    /// mesh whose largest face skewness is `max_skewness`, and the changes
+    /// made (`key: old -> new`; none with `remediation = "off"`, on a mesh
+    /// without poor faces or where the case already sets them).
+    pub fn remedied(&self, max_skewness: f64) -> (Self, Vec<String>) {
+        let mut s = self.clone();
+        let mut changes = Vec::new();
+        if self.remediation == Remediation::Off || max_skewness <= self.skewness_limit {
+            return (s, changes);
+        }
+        if s.pressure_gradient == PressureGradient::LeastSquares {
+            s.pressure_gradient = PressureGradient::Gauss;
+            changes.push("solver.pressure_gradient: \"least-squares\" -> \"gauss\"".into());
+        }
+        if s.scheme != Scheme::Upwind && s.limiter == LimiterKind::None {
+            s.limiter = LimiterKind::Venkatakrishnan;
+            changes.push("solver.limiter: \"none\" -> \"venkatakrishnan\"".into());
+        }
+        (s, changes)
     }
 
     /// Checks the ranges; `transient` when the case has a `[time]` table.
@@ -278,6 +438,11 @@ impl Settings {
             self.limiter_k >= 0.0,
             CASE_RANGE,
             "[solver] limiter_k must be >= 0"
+        );
+        crate::need!(
+            self.skewness_limit > 0.0,
+            CASE_RANGE,
+            "[solver] skewness_limit must be > 0"
         );
         crate::need!(
             (0.0..=1.0).contains(&self.central_blending),
@@ -540,6 +705,8 @@ pub struct Flow {
     /// expressions (D53), added to the right-hand side of the momentum
     /// rows; `None` for a uniform body force (inside the rows).
     pub(crate) source: Option<Buf3>,
+    /// The cell-quality remediation (D50): the mesh check and the changes.
+    pub remediation: RemediationReport,
 }
 
 /// The convective outlets of a transient run (D29): the device buffers of
@@ -681,7 +848,7 @@ impl Flow {
     /// [`initialise`](Self::initialise) or [`load`](Self::load).
     pub fn on(
         (disc, lsq_p): (Discretisation, Soa3),
-        bc: BoundaryArrays,
+        mut bc: BoundaryArrays,
         phys: Physics,
         settings: Settings,
         transient: bool,
@@ -689,6 +856,42 @@ impl Flow {
         target: &Target,
     ) -> Result<Self> {
         settings.validate(transient)?;
+        // cell-quality remediation (D50); with several ranks (stage 7) the
+        // largest skewness is to be reduced over the ranks, so that all of
+        // them take the same schemes
+        let skew = face_skewness(&disc);
+        let max_skewness = skew.iter().copied().fold(0.0, f64::max);
+        let (settings, changes) = settings.remedied(max_skewness);
+        let remediation = {
+            let lim = settings.skewness_limit;
+            let mut poor = vec![false; disc.n_cells];
+            let mut skewed_faces = 0;
+            for (f, &v) in skew.iter().enumerate() {
+                if v > lim {
+                    skewed_faces += 1;
+                    poor[disc.owner[f] as usize] = true;
+                    let n = disc.neighbour[f] as usize;
+                    if n < disc.n_cells {
+                        poor[n] = true;
+                    }
+                }
+            }
+            RemediationReport {
+                skewness_limit: lim,
+                skewed_faces,
+                poor_cells: poor.iter().filter(|&&p| p).count(),
+                max_skewness,
+                changes,
+            }
+        };
+        // the Gauss pressure gradient: its weights, every boundary pressure
+        // enters
+        let lsq_p = if settings.pressure_gradient == PressureGradient::Gauss {
+            bc.p_zero_gradient.iter_mut().for_each(|a| *a = 0.0);
+            gauss_weights(&disc)
+        } else {
+            lsq_p
+        };
         let nc = disc.n_cells;
         let nf = disc.n_faces;
         let nb = nf - disc.n_interior;
@@ -885,6 +1088,7 @@ impl Flow {
             no_backflow,
             conv,
             source: None,
+            remediation,
         })
     }
 
@@ -1406,7 +1610,24 @@ impl Flow {
         let t = Instant::now();
         let s = self.settings.clone();
         if s.pressure_preconditioner == Preconditioner::Amg && (self.amg_setups == 0 || rebuild) {
-            self.dev.amg_setup(w.pval, &s.amg)?;
+            if let Err(e) = self.dev.amg_setup(w.pval, &s.amg) {
+                if self.amg_setups == 0 {
+                    return Err(e);
+                }
+                // the matrix was symmetric positive definite at the earlier
+                // setups: the fields that build it (the momentum diagonal
+                // of SIMPLEC) have run away, a divergence (D63), not a
+                // missing pressure level
+                return Err(crate::diag::err(crate::diag::Diagnostic::new(
+                    crate::diag::RUN_DIVERGED,
+                    format!(
+                        "the solution diverged in outer iteration {}: the pressure-correction \
+                         matrix is no longer positive definite (the multigrid setup failed, \
+                         after {} successful setups)",
+                        self.iteration, self.amg_setups
+                    ),
+                )));
+            }
             self.amg_matrix = Some(self.dev.download(w.pval)?);
             self.amg_setups += 1;
             self.timings.amg_setup += t.elapsed().as_secs_f64();
@@ -1463,7 +1684,8 @@ impl Flow {
     /// Re-validated settings that may change during a run (D40).
     pub fn set_settings(&mut self, s: Settings) -> Result<()> {
         s.validate(self.transient)?;
-        self.settings = s;
+        // the remediation of the start stays in force (D50)
+        self.settings = s.remedied(self.remediation.max_skewness).0;
         Ok(())
     }
 
