@@ -22,7 +22,7 @@ The catalogue is split by physics; each page has its own table of contents.
 | [Scalar cases (`examples/cases/scalar/`)](cases/scalar.md) | steady convection–diffusion of a scalar: manufactured solutions, convection schemes; scalar keys |
 | [Poisson studies (`examples/cases/poisson/`)](cases/poisson.md) | the pressure solver on the Poisson equation, with hypre as the reference; Poisson keys |
 | [Flow cases (`examples/cases/flow/`)](cases/flow.md) | incompressible laminar flow, steady and transient, grouped by physics; what a flow run writes |
-| [Flow case-file keys](cases/flow-keys.md) | every key of a flow case, the boundary conditions (D29) and their sensible combinations (D30) |
+| [Flow case-file keys](cases/flow-keys.md) | every key of a flow case, the derived fields (D72), the boundary conditions (D29) and their sensible combinations (D30) |
 | [Benchmarks (`examples/cases/bench/`)](cases/benchmarks.md) | gate G1, the kernel benchmark; benchmark keys |
 
 ## Sections and keys
@@ -39,6 +39,7 @@ Links to the former single page land here; each row points to the new place.
 | <a id="poisson-case-file-keys"></a>[Poisson case-file keys](cases/poisson.md#poisson-case-file-keys) | [Poisson studies (`examples/cases/poisson/`)](cases/poisson.md) |
 | <a id="flow-cases-examplescasesflow"></a>[Flow cases (`examples/cases/flow/`)](cases/flow.md#flow-cases-examplescasesflow) | [Flow cases (`examples/cases/flow/`)](cases/flow.md) |
 | <a id="flow-case-file-keys"></a>[Flow case-file keys](cases/flow-keys.md#flow-case-file-keys) | [Flow case-file keys](cases/flow-keys.md) |
+| <a id="derived-fields-d72"></a>[Derived fields (D72)](cases/flow-keys.md#derived-fields-d72) | [Flow case-file keys](cases/flow-keys.md) |
 | <a id="boundary-conditions-d29"></a>[Boundary conditions (D29)](cases/flow-keys.md#boundary-conditions-d29) | [Flow case-file keys](cases/flow-keys.md) |
 | <a id="sensible-combinations-d30"></a>[Sensible combinations (D30)](cases/flow-keys.md#sensible-combinations-d30) | [Flow case-file keys](cases/flow-keys.md) |
 | <a id="benchmarks-examplescasesbench"></a>[Benchmarks (`examples/cases/bench/`)](cases/benchmarks.md#benchmarks-examplescasesbench) | [Benchmarks (`examples/cases/bench/`)](cases/benchmarks.md) |

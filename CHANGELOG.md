@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+**Derived fields of stage 5 (part 5c, D72).** `[output] derived` adds
+fields computed from the solution to every `fields*.vtkhdf`: `vorticity`
+(components and magnitude), `q-criterion`, `lambda2`, `enstrophy`,
+`strain-rate`, `pressure-coefficient` (reference state in
+`[output.reference]`: velocity, pressure, density), `total-pressure`, and
+on the patch blocks of the file `wall-shear-stress` and `y-plus`. The new
+command `foehn post derive CASE` writes the same file afterwards from a
+restart file (`--restart`, default `latest`; `--fields`, `--file`), equal
+byte for byte to the file of the run. The VTKHDF writer gains boundary
+face fields on the patch blocks; the `units` attribute lists the derived
+datasets; the estimate counts them; `output.derived` and
+`output.reference` may change during a run. `tools/render_mesh.py` gains
+`--diverging`. New case `flow/couette_derived.toml` (exact on any mesh);
+gallery 22, recipe 30 on the new Post-processing pages. Without `derived`
+every output is as before.
+
 **Boundary conditions of stage 5 (part 5b, D29).** New condition types
 `slip-wall`, `wedge` and `convective-outlet` (∂u/∂t + U_c ∂u/∂n = 0 in
 transient runs, the outlet flow balanced with the inflow, U_c by default

@@ -17,6 +17,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets | 21 |
+| [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22 |
 | [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report | 17, 18, 19 |
 
 ## All examples by number
@@ -44,6 +45,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="health"></a>19 | [Balances and the divergence report](gallery/runs.md#health) | [Run control, health and adjoint readiness](gallery/runs.md) |
 | <a id="time-control"></a>20 | [Time step from the error, output at exact times, potential-flow start](gallery/flow.md#time-control) | [Incompressible flow](gallery/flow.md) |
 | <a id="boundary-conditions"></a>21 | [Boundary conditions: slip walls, wedges, tables, backflow, convective outlets](gallery/boundary-conditions.md#boundary-conditions) | [Boundary conditions](gallery/boundary-conditions.md) |
+| <a id="derived-fields"></a>22 | [Derived fields: vorticity, Q, λ₂, wall shear stress and y⁺](gallery/post-processing.md#derived-fields) | [Post-processing](gallery/post-processing.md) |
 
 ## Adding a feature
 

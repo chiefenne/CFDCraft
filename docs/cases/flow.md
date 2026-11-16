@@ -9,6 +9,7 @@ On this page:
 - [Runs driven by programs, balances](#runs-driven-by-programs-balances)
 - [The flow loop on a GPU](#the-flow-loop-on-a-gpu)
 - [Boundary conditions](#boundary-conditions)
+- [Derived fields](#derived-fields)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -114,3 +115,14 @@ part 5b); the keys are on the [key page](flow-keys.md#boundary-conditions-d29).
 | `flow/pipe_wedge.toml` | generated hex 2D revolved into a 0.5° wedge, perturbed, 256 to 4 096 cells (3 levels) | Hagen–Poiseuille flow on the axisymmetric wedge, observed order 1.8–2.2 required | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |
 | `flow/cylinder_re100_short.toml` | built-in cylinder mesh with the outlet 5.5 D behind the cylinder, 4 928 hexahedra | the Re = 100 vortex street through a static pressure outlet with backflow treatment (Linux, on main, nightly and with the label `full-ci`) | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |
 | `flow/cylinder_re100_convective.toml` | as `cylinder_re100_short.toml` | the same with a convective outlet (Linux, on main, nightly and with the label `full-ci`) | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |
+
+## Derived fields
+
+Fields derived from the solution with the output or afterwards from a
+restart file (D72, stage 5 part 5c); the keys are on the
+[key page](flow-keys.md#derived-fields-d72).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/couette_derived.toml` | generated poly 2D, perturbed by 15 %, 153 cells | every derived field of plane Couette flow, exact (vorticity −1/s, Q = λ₂ = 0, wall shear stress 0.1 Pa); `foehn post derive` writes the same file from `restart.h5` | [gallery 22](../gallery/post-processing.md#derived-fields), [recipe 30](../recipes/post-processing.md#derived-fields) |
+| `flow/cylinder_re100_short.toml` | built-in cylinder mesh, 4 928 hexahedra | vorticity and Q criterion of the vortex street at t = 8 s, from the restart file with `foehn post derive` | [gallery 22](../gallery/post-processing.md#derived-fields), [recipe 30](../recipes/post-processing.md#derived-fields) |

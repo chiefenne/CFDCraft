@@ -19,11 +19,11 @@ scalar_cases() { ls examples/cases/scalar/*.toml | grep -v '_gpu\.toml$'; }
 poisson_cases() { ls examples/cases/poisson/*.toml | grep -v '_gpu\.toml$'; }
 
 F=examples/cases/flow
-flow_linux_1="$F/cavity_re100.toml $F/cavity_re100_energy.toml $F/cavity_re1000_poly3d.toml $F/couette_hex.toml $F/couette_mixed.toml $F/couette_poly.toml $F/couette_tet.toml $F/channel_slip.toml $F/poiseuille_table.toml"
+flow_linux_1="$F/cavity_re100.toml $F/cavity_re100_energy.toml $F/cavity_re1000_poly3d.toml $F/couette_hex.toml $F/couette_mixed.toml $F/couette_poly.toml $F/couette_tet.toml $F/channel_slip.toml $F/poiseuille_table.toml $F/couette_derived.toml"
 flow_linux_2="$F/cylinder_re20.toml $F/cavity_re1000.toml $F/taylor_green_cfl10.toml $F/poiseuille_tet.toml $F/poiseuille_hex.toml $F/poiseuille_poly.toml"
 flow_linux_3="$F/taylor_green_error.toml $F/cylinder_potential.toml $F/cavity_re100_budget.toml $F/taylor_green_bdf2.toml $F/taylor_green_cn.toml $F/poiseuille_mixed.toml $F/cavity_re100_transient.toml $F/taylor_green_space.toml $F/cavity_re100_poly3d.toml $F/cavity_re100_tet3d.toml $F/pipe_wedge.toml"
 flow_long="$F/cylinder_re100.toml $F/cylinder_re100_short.toml $F/cylinder_re100_convective.toml"
-flow_quick="$F/cavity_re100_budget.toml $F/couette_hex.toml $F/couette_mixed.toml $F/couette_poly.toml $F/couette_tet.toml $F/cavity_re100.toml $F/cavity_re100_poly3d.toml $F/poiseuille_hex.toml $F/poiseuille_poly.toml $F/taylor_green_space.toml $F/channel_slip.toml $F/poiseuille_table.toml $F/pipe_wedge.toml"
+flow_quick="$F/cavity_re100_budget.toml $F/couette_hex.toml $F/couette_mixed.toml $F/couette_poly.toml $F/couette_tet.toml $F/cavity_re100.toml $F/cavity_re100_poly3d.toml $F/poiseuille_hex.toml $F/poiseuille_poly.toml $F/taylor_green_space.toml $F/channel_slip.toml $F/poiseuille_table.toml $F/pipe_wedge.toml $F/couette_derived.toml"
 
 # prints "COMMAND FILE" lines
 list() {

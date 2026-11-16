@@ -6,7 +6,8 @@
 //! pressure solver study: CG with algebraic multigrid against hypre; stage
 //! 3), `flow` (steady incompressible laminar flow with SIMPLEC; stage 4)
 //! and `bench g1` (the GPU kernel gate of stage 0), `schema` (the JSON
-//! Schema of the flow case file, D77).
+//! Schema of the flow case file, D77), `post derive` (derived fields from
+//! a restart file, D72).
 //!
 //! Output streams (D79): human text on standard output, or with `--json`
 //! on standard error and one JSON object on standard output (the result
@@ -111,6 +112,53 @@ enum Command {
     /// default, unit and description of every key, and whether it may
     /// change during a run.
     Schema(SchemaArgs),
+    /// Post-processing of a finished or stopped flow run.
+    Post {
+        #[command(subcommand)]
+        post: Post,
+    },
+}
+
+#[derive(Subcommand)]
+enum Post {
+    /// Write the fields with derived fields (D72: vorticity, q-criterion,
+    /// lambda2, enstrophy, strain-rate, pressure-coefficient,
+    /// total-pressure, wall-shear-stress, y-plus) from a restart file of
+    /// the case, the same numbers as `[output] derived` at write time.
+    Derive(DeriveArgs),
+}
+
+#[derive(clap::Args)]
+struct DeriveArgs {
+    /// Flow case file (TOML) of the run.
+    case: PathBuf,
+    /// Restart file, or `latest` for the newest one of the output
+    /// directory.
+    #[arg(long, default_value = "latest")]
+    restart: PathBuf,
+    /// Derived fields, comma-separated (default: `output.derived` of the
+    /// case, or every field when that is empty).
+    #[arg(long, value_delimiter = ',')]
+    fields: Option<Vec<String>>,
+    /// File to write (default: `derived.vtkhdf` for `restart.h5`,
+    /// `derived_<N>.vtkhdf` for `restart_<N>.h5`, in the directory of the
+    /// restart file).
+    #[arg(long)]
+    file: Option<PathBuf>,
+    /// Override a case key, `--set output.reference.velocity=2` (repeatable,
+    /// D62; the value is TOML, a bare word is a string).
+    #[arg(long = "set", value_name = "KEY=VALUE")]
+    set: Vec<String>,
+    /// Allow reading only below this directory (repeatable, D82).
+    #[arg(long, value_name = "DIR")]
+    read_root: Vec<PathBuf>,
+    /// Allow writing only below this directory (repeatable, D82).
+    #[arg(long, value_name = "DIR")]
+    write_root: Vec<PathBuf>,
+    /// Output directory of the run (overrides `output.directory`), where
+    /// `latest` looks.
+    #[arg(long)]
+    out: Option<PathBuf>,
 }
 
 #[derive(clap::Args)]
@@ -305,6 +353,7 @@ fn main() {
         Command::Flow(_) => "flow",
         Command::Bench { .. } => "bench",
         Command::Schema(_) => "schema",
+        Command::Post { .. } => "post",
     };
     let res = match cli.command {
         Command::Info => info(out),
@@ -313,6 +362,9 @@ fn main() {
         Command::Poisson(a) => poisson(a, out),
         Command::Flow(a) => flow(a, out),
         Command::Schema(a) => schema(a, out),
+        Command::Post {
+            post: Post::Derive(a),
+        } => derive(a, out),
         Command::Bench {
             bench: Bench::Backends,
         } => {
@@ -366,6 +418,88 @@ fn main() {
         }
     };
     std::process::exit(code);
+}
+
+/// `foehn post derive`.
+fn derive(a: DeriveArgs, out: Out) -> Result<Done> {
+    use foehncraft_flow::case::output_dir;
+    use foehncraft_flow::derived::{self, Derived};
+    let roots = Roots {
+        read: a.read_root.clone(),
+        write: a.write_root.clone(),
+    };
+    let case = engine::load(&a.case, &a.set, &roots)?;
+    case.validate()?;
+    let (_, dir) = output_dir(&case, &a.case, a.out.clone());
+    let restart = if a.restart == std::path::Path::new("latest") {
+        engine::latest_restart(&dir)?.ok_or_else(|| {
+            diag::err(diag::Diagnostic::new(
+                diag::RUN_NO_RESTART,
+                format!(
+                    "--restart latest: no restart file (restart.h5, restart_<N>.h5) in {}",
+                    dir.display()
+                ),
+            ))
+        })?
+    } else {
+        a.restart.clone()
+    };
+    roots.check_read(&restart, "the restart file")?;
+    let list: Vec<Derived> = match &a.fields {
+        Some(names) => names
+            .iter()
+            .map(|n| {
+                Derived::parse(n.trim()).ok_or_else(|| {
+                    let all: Vec<&str> = Derived::ALL.iter().map(|d| d.name()).collect();
+                    diag::err(diag::Diagnostic::new(
+                        diag::CASE_BAD_VALUE,
+                        format!("unknown derived field `{n}`; known: {}", all.join(", ")),
+                    ))
+                })
+            })
+            .collect::<Result<_>>()?,
+        None if !case.output.derived.is_empty() => case.output.derived.clone(),
+        // every field; the pressure coefficient only with a reference
+        None => Derived::ALL
+            .into_iter()
+            .filter(|d| {
+                *d != Derived::PressureCoefficient || derived::validate_list(&case, &[*d]).is_ok()
+            })
+            .collect(),
+    };
+    let file = a.file.clone().unwrap_or_else(|| {
+        let stem = restart
+            .file_stem()
+            .map_or("restart".into(), |s| s.to_string_lossy().into_owned());
+        let name = match stem.strip_prefix("restart") {
+            Some(rest) => format!("derived{rest}.vtkhdf"),
+            None => format!("{stem}_derived.vtkhdf"),
+        };
+        restart.with_file_name(name)
+    });
+    if let Some(d) = file.parent().filter(|d| !d.as_os_str().is_empty()) {
+        roots.check_write(d)?;
+    }
+    let rep = derived::from_restart(&case, &restart, &list, &file)?;
+    let at = match (rep.step, rep.time) {
+        (Some(n), Some(t)) => format!("step {n}, t = {t} s"),
+        _ => format!("iteration {}", rep.iteration),
+    };
+    out.line(&format!(
+        "{}: {} cells at {at} from {}",
+        rep.file.display(),
+        rep.cells,
+        rep.restart.display()
+    ));
+    out.line(&format!(
+        "  derived: {}",
+        rep.derived
+            .iter()
+            .map(|d| d.name())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ));
+    Ok(Done::ok(serde_json::to_value(&rep)?))
 }
 
 /// The features of this build.

@@ -8,7 +8,8 @@
 //!   hexahedra, prisms and pyramids as VTK's linear cells, everything else
 //!   as `VTK_POLYHEDRON` with its faces; cell fields under `CellData`;
 //! - one `PolyData` block per boundary patch, named after the patch, with
-//!   the patch index as a cell field;
+//!   the patch index and the boundary face fields ([`FaceField`], such as
+//!   the wall shear stress) as cell fields;
 //! - an assembly `internal`, `boundary/<patch>` for ParaView's block
 //!   selection.
 //!
@@ -43,6 +44,15 @@ pub struct CellField<'a> {
     pub values: &'a [f64],
 }
 
+/// A field on the boundary faces, written to the patch blocks.
+pub struct FaceField<'a> {
+    /// Name shown in ParaView.
+    pub name: &'a str,
+    /// One value per local boundary face (boundary face `f` of the mesh at
+    /// `f - n_interior_faces`).
+    pub values: &'a [f64],
+}
+
 /// A file attribute of [`write_with`].
 #[derive(Debug, Clone, Copy)]
 pub enum Attr<'a> {
@@ -69,7 +79,28 @@ pub fn write_with(
     fields: &[CellField],
     attrs: &[(&str, Attr)],
 ) -> Result<()> {
+    write_all(path, mesh, fields, &[], attrs)
+}
+
+/// As [`write_with`], with fields on the boundary faces, which go to the
+/// patch blocks.
+pub fn write_all(
+    path: impl AsRef<Path>,
+    mesh: &Mesh,
+    fields: &[CellField],
+    face_fields: &[FaceField],
+    attrs: &[(&str, Attr)],
+) -> Result<()> {
     let path = path.as_ref();
+    let nb = mesh.n_boundary_faces();
+    for f in face_fields {
+        anyhow::ensure!(
+            f.values.len() == nb,
+            "face field {} has {} values for {nb} boundary faces",
+            f.name,
+            f.values.len(),
+        );
+    }
     for f in fields {
         anyhow::ensure!(
             f.values.len() == mesh.n_cells,
@@ -110,7 +141,7 @@ pub fn write_with(
     for (i, p) in mesh.patches.iter().enumerate() {
         let name = block_name(&p.name);
         let g = group(&root, &name)?;
-        write_patch(&g, mesh, p.range(), i as f64)?;
+        write_patch(&g, mesh, p.range(), i as f64, face_fields)?;
         index_attr(&g, i as i64 + 1)?;
         boundary.link_soft(&format!("/VTKHDF/{name}"), &name)?;
     }
@@ -381,6 +412,7 @@ fn write_patch(
     mesh: &Mesh,
     faces: std::ops::Range<usize>,
     patch: f64,
+    face_fields: &[FaceField],
 ) -> Result<()> {
     type_attr(g, "PolyData")?;
     version_attr(g)?;
@@ -390,7 +422,7 @@ fn write_patch(
     let mut offsets: Vec<i64> = vec![0];
     let mut order: Vec<usize> = faces.clone().collect();
     order.sort_by_key(|&f| mesh.face_id[f]);
-    for f in order {
+    for &f in &order {
         for &n in mesh.face(f) {
             let id = *map.entry(n).or_insert_with(|| {
                 pts.push(mesh.points[n as usize]);
@@ -416,6 +448,11 @@ fn write_patch(
     }
     let cd = group(g, "CellData")?;
     ds(&cd, "patch", &vec![patch; faces.len()])?;
+    let ni = mesh.n_interior_faces();
+    for ff in face_fields {
+        let v: Vec<f64> = order.iter().map(|&f| ff.values[f - ni]).collect();
+        ds(&cd, ff.name, &v)?;
+    }
     group(g, "PointData")?;
     group(g, "FieldData")?;
     Ok(())

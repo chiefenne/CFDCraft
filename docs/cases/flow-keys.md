@@ -66,6 +66,8 @@ line (recipe 26).
 | `output.monitor_interval` | none | transient: a row of `forces.csv` and `probes.csv` at the multiples of this simulated time (s) instead of every `monitor_every` steps, landed on exactly (equally spaced samples for spectra, D66) |
 | `output.probes` | none | point probes `[[output.probes]]` with `name` and `point`: velocity and pressure in `probes.csv` |
 | `output.coefficients` | none | force coefficients C = 2F/(ρU²A) of the sum over `patches`, with `velocity` U, `area` A, `drag_direction` (x), `lift_direction` (y) |
+| `output.derived` | none | derived fields in every `fields*.vtkhdf` (D72): `vorticity`, `q-criterion`, `lambda2`, `enstrophy`, `strain-rate`, `pressure-coefficient`, `total-pressure`, `wall-shear-stress`, `y-plus`; see [Derived fields](#derived-fields-d72) |
+| `output.reference.velocity`, `.pressure`, `.density` | `[output.coefficients] velocity`, 0, `[fluid] density` | reference state U_ref (m/s), p_ref (Pa), ρ_ref (kg/m³) of `pressure-coefficient` |
 
 Transient cases (stage 5):
 
@@ -123,6 +125,30 @@ fills the square 0 ≤ x, y ≤ height and a graded wake block to the outlet.
 | `radial`, `radial_ratio` | 32, 6 | intervals from the cylinder to the square, ratio of the last to the first |
 | `wake`, `wake_ratio` | 64, 8 | intervals in x of the wake block, ratio of the last to the first |
 | `refine` | 0 | halve every interval this many times (refine 0: 6 144 cells, each level four times more) |
+
+# Derived fields (D72)
+
+`[output] derived` adds fields computed from the solution to every
+`fields*.vtkhdf`; `foehn post derive CASE` writes the same file afterwards
+from a restart file ([recipe 30](../recipes/post-processing.md#derived-fields)).
+G is the cell velocity gradient (Gᵢⱼ = ∂uᵢ/∂xⱼ, the weighted
+least-squares gradient of the solver), S = ½ (G + Gᵀ), Ω = ½ (G − Gᵀ),
+‖·‖ the Frobenius norm.
+
+| Name | Datasets | Definition | Unit |
+|---|---|---|---|
+| `vorticity` | `vorticity_x`, `_y`, `_z`, `vorticity_magnitude` | ω = ∇ × u | 1/s |
+| `q-criterion` | `q_criterion` | ½ (‖Ω‖² − ‖S‖²), vortex cores where Q > 0 | 1/s² |
+| `lambda2` | `lambda2` | middle eigenvalue of S² + Ω², vortex cores where λ₂ < 0 | 1/s² |
+| `enstrophy` | `enstrophy` | ½ ω·ω | 1/s² |
+| `strain-rate` | `strain_rate` | √(2 S:S) | 1/s |
+| `pressure-coefficient` | `pressure_coefficient` | (p − p_ref)/(½ ρ_ref U_ref²); needs a reference velocity | - |
+| `total-pressure` | `total_pressure` | p + ½ ρ u·u | Pa |
+| `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude`, on the patch blocks | tangential viscous stress of the fluid on the wall (as `wall_<patch>.csv`), zero off walls | Pa |
+| `y-plus` | `y_plus`, on the patch blocks | d √(τ_w/ρ)/ν, d the wall distance of the cell centroid, zero off walls | - |
+
+The datasets are written in the order of this table, whatever the order of
+the list. `output.derived` and `output.reference` may change during a run.
 
 # Boundary conditions (D29)
 

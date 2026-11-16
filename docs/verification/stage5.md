@@ -16,7 +16,9 @@ requests and are added here. Part 2 is the GPU flow loop
 ([below](#adjoint-ready-kernels-part-3)), part 4a the run contract for
 scripts and agents ([below](#run-contract-part-4a)), part 4b the health
 checks ([below](#health-checks-conservation-ledger-and-divergence-report-part-4b)),
-part 5a the numerics ([below](#numerics-part-5a)). The commands are in
+part 5a the numerics ([below](#numerics-part-5a)), part 5b the boundary
+conditions ([below](#boundary-conditions-part-5b)), part 5c the derived
+fields ([below](#derived-fields-part-5c)). The commands are in
 [recipes 21–28](../recipes.md#transient-flow), the pictures in
 [gallery 14–20](../gallery.md#taylor-green), the case files in the
 [case catalogue](../cases/flow.md#flow-cases-examplescasesflow).
@@ -721,10 +723,58 @@ agree to 2e-6 relative (finest polygonal level 7.73569e-5 against
 `--set boundary.xmax.backflow=zero-gradient` all three are bitwise those
 of main.
 
+## Derived fields (part 5c)
+
+The first set of D72: quantities computed from the solution when the
+fields are written (`[output] derived`), or afterwards from a restart file
+(`foehn post derive`). Both paths call the same code on the same state, so
+they write the same file. Without `derived` the output is that of part 5b
+(the catalogue below).
+
+| Check | Result | Where |
+|---|---|---|
+| Formulas | solid-body rotation: ω_z = 2Ω, Q = Ω², λ₂ = −Ω², enstrophy 2Ω², no strain; simple shear: Q = λ₂ = 0, shear rate γ; pure strain: Q = −a², λ₂ = a²; to 1e-12 | unit tests `solid_body_rotation`, `simple_shear_is_no_vortex`, `pure_strain` |
+| Eigenvalues of λ₂ | rotated diagonal matrices, also with double and triple eigenvalues: to 1e-13 | unit test `eigenvalues_of_symmetric_matrices` |
+| Couette flow on every cell type | hex, tet, poly and mixed cells: vorticity, Q, λ₂, enstrophy and shear rate to 1e-8, total pressure p + ½ρu², pressure coefficient, wall shear stress μU/H = 0.1 Pa to 1e-9 and y⁺ = d√(τ_w/ρ)/ν to 1e-8 relative on both walls, zero on the other patches | case `couette_derived`, test `couette_derived_fields_are_exact_on_every_mesh_type` |
+| Taylor–Green vortex | Q, λ₂ and ω_z against the formulas applied to the exact velocity gradient at the cell centroids, t = 0.1 s, 16², 32², 64² cells: RMS errors relative to the exact RMS 7.0e-2, 1.3e-2, 2.3e-3 (Q, orders 2.42, 2.48), 1.0e-1, 1.7e-2, 2.6e-3 (λ₂, 2.58, 2.68), 3.4e-2, 6.8e-3, 1.3e-3 (ω_z, 2.30, 2.41) | test `taylor_green_vortex_criteria_converge` |
+| Post derive is the file of the run | steady (Couette on polyhedra) and transient (Taylor–Green, BDF2): `derived.vtkhdf` from `restart.h5` equal byte for byte to `fields.vtkhdf`; the command line with `--json`, `--fields`, `--file`, `latest` and the error codes CASE003, CASE005, RUN011 | tests `post_derive_gives_the_file_of_the_run`, `post_derive_from_the_restart_file` |
+| Keys | names in any order and repeated give the same datasets; an unknown name, a pressure coefficient without a reference velocity, a negative reference velocity or density refused with their codes | test `checks_of_the_derived_keys` |
+
+**Definitions.** G is the cell velocity gradient of the solver (the
+weighted least-squares gradient, Gᵢⱼ = ∂uᵢ/∂xⱼ), S = ½ (G + Gᵀ) and
+Ω = ½ (G − Gᵀ). Q = ½ (‖Ω‖² − ‖S‖²) (Hunt, Wray and Moin 1988) and λ₂, the
+middle eigenvalue of S² + Ω² (Jeong and Hussain 1995), mark vortex cores
+where Q > 0 and λ₂ < 0. Both are zero in pure shear, so a straight
+boundary layer does not show up; on a curved wall with the flow along it,
+Q = (u/r) ∂u/∂r is positive in the boundary layer (the cylinder of gallery
+22). The eigenvalues come from cyclic Jacobi rotations (Golub and Van Loan
+2013): the closed form of the cubic loses half the digits where two
+eigenvalues are equal, which is every 2D vortex (−Ω² twice), and λ₂ is
+then the one that matters. The wall shear stress and y⁺ use the wall
+values of `wall_<patch>.csv` (the viscous force of the fluid on the face,
+its tangential part per area); y⁺ takes the distance of the owner centroid
+from the face plane.
+
+**Where the fields go.** Cell fields join the `internal` block of the
+VTKHDF file; the wall fields go to the patch blocks (the boundary faces,
+in the order of their global identities), zero on patches that are not
+walls. ParaView shows them on the patch surfaces (block selection
+`boundary/<patch>`). The `units` attribute lists every dataset. The
+estimate before the run (D81) counts the derived datasets.
+
+**The catalogue against part 5b.** Every case of the CI sets (linux-1 to
+linux-3 and the long set: 29 flow cases including the three cylinder
+benchmarks, the scalar, Poisson and mesh cases) run with the binaries of
+main and of this part (`tools/compare_runs.py --across-versions`, 360
+files): all flow, scalar and Poisson results bitwise equal; the mesh
+reports differ only in their timings.
+
 ## Limits of this part of stage 5
 
-- The further stage-5 items (the derived fields of part 5c, expressions,
-  the Python package) follow in their own pull requests.
+- The further stage-5 items (expressions, the Python package) follow in
+  their own pull requests. The derived fields of the turbulence models,
+  cut planes and integrals over surfaces (D72, D73) come later; a restart
+  file of a moving mesh is not read by `post derive` yet.
 - The turbulence values of the backflow at pressure outlets are accepted
   and take effect with the turbulence models of stage 6. The wedge needs
   a 2D mesh of the box generator; wedges from Gmsh meshes come with D3.
@@ -740,6 +790,14 @@ of main.
 - One partition only, as in stage 4, and one GPU.
 
 ## References
+
+- J. C. R. Hunt, A. A. Wray, P. Moin, *Eddies, streams, and convergence
+  zones in turbulent flows*, Center for Turbulence Research, Proceedings
+  of the Summer Program 1988, 193–208
+- J. Jeong, F. Hussain, *On the identification of a vortex*, J. Fluid
+  Mech. 285, 69–94 (1995)
+- G. H. Golub, C. F. Van Loan, *Matrix Computations*, 4th ed., Johns
+  Hopkins University Press (2013), section 8.5
 
 - A. Griewank, *Achieving logarithmic growth of temporal and spatial
   complexity in reverse automatic differentiation*, Optim. Methods Softw.

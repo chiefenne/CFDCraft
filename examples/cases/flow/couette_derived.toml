@@ -1,0 +1,68 @@
+# Derived fields (D72) of plane Couette flow on perturbed poly cells.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/couette_derived.toml
+#   cargo run --release -p foehncraft-cli -- post derive examples/cases/flow/couette_derived.toml
+#
+# The flow of couette_poly.toml with every derived field in fields.vtkhdf.
+# The velocity gradient is constant, so the fields are exact on any mesh:
+# vorticity_z = -1/s, q_criterion = lambda2 = 0, strain_rate = 1/s,
+# enstrophy = 0.5/s², total_pressure = p + y²/2 Pa, pressure_coefficient =
+# (p - 0.5)/0.5 = -1, on the walls wall_shear_stress = ±0.1 Pa along x and
+# y_plus = 3.162 d with d the wall distance of the cell centroid. The
+# second command writes the same file again from restart.h5 (derived.vtkhdf,
+# byte for byte equal to fields.vtkhdf).
+
+[mesh.generate]
+type = "poly"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [16, 8, 1]
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.1          # Re = ρ U h / μ = 10
+
+[flow]
+convection = false
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"     # the exact Couette profile
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-11
+max_iterations = 2000
+
+[analytic]
+type = "couette"
+wall_velocity = 1.0
+
+[output]
+derived = ["vorticity", "q-criterion", "lambda2", "enstrophy", "strain-rate",
+           "pressure-coefficient", "total-pressure", "wall-shear-stress", "y-plus"]
+[output.reference]       # reference state of pressure_coefficient
+velocity = 1.0           # m/s
+pressure = 0.5           # Pa (density: that of [fluid])
+
+[run]
+restart_final = true     # restart.h5 for `foehn post derive`
+
+[verification]
+max_error = 1e-9
+require_convergence = true
