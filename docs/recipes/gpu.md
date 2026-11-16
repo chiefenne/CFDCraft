@@ -14,19 +14,19 @@ Part of the [Recipes](../recipes.md): scalar operators, pressure solver and flow
 ## 14. Run the scalar operators on an NVIDIA GPU
 
 Without a GPU of your own: open
-[`tools/stage2_colab.ipynb`](https://colab.research.google.com/github/chiefenne/Foehncraft/blob/main/tools/stage2_colab.ipynb)
+[`tools/notebooks/stage2_colab.ipynb`](https://colab.research.google.com/github/chiefenne/Foehncraft/blob/main/tools/notebooks/stage2_colab.ipynb)
 in Google Colab, choose a T4 runtime, set `BRANCH` if the stage-2 branch is
 not merged yet, and run all cells (about 15 minutes). On any Linux machine
 with an NVIDIA GPU of compute capability 7.0 or newer:
 
 ```
-bash tools/stage2_cloud.sh
+python3 -m tools.bench.stage2_cloud
 ```
 
 By hand:
 
 ```
-gpu/ptx-kernels/build.sh sm_75                          # your GPU's sm_XY (nvidia-smi: compute_cap)
+python3 gpu/ptx-kernels/build.py sm_75                          # your GPU's sm_XY (nvidia-smi: compute_cap)
 cargo build --release -p foehncraft-cli --features cuda
 target/release/foehn scalar examples/cases/scalar/mms_poly_gpu.toml
 target/release/foehn scalar examples/cases/scalar/oblique_step_2d.toml --backends cpu,cuda
@@ -47,21 +47,21 @@ run fails if any difference exceeds 1e-10. Keys: `run.backends`,
 ## 16. Run the pressure solver on an NVIDIA GPU against hypre
 
 Without a GPU of your own: open
-[`tools/stage3_colab.ipynb`](https://colab.research.google.com/github/chiefenne/Foehncraft/blob/main/tools/stage3_colab.ipynb)
+[`tools/notebooks/stage3_colab.ipynb`](https://colab.research.google.com/github/chiefenne/Foehncraft/blob/main/tools/notebooks/stage3_colab.ipynb)
 in Google Colab, choose a T4 runtime, set `BRANCH` if the stage-3 branch is
 not merged yet, and run all cells (about 30 minutes, most of it compiling
 hypre with CUDA). On any Linux machine with an NVIDIA GPU of compute
 capability 7.0 or newer and the CUDA toolkit:
 
 ```
-bash tools/stage3_cloud.sh
+python3 -m tools.bench.stage3_cloud
 ```
 
 By hand (sm_75 for a T4; `nvidia-smi --query-gpu=compute_cap --format=csv`):
 
 ```
-tools/build_hypre.sh $PWD/target/hypre-cuda75 75
-gpu/ptx-kernels/build.sh sm_75
+python3 -m tools.bench.build_hypre $PWD/target/hypre-cuda75 75
+python3 gpu/ptx-kernels/build.py sm_75
 HYPRE_DIR=$PWD/target/hypre-cuda75 cargo build --release -p foehncraft-cli --features cuda,hypre
 target/release/foehn poisson examples/cases/poisson/poisson_poly_gpu.toml
 target/release/foehn poisson examples/cases/poisson/poisson_poly_box.toml --backends cuda --solvers amg,amg-double,hypre
@@ -90,7 +90,7 @@ toolkit, the kernels need the nightly toolchain (installed by
 `rust-toolchain.toml` on first use). From the repository root:
 
 ```
-gpu/ptx-kernels/build.sh sm_75                       # PTX for your GPU (sm_75: T4, sm_86: RTX 30xx, ...)
+python3 gpu/ptx-kernels/build.py sm_75                       # PTX for your GPU (sm_75: T4, sm_86: RTX 30xx, ...)
 cargo build --release -p foehncraft-cli --features cuda
 target/release/foehn info                             # features: cuda ...
 target/release/foehn flow examples/cases/flow/cavity_re100.toml --backend cuda
@@ -102,14 +102,14 @@ directories (`pip install h5py numpy` once):
 ```
 target/release/foehn flow examples/cases/flow/cylinder_re100_gpu.toml --backend cpu  --out output/gpu/cpu
 target/release/foehn flow examples/cases/flow/cylinder_re100_gpu.toml --backend cuda --out output/gpu/cuda
-python3 tools/compare_runs.py output/gpu/cpu output/gpu/cuda    # "bitwise equal", exit code 0
+python3 -m tools.check.compare_runs output/gpu/cpu output/gpu/cuda    # "bitwise equal", exit code 0
 ```
 
-`python3 tools/stage5_cloud.py` does this for eight cases, from Couette
+`python3 -m tools.bench.stage5_cloud` does this for eight cases, from Couette
 flow to the cavity on one million polyhedra, and writes
 `output/stage5_gpu/report.md` with the times per cell and iteration.
 **Without a GPU of your own:** open
-[`tools/stage5_colab.ipynb`](https://colab.research.google.com/github/chiefenne/Foehncraft/blob/main/tools/stage5_colab.ipynb)
+[`tools/notebooks/stage5_colab.ipynb`](https://colab.research.google.com/github/chiefenne/Foehncraft/blob/main/tools/notebooks/stage5_colab.ipynb)
 in Google Colab, choose a T4 runtime, set `BRANCH` if the stage-5 branch
 is not merged yet, and run all cells (about 15 minutes).
 

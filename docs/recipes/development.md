@@ -36,20 +36,20 @@ exchange) and a reproducible sum that gives the same bits on every rank.
 
 ```
 cargo fmt --all --check
-tools/ci_cases.sh --check                               # every flow case is in a CI set
+python3 -m tools.check.ci_cases --check                               # every flow case is in a CI set
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --workspace --all-targets --features foehncraft-cuda/cuda,foehncraft-cli/cuda -- -D warnings
-python3 tools/check_backend.py                          # D60: CUDA only in crates/foehncraft-cuda and gpu/
+python3 -m tools.check.backend                          # D60: CUDA only in crates/foehncraft-cuda and gpu/
 cargo test --workspace --profile ci                     # what a pull request runs (--release on main)
 cargo test -p foehncraft-mesh --no-default-features      # without HDF5 and METIS
 cargo test -p foehncraft-fv --no-default-features
-gpu/ptx-kernels/build.sh && tools/check_kernels.sh     # PTX, and R10: no atomics, no f32, no FMA
+python3 gpu/ptx-kernels/build.py && python3 -m tools.check.kernels     # PTX, and R10: no atomics, no f32, no FMA
 cargo build --profile ci -p foehncraft-cli
 for s in linux-1 linux-2 linux-3; do                    # add "long" for the cylinder at Re 100
-  tools/ci_cases.sh "$s" target/ci/foehn || break
+  python3 -m tools.check.ci_cases "$s" target/ci/foehn || break
 done
 pip install -r tools/requirements-ci.txt
-python3 tools/check_vtkhdf.py output/*/mesh.vtkhdf output/*/fields.vtkhdf output/*/*/fields.vtkhdf
+python3 -m tools.check.vtkhdf output/*/mesh.vtkhdf output/*/fields.vtkhdf output/*/*/fields.vtkhdf
 ```
 
 The workflow is `.github/workflows/ci.yml`. It has two tiers:
@@ -132,7 +132,7 @@ in the storage of A (for the solvers and the multigrid),
 (or use `FlowRun` for the flow solver with a fixed time step) and call
 `checkpoint::reverse(run, steps, snapshots, adjoint)`; the adjoint step i
 is called for i = n − 1, …, 0 with level i current. `schedule(n, s)` lists
-the actions, `python3 tools/checkpoint_chart.py out.svg` draws the cost
+the actions, `python3 -m tools.plot.checkpoint_chart out.svg` draws the cost
 against the snapshots.
 
 [↑ back to top](#development-tests-ci-and-releases)

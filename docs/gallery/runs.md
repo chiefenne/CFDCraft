@@ -46,7 +46,7 @@ the snapshots.
 ```
 cargo test --release -p foehncraft-flow --test adjoint -- --nocapture   # Jacobians, one line per kernel
 cargo test --release -p foehncraft-flow --lib -- adjoint_tests checkpoint   # transposed matrices, checkpointing
-python3 tools/checkpoint_chart.py checkpoint_steps.svg
+python3 -m tools.plot.checkpoint_chart checkpoint_steps.svg
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)
@@ -101,7 +101,7 @@ exit 0
 
 ```
 cargo test --release -p foehncraft-cli --test run_contract
-python3 tools/estimate_chart.py estimate.svg
+python3 -m tools.plot.estimate_chart estimate.svg
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)
@@ -168,7 +168,7 @@ Error RUN014: the solution diverged in outer iteration 16 ...
 
 ```
 cargo test --release -p foehncraft-flow --test health
-python3 tools/energy_budget_chart.py energy_budget.svg
+python3 -m tools.plot.energy_budget_chart energy_budget.svg
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)

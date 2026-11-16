@@ -112,13 +112,13 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --all --check
       - name: Every flow case is in a CI case set
-        run: tools/ci_cases.sh --check
+        run: python3 -m tools.check.ci_cases --check
       - run: cargo clippy --workspace --all-targets --locked
       # the CUDA backends compile without a CUDA toolkit (driver and NVRTC
       # are loaded at run time)
       - run: cargo clippy --workspace --all-targets --locked --features foehncraft-cuda/cuda,foehncraft-cli/cuda
       - name: CUDA only in the CUDA backend crate (D60)
-        run: python3 tools/check_backend.py
+        run: python3 -m tools.check.backend
       - run: cargo doc --workspace --no-deps --locked
 
   msrv:
@@ -172,7 +172,7 @@ jobs:
           cargo test -p foehncraft-mesh --no-default-features --locked
           cargo test -p foehncraft-fv --no-default-features --locked
           cargo test -p foehncraft-flow --no-default-features --locked
-          tools/check_c_free.sh
+          python3 -m tools.check.c_free
       - uses: actions/upload-artifact@v4
         with:
           name: g1-ci-small-${{ matrix.os }}
@@ -180,7 +180,7 @@ jobs:
 
   # ---------------------------------------------------------------------
   # The case catalogue (R5; each case checks its own results), sharded.
-  # The lists live in tools/ci_cases.sh so that CI and recipe 5 run the
+  # The lists live in tools/check/ci_cases.py so that CI and recipe 5 run the
   # same cases.
   cases:
     name: Cases ${{ matrix.set }} (${{ matrix.os }})
@@ -202,15 +202,15 @@ jobs:
           shared-key: build-${{ needs.plan.outputs.profile }}
           save-if: false
       - run: cargo build --locked --profile "$BUILD_PROFILE" -p foehncraft-cli
-      - name: Run the cases of set ${{ matrix.set }}
-        shell: bash
-        run: tools/ci_cases.sh "${{ matrix.set }}" "target/$BUILD_PROFILE/foehn"
       - uses: actions/setup-python@v5
-        if: runner.os == 'Linux'
         with:
           python-version: "3.12"
-          cache: pip
+          # pip installs (and so a pip cache) only on Linux, for the VTK check
+          cache: ${{ runner.os == 'Linux' && 'pip' || '' }}
           cache-dependency-path: tools/requirements-ci.txt
+      - name: Run the cases of set ${{ matrix.set }}
+        shell: bash
+        run: python -m tools.check.ci_cases "${{ matrix.set }}" "target/$BUILD_PROFILE/foehn"
       - name: VTKHDF files load with VTK's reader (the reader of ParaView)
         if: runner.os == 'Linux'
         shell: bash
@@ -218,7 +218,7 @@ jobs:
           pip install -r tools/requirements-ci.txt
           shopt -s nullglob
           files=(output/*/mesh.vtkhdf output/*/fields.vtkhdf output/*/*/fields.vtkhdf)
-          if [ ${#files[@]} -gt 0 ]; then python3 tools/check_vtkhdf.py "${files[@]}"; fi
+          if [ ${#files[@]} -gt 0 ]; then python3 -m tools.check.vtkhdf "${files[@]}"; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -258,10 +258,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: hypre-install
-          key: hypre-v3.2.1-${{ runner.os }}-${{ hashFiles('tools/build_hypre.sh') }}
+          key: hypre-v3.2.1-${{ runner.os }}-${{ hashFiles('tools/bench/build_hypre.py') }}
       - name: Build hypre (sequential, shared)
         if: steps.hypre-cache.outputs.cache-hit != 'true'
-        run: tools/build_hypre.sh "$HYPRE_DIR"
+        run: python3 -m tools.bench.build_hypre "$HYPRE_DIR"
       - run: cargo clippy -p foehncraft-fv -p foehncraft-cli --all-targets --locked --features foehncraft-fv/hypre,foehncraft-cli/hypre
       - name: Stage-3 tests including the agreement with hypre
         run: cargo test --locked --profile "$BUILD_PROFILE" -p foehncraft-fv --features hypre --test stage3
@@ -328,10 +328,10 @@ jobs:
         with:
           workspaces: gpu/ptx-kernels -> ../../target
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - run: gpu/ptx-kernels/build.sh
+      - run: python3 gpu/ptx-kernels/build.py
       - name: No atomics, no f32, no contracted f64 arithmetic in the kernels (R10)
-        run: tools/check_kernels.sh
-      - run: gpu/ptx-kernels/build.sh sm_86
+        run: python3 -m tools.check.kernels
+      - run: python3 gpu/ptx-kernels/build.py sm_86
       - uses: actions/upload-artifact@v4
         with:
           name: g1-ptx
@@ -389,6 +389,9 @@ jobs:
           pip install "ruff>=0.5"
           ruff check python
           ruff format --check python
+          # the scripts of tools/, gpu/ and examples/ (D61): syntax and names
+          ruff check --isolated --select E9,F tools gpu examples
+          python -m tools.check.ci_cases --check
       - name: Format and clippy of the native module
         run: |
           cargo fmt --manifest-path crates/foehncraft-py/Cargo.toml --check

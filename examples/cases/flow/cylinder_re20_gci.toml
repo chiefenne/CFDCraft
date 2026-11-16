@@ -13,7 +13,7 @@
 # in result.json. Every mesh is held to the reference ranges of the
 # benchmark with a band of 8 % of the range midpoint (the coarse mesh is
 # 7 % low in C_L); the finest one is the mesh of docs/verification/stage5.md.
-# About 5 minutes on four cores (the `long` set of tools/ci_cases.sh).
+# About 5 minutes on four cores (the `long` set of tools/check/ci_cases.py).
 
 [mesh.cylinder]
 refine = 0

@@ -25,7 +25,7 @@ every case except `*_gpu.toml` (R5).
 | `scalar/mms_mixed_box.toml` | generated mixed 3D, 1 344 to 95 232 cells | the same on hexahedra, prisms, tetrahedra and polyhedra | [recipe 12](../recipes/scalar-pressure.md#scalar-mms) |
 | `scalar/mms_poly_2d.toml` | generated poly 2D, 289 to 16 641 cells (4 levels) | planar solution, zero-gradient (symmetry) z patches | [recipe 12](../recipes/scalar-pressure.md#scalar-mms) |
 | `scalar/oblique_step_2d.toml` | generated poly 2D, 2 401 cells | upwind, linear upwind, both limiters and the bounded central scheme (stage 5, D25) as `[[variants]]`; bounds check | [gallery 9](../gallery/scalar-pressure.md#oblique-step), [recipe 13](../recipes/scalar-pressure.md#scalar-schemes) |
-| `scalar/mms_poly_gpu.toml` | generated poly 3D, 912 673 cells | CPU against two GPU runs: GPU equals CPU and GPU run to run | [recipe 14](../recipes/gpu.md#scalar-gpu), `tools/stage2_colab.ipynb` |
+| `scalar/mms_poly_gpu.toml` | generated poly 3D, 912 673 cells | CPU against two GPU runs: GPU equals CPU and GPU run to run | [recipe 14](../recipes/gpu.md#scalar-gpu), `tools/notebooks/stage2_colab.ipynb` |
 | `scalar/poisson_amg_poly_box.toml` | generated poly 3D, 729 to 35 937 cells | Poisson manufactured solution with CG + AMG (stage 3) against BiCGStab + Jacobi as `[[variants]]`; order of accuracy | [gallery 11](../gallery/scalar-pressure.md#poisson-amg-mms), [recipe 15](../recipes/scalar-pressure.md#poisson-study) |
 
 ## Scalar case-file keys

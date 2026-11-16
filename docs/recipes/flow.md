@@ -66,7 +66,7 @@ cat output/cavity_re1000/flow.md
 # velocity and pressure along the lines: line_vertical.csv, line_horizontal.csv
 # wall pressure and shear stress: wall_ymax.csv (lid) and the other walls
 pip install vtk
-python3 tools/render_mesh.py output/cavity_re1000/fields.vtkhdf cavity.png --field speed --top --no-edges
+python3 -m tools.mesh.render_mesh output/cavity_re1000/fields.vtkhdf cavity.png --field speed --top --no-edges
 ```
 
 Keys used: `[verification]` `reference = "ghia-re100"` or `"ghia-re1000"`,
@@ -211,7 +211,7 @@ cat output/cylinder_re100/flow.md
 # C_D, C_L per step: output/cylinder_re100/forces.csv, chart: coefficients.svg
 # probes in front of and behind the cylinder: probes.csv
 pip install vtk
-python3 tools/render_mesh.py output/cylinder_re20/fields.vtkhdf cylinder.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
+python3 -m tools.mesh.render_mesh output/cylinder_re20/fields.vtkhdf cylinder.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
 ```
 
 The mesh is built in (`[mesh.cylinder]`); `refine = 1` and `2` give 24 576
@@ -254,7 +254,7 @@ shorter; the log names each one, `history.csv` holds the steps taken, and
 target/release/foehn flow examples/cases/flow/taylor_green_error.toml --out output/tg_error
 grep -E "rejected|error" output/tg_error/flow.log | head
 target/release/foehn flow examples/cases/flow/taylor_green_error.toml --set time.error_tolerance=1e-6 --out output/tg_error6
-python3 tools/time_step_chart.py output/time_step_error.svg
+python3 -m tools.plot.time_step_chart output/time_step_error.svg
 ```
 
 ```toml
@@ -304,7 +304,7 @@ iteration:
 
 ```
 target/release/foehn flow examples/cases/flow/cylinder_potential.toml --out output/potential
-python3 tools/render_mesh.py output/potential/fields.vtkhdf potential.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
+python3 -m tools.mesh.render_mesh output/potential/fields.vtkhdf potential.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
 target/release/foehn flow examples/cases/flow/cylinder_re20.toml --set initial.potential_flow=true --out output/cyl_pf
 ```
 

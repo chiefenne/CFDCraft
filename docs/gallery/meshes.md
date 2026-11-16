@@ -39,7 +39,7 @@ for t in hex tet poly mixed; do
   target/release/foehn mesh examples/cases/mesh/${t}_box.toml
 done
 # output/<case>/mesh_report.md, mesh_report.json, mesh.vtkhdf (open in ParaView)
-python3 tools/render_mesh.py output/poly_box/mesh.vtkhdf poly_box.png --cut
+python3 -m tools.mesh.render_mesh output/poly_box/mesh.vtkhdf poly_box.png --cut
 ```
 
 [↑ back to top](#meshes)
@@ -69,7 +69,7 @@ through the faces; all 5 000 are found in the right cell.
 ```
 target/release/foehn mesh examples/cases/mesh/poly_partition.toml
 target/release/foehn mesh examples/cases/mesh/poly_partition.toml --method rcb --parts 6
-python3 tools/render_mesh.py output/poly_partition/mesh.vtkhdf part.png --cut --field rank --categorical
+python3 -m tools.mesh.render_mesh output/poly_partition/mesh.vtkhdf part.png --cut --field rank --categorical
 ```
 
 [↑ back to top](#meshes)
@@ -97,7 +97,7 @@ perturbed in x and y. The case files rename the generator's patches
 for t in hex tet poly mixed; do
   target/release/foehn mesh examples/cases/mesh/${t}_2d.toml
 done
-python3 tools/render_mesh.py output/poly_2d/mesh.vtkhdf poly_2d.png --top
+python3 -m tools.mesh.render_mesh output/poly_2d/mesh.vtkhdf poly_2d.png --top
 ```
 
 [↑ back to top](#meshes)
@@ -132,7 +132,7 @@ finds those, none lands in a wrong cell.
 gmsh -3 examples/meshes/tjunction.geo -format msh41 -o examples/meshes/tjunction.msh
 target/release/foehn mesh examples/cases/mesh/tjunction_tet.toml
 target/release/foehn mesh examples/cases/mesh/tjunction_poly.toml
-python3 tools/render_mesh.py output/tjunction_poly/mesh.vtkhdf tj.png \
+python3 -m tools.mesh.render_mesh output/tjunction_poly/mesh.vtkhdf tj.png \
     --field rank --categorical --half --top --crop 0.2 0.8 -0.06 0.31
 ```
 

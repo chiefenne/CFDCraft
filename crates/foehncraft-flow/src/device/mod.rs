@@ -355,7 +355,7 @@ pub enum Mask {
 }
 
 /// Builds a GPU flow device from the static data and the kernel module
-/// (for CUDA the PTX file of `gpu/ptx-kernels/build.sh`).
+/// (for CUDA the PTX file of `gpu/ptx-kernels/build.py`).
 pub type GpuFactory = fn(&Setup, &std::path::Path) -> Result<Box<dyn FlowDevice>>;
 
 static GPU: std::sync::OnceLock<(&'static str, GpuFactory)> = std::sync::OnceLock::new();

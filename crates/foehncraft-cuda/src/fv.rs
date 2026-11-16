@@ -367,7 +367,7 @@ impl CudaBackend {
     pub fn new(disc: &Discretisation, ordinal: usize, ptx: &Path) -> anyhow::Result<Self> {
         anyhow::ensure!(
             ptx.exists(),
-            "PTX module `{}` not found; build it with gpu/ptx-kernels/build.sh",
+            "PTX module `{}` not found; build it with python3 gpu/ptx-kernels/build.py",
             ptx.display()
         );
         let ctx =

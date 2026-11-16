@@ -56,7 +56,7 @@ line (recipe 26).
 | `verification.require_convergence` | none | fail unless the outer iterations converge |
 | `run.threads` | all cores | CPU threads (meshes below 20 000 cells run on one; the results are bitwise the same) |
 | `run.backend` | `cpu` | where the flow loop runs: `cpu`, or `cuda` in a build with the `cuda` feature (NVIDIA GPU of compute capability 7.0 or newer); the results are bitwise those of `cpu` (D31). `foehn flow --backend` overrides it |
-| `run.ptx` | `target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx` | PTX module of the `cuda` backend (`gpu/ptx-kernels/build.sh`); `foehn flow --ptx` overrides it |
+| `run.ptx` | `target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx` | PTX module of the `cuda` backend (`python3 gpu/ptx-kernels/build.py`); `foehn flow --ptx` overrides it |
 | `output.directory` | `output/<case name>` | output directory |
 | `output.vtkhdf` | true | write `fields.vtkhdf` |
 | `output.history_every` | 1 | a row of `residuals.csv` every N outer iterations |

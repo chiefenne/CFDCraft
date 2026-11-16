@@ -27,7 +27,7 @@ CI runs every case except `*_gpu.toml`, and again with hypre (R5).
 | `poisson/poisson_hex_box.toml` | generated hex 3D, 512 to 262 144 cells | the same on perturbed hexahedra | [recipe 15](../recipes/scalar-pressure.md#poisson-study) |
 | `poisson/poisson_tet_box.toml` | generated tet 3D, 3 072 to 196 608 cells (3 levels) | the same on tetrahedra | [recipe 15](../recipes/scalar-pressure.md#poisson-study) |
 | `poisson/poisson_mixed_box.toml` | generated mixed 3D, 1 344 to 95 232 cells (3 levels) | the same on hexahedra, prisms, tetrahedra and polyhedra | [recipe 15](../recipes/scalar-pressure.md#poisson-study) |
-| `poisson/poisson_poly_gpu.toml` | generated poly 3D, 912 673 cells | CPU and GPU against hypre on the GPU: times per cell, GPU equals CPU | [recipe 16](../recipes/gpu.md#poisson-gpu), `tools/stage3_colab.ipynb` |
+| `poisson/poisson_poly_gpu.toml` | generated poly 3D, 912 673 cells | CPU and GPU against hypre on the GPU: times per cell, GPU equals CPU | [recipe 16](../recipes/gpu.md#poisson-gpu), `tools/notebooks/stage3_colab.ipynb` |
 
 ## Poisson case-file keys
 

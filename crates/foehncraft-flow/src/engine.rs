@@ -869,7 +869,7 @@ pub struct Estimate {
 /// face, fitted to the peak resident memory of eleven cases of the
 /// catalogue (2D and 3D, hexahedra to polyhedra, steady and transient, 2
 /// threads; 128 to 28 227 cells): within 6 % on each
-/// (`tools/estimate_chart.py`, gallery 18). An interior face carries two
+/// (`tools/plot/estimate_chart.py`, gallery 18). An interior face carries two
 /// off-diagonal entries of each matrix (SELL storage), its fluxes and its
 /// share of the multigrid hierarchy; a boundary face only its geometry and
 /// boundary values, which matters for the one-cell-thick 2D meshes, whose

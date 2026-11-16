@@ -71,7 +71,7 @@ impl CudaExec {
         crate::driver()?;
         ensure!(
             ptx.exists(),
-            "PTX module `{}` not found; build it with gpu/ptx-kernels/build.sh",
+            "PTX module `{}` not found; build it with python3 gpu/ptx-kernels/build.py",
             ptx.display()
         );
         let be = CudaBackend::new(s.disc, ordinal, ptx)?;
@@ -87,7 +87,7 @@ impl CudaExec {
                 name,
                 module.load_function(&entry).with_context(|| {
                     format!(
-                        "entry point {entry} (rebuild the PTX module with gpu/ptx-kernels/build.sh)"
+                        "entry point {entry} (rebuild the PTX module with python3 gpu/ptx-kernels/build.py)"
                     )
                 })?,
             );

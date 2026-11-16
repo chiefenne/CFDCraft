@@ -162,7 +162,7 @@ and a ledger of the whole run at the end; draw the time histories with
 
 ```
 target/release/foehn flow examples/cases/flow/taylor_green_bdf2.toml --set "verification.time_steps=[]" --out output/tg
-python3 tools/balance_chart.py output/tg
+python3 -m tools.plot.balance_chart output/tg
 ```
 
 **Tolerances**: `[balance] tolerance_step` (1e-8, the relative mass
@@ -181,7 +181,7 @@ target/release/foehn flow examples/cases/flow/taylor_green_bdf2.toml --set "veri
 **The energy budget over the mesh** (the gallery chart):
 
 ```
-python3 tools/energy_budget_chart.py output/energy_budget.svg
+python3 -m tools.plot.energy_budget_chart output/energy_budget.svg
 ```
 
 **A divergence** (D63) ends the run with exit code 1 and `RUN014`, after

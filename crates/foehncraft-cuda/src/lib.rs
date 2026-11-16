@@ -1,6 +1,6 @@
 //! NVIDIA GPU backends of Foehncraft (feature `cuda`). This is the only crate
 //! with CUDA types, calls or sources (D60, checked in CI by
-//! `tools/check_backend.py`): the solver crates use the vendor-neutral
+//! `tools/check/backend.py`): the solver crates use the vendor-neutral
 //! interfaces (`foehncraft_fv::backend::Backend`,
 //! `foehncraft_flow::device::kernel::Exec`, `foehncraft_bench::backend::Backend`)
 //! and find the GPU backends through the factories that [`register`]
@@ -13,7 +13,7 @@
 //!   CUDA C, `kernels/g1_reference.cu`) and `cuda-rust` (`g1_*`).
 //!
 //! All PTX entries come from `gpu/ptx-kernels`, built with
-//! `gpu/ptx-kernels/build.sh` (nightly Rust, sm_70 and newer).
+//! `python3 gpu/ptx-kernels/build.py` (nightly Rust, sm_70 and newer).
 
 #[cfg(feature = "cuda")]
 pub mod bench;

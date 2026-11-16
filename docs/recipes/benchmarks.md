@@ -88,7 +88,7 @@ for the hand-written reference) and, for the single-source route, a GPU of
 compute capability 7.0 (Volta) or newer. `nvidia-smi` shows the GPU.
 
 ```
-gpu/ptx-kernels/build.sh                       # installs nightly + the nvptx target on first use
+python3 gpu/ptx-kernels/build.py                       # installs nightly + the nvptx target on first use
 cargo build --release -p foehncraft-cli --features cuda
 target/release/foehn bench backends         # must list cuda-reference and cuda-rust
 target/release/foehn bench g1 examples/cases/bench/g1_gpu_10m.toml
@@ -97,21 +97,21 @@ target/release/foehn bench g1 examples/cases/bench/g1_gpu_10m.toml
 The last lines print `G1 cuda-rust against cuda-reference: PASS` or `FAIL`.
 Send `output/g1_gpu_10m/g1.md` and `g1.json`; they go into
 [G1 results](../benchmarks/g1.md#results). For the exact architecture:
-`gpu/ptx-kernels/build.sh sm_86` (your GPU's compute capability). Keys:
+`python3 gpu/ptx-kernels/build.py sm_86` (your GPU's compute capability). Keys:
 `run.backends`, `run.device`, `run.rust_ptx`, `run.tolerance`.
 
 On Windows, run the build script from Git Bash or WSL, or the two `cargo`
 commands in it by hand.
 
 **Without a GPU of your own: Google Colab (free T4).** Open
-[`tools/g1_colab.ipynb` in Colab](https://colab.research.google.com/github/chiefenne/Foehncraft/blob/main/tools/g1_colab.ipynb),
+[`tools/notebooks/g1_colab.ipynb` in Colab](https://colab.research.google.com/github/chiefenne/Foehncraft/blob/main/tools/notebooks/g1_colab.ipynb),
 choose *Runtime → Change runtime type → T4 GPU*, then *Runtime → Run all*.
 About 10 minutes; the last cell shows both reports. On any other Linux
 machine with a GPU (Kaggle with "GPU T4 x2", Lightning.ai):
 
 ```
 git clone --depth 1 https://github.com/chiefenne/Foehncraft.git && cd Foehncraft
-bash tools/g1_cloud.sh            # installs Rust, builds, runs g1_gpu_10m.toml twice
+python3 -m tools.bench.g1_cloud            # installs Rust, builds, runs g1_gpu_10m.toml twice
 ```
 
 [↑ back to top](#kernel-benchmark-g1)

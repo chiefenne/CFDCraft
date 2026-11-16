@@ -1,5 +1,5 @@
 //! VTKHDF files for every generated mesh type; read back with VTK by
-//! `tools/check_vtkhdf.py` (stage-1 acceptance: the files load in ParaView).
+//! `tools/check/vtkhdf.py` (stage-1 acceptance: the files load in ParaView).
 #![cfg(feature = "hdf5")]
 
 use foehncraft_mesh::Geometry;

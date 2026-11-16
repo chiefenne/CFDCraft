@@ -34,7 +34,7 @@ polyhedra) or render a picture:
 
 ```
 pip install vtk
-python3 tools/render_mesh.py output/poly_box/mesh.vtkhdf poly.png --cut --field non_orthogonality
+python3 -m tools.mesh.render_mesh output/poly_box/mesh.vtkhdf poly.png --cut --field non_orthogonality
 ```
 
 A grid-convergence family: the same case with `refine = 0, 1, 2` gives

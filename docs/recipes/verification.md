@@ -81,7 +81,7 @@ for a release and after a change of a scheme:
 
 ```
 cargo build --release -p foehncraft-cli
-for s in linux-1 linux-2 linux-3 long; do bash tools/ci_cases.sh $s target/release/foehn; done
+for s in linux-1 linux-2 linux-3 long; do python3 -m tools.check.ci_cases $s target/release/foehn; done
 python3 tools/release/verification_manual.py output
 git diff --stat docs/verification docs/figures/verification
 ```

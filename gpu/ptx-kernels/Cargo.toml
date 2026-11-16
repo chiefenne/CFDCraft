@@ -7,7 +7,7 @@ license = "MIT"
 publish = false
 
 # Not a member of the main workspace: built with the nightly toolchain for
-# the nvptx64-nvidia-cuda target by build.sh.
+# the nvptx64-nvidia-cuda target by build.py.
 [workspace]
 
 [lib]

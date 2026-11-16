@@ -46,7 +46,7 @@ recipe 14).
 cargo build --release -p foehncraft-cli
 target/release/foehn scalar examples/cases/scalar/mms_poly_box.toml
 # report: output/mms_poly_box/scalar.md, plot: convergence.svg, fields: fields.vtkhdf
-python3 tools/render_mesh.py output/mms_poly_box/fields.vtkhdf mms_poly_error.png --field error --cut
+python3 -m tools.mesh.render_mesh output/mms_poly_box/fields.vtkhdf mms_poly_error.png --field error --cut
 ```
 
 [↑ back to top](#scalar-transport-and-the-pressure-solver)
@@ -84,7 +84,7 @@ bounds of every limited variant and fails if one leaves [0, 1].
 target/release/foehn scalar examples/cases/scalar/oblique_step_2d.toml
 # report: output/oblique_step_2d/scalar.md, profiles: profile.svg,
 # fields per variant: output/oblique_step_2d/<variant>/fields.vtkhdf
-python3 tools/render_mesh.py output/oblique_step_2d/venkatakrishnan/fields.vtkhdf step.png --field phi --top --range -0.08 1.08
+python3 -m tools.mesh.render_mesh output/oblique_step_2d/venkatakrishnan/fields.vtkhdf step.png --field phi --top --range -0.08 1.08
 ```
 
 [↑ back to top](#scalar-transport-and-the-pressure-solver)
@@ -119,7 +119,7 @@ cargo build --release -p foehncraft-cli
 target/release/foehn poisson examples/cases/poisson/poisson_poly_box.toml
 # report: output/poisson_poly_box/poisson.md, plot: iterations.svg
 # with hypre as the reference (recipe 17):
-tools/build_hypre.sh target/hypre
+python3 -m tools.bench.build_hypre target/hypre
 HYPRE_DIR=$PWD/target/hypre cargo build --release -p foehncraft-cli --features hypre
 target/release/foehn poisson examples/cases/poisson/poisson_poly_box.toml \
     --solvers amg,amg-double,amg-plain,jacobi,hypre

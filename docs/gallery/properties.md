@@ -51,7 +51,7 @@ for c in couette_viscosity couette_transpiration; do
   target/release/foehn flow examples/cases/flow/$c.toml --set 'verification.levels=[1]' \
       --set 'output.lines=[{name="mid",from=[1.0,0.03125,0.05],to=[1.0,0.96875,0.05],points=16}]'
 done
-python3 tools/property_chart.py docs/figures/gallery/expressions_materials.svg
+python3 -m tools.plot.property_chart docs/figures/gallery/expressions_materials.svg
 ```
 
 **Expressions against the built-in profiles.** Three more cases check

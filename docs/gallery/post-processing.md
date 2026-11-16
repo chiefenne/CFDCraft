@@ -33,9 +33,9 @@ target/release/foehn flow examples/cases/flow/cylinder_re100_short.toml --set ru
 target/release/foehn post derive examples/cases/flow/cylinder_re100_short.toml \
     --set output.reference.velocity=1.0
 # output/cylinder_re100_short/derived.vtkhdf: open it in ParaView
-python3 tools/render_mesh.py output/cylinder_re100_short/derived.vtkhdf vorticity.png \
+python3 -m tools.mesh.render_mesh output/cylinder_re100_short/derived.vtkhdf vorticity.png \
     --field vorticity_z --top --no-edges --diverging --range -100 100 --size 1100x700 --zoom 1.3
-python3 tools/render_mesh.py output/cylinder_re100_short/derived.vtkhdf q.png \
+python3 -m tools.mesh.render_mesh output/cylinder_re100_short/derived.vtkhdf q.png \
     --field q_criterion --top --no-edges --range 0 1000 --size 1100x700 --zoom 1.3
 ```
 

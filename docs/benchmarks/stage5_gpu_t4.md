@@ -12,4 +12,4 @@ GPU: Tesla T4 (sm_75); CPU: 2 threads. Wall times include mesh generation and ou
 | cavity_poly3d_gpu | 970225 | 200.1 | 136.4 | 5116 | 722 ns/cell/iteration | yes |
 all GPU runs bitwise equal to the CPU runs
 
-Measured 2026-11-15 on Google Colab (Tesla T4, 2 CPU threads), branch `stage5-gpu-flow-loop`, `tools/stage5_colab.ipynb`.
+Measured 2026-11-15 on Google Colab (Tesla T4, 2 CPU threads), branch `stage5-gpu-flow-loop`, `tools/notebooks/stage5_colab.ipynb`.
