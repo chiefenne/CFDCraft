@@ -17,7 +17,7 @@ use std::fmt::Display;
 
 /// Width of the page on which the frames are centred: the widest frame,
 /// the banner with the name of the code.
-pub const PAGE: usize = 141;
+pub const PAGE: usize = 133;
 
 /// Spaces between the side of a frame and its text.
 const PAD: usize = 3;
@@ -615,7 +615,7 @@ mod tests {
             let l = f.render(s);
             assert!(l.iter().all(|x| x.chars().count() == PAGE), "{l:?}");
             assert!(!l.iter().any(|x| x.contains("Foehncraft")), "{l:?}");
-            assert!(l.iter().any(|x| x.contains("/::::::::/")), "{l:?}");
+            assert!(l.iter().any(|x| x.contains("/:::/__\\:::\\")), "{l:?}");
         }
     }
 

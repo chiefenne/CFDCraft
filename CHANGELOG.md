@@ -2,10 +2,14 @@
 
 ## Unreleased
 
+- **Banner font.** The name of the code on top of the log is set in the
+  "Alpha" figlet font by Lennert Stock ("Foehn" over "craft", 133 columns
+  with the box), as in the owner's example; the glyphs are in
+  `banner_art.rs` with the credit. Only text changes.
 - **Log look (D125).** The log opens with "Foehncraft" in block letters
-  with depth, on one row. Every block is a box of asterisks as wide as its
+  (see the banner font entry above). Every block is a box of asterisks as wide as its
   content and centred on the page, which has no fixed width any more
-  (the banner is 141 columns). Summaries have blank rows, a heading and
+  (the banner is 133 columns). Summaries have blank rows, a heading and
   dashed rules; a logged time step starts with a box (step, time, dt,
   Courant number, outer iterations). Messages read
   `%FOEHN-I-CASE, text`: severity and the capitalised name of the source
