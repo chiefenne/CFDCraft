@@ -30,13 +30,21 @@ When you add an entry:
 - put it on the topic page that fits; start a new topic page when a new
   physics or topic begins (energy, turbulence, reacting flows, sprays,
   multiphase, ...) and add a row for it to the index page;
-- gallery examples and recipes get the next free number; numbers are
-  global and never reused, so "gallery 12" or "recipe 17" keeps its
-  meaning in other pages, the changelog and commit messages;
+- gallery examples and recipes take the number of the pull request that
+  adds them (gallery 54, recipe 54; a second entry of the same pull request
+  is 54b). Numbers are global and never reused, so "gallery 12" or
+  "recipe 17" keeps its meaning in other pages, the changelog and commit
+  messages; gaps are fine. Open the pull request first (a draft will do)
+  to know the number. Entries up to 39 keep their consecutive numbers;
 - give each entry an `<a id="short-name"></a>` anchor right above its
-  heading, a row in its page's table of contents and a row in the
-  "by number" table of the index page; the anchor names are unique per
-  section and stay valid when an entry moves to another page;
+  heading `## 54. Title` and a row in its page's table of contents; the
+  anchor names are unique per section and stay valid when an entry moves
+  to another page;
+- leave the "by number" table and the number column of the page table on
+  `docs/gallery.md` and `docs/recipes.md` alone: the workflow
+  `docs-index.yml` regenerates them after every merge to main
+  (`python -m tools.docs.indexes`, `--check` to compare). A new topic page
+  needs its row in the page table, with the numbers column left empty;
 - link to an entry on its topic page (`gallery/flow.md#cavity`), not to the
   index; links to an anchor of the index page still work and land on the
   entry's row there;
@@ -47,3 +55,33 @@ When you add an entry:
 
 Keep a topic page below a few hundred lines; when one grows past that,
 split it into two topic pages the same way.
+
+## Working in parallel
+
+Several pull requests are often open at once. These rules keep them from
+conflicting with each other, because GitHub runs no CI on a pull request
+with a merge conflict, and every merge of main into a pull request runs
+its CI again:
+
+- **Changelog**: write the entry as a fragment `changelog.d/<PR number>-<short-name>.md`
+  (see [changelog.d/README.md](changelog.d/README.md)), not in
+  `CHANGELOG.md`; the release pull request collects the fragments.
+- **Numbers**: gallery, recipe and case entries take the pull request's
+  number (above); decisions in `docs/requirements.md` keep their D numbers,
+  so add a decision in one pull request at a time.
+- **Index pages**: regenerated after the merge (above).
+- **Topic pages** of the gallery and recipes merge with git's `union`
+  driver (`.gitattributes`): when two pull requests append to the same
+  page, a local `git merge origin/main` keeps both entries without a
+  conflict. Read the merged page once; GitHub itself ignores the driver
+  and still reports the conflict until main is merged locally.
+- **Do not merge main into a pull request whose CI is green**: merge the
+  pull request. Merge main only for a real conflict.
+- **The lock file of the Python crate** (`crates/foehncraft-py/Cargo.lock`)
+  is separate, because the solver workspace builds without Python. After
+  changing dependencies run
+  `cargo update -w --manifest-path crates/foehncraft-py/Cargo.toml`; CI
+  checks it first.
+- **After a merge**, watch the main run of the merge commit (macOS and
+  Windows are tested there, not in the pull request) and fix forward at
+  once when it fails.

@@ -60,4 +60,4 @@ The gallery is split by topic; each page has its own table of contents. The numb
 ## Adding a feature
 
 Every feature ships with a gallery example, case files and a recipe (D18,
-as in PyAeroFlow); see [CONTRIBUTING.md](../CONTRIBUTING.md). Put the example on the topic page that fits, or start a new page when a new physics or topic begins (energy, turbulence, reacting flows, sprays, ...). Give it the next free number, an `<a id>` anchor, a row in that page's table of contents and a row in both tables above.
+as in PyAeroFlow); see [CONTRIBUTING.md](../CONTRIBUTING.md). Put the example on the topic page that fits, or start a new page when a new physics or topic begins (energy, turbulence, reacting flows, sprays, ...). Number it with its pull request (a second example of the same pull request gets a letter: 54b), give it an `<a id>` anchor and a row in that page's table of contents. The two tables above are regenerated after the merge (`python -m tools.docs.indexes`); pull requests leave them alone. A new topic page also needs a row in the first table.

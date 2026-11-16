@@ -1,0 +1,5 @@
+# Topic pages of the gallery and the recipes: two pull requests that append
+# entries to the same page merge without a conflict in a local git merge
+# (GitHub ignores merge drivers; see CONTRIBUTING.md, "Working in parallel").
+docs/gallery/*.md merge=union
+docs/recipes/*.md merge=union
