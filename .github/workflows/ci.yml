@@ -32,10 +32,12 @@ on:
 permissions:
   contents: read
 
-# One run per PR (a new push cancels the old run); runs on main are never
-# cancelled, so every merge commit is verified.
+# One run per PR (a new push cancels the old run). Every other run (push to
+# main, nightly, manual) gets a group of its own: with a shared group GitHub
+# keeps only one *pending* run and cancels the older pending ones, which is
+# how the first nightly run and a merge commit were cancelled.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # bash everywhere, also on Windows (Git Bash), so that "$BUILD_PROFILE" means
