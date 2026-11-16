@@ -181,7 +181,7 @@ python3 -m tools.plot.energy_budget_chart energy_budget.svg
 <a id="log"></a>
 ## 27. A log that can be circulated
 
-Part of what a run says about itself (D125): the log shows what the case file set, so a log mailed on its own is enough to see the run. The log opens with the name of the code in block letters ("Foehn" over "craft", the Alpha figlet font by Lennert Stock); every block is a box of asterisks as wide as its content, centred on the page (no colour, no fixed width: the banner is 133 columns, the other blocks fit their text); the console and `flow.log` are identical. Excerpt of the transient cavity (Re 100, 64 x 64, BDF2), blocks between the banner and the table, most time steps and the lower summaries left out:
+Part of what a run says about itself (D125): the log shows what the case file set, so a log mailed on its own is enough to see the run. The log opens with the name of the code in block letters ("Foehn" over "craft", the Alpha figlet font by Lennert Stock); every block is a box of asterisks as wide as its content, centred on the page (no colour, no fixed width: the banner is 133 columns, the other blocks fit their text); the console and `flow.log` are identical. Excerpt of the transient cavity (Re 100, 64 x 64, BDF2, three outer iterations), blocks between the banner and the table, most time steps and the lower summaries left out:
 
 ```
 *************************************************************************************************************************************
@@ -243,13 +243,19 @@ Part of what a run says about itself (D125): the log shows what the case file se
 
                                    **********************************************************************
                                    *         1. TIME STEP     TIME = 1.00000E-01     DT = 1.00000E-01   *
-                                   *            COURANT NUMBER = 4.645     OUTER ITERATIONS = 1         *
+                                   *            COURANT NUMBER = 4.762     OUTER ITERATIONS = 3         *
                                    **********************************************************************
+
+         -- scaled residuals ----------------- -- linear iterations
+   Outer      ResU     ResV     ResW     ResM      U    V    W    P 
+       1  1.00E+00 0.00E+00 0.00E+00 6.33E-02     37    0    0   22
+       2  1.37E-02 1.03E-02 0.00E+00 1.56E-02     43   42    0   23
+       3  2.94E-03 3.07E-03 0.00E+00 5.57E-03     41   43    0   22
 
          -- time ------------------- -- scaled residuals ----------------- -- solvers --
     Step    Time [s]   Dt [s] Cour.       ResU     ResV     ResW     ResM   Outer    CG 
-       1  1.0000E-01 1.00E-01 4.645   1.00E+00 0.00E+00 0.00E+00 6.33E-02       1    22
-      balance  mass +0.00e0  kinetic energy: dK/dt +9.006e-4 W, boundary +1.332e-2 W, dissipation 1.217e-2 W, numerical +2.505e-4 W (+1.9e-2)
+       1  1.0000E-01 1.00E-01 4.762   1.00E+00 0.00E+00 0.00E+00 6.33E-02       3    67
+      balance  mass +0.00e0  kinetic energy: dK/dt +9.912e-4 W, boundary +1.308e-2 W, dissipation 1.206e-2 W, numerical +3.204e-5 W (+2.4e-3)
 
   ...
 
@@ -276,7 +282,7 @@ Part of what a run says about itself (D125): the log shows what the case file se
           ************************************************************************************************************************
 ```
 
-Before the table, the log lists the input and output files, the run control, the mesh information with its quality, the fluid properties, the solution settings as a matrix per equation and the boundary conditions with their values. After it come the summaries: convergence or time stepping, verification, results per boundary, the ledger, the run time and the warnings. Each time step that is logged starts with a box (step, time, time step, Courant number, outer iterations), the summaries are boxes with a heading, blank rows and dashed rules. Messages read ` %FOEHN-I-CASE, text` (`I`, `W` or `E`, then the capitalised name of the source file that writes the message), so `%FOEHN` finds them in the log and in the code; a failed run ends with `Run FAILED: <code>`, the reason and the exit code. `[log] style = "box"` draws the boxes with box characters.
+Before the table, the log lists the input and output files, the run control, the mesh information with its quality, the fluid properties, the solution settings as a matrix per equation and the boundary conditions with their values. After it come the summaries: convergence or time stepping, verification, results per boundary, the ledger, the run time and the warnings. Each time step that is logged starts with a box (step, time, time step, Courant number, outer iterations), followed by the residuals and the linear iterations of every outer iteration of that step (the heavier the transient run, the more there is to watch: *Residuen-gaffen*, see [sayings](../sayings.md)), the summaries are boxes with a heading, blank rows and dashed rules. Messages read ` %FOEHN-I-CASE, text` (`I`, `W` or `E`, then the capitalised name of the source file that writes the message), so `%FOEHN` finds them in the log and in the code; a failed run ends with `Run FAILED: <code>`, the reason and the exit code. `[log] style = "box"` draws the boxes with box characters.
 
 | | |
 |---|---|
