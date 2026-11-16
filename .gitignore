@@ -26,6 +26,8 @@ rustc-ice-*.txt
 # Benchmark and run output
 /output/
 examples/meshes/*.msh
+# the raw Gmsh pipe of the cell-quality remediation (D50): case, test and gallery
+!examples/meshes/pipe_gmsh_raw.msh
 
 # Python package
 __pycache__/

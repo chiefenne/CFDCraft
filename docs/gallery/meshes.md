@@ -1,6 +1,6 @@
 # Meshes
 
-Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and 3D, partitioning and the Gmsh reader.
+Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes.
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
@@ -8,6 +8,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 4 | [A polyhedral mesh in four parts](#poly-partition) | 1 | partitioning, halo layout, point location |
 | 5 | [The four test-mesh types in 2D](#mesh-types-2d) | 1 | one-cell-thick 2D meshes, patch renaming |
 | 6 | [T-junction from Gmsh](#tjunction) | 1 | Gmsh reader, conversion to polyhedra, renumbering |
+| 26 | [Flow on raw Gmsh tetrahedra: the cell-quality remediation](#skewed-tets) | 6 | skewed faces, Gauss pressure gradient, limiter, divergence report (D50, D63) |
 
 ---
 
@@ -134,6 +135,74 @@ target/release/foehn mesh examples/cases/mesh/tjunction_tet.toml
 target/release/foehn mesh examples/cases/mesh/tjunction_poly.toml
 python3 -m tools.mesh.render_mesh output/tjunction_poly/mesh.vtkhdf tj.png \
     --field rank --categorical --half --top --crop 0.2 0.8 -0.06 0.31
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="skewed-tets"></a>
+## 26. Flow on raw Gmsh tetrahedra: the cell-quality remediation
+
+![Residuals of the pipe on raw Gmsh tetrahedra with and without the remediation](../figures/gallery/pipe_gmsh_raw_residuals.svg)
+
+Gmsh's tetrahedra without its optimisation pass contain faces of a
+skewness above 0.9: the face centroid lies almost as far from the line
+through the two cell centroids as the centroids lie apart, mostly in
+tetrahedra with two faces on a curved wall. On such faces the
+least-squares pressure gradient (in the momentum source, the Rhie–Chow
+flux and the wall pressure) drives the steady SIMPLEC iteration away
+from the solution. The pipe of `examples/meshes/pipe_gmsh_raw.geo`
+(D = 0.1 m, L = 1 m, Re = 100, 1 572 tetrahedra, 28 faces above 0.9, the
+largest 1.23) shows it: with `solver.remediation = "off"` the residuals
+stall at 0.1, and in iteration 91 the pressure-correction matrix stops
+being positive definite. The divergence report (D63) names the skewed
+faces as the first cause (`DIV003`) with the fix
+`solver.remediation="auto"`.
+
+With the default `solver.remediation = "auto"` the solver measures the
+faces at start-up, reports them (`MESH001`), switches to the Gauss
+pressure gradient (the face sum of the face pressures, with the boundary
+pressures) and the Venkatakrishnan limiter on the velocity gradients, says
+so (`MESH002`, `flow.log`, `flow.md`) and converges in 105 iterations:
+
+```
+mesh quality: 28 faces with skewness above 0.9 (largest 1.233) in 44 cells; an optimised mesh avoids them (Gmsh: Mesh.OptimizeNetgen = 1)
+cell-quality remediation (D50, solver.remediation = "auto"): solver.pressure_gradient: "least-squares" -> "gauss", solver.limiter: "none" -> "venkatakrishnan"
+```
+
+The switch is global, not per cell: treating only the cells at the
+skewed faces (first-order convection, a Gauss gradient or a damped
+correction there) did not converge on these meshes, because the error of
+the pressure gradient travels with the pressure correction through the
+whole domain. The Gauss pressure gradient keeps second order on
+tetrahedra (observed 2.00 on the Poiseuille sweep), but it is less
+accurate than least squares on smooth meshes (the lift of the cylinder
+at Re = 20 is 3.5 % lower), so it stays a remedy for poor meshes and
+least squares the default. A mesh without faces above
+`solver.skewness_limit` (0.9) runs bitwise as before; none of the
+catalogue cases has such faces.
+
+The better cure is the mesh: `Mesh.OptimizeNetgen = 1` in the .geo file
+(as in `examples/meshes/tjunction_netgen.geo`) removes the skewed faces.
+The T-junction of gallery 6 has 461 faces above 0.9 in Gmsh's raw mesh
+and none after the Netgen pass; a laminar run on the raw mesh diverged
+without the remediation and converges with it, and the optimised mesh
+runs unchanged.
+
+| | |
+|---|---|
+| Mesh | `examples/meshes/pipe_gmsh_raw.msh`, 1 572 tetrahedra (in the repository) |
+| Case file | `flow/pipe_gmsh_raw.toml` |
+| Keys | `solver.remediation`, `solver.skewness_limit`, `solver.pressure_gradient` |
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/pipe_gmsh_raw.toml --set solver.log_every=1
+target/release/foehn flow examples/cases/flow/pipe_gmsh_raw.toml --set solver.remediation=off \
+    --set solver.log_every=1 --out output/pipe_gmsh_raw_off
+python3 -m tools.plot.residuals_chart pipe_gmsh_raw_residuals.svg \
+    "output/pipe_gmsh_raw_off=remediation off" "output/pipe_gmsh_raw=remediation auto"
 ```
 
 [↑ back to top](#meshes)

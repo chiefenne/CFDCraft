@@ -275,6 +275,8 @@ A code keeps its meaning; a retired code stays in the table.
 | `MAT005` | error | A property value that is not positive and finite. |
 | `REG001` | error | A region that is not a fluid: solids and porous zones come with the energy equation (L1). |
 | `REG002` | error | A region that names a cell zone the mesh does not have, or a zone in two regions. |
+| `MESH001` | warning | Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised). |
+| `MESH002` | note | Cell-quality remediation (D50): the run uses other schemes than set because of poor cells. |
 | `RUN001` | note | Stopped by the `.stop` control file. |
 | `RUN002` | note | Stopped by a signal (SIGTERM, SIGINT or SIGUSR2). |
 | `RUN003` | warning | Stopped at the wall-time limit (`[run.limits] max_wall_time`). |
@@ -291,7 +293,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `RUN014` | error | The solution diverged (a value that is not finite); see `divergence.md` (D63). |
 | `DIV001` | note | Divergence cause: the Courant number near the failing cells is large; reduce the time step. |
 | `DIV002` | note | Divergence cause: under-relaxation factors too large for the case. |
-| `DIV003` | note | Divergence cause: poor cells (non-orthogonality, volume ratio) at the failing cells. |
+| `DIV003` | note | Divergence cause: poor cells (skewness, non-orthogonality, volume ratio) at the failing cells. |
 | `DIV004` | note | Divergence cause: a boundary condition next to the failing cells. |
 | `DIV005` | note | Divergence cause: the run failed within its first steps or iterations, from the initial state. |
 | `DIV006` | note | Divergence cause: a linear solve that stopped at its iteration limit. |

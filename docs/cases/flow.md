@@ -67,6 +67,7 @@ Couette and Poiseuille flow, the lid-driven cavity and the steady cylinder.
 | `flow/cylinder_re20.toml` | built-in cylinder mesh, refine 1: 24 576 hexahedra | Schäfer & Turek 2D-1, steady, Re = 20: C_D, C_L, Δp within 0.5 % of the reference ranges | [gallery 15](../gallery/flow.md#cylinder), [recipe 23](../recipes/flow.md#cylinder) |
 | `flow/cylinder_potential.toml` | built-in cylinder mesh, refine 1: 24 576 hexahedra | the potential-flow start (D52) around the cylinder, written without outer iterations | [gallery 20](../gallery/flow.md#time-control), [recipe 28](../recipes/flow.md#time-control) |
 | `flow/cylinder_re20_gci.toml` | built-in cylinder mesh, refine 0 to 2: 6 144 to 98 304 hexahedra (3 levels) | the benchmark 2D-1 on three meshes: observed order, extrapolated value and grid convergence index of C_D, C_L and Δp (D67); every mesh within 8 % of the reference ranges (about 16 minutes, in the `long` set) | [gallery 25](../gallery/verification.md#gci), [recipe 34](../recipes/verification.md#gci) |
+| `flow/pipe_gmsh_raw.toml` | Gmsh tetrahedra without optimisation (`examples/meshes/pipe_gmsh_raw.msh`), 1 572 cells, 28 faces with a skewness above 0.9 | developing pipe flow at Re = 100 on a poor mesh: the cell-quality remediation (D50) switches to the Gauss pressure gradient and the limiter, reports it and converges; with `--set solver.remediation=off` the run diverges with a report that names the skewed faces | [gallery 26](../gallery/meshes.md#skewed-tets), [recipe 36](../recipes/meshes.md#skewed-tets) |
 
 ## Transient flow
 

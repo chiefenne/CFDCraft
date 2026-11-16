@@ -791,6 +791,7 @@ fn run_one<F: FnMut(&str)>(
         reference_cell,
         &target,
     )?;
+    let remediation = crate::case::report_remediation(&fl, lg, warnings);
     let nc = mesh.n_cells;
     if let Some(src) = crate::case::momentum_source(&case, geo, nc, time0.start_time)? {
         fl.set_momentum_source(src)?;
@@ -1584,6 +1585,7 @@ fn run_one<F: FnMut(&str)>(
         }
     }
     let solve = Solve {
+        remediation,
         balance: Some(balance_summary),
         mesh: desc.into(),
         mesh_hash: crate::engine::mesh_hash(mesh),
