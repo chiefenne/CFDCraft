@@ -365,6 +365,8 @@ pub fn assemble(be: &mut dyn Backend) -> Result<()> {
     be.gradient()?;
     be.faces(FaceSettings {
         blend: 0.0,
+        central: 0.0,
+        beta: 0.0,
         nonorth: false,
         nonorth_limit: -1.0,
     })?;

@@ -357,6 +357,8 @@ impl Backend for CpuBackend {
             grad: self.grad_view(),
             psi: self.v(V::Psi),
             blend: st.blend,
+            central: st.central,
+            beta: st.beta,
             nonorth: if st.nonorth { 1.0 } else { 0.0 },
             nonorth_limit: st.nonorth_limit,
         };

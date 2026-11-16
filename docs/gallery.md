@@ -18,7 +18,7 @@ All commands run from the repository root. Case files are in
 | 6 | [T-junction from Gmsh](#tjunction) | 1 | Gmsh reader, conversion to polyhedra, renumbering |
 | 7 | [G1 on polyhedral and tetrahedral meshes](#g1-stage1) | 1 | G1 rerun on stage-1 meshes, natural and shuffled order |
 | 8 | [Convection–diffusion, manufactured solution](#scalar-mms) | 2 | least-squares gradients, linear upwind, non-orthogonal diffusion, BiCGStab, order of accuracy |
-| 9 | [Oblique step: four convection schemes](#oblique-step) | 2 | Venkatakrishnan and Venkatakrishnan–Wang limiters, bounded solutions |
+| 9 | [Oblique step: five convection schemes](#oblique-step) | 2, 5 | Venkatakrishnan and Venkatakrishnan–Wang limiters, bounded central scheme, bounded solutions |
 | 10 | [Pressure solver: iterations over the mesh size](#poisson-iterations) | 3 | CG with smoothed-aggregation AMG, mixed precision, hypre reference |
 | 11 | [Poisson manufactured solution with the multigrid](#poisson-amg-mms) | 3 | CG + AMG inside the outer iterations, non-orthogonal correction |
 | 12 | [Lid-driven cavity against Ghia et al.](#cavity) | 4 | SIMPLEC, Rhie–Chow, reference cell, centre-line comparison, 2D and 3D cells |
@@ -29,6 +29,7 @@ All commands run from the repository root. Case files are in
 | 17 | [Adjoint-ready kernels: derivatives and checkpointing](#adjoint-ready) | 5 | dual numbers through the kernel bodies, transposed matrices, binomial checkpointing |
 | 18 | [A run that a program can drive](#run-contract) | 5 | `--json`, exit codes, `--set`, limits, signals, `--restart latest`, diagnostic codes, estimate before the run, byte-identical files |
 | 19 | [Balances and the divergence report](#health) | 5 | mass and kinetic-energy ledger, numerical dissipation of the schemes (second law), divergence report with ranked causes |
+| 20 | [Time step from the error, output at exact times, potential-flow start](#time-control) | 5 | BDF2 error estimate with rejected steps, output in simulated time, potential flow from the pressure multigrid |
 
 ---
 
@@ -306,26 +307,31 @@ python3 tools/render_mesh.py output/mms_poly_box/fields.vtkhdf mms_poly_error.pn
 ---
 
 <a id="oblique-step"></a>
-## 9. Oblique step: four convection schemes
+## 9. Oblique step: five convection schemes
 
-| first-order upwind | linear upwind, no limiter | linear upwind, Venkatakrishnan (K = 0) |
-|---|---|---|
-| ![upwind](figures/gallery/oblique_step_upwind.png) | ![linear upwind](figures/gallery/oblique_step_linear-upwind.png) | ![Venkatakrishnan](figures/gallery/oblique_step_venkatakrishnan.png) |
+| first-order upwind | linear upwind, no limiter | linear upwind, Venkatakrishnan (K = 0) | bounded central (β = 0.5) |
+|---|---|---|---|
+| ![upwind](figures/gallery/oblique_step_upwind.png) | ![linear upwind](figures/gallery/oblique_step_linear-upwind.png) | ![Venkatakrishnan](figures/gallery/oblique_step_venkatakrishnan.png) | ![bounded central](figures/gallery/oblique_step_bounded-central.png) |
 
-![φ along x = 0.8 for the four schemes](figures/gallery/oblique_step_profile.svg)
+![φ along x = 0.8 for the five schemes](figures/gallery/oblique_step_profile.svg)
 
 Pure convection of a step at 30° to the x axis across 2 401 polygonal
 prisms. Upwind is bounded but smears the step over many cells. Linear
 upwind without a limiter is sharp but over- and undershoots by 7 % and
 5 %. With the Venkatakrishnan limiter (and with Venkatakrishnan–Wang) at
 K = 0 the step is as sharp as with linear upwind and φ stays in [0, 1].
-The run checks the bounds of every limited variant and fails if one leaves
-[0, 1].
+The bounded central scheme of stage 5 (D25) takes the central face value
+where the normalised variable of the upwind cell shows a smooth profile,
+blends towards upwind near extrema and is upwind at them; on these
+distorted polygons it needs the limiter of the upwind cell as well. It
+stays in [0, 1] with a 10–90 % width of the step of 0.090 m (linear
+upwind with the limiter 0.082 m, upwind 0.172 m). The run checks the
+bounds of every limited variant and fails if one leaves [0, 1].
 
 | | |
 |---|---|
 | Mesh | generated poly 2D, 48 × 48 intervals, perturb 0.1: 2 401 cells |
-| Case file | `scalar/oblique_step_2d.toml` (four `[[variants]]`) |
+| Case file | `scalar/oblique_step_2d.toml` (five `[[variants]]`) |
 
 ```
 target/release/foehn scalar examples/cases/scalar/oblique_step_2d.toml
@@ -790,6 +796,65 @@ Error RUN014: the solution diverged in outer iteration 16 ...
 ```
 cargo test --release -p foehncraft-flow --test health
 python3 tools/energy_budget_chart.py energy_budget.svg
+```
+
+[↑ back to top](#example-gallery)
+
+---
+
+<a id="time-control"></a>
+## 20. Time step from the error, output at exact times, potential-flow start
+
+![Time step over time for three error tolerances and for the Courant number alone, Taylor–Green vortex](figures/gallery/time_step_error.svg)
+
+The Taylor–Green vortex with the step chosen by the error of BDF2 (D65):
+from the fourth step on, the local error is estimated from the difference
+between the step and the quadratic extrapolation of the last three levels,
+and the next step is the one that meets the tolerance, at most 1.2 times
+the last and below Courant number 5. With 1e-4 the error never limits and
+the run follows the growth limit like the Courant control alone; with
+1e-5 and 1e-6 the estimate cuts the step where plain PISO loses accuracy,
+at Courant numbers about 2, and repeats the steps that missed (the
+crosses). The velocity error at the end falls from 1.6e-3 to 6.3e-4, near
+the spatial error of the mesh (5.5e-4), for twice the steps. A rejected
+step is taken back exactly: the repeated step is bitwise the step a run
+with the shorter Δt takes, and a restart continues bitwise. At the end
+every run lands on t = 0.4 s in two equal steps; the same holds for
+field, monitor and restart output in simulated time (D66).
+
+![Potential-flow start around the cylinder, 24 576 cells](figures/gallery/cylinder_potential_speed.png)
+
+The start field of `initial.potential_flow` (D52) for the cylinder of
+gallery 15: the irrotational flow that carries the parabolic inflow
+around the cylinder to the outlet, with the stagnation points on the axis
+and the fastest flow above and below the cylinder. It is one Laplace solve
+with the pressure multigrid (the pressure-correction equation with unit
+coefficients) and four passes of the non-orthogonal correction; the cell
+velocity is rebuilt from the face fluxes, which are continuous to the
+solver tolerance. The steady run at Re 20 from it converges in 1527
+instead of 1570 outer iterations.
+
+| Check | Result |
+|---|---|
+| Taylor–Green, 64², BDF2, tolerance 1e-4 / 1e-5 / 1e-6 | 26 / 37 / 50 steps, 0 / 6 / 9 rejected, velocity error L2 1.53e-3 / 8.36e-4 / 6.25e-4 (Courant control alone: 25 steps, 1.64e-3) |
+| Rejected step, BDF2 and Crank–Nicolson | the repeated step and the next one bitwise equal to the run that took the short step at once |
+| Restart of an error-controlled run with rejections | bit-identical continuation |
+| Output at exact times | monitor rows at multiples of 0.05 s to 1e-12 s, restart at its time, no step below half the one before |
+| Potential start in a channel with uniform inflow | uniform flow to 1e-11 on hexahedra, RMS deviation 1.2 % on polygons perturbed by 15 % (12 % without the non-orthogonal correction) |
+| The catalogue against part 4b | 22 flow cases and the scalar cases bitwise equal without the new keys |
+
+| | |
+|---|---|
+| Code | `foehncraft_flow::transient` (`ErrorControl`, `Transient::reject`), `unsteady` (rejection, `Schedule`), `simplec::Flow::potential_flow` |
+| Tests | `adjoint_tests.rs` (`rejected_step_repeats_bitwise`, `potential_flow_start_in_a_channel`), `tests/stage5.rs` (`error_controlled_steps_restart_bit_identically`, `output_lands_on_scheduled_times`) |
+| Case files | `flow/taylor_green_error.toml`, `flow/cylinder_potential.toml` |
+| Recipe | [28](recipes.md#time-control) |
+
+```
+target/release/foehn flow examples/cases/flow/taylor_green_error.toml
+python3 tools/time_step_chart.py time_step_error.svg
+target/release/foehn flow examples/cases/flow/cylinder_potential.toml
+python3 tools/render_mesh.py output/cylinder_potential/fields.vtkhdf potential.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
 ```
 
 [↑ back to top](#example-gallery)

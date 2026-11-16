@@ -14,9 +14,11 @@ flow loop and the further items of the stage follow in their own pull
 requests and are added here. Part 2 is the GPU flow loop
 ([below](#gpu-flow-loop-part-2)), part 3 the adjoint-ready kernels
 ([below](#adjoint-ready-kernels-part-3)), part 4a the run contract for
-scripts and agents ([below](#run-contract-part-4a)). The commands are in
-[recipes 21–26](../recipes.md#transient-flow), the pictures in
-[gallery 14–18](../gallery.md#taylor-green), the case files in the
+scripts and agents ([below](#run-contract-part-4a)), part 4b the health
+checks ([below](#health-checks-conservation-ledger-and-divergence-report-part-4b)),
+part 5a the numerics ([below](#numerics-part-5a)). The commands are in
+[recipes 21–28](../recipes.md#transient-flow), the pictures in
+[gallery 14–20](../gallery.md#taylor-green), the case files in the
 [case catalogue](../cases.md#flow-cases-examplescasesflow).
 
 ## Acceptance checks and results
@@ -520,11 +522,117 @@ against α_p ≈ 1 − α_u), the non-orthogonality and volume ratio of the
 failing cells, patches next to them (and backflow at an outflow), a
 failure within the first steps, and linear solvers at their limits.
 
+## Numerics (part 5a)
+
+Four items of the stage plan: the bounded central scheme (D25), the time
+step from the time-integration error (D65), output at exact simulated
+times (D66) and the potential-flow start (D52). Runs without the new keys
+are bitwise those of part 4b (the catalogue below).
+
+| Check | Result | Where |
+|---|---|---|
+| Bounded central, oblique step on 2 401 distorted polygons | φ in [0, 1], 57 outer iterations, 10–90 % width of the step 0.090 m (linear upwind with the Venkatakrishnan limiter 0.082 m, upwind 0.172 m) | variant `bounded-central` of `scalar/oblique_step_2d.toml` (fails outside [0, 1]) |
+| Bounded central, Taylor–Green space order | 16² to 128²: 3.22, 2.65, 2.10; L2 error on 128² 1.291e-4 (linear upwind 1.290e-4), pressure L∞ 7.66e-4 (1.08e-3) | `taylor_green_space` with `--set 'solver.scheme="central"'` |
+| Bounded central, kinetic energy | Taylor–Green 64², 0.4 s: numerical dissipation −1.5e-6 J (pressure part +1.4e-6 J, scheme part −2.9e-6 J), −0.08 % of the viscous dissipation, inside `tolerance_energy`; linear upwind +1.2e-5 J | `taylor_green_bdf2` with `verification.time_steps=[]` |
+| Central momentum flux, derivatives | dual-number Jacobian of the central face flux against central differences | test `jacobian_of_the_central_momentum_face_flux` |
+| Error-based time step, Taylor–Green 64² | tolerance 1e-4 / 1e-5 / 1e-6: 26 / 37 / 50 steps, 0 / 6 / 9 rejected, velocity error L2 1.53e-3 / 8.36e-4 / 6.25e-4 at t = 0.4 s (Courant control alone 25 steps, 1.64e-3; spatial error of the mesh 5.5e-4) | case `taylor_green_error`, `tools/time_step_chart.py` |
+| A rejected step is taken back exactly | BDF2 and Crank–Nicolson: the repeated step and the next one bitwise those of the run that took the short step at once | test `rejected_step_repeats_bitwise` |
+| Restart with the error estimate | a run with rejected steps continues from a restart file bit-identically | test `error_controlled_steps_restart_bit_identically` |
+| Output at exact times | monitor rows at the multiples of 0.05 s to 1e-12 s, the numbered restart at its time, no step below half the one before | test `output_lands_on_scheduled_times` |
+| Potential-flow start | uniform channel flow to 1e-11 on hexahedra; on polygons perturbed by 15 % RMS deviation 1.2 % (12 % without the non-orthogonal correction); face fluxes continuous to 1e-8 of the inflow; cylinder Re 20 converges in 1527 instead of 1570 iterations | test `potential_flow_start_in_a_channel`, case `cylinder_potential` |
+
+**Bounded central scheme.** The face value of the central scheme,
+φ_c = w φ_P + (1 − w) φ_N + ∇φ_f·(x_f − x_w), is bounded in the normalised
+variable of the upwind cell U (Leonard 1988; Gaskell & Lau 1988),
+φ̃_U = 1 − (φ_D − φ_U)/(2∇φ_U·d), d = x_D − x_U: γ = 1 for φ̃_U ≥ β,
+γ = φ̃_U/β for 0 < φ̃_U < β, γ = 0 (upwind) outside (0, 1), and for β > 0
+the central value is clipped to [φ_U, φ_D]. The deferred correction is
+ṁ[(1 − c)·ψ_U(∇φ_U·(x_f − x_U)) + c·ψ_U γ (φ_c − φ_U)] with the blend c
+(`central_blending`) and the limiter ψ_U of the upwind cell. The limiter
+factor was needed: on the distorted polygons the bounded value alone left
+overshoots of 3–9 % and did not converge for pure convection; on regular
+hexahedra the scheme is bounded without it for β ≥ 0.3. On outflow
+boundary faces the scheme takes the boundary value (c·ṁ(φ_b − φ_P)): without
+it the outflow faces of the Taylor–Green box were first order and the
+error 2.4 times that of linear upwind. In the first outer iteration of an
+extrapolated transient step the correction uses the extrapolated velocity
+u* = (1 + ω)uⁿ − ωuⁿ⁻¹, as the other explicit parts do. Every new term
+sits behind `central > 0`, so the other schemes stay bitwise as before.
+
+**Error estimate of the time step.** Milne's device (Kay, Gresho,
+Griffiths & Silvester 2010): the predictor P is the quadratic through
+uⁿ⁻², uⁿ⁻¹, uⁿ at tⁿ⁺¹, whose error is P − u(tⁿ⁺¹) = −Π h³u'''/6 with
+Π = (h + h₁)(h + h₁ + h₂)/h²; the error of the corrector is
+uⁿ⁺¹ − u(tⁿ⁺¹) = K h³u'''/6 with K = (1 + ω)²/(ω(1 + 2ω)) for
+variable-step BDF2 (ω = h/h₁; 4/3 at equal steps) and K = −1/2 for
+Crank–Nicolson. So the local error is K/(K + Π)·(uⁿ⁺¹ − P), and
+E = |K/(K + Π)|·RMS(uⁿ⁺¹ − P)/(atol + rtol·RMS(uⁿ⁺¹)). The next step is
+h·min(0.9 E^(−1/3), max_growth, max_cfl/Courant), bounded by
+`min_time_step` and `max_time_step`; a step with E > 1 is repeated with
+h·max(0.2, 0.9 E^(−1/2)), at most 8 times. The repeat uses the exponent ½
+because the error constant K grows as 1/ω when the step gets short
+against the one before, so the error falls only as h² there (measured on
+the cavity: from ω = 1 down, 2.3 falling towards 2). The estimate starts
+with the fourth step: uⁿ⁻² is then a level after the first step, whose
+BDF1 error and the start fields, which are not a solution of the discrete
+equations, otherwise count as error. Two limits of the estimate: it sees
+the noise of the linear solvers (keep the tolerance ten times above
+theirs), and with plain PISO at Courant numbers above about 2 the error
+grows faster than h³, so the estimate cuts the step sharply there (the
+drops in gallery 20). The tolerance is per step: the error at the end of
+a run is up to the number of steps times larger.
+
+**Taking a step back.** Before each estimated step the driver keeps uⁿ⁻²,
+Xⁿ⁻¹ (the Rhie–Chow time-step term), the velocity gradients and limiters
+of level n − 1 with the buffer roles of the extrapolation, and the clock;
+u, p and ṁ of level n are the copy that the divergence report keeps
+anyway (D63). A rejection puts these back, sets the boundary values of tⁿ
+and recomputes the boundary values and gradients of level n from them,
+the same operations on the same data as at the end of the step before.
+That is why the repeat is bitwise the step of a run with the shorter Δt.
+The restart file carries uⁿ⁻² and the step before the last, so that an
+error-controlled run continues bitwise.
+
+**Output at exact times.** A schedule in simulated time (the multiples of
+an interval and a list of times) names the next time after the current
+one; the driver shortens the planned step to land on it, and when the
+time lies within two planned steps it takes two equal ones, so that no
+step falls below half the planned one (a short step would cost the
+adaptive control many steps to recover under the growth limit). The
+schedules are computed from the clock alone, so a restart keeps them.
+
+**Potential-flow start.** The pressure-correction equation of SIMPLEC
+with D = 1, Σ_f ρ dgeo_f (φ_P − φ_N) = −Σ_f ±ṁ*_f, from zero cell
+velocities, so that ṁ* holds only the prescribed boundary fluxes: its
+boundary conditions are those of the potential (∂φ/∂n from the velocity
+inlets, ∂φ/∂n = 0 on walls and symmetry planes, φ = 0 on pressure
+boundaries), and the pressure multigrid solves it. Four passes add the
+non-orthogonal part of the face flux, −ρ(∇φ)_f·k_f, of the potential of
+the pass before (Jasak 1996): on polygons perturbed by 15 % the RMS
+deviation from uniform channel flow falls from 12 % to 1.2 %. The cell
+velocity comes from the face fluxes, u_P = Σ_f ±ṁ_f (x_f − x_P)/(ρV_P),
+exact for a uniform flow because Σ_f (x_f − x_P) S_fᵀ = V_P I; the
+gradient of φ is not, next to the inlets, because the correction gradient
+assumes ∂φ/∂n = 0 on every boundary that is not a pressure boundary. The
+start pressure stays, and the run builds its own multigrid.
+
+**The catalogue against part 4b.** The 22 flow cases of the CI sets and
+the scalar cases `oblique_step_2d` (its four variants of part 4b),
+`mms_poly_2d` and `mms_poly_box`, run with the binaries of main and of
+this part: every field, restart dataset, CSV row and report value
+bitwise equal (`tools/compare_runs.py --across-versions`, 263 files).
+What differs by design: the resolved case lists the new keys, and the
+restart file has the attribute `dt_prev2`; the comparison now matches
+the lines of the older resolved case in order and HDF5 files by their
+datasets.
+
 ## Limits of this part of stage 5
 
-- The further stage-5 items (the bounded central scheme, the new boundary
-  conditions, potential-flow initialisation, expressions, the Python
-  package) follow in their own pull requests.
+- The further stage-5 items (the new boundary conditions and derived
+  fields of part 5b, expressions, the Python package) follow in their own
+  pull requests.
+- The potential-flow start does not yet interpolate from a result on
+  another mesh, and has no grid sequencing (D52 later).
 - The ledger covers mass and kinetic energy; momentum (the patch forces
   are in the reports), total energy and entropy (D90 parts 1–3) come with
   the energy equation (L1); regions (D73) later.
@@ -545,6 +653,18 @@ failure within the first steps, and linear solvers at their limits.
 - M. B. Giles, N. A. Pierce, *An introduction to the adjoint approach to
   design*, Flow Turbul. Combust. 65, 393–415 (2000)
 
+- D. Kay, P. Gresho, D. Griffiths, D. Silvester, *Adaptive time-stepping
+  for incompressible flow. Part II: Navier–Stokes equations*, SIAM J. Sci.
+  Comput. 32, 111–128 (2010)
+- B. P. Leonard, *Simple high-accuracy resolution program for convective
+  modelling of discontinuities*, Int. J. Numer. Methods Fluids 8,
+  1291–1318 (1988)
+- P. H. Gaskell, A. K. C. Lau, *Curvature-compensated convective
+  transport: SMART, a new boundedness-preserving transport algorithm*,
+  Int. J. Numer. Methods Fluids 8, 617–641 (1988)
+- H. Jasak, *Error analysis and estimation for the finite volume method
+  with applications to fluid flows*, PhD thesis, Imperial College London
+  (1996)
 - R. I. Issa, *Solution of the implicitly discretised fluid flow equations
   by operator-splitting*, J. Comput. Phys. 62, 40–65 (1986)
 - M. Schäfer, S. Turek, *Benchmark computations of laminar flow around a

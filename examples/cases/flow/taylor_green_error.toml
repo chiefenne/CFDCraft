@@ -1,0 +1,72 @@
+# Taylor–Green vortex with the time step from the time-integration error
+# (stage 5, D65) and output at exact simulated times (D66).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/taylor_green_error.toml
+#
+# The vortex of taylor_green_bdf2.toml (64 x 64 cells, Re = 100, the exact
+# velocity on the sides) from t = 0 to 0.4 s, plain PISO with BDF2. The
+# step starts at 1 ms; from the fourth step on, the local error of BDF2 is
+# estimated from the difference between the corrector and the quadratic
+# extrapolation of the last three levels (Milne's device), and the next
+# step is the one that meets `error_tolerance` (1e-4 of the RMS velocity
+# per step), at most `max_growth` times the last and below the Courant
+# number `max_cfl`. A step whose error exceeds the tolerance is taken back
+# and repeated with a shorter one; the log names each. The probe row
+# every 0.05 s and the fields every 0.1 s land on their times exactly: the
+# steps before them are shortened (in two equal steps when the time lies
+# within two steps). tools/time_step_chart.py runs the tolerances 1e-3 to
+# 1e-5 and draws the steps.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.015625]
+cells = [64, 64, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.01         # Re = ρ U L / μ = 100
+
+[flow]
+convection = true
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.xmax]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.ymin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.ymax]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[analytic]
+type = "taylor-green"    # U = 1 m/s, period L = 1 m
+
+[time]
+scheme = "bdf2"
+time_step = 0.001
+end_time = 0.4
+adaptive = true
+max_cfl = 5.0
+max_growth = 1.2
+error_tolerance = 1e-4   # relative, per step
+error_absolute = 1e-6    # m/s
+
+[solver]
+log_every = 5
+
+[output]
+wall_csv = false
+fields_interval = 0.1    # fields_<step>.vtkhdf at t = 0.1, 0.2, 0.3, 0.4 s
+monitor_interval = 0.05  # a probes.csv row every 0.05 s
+[[output.probes]]
+name = "p"
+point = [0.125, 0.25, 0.0078125]

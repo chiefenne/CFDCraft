@@ -120,6 +120,11 @@ pub struct InitialSection {
     pub velocity: [f64; 3],
     /// Start pressure (Pa).
     pub pressure: f64,
+    /// Start from potential flow (D52) instead of `velocity`: the
+    /// irrotational velocity that carries the inflow through the domain to
+    /// the pressure boundaries, from one Laplace solve with the pressure
+    /// multigrid.
+    pub potential_flow: bool,
 }
 
 /// `[pressure]`
@@ -151,6 +156,13 @@ pub struct RunSection {
     pub restart_every: usize,
     /// Also write a numbered `restart_<N>.h5` at these iterations or steps.
     pub restart_at: Vec<usize>,
+    /// Transient: write `restart.h5` every this much simulated time (s), at
+    /// the multiples of it; the time step is shortened to land on them
+    /// (D66).
+    pub restart_interval: Option<f64>,
+    /// Transient: also write a numbered `restart_<N>.h5` at these simulated
+    /// times (s), landed on exactly (D66).
+    pub restart_times: Vec<f64>,
     /// Write `restart.h5` at the end of the run.
     pub restart_final: bool,
     /// Re-read the case file every N iterations or time steps (0: only on a
@@ -217,6 +229,8 @@ impl Default for RunSection {
             restart: None,
             restart_every: 0,
             restart_at: Vec::new(),
+            restart_interval: None,
+            restart_times: Vec::new(),
             restart_final: true,
             reread_every: 0,
             limits: Limits::default(),
@@ -248,6 +262,15 @@ pub struct TimeSection {
     pub min_time_step: f64,
     /// Largest time step with `adaptive` (s).
     pub max_time_step: Option<f64>,
+    /// Relative tolerance of the local time-integration error with
+    /// `adaptive` (D65): the step follows from the error estimate of BDF2
+    /// or Crank–Nicolson, bounded by `max_cfl` and `max_growth`, and a
+    /// step whose error exceeds the tolerance is repeated with a shorter
+    /// one. Off when absent.
+    pub error_tolerance: Option<f64>,
+    /// Absolute tolerance of the local time-integration error (m/s), added
+    /// to `error_tolerance` × the RMS velocity.
+    pub error_absolute: f64,
 }
 
 impl Default for TimeSection {
@@ -263,6 +286,8 @@ impl Default for TimeSection {
             max_growth: 1.2,
             min_time_step: 0.0,
             max_time_step: None,
+            error_tolerance: None,
+            error_absolute: 1e-6,
         }
     }
 }
@@ -311,6 +336,29 @@ impl TimeSection {
                 "[time] max_time_step must be > 0 and >= min_time_step"
             );
         }
+        if let Some(e) = self.error_tolerance {
+            crate::need!(
+                e > 0.0 && e < 1.0,
+                CASE_RANGE,
+                "[time] error_tolerance must lie in (0, 1)"
+            );
+            crate::need!(
+                self.adaptive,
+                CASE_RANGE,
+                "[time] error_tolerance needs adaptive = true"
+            );
+            crate::need!(
+                self.scheme != TimeScheme::Bdf1,
+                CASE_RANGE,
+                "[time] error_tolerance needs scheme bdf2 or crank-nicolson (the estimate is that \
+                 of a second-order method)"
+            );
+        }
+        crate::need!(
+            self.error_absolute >= 0.0,
+            CASE_RANGE,
+            "[time] error_absolute must be >= 0"
+        );
         Ok(())
     }
 }
@@ -428,8 +476,19 @@ pub struct OutputSection {
     pub fields_every: usize,
     /// Transient: also write the fields at these steps.
     pub fields_at: Vec<usize>,
+    /// Transient: write `fields_<step>.vtkhdf` every this much simulated
+    /// time (s), at the multiples of it; the time step is shortened to
+    /// land on them (D66).
+    pub fields_interval: Option<f64>,
+    /// Transient: also write the fields at these simulated times (s),
+    /// landed on exactly (D66).
+    pub fields_times: Vec<f64>,
     /// A row of `forces.csv` and `probes.csv` every N steps (transient).
     pub monitor_every: usize,
+    /// Transient: a row of `forces.csv` and `probes.csv` every this much
+    /// simulated time (s) instead of every `monitor_every` steps, landed
+    /// on exactly (D66): equally spaced samples for spectra.
+    pub monitor_interval: Option<f64>,
     /// Point probes: velocity and pressure per step (`probes.csv`).
     pub probes: Vec<Probe>,
     /// Force coefficients of some patches (`forces.csv`, the report).
@@ -446,7 +505,10 @@ impl Default for OutputSection {
             lines: Vec::new(),
             fields_every: 0,
             fields_at: Vec::new(),
+            fields_interval: None,
+            fields_times: Vec::new(),
             monitor_every: 1,
+            monitor_interval: None,
             probes: Vec::new(),
             coefficients: None,
         }
@@ -699,6 +761,43 @@ impl FlowCase {
             CASE_RANGE,
             "[output] monitor_every must be >= 1"
         );
+        // D66: output in simulated time
+        let (o, r) = (&self.output, &self.run);
+        for (key, v) in [
+            ("output.fields_interval", o.fields_interval),
+            ("output.monitor_interval", o.monitor_interval),
+            ("run.restart_interval", r.restart_interval),
+        ] {
+            if let Some(v) = v {
+                crate::need!(
+                    v > 0.0 && v.is_finite(),
+                    CASE_RANGE,
+                    "{key} must be > 0 (s)"
+                );
+                crate::need!(
+                    transient,
+                    CASE_INCONSISTENT,
+                    "{key} schedules output in simulated time and needs a [time] table"
+                );
+            }
+        }
+        for (key, v) in [
+            ("output.fields_times", &o.fields_times),
+            ("run.restart_times", &r.restart_times),
+        ] {
+            if !v.is_empty() {
+                crate::need!(
+                    v.iter().all(|x| x.is_finite()),
+                    CASE_RANGE,
+                    "{key} must hold finite times (s)"
+                );
+                crate::need!(
+                    transient,
+                    CASE_INCONSISTENT,
+                    "{key} schedules output in simulated time and needs a [time] table"
+                );
+            }
+        }
         if let Some(a) = &self.analytic
             && a.is_transient()
             && !transient
@@ -1205,6 +1304,9 @@ pub fn run_steered(
                 path.display(),
                 r.iteration
             ));
+        } else if case.initial.potential_flow {
+            let it = fl.potential_flow(&mesh, &geo)?;
+            lg.line(&format!("start  potential flow (D52): {it} CG iterations"));
         }
         let first = fl.iteration();
         let mut csv = csv_preamble(

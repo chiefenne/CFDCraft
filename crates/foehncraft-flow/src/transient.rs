@@ -42,6 +42,7 @@
 use crate::device::{Buf, Buf3, TimeTerms};
 use crate::simplec::{Flow, Residuals};
 use anyhow::{Result, ensure};
+use foehncraft_fv::solver::Scheme;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -87,6 +88,11 @@ pub struct Clock {
     /// extrapolation, which would otherwise carry an initial field that is
     /// not divergence-free into the convecting flux).
     pub levels: usize,
+    /// Size of the step before the last one (s), 0 while uⁿ⁻² is not a
+    /// level of this run (the first two steps, after a rewind): the
+    /// predictor of the error estimate (D65) needs it.
+    #[serde(default)]
+    pub dt_prev2: f64,
 }
 
 /// Report of one time step.
@@ -108,6 +114,38 @@ pub struct StepReport {
     pub outer: usize,
     /// Largest Courant number of the new level.
     pub cfl: f64,
+    /// Estimated local error of the time integration relative to the
+    /// tolerance (D65; > 1: the step is too long), when the estimate is on
+    /// and three levels exist.
+    pub error: Option<f64>,
+}
+
+/// Tolerances of the error-based time step (D65).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ErrorControl {
+    /// Relative tolerance on the velocity.
+    pub relative: f64,
+    /// Absolute tolerance on the velocity (m/s).
+    pub absolute: f64,
+}
+
+/// Work of the error estimate (D65): the predictor and what a rejected
+/// step needs to be repeated exactly.
+#[derive(Debug, Clone, Copy)]
+struct ErrorWork {
+    /// Quadratic extrapolation of uⁿ⁻², uⁿ⁻¹, uⁿ to tⁿ⁺¹.
+    pred: Buf3,
+    /// uⁿ⁻² at the start of the step.
+    u2: Buf3,
+    /// Xⁿ⁻¹ at the start of the step.
+    x_old: Buf,
+    /// Gⁿ⁻¹ at the start of the step.
+    g_old: [Buf; N_EXPLICIT],
+    /// The current explicit buffers and those of Gⁿ⁻¹ at the start.
+    ids: [Buf; N_EXPLICIT],
+    old_ids: [Buf; N_EXPLICIT],
+    /// The clock at the start.
+    clock: Clock,
 }
 
 /// Old levels and work buffers of the time integration.
@@ -159,7 +197,10 @@ pub struct Transient {
     pub scheme: TimeScheme,
     /// The clock.
     pub clock: Clock,
+    /// Error estimate of the time integration (D65), off with `None`.
+    pub error_control: Option<ErrorControl>,
     l: Levels,
+    e: Option<ErrorWork>,
 }
 
 /// Host copy of the old levels (for a restart).
@@ -175,6 +216,10 @@ pub struct OldLevels {
     pub x_old: Vec<f64>,
     /// Velocity gradients (9) and limiters (3) of level n−1.
     pub g_old: Vec<Vec<f64>>,
+    /// uⁿ⁻¹ of the step before (uⁿ⁻² of the next step), for the predictor
+    /// of the error estimate (D65); only with the estimate on.
+    #[serde(default)]
+    pub u_old2: Option<[Vec<f64>; 3]>,
 }
 
 impl OldLevels {
@@ -184,7 +229,11 @@ impl OldLevels {
             + self.m_old.len()
             + self.x_cur.len()
             + self.x_old.len()
-            + self.g_old.iter().map(Vec::len).sum::<usize>())
+            + self.g_old.iter().map(Vec::len).sum::<usize>()
+            + self
+                .u_old2
+                .as_ref()
+                .map_or(0, |u| u.iter().map(Vec::len).sum::<usize>()))
     }
 }
 
@@ -236,7 +285,9 @@ impl Transient {
                 time: start_time,
                 ..Default::default()
             },
+            error_control: None,
             l,
+            e: None,
         })
     }
 
@@ -272,6 +323,15 @@ impl Transient {
                 .iter()
                 .map(|&b| fl.dev.download(b))
                 .collect::<Result<_>>()?,
+            u_old2: if self.error_control.is_some() && self.clock.dt_prev2 > 0.0 {
+                Some([
+                    fl.dev.download(l.u_old2.x)?,
+                    fl.dev.download(l.u_old2.y)?,
+                    fl.dev.download(l.u_old2.z)?,
+                ])
+            } else {
+                None
+            },
         })
     }
 
@@ -294,6 +354,15 @@ impl Transient {
             fl.dev.upload(b, g)?;
         }
         self.clock = clock;
+        match &o.u_old2 {
+            Some(u) => {
+                for (&b, v) in l.u_old2.all().iter().zip(u) {
+                    fl.dev.upload(b, v)?;
+                }
+            }
+            // no uⁿ⁻²: the predictor waits a step
+            None => self.clock.dt_prev2 = 0.0,
+        }
         Ok(())
     }
 
@@ -314,8 +383,75 @@ impl Transient {
             }
             fl.dev.copy(l.m_old2, l.m_old)?;
         }
+        // uⁿ⁻² is gone
+        self.clock.dt_prev2 = 0.0;
         self.finish_level(fl)?;
         Ok(true)
+    }
+
+    /// Takes back the step just done, after its error estimate exceeded the
+    /// tolerance (D65): every level, the old gradients, the clock and the
+    /// state of level n return exactly as before the step, so that the
+    /// step repeated with a shorter Δt is the step a run with that Δt
+    /// would have taken. The prescribed boundary values of tⁿ are set
+    /// beforehand.
+    pub fn reject(&mut self, fl: &mut Flow) -> Result<()> {
+        let Some(e) = self.e else {
+            anyhow::bail!("no step to take back");
+        };
+        let l = self.l;
+        self.clock = e.clock;
+        if self.clock.levels >= 1 {
+            for (a, b) in l.u_old2.all().into_iter().zip(l.u_old.all()) {
+                fl.dev.copy(a, b)?;
+            }
+            fl.dev.copy(l.m_old2, l.m_old)?;
+        }
+        for (a, b) in e.u2.all().into_iter().zip(l.u_old2.all()) {
+            fl.dev.copy(a, b)?;
+        }
+        fl.dev.copy(l.x_old, l.x_cur)?;
+        fl.dev.copy(e.x_old, l.x_old)?;
+        set_explicit_buffers(&mut fl.f, e.ids);
+        self.l.g_old = e.old_ids;
+        for (&a, &b) in e.g_old.iter().zip(&e.old_ids) {
+            fl.dev.copy(a, b)?;
+        }
+        // u, p, ṁ of level n with their boundary values and gradients
+        anyhow::ensure!(fl.rewind()?, "no valid state was kept");
+        fl.dev.sync()
+    }
+
+    /// The buffers of the error estimate, allocated at first use.
+    fn error_work(&mut self, fl: &mut Flow) -> Result<ErrorWork> {
+        if let Some(e) = self.e {
+            return Ok(e);
+        }
+        let (nc, nf) = (fl.disc.n_cells, fl.disc.n_faces);
+        let dev = &mut fl.dev;
+        let mut c3 = || -> Result<Buf3> {
+            Ok(Buf3 {
+                x: dev.alloc(nc)?,
+                y: dev.alloc(nc)?,
+                z: dev.alloc(nc)?,
+            })
+        };
+        let (pred, u2) = (c3()?, c3()?);
+        let mut g_old = [Buf(0); N_EXPLICIT];
+        for b in &mut g_old {
+            *b = fl.dev.alloc(nc)?;
+        }
+        let e = ErrorWork {
+            pred,
+            u2,
+            x_old: fl.dev.alloc(nf)?,
+            g_old,
+            ids: [Buf(0); N_EXPLICIT],
+            old_ids: [Buf(0); N_EXPLICIT],
+            clock: self.clock,
+        };
+        self.e = Some(e);
+        Ok(e)
     }
 
     /// Largest Courant number of the current fluxes for a step `dt`.
@@ -347,6 +483,51 @@ impl Transient {
         let alpha_p = s.alpha_p(true);
         let extrapolate = second && s.extrapolation && self.clock.levels >= 2;
         let t = Instant::now();
+
+        // 0. error estimate (D65): the state of the start for a rejection,
+        // and the predictor P = L₀uⁿ⁻² + L₁uⁿ⁻¹ + L₂uⁿ, the quadratic
+        // through the last three levels at tⁿ⁺¹
+        let control = match self.error_control {
+            Some(c) if self.scheme != TimeScheme::Bdf1 => Some(c),
+            _ => None,
+        };
+        // (from the fourth step on: uⁿ⁻² is then a level after the first
+        // step, whose BDF1 error and the start fields that are not a
+        // solution of the discrete equations would count as error)
+        let predict = control.is_some()
+            && self.clock.levels >= 2
+            && self.clock.dt_prev2 > 0.0
+            && self.clock.step >= 3;
+        if control.is_some() {
+            let mut e = self.error_work(fl)?;
+            e.ids = explicit_buffers(&fl.f);
+            e.old_ids = self.l.g_old;
+            e.clock = self.clock;
+            for (a, b) in l.u_old2.all().into_iter().zip(e.u2.all()) {
+                fl.dev.copy(a, b)?;
+            }
+            fl.dev.copy(l.x_old, e.x_old)?;
+            for (&a, &b) in self.l.g_old.iter().zip(&e.g_old) {
+                fl.dev.copy(a, b)?;
+            }
+            if predict {
+                let (h, h1, h2) = (dt, self.clock.dt_prev, self.clock.dt_prev2);
+                let c2 = (h + h1) * (h + h1 + h2) / (h1 * (h1 + h2));
+                let c1 = -h * (h + h1 + h2) / (h1 * h2);
+                let c0 = h * (h + h1) / (h2 * (h1 + h2));
+                for ((p, (a, b)), c) in e
+                    .pred
+                    .all()
+                    .into_iter()
+                    .zip(f.u.all().into_iter().zip(l.u_old.all()))
+                    .zip(l.u_old2.all())
+                {
+                    fl.dev.lincomb(p, c2, a, c1, b)?;
+                    fl.dev.lincomb(p, 1.0, p, c0, c)?;
+                }
+            }
+            self.e = Some(e);
+        }
 
         // 1. old levels
         if self.clock.levels >= 1 {
@@ -436,7 +617,25 @@ impl Transient {
                 w.zero_face
             };
             let c = if k == 1 { conv } else { fl.f.mass_flux };
-            let scale = fl.momentum_assembly(c, alpha, theta, Some(time))?;
+            // the central correction reads cell velocities, not gradients:
+            // extrapolate them as well, u* = (1 + ω)uⁿ − ωuⁿ⁻¹, into the
+            // corrector scratch (free until the correctors)
+            let central = k == 1 && extrapolate && s.scheme == Scheme::Central;
+            if central {
+                for ((d, a), b) in l
+                    .delta
+                    .all()
+                    .into_iter()
+                    .zip(l.u_old.all())
+                    .zip(l.u_old2.all())
+                {
+                    fl.dev.lincomb(d, 1.0 + omega, a, -omega, b)?;
+                }
+                fl.central_u = Some(l.delta);
+            }
+            let scale = fl.momentum_assembly(c, alpha, theta, Some(time));
+            fl.central_u = None;
+            let scale = scale?;
             fl.dev.sync()?;
             fl.timings.momentum_assembly += t.elapsed().as_secs_f64();
             let t = Instant::now();
@@ -513,10 +712,36 @@ impl Transient {
         fl.dev.copy(self.l.x_cur, self.l.x_old)?;
         self.finish_level(fl)?;
         let cfl = self.courant(fl, dt)?;
+        // the local error of the corrector from its difference to the
+        // predictor (Milne's device): with the step constants of uⁿ⁺¹ − u(tⁿ⁺¹)
+        // = K h³u'''/6 and P − u(tⁿ⁺¹) = −Π h³u'''/6, the error is
+        // K/(K + Π)·(uⁿ⁺¹ − P)
+        let error = match (control, self.e) {
+            (Some(c), Some(e)) if predict => {
+                let (h, h1, h2) = (dt, self.clock.dt_prev, self.clock.dt_prev2);
+                let k = match self.scheme {
+                    TimeScheme::CrankNicolson => -0.5,
+                    _ => (1.0 + omega) * (1.0 + omega) / (omega * (1.0 + 2.0 * omega)),
+                };
+                let pi = (h + h1) * (h + h1 + h2) / (h * h);
+                let u = fl.f.u;
+                let (mut dd, mut uu) = (0.0, 0.0);
+                for ((d, a), p) in l.delta.all().into_iter().zip(u.all()).zip(e.pred.all()) {
+                    fl.dev.lincomb(d, 1.0, a, -1.0, p)?;
+                    dd += fl.dev.sum_sq(d)?;
+                    uu += fl.dev.sum_sq(a)?;
+                }
+                let n = 3.0 * fl.disc.n_cells as f64;
+                let rms = |x: f64| (x / n).sqrt();
+                Some((k / (k + pi)).abs() * rms(dd) / (c.absolute + c.relative * rms(uu)))
+            }
+            _ => None,
+        };
         fl.dev.sync()?;
         fl.timings.gradients += t.elapsed().as_secs_f64();
         self.clock.time += dt;
         self.clock.step += 1;
+        self.clock.dt_prev2 = self.clock.dt_prev;
         self.clock.dt_prev = dt;
         self.clock.levels = (self.clock.levels + 1).min(2);
         Ok(StepReport {
@@ -527,6 +752,7 @@ impl Transient {
             last,
             outer,
             cfl,
+            error,
         })
     }
 }

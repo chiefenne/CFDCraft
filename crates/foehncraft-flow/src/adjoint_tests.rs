@@ -280,3 +280,166 @@ fn checkpointed_reverse_sweep_meets_the_forward_levels_bitwise() {
     // 13 steps with 2 snapshots: t = 3, 3·13 − β(4, 2) = 24 primal steps
     assert_eq!(st.steps, 24);
 }
+
+/// D65: a step taken back after its error estimate (`Transient::reject`)
+/// leaves every level as before, so that the repeated step and the steps
+/// after it are bitwise those of a run that took the shorter step at once;
+/// for BDF2 and Crank–Nicolson.
+#[test]
+fn rejected_step_repeats_bitwise() {
+    use crate::transient::{ErrorControl, TimeScheme};
+    for scheme in [TimeScheme::Bdf2, TimeScheme::CrankNicolson] {
+        let (case, mesh, geo) =
+            cavity_case("[time]\nscheme = \"bdf2\"\ntime_step = 0.05\nsteps = 9\n");
+        let make = || {
+            let phys = physics(&case);
+            let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, None).unwrap();
+            let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
+            let mut fl = Flow::on(
+                disc,
+                arrays,
+                phys,
+                case.solver.clone(),
+                true,
+                Some(0),
+                &Target {
+                    device: "cpu".into(),
+                    threads: None,
+                    ptx: Default::default(),
+                },
+            )
+            .unwrap();
+            let mut tr = Transient::new(&mut fl, scheme, 0.0).unwrap();
+            tr.error_control = Some(ErrorControl {
+                relative: 1e-3,
+                absolute: 1e-6,
+            });
+            let nc = mesh.n_cells;
+            fl.initialise(&foehncraft_fv::disc::Soa3::zeros(nc), &vec![0.0; nc])
+                .unwrap();
+            tr.start(&mut fl).unwrap();
+            (fl, tr)
+        };
+        let fields = |fl: &mut Flow| {
+            let s = fl.state().unwrap();
+            let mut v = s.u.x.clone();
+            v.extend(&s.u.y);
+            v.extend(&s.p);
+            v.extend(&s.mass_flux);
+            v.extend(&s.grad_u[0].x);
+            v.extend(&s.psi.y);
+            v.iter().map(|x| x.to_bits()).collect::<Vec<u64>>()
+        };
+        let steps = [0.05, 0.06, 0.07, 0.08, 0.05];
+        let (short, after) = (0.03, 0.04);
+        // the run that takes the long step, rejects it, repeats it short
+        let (mut fl, mut tr) = make();
+        for &h in &steps {
+            tr.step(&mut fl, h).unwrap();
+        }
+        fl.keep_valid().unwrap();
+        let r = tr.step(&mut fl, 0.2).unwrap();
+        assert!(r.error.is_some(), "no error estimate in step {}", r.step);
+        tr.reject(&mut fl).unwrap();
+        assert_eq!(tr.clock.step, steps.len());
+        fl.keep_valid().unwrap();
+        let a = tr.step(&mut fl, short).unwrap();
+        let fa = fields(&mut fl);
+        let a2 = tr.step(&mut fl, after).unwrap();
+        let fa2 = fields(&mut fl);
+        // the run that takes the short step at once
+        let (mut fl, mut tr) = make();
+        for &h in &steps {
+            tr.step(&mut fl, h).unwrap();
+        }
+        fl.keep_valid().unwrap();
+        let b = tr.step(&mut fl, short).unwrap();
+        assert!(
+            fields(&mut fl) == fa,
+            "{scheme:?}: the repeated step differs"
+        );
+        let b2 = tr.step(&mut fl, after).unwrap();
+        assert!(fields(&mut fl) == fa2, "{scheme:?}: the step after differs");
+        assert_eq!(a.error.map(f64::to_bits), b.error.map(f64::to_bits));
+        assert_eq!(a2.error.map(f64::to_bits), b2.error.map(f64::to_bits));
+        assert_eq!(a2.time.to_bits(), b2.time.to_bits());
+    }
+}
+
+/// D52: the potential-flow start in a channel with a uniform inflow is the
+/// uniform flow (exact for the linear potential on hexahedra, to the
+/// discretisation on perturbed polygons), its face fluxes are continuous,
+/// and the run after it builds its own multigrid.
+#[test]
+fn potential_flow_start_in_a_channel() {
+    for (kind, tol) in [("hex", 1e-9), ("poly", 0.025)] {
+        let text = format!(
+            r#"
+[mesh.generate]
+type = "{kind}"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [24, 12, 1]
+perturb = {}
+[fluid]
+viscosity = 0.1
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+"#,
+            if kind == "poly" { 0.15 } else { 0.0 }
+        );
+        let case = FlowCase::from_toml(&text, Path::new(".")).unwrap();
+        let (mesh, geo, _) = mesh_for(&case, None).unwrap();
+        let phys = physics(&case);
+        let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, None).unwrap();
+        let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
+        let mut fl = Flow::new(
+            disc,
+            arrays,
+            phys,
+            case.solver.clone(),
+            [0.0; 3],
+            0.0,
+            None,
+            &Target::default(),
+        )
+        .unwrap();
+        let it = fl.potential_flow(&mesh, &geo).unwrap();
+        assert!(it > 0 && fl.amg_setups == 0);
+        let s = fl.state().unwrap();
+        let nc = mesh.n_cells;
+        let (mut worst, mut sq) = (0.0f64, 0.0);
+        for c in 0..nc {
+            let e = ((s.u.x[c] - 1.0).powi(2) + s.u.y[c].powi(2) + s.u.z[c].powi(2)).sqrt();
+            worst = worst.max(e);
+            sq += e * e;
+        }
+        let rms = (sq / nc as f64).sqrt();
+        eprintln!("{kind}: deviation from the uniform flow largest {worst:.3e}, RMS {rms:.3e}");
+        assert!(rms < tol, "{kind}: RMS deviation {rms:e}");
+        // continuity of the face fluxes: Σ ±ṁ per cell against the inflow
+        let mut div = vec![0.0; nc];
+        for (f, &m) in s.mass_flux.iter().enumerate() {
+            div[mesh.owner[f] as usize] += m;
+            if f < mesh.n_interior_faces() {
+                div[mesh.neighbour[f] as usize] -= m;
+            }
+        }
+        let inflow = 1.0 * 1.0 * 0.1;
+        let d = div.iter().fold(0.0f64, |a, x| a.max(x.abs()));
+        assert!(d < 1e-8 * inflow, "{kind}: cell imbalance {d:e}");
+        fl.iterate().unwrap();
+        assert_eq!(fl.amg_setups, 1);
+    }
+}

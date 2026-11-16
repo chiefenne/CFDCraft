@@ -7,12 +7,13 @@
 //!
 //! - attributes `format`, `version`, `case`, `iteration`, `amg_setups`,
 //!   `transient`, and for a transient run `time`, `step`, `dt_prev`,
-//!   `levels`, `dt_next`, `scheme`;
+//!   `dt_prev2`, `levels`, `dt_next`, `scheme`;
 //! - per cell (local order, with the global identities in `cell_id`):
 //!   `u_x u_y u_z p`, the gradients `grad_u_<i><j>` and `grad_p_<j>`, the
 //!   limiters `psi_<i>`, and for a transient run the old levels `u_old_<i>`
 //!   and `g_old_<k>` (velocity gradients and limiters of the level
-//!   before, for the extrapolation);
+//!   before, for the extrapolation), with the error estimate of the time
+//!   step (D65) also `u_old2_<i>` (the level before that);
 //! - per face (with `face_id`): `mass_flux`, and transient `m_old`, `x_cur`,
 //!   `x_old`; per boundary face `ub_<i>`, `pb`;
 //! - `amg_matrix`: the pressure matrix of the last multigrid setup (the
@@ -178,6 +179,7 @@ mod io {
                 attr(&g, "time", &clock.time)?;
                 attr(&g, "step", &(clock.step as u64))?;
                 attr(&g, "dt_prev", &clock.dt_prev)?;
+                attr(&g, "dt_prev2", &clock.dt_prev2)?;
                 attr(&g, "levels", &(clock.levels as u64))?;
                 attr(&g, "dt_next", dt_next)?;
                 sattr(&g, "scheme", scheme_name(*scheme))?;
@@ -189,6 +191,11 @@ mod io {
                 ds(&g, "x_old", &o.x_old)?;
                 for (i, v) in o.g_old.iter().enumerate() {
                     ds(&g, &format!("g_old_{i}"), v)?;
+                }
+                if let Some(u) = &o.u_old2 {
+                    ds(&g, "u_old2_x", &u[0])?;
+                    ds(&g, "u_old2_y", &u[1])?;
+                    ds(&g, "u_old2_z", &u[2])?;
                 }
             }
             if let Some(geo) = &r.geometry {
@@ -280,12 +287,27 @@ mod io {
                     g_old: (0..12)
                         .map(|i| rd(&g, &format!("g_old_{i}")))
                         .collect::<Result<_>>()?,
+                    u_old2: if g.link_exists("u_old2_x") {
+                        Some([
+                            rd(&g, "u_old2_x")?,
+                            rd(&g, "u_old2_y")?,
+                            rd(&g, "u_old2_z")?,
+                        ])
+                    } else {
+                        None
+                    },
                 },
                 Clock {
                     time: rattr(&g, "time")?,
                     step: rattr::<u64>(&g, "step")? as usize,
                     dt_prev: rattr(&g, "dt_prev")?,
                     levels: rattr::<u64>(&g, "levels")? as usize,
+                    // files of earlier versions: no uⁿ⁻² (D65)
+                    dt_prev2: if g.attr("dt_prev2").is_ok() {
+                        rattr(&g, "dt_prev2")?
+                    } else {
+                        0.0
+                    },
                 },
                 rattr(&g, "dt_next")?,
                 scheme,
@@ -321,7 +343,7 @@ mod io {
 
 /// Units of the fields in a restart file (attribute `units`, D75).
 pub const UNITS: &str = "u m/s; p Pa; mass_flux kg/s; ub m/s; pb Pa; grad_u 1/s; grad_p Pa/m; \
-     time s; dt_prev s; dt_next s";
+     time s; dt_prev s; dt_prev2 s; dt_next s";
 
 /// Whether a restart file is transient, and its step (transient) or outer
 /// iteration (steady), read from the file (D75), never from its name.
@@ -448,6 +470,10 @@ impl Restart {
                     x_cur: remap(&o.x_cur, &mf),
                     x_old: remap(&o.x_old, &mf),
                     g_old: o.g_old.iter().map(|v| remap(v, &mc)).collect(),
+                    u_old2: o
+                        .u_old2
+                        .as_ref()
+                        .map(|u| [remap(&u[0], &mc), remap(&u[1], &mc), remap(&u[2], &mc)]),
                 };
             }
             if let Some(geo) = &mut self.geometry {

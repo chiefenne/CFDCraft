@@ -106,6 +106,8 @@ pub struct MomentumFaceArgs {
     pub mass_flux: Buf,
     /// Cell velocity.
     pub u: Buf3,
+    /// Velocity of the central correction (`u`, or extrapolated in time).
+    pub uc: Buf3,
     /// Velocity gradients.
     pub grad_u: [Buf3; 3],
     /// Limiter per component.
@@ -114,6 +116,10 @@ pub struct MomentumFaceArgs {
     pub ub: Buf3,
     /// 1 linear upwind, 0 upwind.
     pub blend: f64,
+    /// Fraction of the bounded central scheme.
+    pub central: f64,
+    /// β of its bounding.
+    pub beta: f64,
     /// 1 with the non-orthogonal correction.
     pub nonorth: f64,
     /// 1 with convection.

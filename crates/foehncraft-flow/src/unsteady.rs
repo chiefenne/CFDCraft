@@ -24,7 +24,81 @@ use crate::monitor::{self, History, Probes};
 use crate::plot::{self, Series};
 use crate::restart::{self, Restart};
 use crate::simplec::{self, Flow, Physics, Solution, Target};
-use crate::transient::{StepReport, TimeScheme, Transient};
+use crate::transient::{ErrorControl, StepReport, TimeScheme, Transient};
+
+/// Times of an output schedule in simulated time (D66): the multiples of
+/// `interval` and the listed `times`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Schedule<'a> {
+    pub interval: Option<f64>,
+    pub times: &'a [f64],
+}
+
+impl Schedule<'_> {
+    /// The first scheduled time later than t + tol.
+    pub fn next(&self, t: f64, tol: f64) -> Option<f64> {
+        let a = self.interval.map(|i| (((t + tol) / i).floor() + 1.0) * i);
+        self.times
+            .iter()
+            .copied()
+            .filter(|&x| x > t + tol)
+            .chain(a)
+            .reduce(f64::min)
+    }
+
+    /// Whether a scheduled time lies in (t0, t1], to within tol.
+    pub fn fired(&self, t0: f64, t1: f64, tol: f64) -> bool {
+        self.next(t0, tol).is_some_and(|x| x <= t1 + tol)
+    }
+
+    /// Scheduled times in (t0, t1] (for the estimate of the output).
+    pub fn count(&self, t0: f64, t1: f64) -> usize {
+        let a = self.interval.map_or(0, |i| {
+            ((t1 / i).floor() - (t0 / i).floor()).max(0.0) as usize
+        });
+        a + self.times.iter().filter(|&&x| x > t0 && x <= t1).count()
+    }
+}
+
+/// The schedules of fields, monitors and restart files in simulated time.
+fn schedules(case: &FlowCase) -> [Schedule<'_>; 3] {
+    let (o, r) = (&case.output, &case.run);
+    [
+        Schedule {
+            interval: o.fields_interval,
+            times: &o.fields_times,
+        },
+        Schedule {
+            interval: o.monitor_interval,
+            times: &[],
+        },
+        Schedule {
+            interval: r.restart_interval,
+            times: &r.restart_times,
+        },
+    ]
+}
+
+/// Numbered field files and restart files that the schedules in simulated
+/// time ask for over a run of `steps` steps of `dt` (the estimate, D81).
+pub(crate) fn scheduled_outputs(case: &FlowCase, steps: usize, dt: f64) -> (usize, usize) {
+    let Some(t) = case.time else {
+        return (0, 0);
+    };
+    let (t0, t1) = (
+        t.start_time,
+        t.end_time.unwrap_or(t.start_time + steps as f64 * dt),
+    );
+    let numbered = Schedule {
+        interval: None,
+        times: &case.run.restart_times,
+    };
+    (schedules(case)[0].count(t0, t1), numbered.count(t0, t1))
+}
+
+/// Repetitions of one step at most when its error estimate exceeds the
+/// tolerance (D65); the last try is kept.
+const MAX_REJECTIONS: usize = 8;
 use anyhow::{Context, Result, bail};
 use foehncraft_fv::disc::Soa3;
 use foehncraft_mesh::geometry::norm;
@@ -56,6 +130,10 @@ pub struct TransientSummary {
     pub outer_mean: f64,
     /// Mean CG iterations per step.
     pub cg_mean: f64,
+    /// Steps repeated with a shorter Δt because their time-integration
+    /// error exceeded the tolerance (D65).
+    #[serde(default)]
+    pub rejected: usize,
     /// Restart file the run continued from.
     pub restart_from: Option<String>,
     /// Ended by `.stop`.
@@ -514,7 +592,9 @@ fn header<F: FnMut(&str)>(
         let mb =
             (nc * (8 * 6) + mesh.face_nodes.len() * 8 + mesh.points.len() * 24) / 1_000_000 + 1;
         if o.vtkhdf {
-            let series = steps.checked_div(o.fields_every).unwrap_or(0) + o.fields_at.len();
+            let series = steps.checked_div(o.fields_every).unwrap_or(0)
+                + o.fields_at.len()
+                + scheduled_outputs(case, steps, dt).0;
             lg.line(&format!(
                 "  fields.vtkhdf (final){}: about {mb} MB each",
                 if series > 0 {
@@ -525,7 +605,12 @@ fn header<F: FnMut(&str)>(
             ));
         }
         let r = &case.run;
-        if r.restart_final || r.restart_every > 0 || !r.restart_at.is_empty() {
+        if r.restart_final
+            || r.restart_every > 0
+            || !r.restart_at.is_empty()
+            || r.restart_interval.is_some()
+            || !r.restart_times.is_empty()
+        {
             lg.line(&format!(
                 "  restart.h5{}: about {} MB",
                 if r.restart_at.is_empty() {
@@ -705,6 +790,10 @@ fn run_one<F: FnMut(&str)>(
         };
         af.update(&case, mesh, geo, &mut fl, time0.start_time)?;
         fl.initialise(&u, &p)?;
+        if case.initial.potential_flow {
+            let it = fl.potential_flow(mesh, geo)?;
+            lg.line(&format!("start  potential flow (D52): {it} CG iterations"));
+        }
         tr.start(&mut fl)?;
     }
     let setup = t_setup.elapsed().as_secs_f64();
@@ -822,6 +911,7 @@ fn run_one<F: FnMut(&str)>(
     let mut stopped = false;
     let (mut dt_min, mut dt_max, mut cfl_max) = (f64::INFINITY, 0.0f64, 0.0f64);
     let (mut outer_sum, mut cg_sum, mut nsteps) = (0usize, 0usize, 0usize);
+    let mut rejected = 0usize;
     let mut last_rep = StepReport::default();
     loop {
         let t = case.time.context("[time]")?;
@@ -830,6 +920,23 @@ fn run_one<F: FnMut(&str)>(
             break;
         }
         let mut h = dt;
+        // D66: land on the next scheduled output time; when it lies within
+        // two steps, in two equal steps, so that no step gets shorter than
+        // half the planned one
+        let t0 = tr.clock.time;
+        let tol = 1e-6 * h;
+        if let Some(te) = schedules(&case)
+            .iter()
+            .filter_map(|s| s.next(t0, tol))
+            .reduce(f64::min)
+        {
+            let rest = te - t0;
+            if rest <= h + tol {
+                h = rest;
+            } else if rest < 2.0 * h {
+                h = 0.5 * rest;
+            }
+        }
         if let Some(end) = t.end_time {
             let rest = end - tr.clock.time;
             if rest <= 1e-9 * dt {
@@ -839,9 +946,48 @@ fn run_one<F: FnMut(&str)>(
                 h = rest;
             }
         }
-        af.update(&case, mesh, geo, &mut fl, tr.clock.time + h)?;
-        fl.keep_valid()?;
-        let rp = match tr.step(&mut fl, h) {
+        // D65: the error estimate, with the tolerances of now (re-read)
+        tr.error_control = t
+            .error_tolerance
+            .filter(|_| t.adaptive)
+            .map(|r| ErrorControl {
+                relative: r,
+                absolute: t.error_absolute,
+            });
+        let min_dt = t.min_time_step;
+        let mut tries = 0;
+        let stepped = loop {
+            af.update(&case, mesh, geo, &mut fl, t0 + h)?;
+            fl.keep_valid()?;
+            let r = tr.step(&mut fl, h);
+            // a step whose error exceeds the tolerance is taken back and
+            // repeated with a shorter one (at most MAX_REJECTIONS times, and
+            // not below min_time_step); with the exponent ½ rather than ⅓,
+            // since the estimate falls only as Δt² when Δt gets small
+            // against the step before (the error constant of variable-step
+            // BDF2 grows as 1/ω)
+            if let Ok(rp) = &r
+                && let Some(e) = rp.error
+                && e > 1.0
+                && tries < MAX_REJECTIONS
+                && h > min_dt
+            {
+                tries += 1;
+                rejected += 1;
+                let hn = (h * (0.9 * e.powf(-0.5)).max(0.2)).max(min_dt);
+                lg.line(&format!(
+                    "      step {} rejected: error {e:.2} of the tolerance at Δt {h:.3e} s, \
+                     repeated with Δt {hn:.3e} s",
+                    rp.step
+                ));
+                af.update(&case, mesh, geo, &mut fl, t0)?;
+                tr.reject(&mut fl)?;
+                h = hn;
+                continue;
+            }
+            break r;
+        };
+        let rp = match stepped {
             Ok(r) => r,
             Err(e) if crate::divergence::is_divergence(&e, &mut fl) => {
                 // D63: the last valid state, the snapshot and the report
@@ -923,7 +1069,7 @@ fn run_one<F: FnMut(&str)>(
                 r.pressure_iterations
             ));
             if steer.record.on() {
-                steer.record.row(&serde_json::json!({
+                let mut row = serde_json::json!({
                     "type": "step",
                     "step": n,
                     "time": rp.time,
@@ -933,7 +1079,11 @@ fn run_one<F: FnMut(&str)>(
                     "continuity": r.continuity,
                     "outer": rp.outer,
                     "cg": r.pressure_iterations,
-                }));
+                });
+                if let Some(e) = rp.error {
+                    row["error"] = e.into();
+                }
+                steer.record.row(&row);
             }
         }
         let bal = {
@@ -979,9 +1129,13 @@ fn run_one<F: FnMut(&str)>(
         let log_now = n == first_step + 1 || n.is_multiple_of(case.solver.log_every);
         if log_now {
             steer.record.flush();
+            let err = rp
+                .error
+                .map(|e| format!("  error {e:.2}"))
+                .unwrap_or_default();
             lg.line(&format!(
                 "step {n:6}  t {:.6e}  Δt {h:.3e}  Courant {:.3}  momentum {:.2e} {:.2e} {:.2e}  \
-                 continuity {:.2e}  outer {}  cg {}",
+                 continuity {:.2e}  outer {}  cg {}{err}",
                 rp.time,
                 rp.cfl,
                 r.momentum[0],
@@ -1015,17 +1169,32 @@ fn run_one<F: FnMut(&str)>(
         }
         last_balance = Some(bal);
         let req = control.check(n, case.run.reread_every);
-        let at_monitor = monitors && n.is_multiple_of(case.output.monitor_every);
+        let [sf, sm, sr] = schedules(&case);
+        let tol = 1e-6 * h;
+        let at_monitor = monitors
+            && if sm.interval.is_some() {
+                sm.fired(t0, rp.time, tol)
+            } else {
+                n.is_multiple_of(case.output.monitor_every)
+            };
         let o = &case.output;
         let fields_now = last
             && ((o.fields_every > 0 && n.is_multiple_of(o.fields_every))
                 || o.fields_at.contains(&n)
+                || sf.fired(t0, rp.time, tol)
                 || req.result);
         let r = &case.run;
         let asked = steer.restart_requested();
+        let restart_numbered = r.restart_at.contains(&n)
+            || Schedule {
+                interval: None,
+                times: &r.restart_times,
+            }
+            .fired(t0, rp.time, tol);
         let restart_now = last
             && ((r.restart_every > 0 && n.is_multiple_of(r.restart_every))
-                || r.restart_at.contains(&n)
+                || restart_numbered
+                || sr.fired(t0, rp.time, tol)
                 || asked);
         if at_monitor || fields_now {
             let sol = Solution {
@@ -1091,11 +1260,22 @@ fn run_one<F: FnMut(&str)>(
         let tnow = case.time.context("[time]")?;
         if tnow.adaptive {
             dt = h;
-            let grow = if rp.cfl > 0.0 {
+            let mut grow = if rp.cfl > 0.0 {
                 (tnow.max_cfl / rp.cfl).min(tnow.max_growth)
             } else {
                 tnow.max_growth
             };
+            // D65: the step of the error estimate, Δt (0.9/E)^⅓ for an
+            // error of third order in Δt, inside the Courant and growth
+            // bounds
+            if let Some(e) = rp.error.filter(|_| tnow.error_tolerance.is_some()) {
+                let f = if e > 0.0 {
+                    0.9 * e.powf(-1.0 / 3.0)
+                } else {
+                    tnow.max_growth
+                };
+                grow = grow.min(f.max(0.2));
+            }
             dt = (dt * grow).max(tnow.min_time_step);
             if let Some(m) = tnow.max_time_step {
                 dt = dt.min(m);
@@ -1104,7 +1284,7 @@ fn run_one<F: FnMut(&str)>(
         if restart_now && restart::AVAILABLE {
             let rs = restart_of(&mut fl, &tr, mesh, name, dt)?;
             restart::write(&out.join("restart.h5"), &rs)?;
-            if case.run.restart_at.contains(&n) {
+            if restart_numbered {
                 restart::write(&out.join(format!("restart_{n:06}.h5")), &rs)?;
             }
             if asked {
@@ -1146,6 +1326,11 @@ fn run_one<F: FnMut(&str)>(
         dt_max,
         cfl_max
     ));
+    if rejected > 0 {
+        lg.line(&format!(
+            "      {rejected} steps repeated with a shorter Δt (time-integration error above the tolerance)"
+        ));
+    }
     if last && (case.run.restart_final || stopped) && restart::AVAILABLE {
         let rs = restart_of(&mut fl, &tr, mesh, name, dt)?;
         restart::write(&out.join("restart.h5"), &rs)?;
@@ -1335,6 +1520,7 @@ fn run_one<F: FnMut(&str)>(
             cfl_max,
             outer_mean: outer_sum as f64 / nsteps.max(1) as f64,
             cg_mean: cg_sum as f64 / nsteps.max(1) as f64,
+            rejected,
             restart_from,
             stopped,
             ns_per_cell_step: 1e9 * secs / (nc as f64 * nsteps.max(1) as f64),

@@ -24,7 +24,9 @@
 //! first-order upwind convection and the orthogonal part of the diffusion;
 //! `b_f` carries the deferred corrections: the linear-upwind
 //! reconstruction ṁ (φ_f − φ_U), blended by `blend` (0 upwind, 1 linear
-//! upwind), and the non-orthogonal diffusion −Γ k·∇φ_f (Jasak 1996, the
+//! upwind), or with `central` > 0 the bounded central scheme (see
+//! [`central_weight`]) for that fraction of it, and the non-orthogonal
+//! diffusion −Γ k·∇φ_f (Jasak 1996, the
 //! over-relaxed decomposition S = Δ + k with Δ = d |S|²/(d·S)), switched by
 //! `nonorth` and limited by `nonorth_limit`.
 
@@ -268,11 +270,64 @@ pub struct FaceInputs<'a, T> {
     /// Blending of the linear-upwind correction: 0 first-order upwind, 1
     /// linear upwind.
     pub blend: T,
+    /// Fraction of the bounded central scheme on interior faces (0: none;
+    /// the rest takes the linear-upwind correction of `blend`).
+    pub central: T,
+    /// β of the normalised-variable bounding of the central value (0: no
+    /// bounding), see [`central_weight`].
+    pub beta: T,
     /// 1 to apply the non-orthogonal diffusion correction, 0 to omit it.
     pub nonorth: T,
     /// Limit of the non-orthogonal correction as a multiple of the
     /// orthogonal part (Jasak 1996); a negative value means no limit.
     pub nonorth_limit: T,
+}
+
+/// With bounding (β > 0) the central value `c` clipped to the interval of
+/// the upwind and downwind values `u`, `d` (the skewness correction can
+/// leave it); without bounding unchanged.
+#[inline(always)]
+pub fn bounded_between<T: Real>(c: T, u: T, d: T, beta: T) -> T {
+    if beta <= T::ZERO {
+        c
+    } else {
+        c.max_of(u.min_of(d)).min_of(u.max_of(d))
+    }
+}
+
+/// Weight γ ∈ [0, 1] of the central face value in the bounded central
+/// scheme: φ_f = φ_U + γ (φ_f^C − φ_U), with φ_f^C the linear
+/// interpolation. The normalised variable of the upwind cell,
+/// φ̃_U = 1 − (φ_D − φ_U)/(2 ∇φ_U·d) with d = x_D − x_U (the far-upwind
+/// value is extrapolated with the upwind gradient; Jasak, Weller & Gosman
+/// 1999, after Leonard's normalised-variable diagram), decides: in the
+/// monotone range β ≤ φ̃_U < 1 the central value (γ = 1), at a local
+/// extremum (φ̃_U ≤ 0 or φ̃_U ≥ 1) upwind (γ = 0), in between the smooth
+/// switch γ = φ̃_U/β. With the central value clipped to [φ_U, φ_D]
+/// ([`bounded_between`]) the face value lies between φ_U and φ_D; this
+/// bounds a 1D profile. On distorted multi-dimensional meshes the kernels
+/// also scale the correction with the limiter of the upwind cell (as the
+/// linear-upwind one), which with a Venkatakrishnan limiter keeps the
+/// oblique step of the catalogue inside [0, 1]. `diff` = φ_D − φ_U,
+/// `gd` = ∇φ_U·d; β ≤ 0 gives the plain central scheme (γ = 1).
+#[inline(always)]
+pub fn central_weight<T: Real>(diff: T, gd: T, beta: T) -> T {
+    if beta <= T::ZERO {
+        return T::ONE;
+    }
+    let den = T::from_f64(2.0) * gd;
+    if den == T::ZERO {
+        // a uniform field (central = upwind) or an extremum at U
+        return if diff == T::ZERO { T::ONE } else { T::ZERO };
+    }
+    let r = T::ONE - diff / den;
+    if r <= T::ZERO || r >= T::ONE {
+        T::ZERO
+    } else if r >= beta {
+        T::ONE
+    } else {
+        r / beta
+    }
 }
 
 /// Coefficients `(c_P, c_N, b_f)` of the flux out of the owner through face
@@ -305,8 +360,6 @@ pub unsafe fn face_coefficients<T: Real>(f: usize, inp: &FaceInputs<T>) -> (T, T
             } else {
                 ld(inp.psi, n) * dot(gn, sub(xf, inp.cell_centroid.at(n)))
             };
-            let mut b = inp.blend * m * ho;
-            // non-orthogonal correction −Γ k·∇φ_f, ∇φ_f interpolated
             let w = ld(inp.weight, f);
             let wn = T::ONE - w;
             let gf = [
@@ -314,6 +367,32 @@ pub unsafe fn face_coefficients<T: Real>(f: usize, inp: &FaceInputs<T>) -> (T, T
                 w * gp[1] + wn * gn[1],
                 w * gp[2] + wn * gn[2],
             ];
+            let mut b = if inp.central > T::ZERO {
+                // bounded central: the linear interpolation to x_w on the
+                // line P–N, corrected along the face with the
+                // interpolated gradient
+                let (xp, xn) = (inp.cell_centroid.at(p), inp.cell_centroid.at(n));
+                let phi_n = ld(inp.phi, n);
+                let xw = [
+                    w * xp[0] + wn * xn[0],
+                    w * xp[1] + wn * xn[1],
+                    w * xp[2] + wn * xn[2],
+                ];
+                let phi_c = w * phi_p + wn * phi_n + dot(gf, sub(xf, xw));
+                let (phi_u, phi_d, gu, d, psi_u) = if m >= T::ZERO {
+                    (phi_p, phi_n, gp, sub(xn, xp), ld(inp.psi, p))
+                } else {
+                    (phi_n, phi_p, gn, sub(xp, xn), ld(inp.psi, n))
+                };
+                // the limiter of the upwind cell (1 without one) scales
+                // the central correction as it scales the linear-upwind one
+                let g = psi_u * central_weight(phi_d - phi_u, dot(gu, d), inp.beta);
+                let phi_c = bounded_between(phi_c, phi_u, phi_d, inp.beta);
+                m * ((T::ONE - inp.central) * inp.blend * ho + inp.central * g * (phi_c - phi_u))
+            } else {
+                inp.blend * m * ho
+            };
+            // non-orthogonal correction −Γ k·∇φ_f, ∇φ_f interpolated
             let corr = gam * dot(kf, gf);
             let orth = dd * (ld(inp.phi, n) - phi_p);
             b -= inp.nonorth * limit_corr(corr, orth, inp.nonorth_limit);
@@ -326,8 +405,18 @@ pub unsafe fn face_coefficients<T: Real>(f: usize, inp: &FaceInputs<T>) -> (T, T
             let ho = ld(inp.psi, p) * dot(gp, sub(xf, inp.cell_centroid.at(p)));
             let corr = gam * dot(kf, gp);
             let orth = dd * (inp.bc.value(fb, phi_p) - phi_p);
-            let b = mm * bb - dd * bb + inp.blend * mp * ho
+            // the central fraction takes the boundary value as the face
+            // value of the outflow, ṁ⁺ (φ_b − φ_P)
+            let lud = if inp.central > T::ZERO {
+                (T::ONE - inp.central) * inp.blend
+            } else {
+                inp.blend
+            };
+            let mut b = mm * bb - dd * bb + lud * mp * ho
                 - inp.nonorth * one_a * limit_corr(corr, orth, inp.nonorth_limit);
+            if inp.central > T::ZERO {
+                b += inp.central * mp * (inp.bc.value(fb, phi_p) - phi_p);
+            }
             (mp + a * mm + one_a * dd, T::ZERO, b)
         }
     }
