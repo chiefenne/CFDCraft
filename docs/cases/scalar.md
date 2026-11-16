@@ -23,7 +23,7 @@ every case except `*_gpu.toml` (R5).
 | `scalar/mms_hex_box.toml` | generated hex 3D, 512 to 32 768 cells | the same on perturbed (warped) hexahedra | [recipe 12](../recipes/scalar-pressure.md#scalar-mms) |
 | `scalar/mms_tet_box.toml` | generated tet 3D, 3 072 to 196 608 cells | the same on tetrahedra | [recipe 12](../recipes/scalar-pressure.md#scalar-mms) |
 | `scalar/mms_mixed_box.toml` | generated mixed 3D, 1 344 to 95 232 cells | the same on hexahedra, prisms, tetrahedra and polyhedra | [recipe 12](../recipes/scalar-pressure.md#scalar-mms) |
-| `scalar/mms_poly_2d.toml` | generated poly 2D, 289 to 16 641 cells (4 levels) | planar solution, zero-gradient (symmetry) z patches | [recipe 12](../recipes/scalar-pressure.md#scalar-mms) |
+| `scalar/mms_poly_2d.toml` | generated poly 2D, 289 to 16 641 cells (4 levels) | planar solution, zero-gradient (symmetry) z boundaries | [recipe 12](../recipes/scalar-pressure.md#scalar-mms) |
 | `scalar/oblique_step_2d.toml` | generated poly 2D, 2 401 cells | upwind, linear upwind, both limiters and the bounded central scheme (stage 5, D25) as `[[variants]]`; bounds check | [gallery 9](../gallery/scalar-pressure.md#oblique-step), [recipe 13](../recipes/scalar-pressure.md#scalar-schemes) |
 | `scalar/mms_poly_gpu.toml` | generated poly 3D, 912 673 cells | CPU against two GPU runs: GPU equals CPU and GPU run to run | [recipe 14](../recipes/gpu.md#scalar-gpu), `tools/notebooks/stage2_colab.ipynb` |
 | `scalar/poisson_amg_poly_box.toml` | generated poly 3D, 729 to 35 937 cells | Poisson manufactured solution with CG + AMG (stage 3) against BiCGStab + Jacobi as `[[variants]]`; order of accuracy | [gallery 11](../gallery/scalar-pressure.md#poisson-amg-mms), [recipe 15](../recipes/scalar-pressure.md#poisson-study) |
@@ -31,7 +31,7 @@ every case except `*_gpu.toml` (R5).
 ## Scalar case-file keys
 
 `[mesh]` and `[mesh.generate]` as in the [mesh cases](meshes.md#mesh-case-file-keys).
-A boundary condition is required for every patch.
+A boundary condition is required for every boundary.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -40,8 +40,8 @@ A boundary condition is required for every patch.
 | `problem.velocity` | `[1.0, 0.6, 0.3]` | u (m/s), constant |
 | `problem.source` | 0 | constant volumetric source |
 | `problem.manufactured` | none | `{}` for the default manufactured solution, or `{ offset, amplitude, wavenumber, phase }`; sets the source, the `manufactured` boundary values and the error norms |
-| `problem.boundary.<patch>.type` | – (required) | `fixed-value`, `fixed-gradient` (outward normal gradient) or `zero-gradient` (also symmetry and outflow) |
-| `problem.boundary.<patch>.profile` | `"constant"` | `constant` (`value`), `step` (`axis`, `at`, `below`, `above`), `linear` (`value`, `gradient`), `manufactured` |
+| `problem.boundary.<boundary>.type` | – (required) | `fixed-value`, `fixed-gradient` (outward normal gradient) or `zero-gradient` (also symmetry and outflow) |
+| `problem.boundary.<boundary>.profile` | `"constant"` | `constant` (`value`), `step` (`axis`, `at`, `below`, `above`), `linear` (`value`, `gradient`), `manufactured` |
 | `solver.scheme` | `"linear-upwind"` | `upwind`, `linear-upwind` or `central` (bounded central, D25) |
 | `solver.central_blending` | 1 | with `central`: share c of the bounded central correction; the rest, 1 − c, is linear upwind |
 | `solver.central_bounding` | 0.1 | with `central`: β of the normalised-variable bound (central where φ̃_U ≥ β, blended towards upwind below, upwind outside (0, 1)); 0 for plain central |

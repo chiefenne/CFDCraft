@@ -10,6 +10,8 @@
 # hexahedra; the run fails if the observed order of the velocity error on
 # the finest pair is outside 1.8–2.2.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2

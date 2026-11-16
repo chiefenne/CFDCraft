@@ -48,7 +48,7 @@ type = "symmetry"
 fn steady(d: &Path) -> PathBuf {
     let p = d.join("cavity.toml");
     let text = format!(
-        "{MESH_AND_WALLS}\n[solver]\nrelaxation_velocity = 0.9\ntolerance = 1e-8\nmax_iterations = 2000\n"
+        "{MESH_AND_WALLS}\n[solver]\ntolerance = 1e-8\nmax_iterations = 2000\n[solver.momentum]\nrelaxation = 0.9\n"
     );
     std::fs::write(&p, text).unwrap();
     p

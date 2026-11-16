@@ -14,6 +14,8 @@
 # than 1e-6 (relative), or if a solver differs between the backends (4
 # threads and 1 thread: bitwise equal).
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "mixed"         # bands of hexahedra, prisms and tetrahedra along x
 cells = [4, 4, 4]      # base intervals; [study] levels refine them

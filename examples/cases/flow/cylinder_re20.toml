@@ -15,6 +15,8 @@
 # is within 0.4 % on this mesh; docs/verification/stage5.md has the finer
 # mesh).
 
+case_format = "0.6"
+
 [mesh.cylinder]
 refine = 1
 

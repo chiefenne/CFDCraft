@@ -10,6 +10,8 @@
 # or on Google Colab: tools/notebooks/stage2_colab.ipynb. Needs a GPU of compute
 # capability 7.0 or newer and about 1 GB of GPU memory.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "poly"
 cells = [12, 12, 12]
@@ -44,6 +46,8 @@ type = "fixed-value"
 profile = "manufactured"
 
 [solver]
+
+[solver.momentum]
 scheme = "linear-upwind"
 limiter = "venkatakrishnan"     # exercises the limiter kernel; K = 5 keeps
 limiter_k = 5.0                 # smooth regions unlimited

@@ -28,7 +28,7 @@
 //! [problem]                     # velocity must be zero
 //! diffusivity = 1.0
 //! manufactured = {}
-//! [problem.boundary.xmin]       # ... one table per patch
+//! [problem.boundary.xmin]       # ... one table per boundary
 //! type = "fixed-value"
 //! profile = "manufactured"
 //! [linear]
@@ -61,6 +61,8 @@ use std::time::Instant;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct PoissonCase {
+    /// Format of the case file (`case_format`).
+    pub case_format: Option<String>,
     /// Mesh (file or generated).
     pub mesh: MeshSection,
     /// The problem (velocity zero).
@@ -244,8 +246,9 @@ impl PoissonCase {
     pub fn from_file(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let mut c: Self =
-            toml::from_str(&text).with_context(|| format!("in case file {}", path.display()))?;
+        let (mut c, _notes): (Self, _) = foehncraft_mesh::case_format::read(&text)
+            .with_context(|| format!("in case file {}", path.display()))?;
+        c.case_format = Some(foehncraft_mesh::case_format::CURRENT.into());
         let dir = path.parent().unwrap_or(Path::new("."));
         if let Some(f) = &c.mesh.file {
             c.mesh.file = Some(dir.join(f));

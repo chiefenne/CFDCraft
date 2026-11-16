@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct G1Case {
+    /// Format of the case file (`case_format`); the bench case has no
+    /// renames, the key only marks the version.
+    pub case_format: Option<String>,
     /// Synthetic mesh.
     pub mesh: MeshSection,
     /// What to run.

@@ -17,6 +17,8 @@
 # within two steps). tools/plot/time_step_chart.py runs the tolerances 1e-3 to
 # 1e-5 and draws the steps.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2

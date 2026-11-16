@@ -16,7 +16,7 @@ Part of the [Example gallery](../gallery.md): slip walls, axisymmetric wedges, i
 **Axisymmetric flow on a wedge.** A 2D mesh of the half plane y ≥ 0 is
 revolved about the x axis into a wedge one cell thick
 (`mesh.generate.wedge`); the nodes on the axis merge, so the cells next to
-it are prisms with an edge on the axis and the mesh has no axis patch. The
+it are prisms with an edge on the axis and the mesh has no axis boundary. The
 picture is the pipe at 20° to show the shape; the verification runs at
 0.5°, where Hagen–Poiseuille flow converges at second order (2.07 and 2.04
 on 256 to 4 096 cells). Every cell type of the box generator revolves,

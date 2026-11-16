@@ -11,7 +11,7 @@
 //! - `poly`: polyhedra, the dual of the `tet` mesh: one cell per node of the
 //!   tetrahedral mesh, one face per tetrahedral edge (a polygon through the
 //!   centroids of the triangles and tetrahedra around the edge), boundary
-//!   faces merged into one planar polygon per node and patch; interior cells
+//!   faces merged into one planar polygon per node and boundary; interior cells
 //!   have 14 faces on a regular grid;
 //! - `mixed`: three bands along x: hexahedra, prisms (each hexahedron split
 //!   into two along the diagonal of its z faces) and tetrahedra. Where a
@@ -21,10 +21,10 @@
 //! A 2D mesh (`dimension = 2`) is one cell layer thick in z (D3): `hex`
 //! gives hexahedra, `tet` prisms on a triangulation, `poly` prisms on the
 //! dual polygons of that triangulation (mostly hexagons), `mixed` a band of
-//! hexahedra and a band of prisms. The two z patches take the symmetry
+//! hexahedra and a band of prisms. The two z boundaries take the symmetry
 //! condition in a 2D case.
 //!
-//! Boundary patches are named `xmin`, `xmax`, `ymin`, `ymax`, `zmin`, `zmax`.
+//! Boundary boundaries are named `xmin`, `xmax`, `ymin`, `ymax`, `zmin`, `zmax`.
 //!
 //! **Grading.** Per direction a ratio r of the last to the first interval
 //! (one-sided, r < 1 clusters at the upper end), or with `symmetric` of the
@@ -217,8 +217,8 @@ impl Default for BoxSpec {
     }
 }
 
-/// Patch names of a box, in face order.
-pub const BOX_PATCHES: [&str; 6] = ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"];
+/// Boundary names of a box, in face order.
+pub const BOX_BOUNDARIES: [&str; 6] = ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"];
 
 impl BoxSpec {
     /// A spec with the given type, dimension and intervals.
@@ -395,7 +395,7 @@ impl BoxSpec {
                 b.centroid,
                 b.normal
             );
-            BOX_PATCHES[2 * d + s].to_string()
+            BOX_BOUNDARIES[2 * d + s].to_string()
         }
     }
 
@@ -479,7 +479,7 @@ impl BoxSpec {
                 }
             }
         }
-        soup.finish(&BOX_PATCHES, self.classifier())
+        soup.finish(&BOX_BOUNDARIES, self.classifier())
     }
 
     /// 2D polygonal prisms: the dual of the triangulation, extruded.
@@ -572,7 +572,7 @@ impl BoxSpec {
             }
             soup.add_cell(faces.iter().map(|f| &f[..]));
         }
-        soup.finish(&BOX_PATCHES, self.classifier())
+        soup.finish(&BOX_BOUNDARIES, self.classifier())
     }
 
     /// 3D polyhedra: the dual of the Kuhn tetrahedral mesh.
@@ -603,7 +603,7 @@ impl BoxSpec {
                 }
             }
         }
-        dual_of_tets(&grid, &tets, &BOX_PATCHES, self.classifier())
+        dual_of_tets(&grid, &tets, &BOX_BOUNDARIES, self.classifier())
     }
 }
 
@@ -710,7 +710,7 @@ fn walk_ring(links: &[(u32, u32)]) -> Ring {
 }
 
 /// The polyhedral mesh of a tetrahedral mesh (for example from Gmsh): the
-/// dual of [`dual_of_tets`], with the patches of the boundary triangles.
+/// dual of [`dual_of_tets`], with the boundaries of the boundary triangles.
 /// Every cell must be a tetrahedron. Nodes of the tetrahedral mesh that no
 /// cell uses are not allowed (the Gmsh reader drops them).
 pub fn polyhedral_from_tets(mesh: &Mesh) -> Result<Mesh, String> {
@@ -725,20 +725,20 @@ pub fn polyhedral_from_tets(mesh: &Mesh) -> Result<Mesh, String> {
         let v = mesh.cell_nodes(c);
         tets.push([v[0], v[1], v[2], v[3]]);
     }
-    let mut patch_of: HashMap<[u32; 3], usize> = HashMap::new();
-    for (i, p) in mesh.patches.iter().enumerate() {
+    let mut boundary_of: HashMap<[u32; 3], usize> = HashMap::new();
+    for (i, p) in mesh.boundaries.iter().enumerate() {
         for f in p.range() {
             let n = mesh.face(f);
             let mut k = [n[0], n[1], n[2]];
             k.sort_unstable();
-            patch_of.insert(k, i);
+            boundary_of.insert(k, i);
         }
     }
-    let names: Vec<&str> = mesh.patches.iter().map(|p| p.name.as_str()).collect();
+    let names: Vec<&str> = mesh.boundaries.iter().map(|p| p.name.as_str()).collect();
     let mut m = dual_of_tets(&mesh.points, &tets, &names, |b| {
         let mut k = [b.nodes[0], b.nodes[1], b.nodes[2]];
         k.sort_unstable();
-        names[patch_of[&k]].to_string()
+        names[boundary_of[&k]].to_string()
     })?;
     // zones: the zone of the tetrahedra around a node, if they agree
     let mut zone = vec![u32::MAX; m.n_cells];
@@ -767,13 +767,13 @@ pub fn polyhedral_from_tets(mesh: &Mesh) -> Result<Mesh, String> {
 /// cells of nodes a and b runs through the centroids of the triangles and
 /// tetrahedra around edge (a, b), closed by the edge midpoint if the edge
 /// lies on the boundary. The boundary faces of a cell are the pieces of the
-/// boundary triangles around its node, merged into one polygon per patch
+/// boundary triangles around its node, merged into one polygon per boundary
 /// where they are coplanar and kept as one planar piece per triangle on
 /// curved boundaries, so the dual has exactly the volume of the tet mesh.
 pub fn dual_of_tets(
     points: &[[f64; 3]],
     tets: &[[u32; 4]],
-    patches: &[&str],
+    boundaries: &[&str],
     classify: impl Fn(BoundaryFace) -> String,
 ) -> Result<Mesh, String> {
     let nv = points.len();
@@ -827,8 +827,8 @@ pub fn dual_of_tets(
             .map(|k| scale(add(add(pt(k[0]), pt(k[1])), pt(k[2])), 1.0 / 3.0)),
     );
     let tri_pt = |t: u32| n_tet + t;
-    // boundary triangles, outward orientation and patch
-    let mut btri: Vec<(u32, [u32; 3], String)> = Vec::new(); // (tri, outward nodes, patch)
+    // boundary triangles, outward orientation and boundary
+    let mut btri: Vec<(u32, [u32; 3], String)> = Vec::new(); // (tri, outward nodes, boundary)
     for (t, (k, tt)) in tri_keys.iter().zip(&tri_tets).enumerate() {
         if tt[1] != u32::MAX {
             continue;
@@ -876,8 +876,8 @@ pub fn dual_of_tets(
     }
     edge_list.sort_unstable();
     let mut builder = MeshBuilder::new(dp.clone(), nv);
-    for p in patches {
-        builder.declare_patch(p);
+    for p in boundaries {
+        builder.declare_boundary(p);
     }
     let mut links: Vec<(u32, u32)> = Vec::new();
     let mut poly: Vec<u32> = Vec::new();
@@ -919,7 +919,7 @@ pub fn dual_of_tets(
         builder.add_interior(&poly, a, b);
         i = j;
     }
-    // boundary faces: group boundary triangles by (vertex, patch)
+    // boundary faces: group boundary triangles by (vertex, boundary)
     let mut by_vertex: Vec<(u32, String, usize)> = Vec::with_capacity(3 * btri.len());
     for (bi, (_, k, name)) in btri.iter().enumerate() {
         for &v in k {

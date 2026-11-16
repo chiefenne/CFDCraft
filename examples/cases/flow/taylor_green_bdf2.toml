@@ -11,6 +11,8 @@
 # cancels); the run fails if the order on the smallest steps is outside
 # 1.8–2.3 (D28 acceptance; the orders approach 2 from above).
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2

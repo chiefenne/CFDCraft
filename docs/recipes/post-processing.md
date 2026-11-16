@@ -23,8 +23,8 @@ The names: `vorticity`, `q-criterion`, `lambda2`, `enstrophy`,
 `strain-rate`, `pressure-coefficient`, `total-pressure`,
 `wall-shear-stress`, `y-plus`. The order of the list does not matter.
 Cell fields go to the `internal` block; the wall shear stress and y⁺ go to
-the patch blocks (`boundary/<patch>` in ParaView's block selector), zero on
-patches that are not walls. The `units` attribute of the file lists every
+the boundary blocks (`boundary/<boundary>` in ParaView's block selector), zero on
+boundaries that are not walls. The `units` attribute of the file lists every
 dataset with its unit. The list may change during a run (re-read, D40).
 
 **The pressure coefficient** needs a reference state; the density defaults
@@ -61,6 +61,6 @@ its restart file with `[run] restart_final = true` (or
 **What they mean.** Q > 0 and λ₂ < 0 mark vortex cores (Hunt, Wray and
 Moin 1988; Jeong and Hussain 1995); both are zero in pure shear, and Q is
 also positive in boundary layers on convex walls. The wall values are those
-of `wall_<patch>.csv`: τ_w the tangential viscous stress of the fluid on
+of `wall_<boundary>.csv`: τ_w the tangential viscous stress of the fluid on
 the wall, y⁺ = d √(τ_w/ρ)/ν with d the wall distance of the cell centroid.
 Pictures: [gallery 22](../gallery/post-processing.md#derived-fields).

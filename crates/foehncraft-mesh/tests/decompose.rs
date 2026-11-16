@@ -53,7 +53,7 @@ fn decompositions_are_consistent() {
                                 let cl = lg.closure(&l.mesh, c);
                                 assert!(cl.iter().all(|x| x.abs() < 1e-13), "{name}");
                             }
-                            assert_eq!(l.mesh.patches.len(), m.patches.len());
+                            assert_eq!(l.mesh.boundaries.len(), m.boundaries.len());
                         }
                         assert!(owned.iter().all(|&k| k == 1), "{name}");
                         assert!(

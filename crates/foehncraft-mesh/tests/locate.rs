@@ -84,7 +84,7 @@ fn locate_and_track_on_all_mesh_types() {
             let t = loc.track(pos, [3.0, 0.5, 0.25]);
             match t.end {
                 TrackEnd::Boundary { face } => {
-                    assert_eq!(m.patches[m.patch_of(face).unwrap()].name, "xmax");
+                    assert_eq!(m.boundaries[m.boundary_of(face).unwrap()].name, "xmax");
                     assert!((t.position.x[0] - 2.0).abs() < 1e-9, "{:?}", t.position.x);
                 }
                 e => panic!("{name}: {e:?}"),

@@ -15,7 +15,7 @@ Part of the [Example gallery](../gallery.md): the discretisation uncertainty of 
 
 **What the report adds.** Every sweep of three or more meshes (or time
 steps) now ends with a table of the discretisation uncertainty of its
-monitored quantities: patch mass flows, mean pressures and forces, the
+monitored quantities: boundary mass flows, mean pressures and forces, the
 drag and lift coefficients, the benchmark values and the viscous and
 numerical dissipation. For each, the procedure of Celik et al. (2008)
 takes the three finest solutions and gives the observed order p (by

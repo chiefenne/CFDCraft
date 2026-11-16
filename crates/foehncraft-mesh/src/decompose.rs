@@ -11,7 +11,7 @@
 //!   of one rank by layer, then by their order on that rank;
 //! - **faces**: inner faces (both cells on this rank), then processor faces
 //!   (own cell to halo cell, normal out of the own cell, grouped by
-//!   neighbouring rank), then the boundary faces with the same patches, in
+//!   neighbouring rank), then the boundary faces with the same boundaries, in
 //!   the same order, on every rank.
 //!
 //! A solver step can therefore launch the inner faces and inner cells, wait
@@ -37,7 +37,7 @@
 //! one rank follows with the parallel I/O of later stages.
 
 use crate::geometry::Geometry;
-use crate::mesh::{Mesh, Patch};
+use crate::mesh::{Boundary, Mesh};
 use crate::renumber::rcm_order;
 use foehncraft_parallel::Communicator;
 use serde::{Deserialize, Serialize};
@@ -196,7 +196,7 @@ pub fn extract(
 
     // faces of own cells: (class, key, local owner, local neighbour, global
     // face, reverse); class 0 inner, 1 processor (key = neighbour rank),
-    // 2 + patch for boundary faces
+    // 2 + boundary for boundary faces
     let ni = global.n_interior_faces();
     let mut faces: Vec<(u32, u32, u32, u32, u32, bool)> = Vec::new();
     for f in 0..global.n_faces() {
@@ -218,8 +218,8 @@ pub fn extract(
                 (false, false) => {}
             }
         } else if part[p] == r {
-            let patch = global.patch_of(f).unwrap() as u32;
-            faces.push((2 + patch, 0, local[p], 0, f as u32, false));
+            let boundary = global.boundary_of(f).unwrap() as u32;
+            faces.push((2 + boundary, 0, local[p], 0, f as u32, false));
         }
     }
     faces.sort_unstable();
@@ -282,9 +282,9 @@ pub fn extract(
     }
     mesh.n_inner_faces = faces.iter().filter(|x| x.0 == 0).count();
     let mut start = mesh.neighbour.len();
-    for (i, p) in global.patches.iter().enumerate() {
+    for (i, p) in global.boundaries.iter().enumerate() {
         let len = faces.iter().filter(|x| x.0 == 2 + i as u32).count();
-        mesh.patches.push(Patch {
+        mesh.boundaries.push(Boundary {
             name: p.name.clone(),
             start,
             len,

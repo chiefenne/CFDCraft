@@ -16,6 +16,8 @@
 #
 # converges in 1527 instead of 1570 outer iterations.
 
+case_format = "0.6"
+
 [mesh.cylinder]
 refine = 1
 

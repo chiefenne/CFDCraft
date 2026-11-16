@@ -4,6 +4,8 @@
 #   gmsh -3 examples/meshes/tjunction.geo -format msh41 -o examples/meshes/tjunction.msh
 #   foehn mesh examples/cases/mesh/tjunction_tet.toml
 
+case_format = "0.6"
+
 [mesh]
 file = "../../meshes/tjunction.msh"   # relative to this case file
 scale = 1.0                           # 0.001 for a mesh in millimetres

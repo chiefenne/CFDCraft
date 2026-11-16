@@ -26,7 +26,7 @@ cat output/poly_box/mesh_report.md
 
 The report gives the verdict (valid or not), the cell types, the closure
 |Σ S| / Σ |S| of the worst cell, the total volume against the volume
-enclosed by the boundary, the patch areas, non-orthogonality, skewness,
+enclosed by the boundary, the boundary areas, non-orthogonality, skewness,
 face warp, aspect and volume ratio with the cell or face where the maximum
 sits, and the point-location test. `mesh.vtkhdf` holds the mesh with these
 fields per cell; open it in ParaView (5.13 or newer reads VTKHDF 2.4 with
@@ -62,7 +62,7 @@ In your own case file: `mesh.file` (relative to the case file),
 `mesh.scale = 0.001` for a mesh in millimetres, `mesh.polyhedral = true`
 for the conversion of a tetrahedral mesh into polyhedra (one cell per node,
 same volume), `mesh.renumber = "rcm"` for a band-limited cell order, and
-`[mesh.patches]` to rename physical groups. Give every boundary surface a
+`[mesh.boundaries]` to rename physical groups. Give every boundary surface a
 physical group in Gmsh; surfaces without one become `surface_<tag>`.
 
 [↑ back to top](#meshes)

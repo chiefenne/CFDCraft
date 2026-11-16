@@ -116,11 +116,38 @@ enum Command {
     /// viscosity of each material at a temperature, or show one material
     /// with its property forms, data range and sources.
     Materials(MaterialsArgs),
+    /// Case files: bring a file of an older case format to the current
+    /// one (`foehn case upgrade`).
+    Case {
+        #[command(subcommand)]
+        case: CaseCmd,
+    },
     /// Post-processing of a finished or stopped flow run.
     Post {
         #[command(subcommand)]
         post: Post,
     },
+}
+
+#[derive(Subcommand)]
+enum CaseCmd {
+    /// Rewrite case files in the current case format (renamed keys, the
+    /// line `case_format`), keeping their comments. Without `--write` only
+    /// the changes are listed; `--check` fails when a file needs one.
+    Upgrade(UpgradeArgs),
+}
+
+#[derive(clap::Args)]
+struct UpgradeArgs {
+    /// Case files (TOML) of any kind: flow, mesh, scalar or Poisson.
+    #[arg(required = true)]
+    files: Vec<PathBuf>,
+    /// Write the files (default: list the changes only).
+    #[arg(long)]
+    write: bool,
+    /// Exit with code 1 when a file is not in the current format.
+    #[arg(long)]
+    check: bool,
 }
 
 #[derive(Subcommand)]
@@ -370,6 +397,7 @@ fn main() {
         Command::Bench { .. } => "bench",
         Command::Schema(_) => "schema",
         Command::Materials(_) => "materials",
+        Command::Case { .. } => "case",
         Command::Post { .. } => "post",
     };
     let res = match cli.command {
@@ -380,6 +408,9 @@ fn main() {
         Command::Flow(a) => flow(a, out),
         Command::Schema(a) => schema(a, out),
         Command::Materials(a) => materials(a, out),
+        Command::Case {
+            case: CaseCmd::Upgrade(a),
+        } => upgrade(a, out),
         Command::Post {
             post: Post::Derive(a),
         } => derive(a, out),
@@ -645,6 +676,74 @@ fn materials(a: MaterialsArgs, out: Out) -> Result<Done> {
         "database_sha256": m::database_hash(),
         "materials": list,
     })))
+}
+
+/// `foehn case upgrade`.
+fn upgrade(a: UpgradeArgs, out: Out) -> Result<Done> {
+    use anyhow::Context as _;
+    use foehncraft_mesh::case_format as cf;
+    let mut pending = 0usize;
+    let mut failed = 0usize;
+    let mut rows = Vec::new();
+    for f in &a.files {
+        let text =
+            std::fs::read_to_string(f).with_context(|| format!("reading {}", f.display()))?;
+        match cf::upgrade_text(&text) {
+            Err(e) => {
+                failed += 1;
+                out.line(&format!("{}: {e}", f.display()));
+                rows.push(json!({ "file": f.display().to_string(), "error": e }));
+            }
+            Ok((new, notes)) => {
+                let changed = new != text;
+                if changed {
+                    pending += 1;
+                }
+                if !changed {
+                    out.line(&format!(
+                        "{}: format {}, nothing to do",
+                        f.display(),
+                        cf::CURRENT
+                    ));
+                } else {
+                    out.line(&format!("{}:", f.display()));
+                    for n in &notes {
+                        out.line(&format!("  {n}"));
+                    }
+                    if notes.is_empty() {
+                        out.line(&format!(
+                            "  the line case_format = \"{}\" is added",
+                            cf::CURRENT
+                        ));
+                    }
+                    if a.write {
+                        std::fs::write(f, &new)
+                            .with_context(|| format!("writing {}", f.display()))?;
+                        out.line("  written");
+                    }
+                }
+                rows.push(json!({
+                    "file": f.display().to_string(),
+                    "changed": changed,
+                    "written": changed && a.write,
+                    "notes": notes,
+                }));
+            }
+        }
+    }
+    let code = i32::from(failed > 0 || (a.check && pending > 0));
+    if pending > 0 && !a.write {
+        out.line("run again with --write to rewrite the files");
+    }
+    Ok(Done {
+        code,
+        json: json!({
+            "format": "foehncraft.case_upgrade",
+            "format_version": engine::FORMAT_VERSION,
+            "current": cf::CURRENT,
+            "files": rows,
+        }),
+    })
 }
 
 fn schema(a: SchemaArgs, out: Out) -> Result<Done> {
@@ -930,22 +1029,6 @@ fn flow(a: FlowArgs, out: Out) -> Result<Done> {
             r.failures.join("\n  ")
         );
     }
-    out.line(&format!("wrote {}", dir.join("flow.md").display()));
-    out.line(&format!(
-        "{}: {} (exit code {}), summary in {}",
-        name,
-        match s.status {
-            engine::Status::Finished => "finished, every check passed".to_string(),
-            engine::Status::FailedChecks => "finished with failed checks".to_string(),
-            engine::Status::Stopped => format!(
-                "stopped ({})",
-                s.stop.as_ref().map_or("", |x| x.message.as_str())
-            ),
-            engine::Status::Error => "error".to_string(),
-        },
-        s.exit_code,
-        dir.join("result.json").display()
-    ));
     Ok(Done {
         code: s.exit_code,
         json: serde_json::to_value(s)?,

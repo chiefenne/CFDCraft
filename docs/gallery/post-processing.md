@@ -25,7 +25,7 @@ layers leaving the cylinder and rolling up into the street of alternating
 vortices; the Q criterion (the rotation rate beats the strain rate) marks
 their cores. Q is also positive in the boundary layer on the curved
 surface, where it is (u/r) ∂u/∂r: a property of the criterion, not a
-vortex. On the cylinder wall, the patch block of the file carries the wall
+vortex. On the cylinder wall, the boundary block of the file carries the wall
 shear stress (largest 0.46 Pa) and y⁺ (at most 0.87).
 
 ```
@@ -63,7 +63,7 @@ cmp output/couette_derived/fields.vtkhdf output/couette_derived/derived.vtkhdf &
 | `strain-rate` | `strain_rate`: √(2 S:S) | 1/s |
 | `pressure-coefficient` | `pressure_coefficient`: (p − p_ref)/(½ ρ_ref U_ref²) | - |
 | `total-pressure` | `total_pressure`: p + ½ ρ u·u | Pa |
-| `wall-shear-stress` | on the patch blocks: `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude` | Pa |
-| `y-plus` | on the patch blocks: `y_plus` | - |
+| `wall-shear-stress` | on the boundary blocks: `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude` | Pa |
+| `y-plus` | on the boundary blocks: `y_plus` | - |
 
 How to use them: [recipe 30](../recipes/post-processing.md#derived-fields).

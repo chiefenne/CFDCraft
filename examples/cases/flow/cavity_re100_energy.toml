@@ -14,6 +14,8 @@
 # ledger of the closed cavity is zero. balance.csv holds the history,
 # balance.svg the bars of the final state, flow.md the table.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2
@@ -42,9 +44,11 @@ type = "symmetry"
 type = "symmetry"
 
 [solver]
-relaxation_velocity = 0.9
 tolerance = 1e-8
 max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.9
 
 [balance]
 every = 100                  # the full table every 100 iterations

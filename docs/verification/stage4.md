@@ -23,8 +23,8 @@ pictures in [gallery 12–13](../gallery/flow.md#cavity), the case files in the
 | Lid-driven cavity 2D, Re 100 and 1000, against Ghia et al. (1982) | largest deviation on the centre lines: Re 100 on 64 × 64 hexahedra 0.44 % (u) and 0.95 % (v) of the lid speed; Re 1000 on 128 × 128 0.40 % and 1.4 % | cases `cavity_re100`, `cavity_re1000` (fail above 2 %), test `cavity_re100_agrees_with_ghia` |
 | Lid-driven cavity 3D, Re 100 and 1000 | the same flow on fully three-dimensional cells (a slab with symmetry planes front and back): Re 100 on 24 576 tetrahedra 2.5 % / 2.2 %, on 5 445 polyhedra 0.70 % / 1.3 %; Re 1000 on 28 227 polyhedra 2.0 % / 2.4 % | cases `cavity_re100_tet3d`, `cavity_re100_poly3d`, `cavity_re1000_poly3d` (fail above 3 %) |
 | Rhie–Chow independent of the under-relaxation (D27) | lid force of the cavity with α_u = 0.7 and 0.9: equal to 3e-11 (relative), both converged to 1e-11 | test `converged_result_does_not_depend_on_relaxation` |
-| Boundary-condition check and guidance (D30) | errors, warnings and notes with the boundary name and what to change; "did you mean" for patch names, keys and values | `foehn flow --check`, tests `boundary_check_*`, `unknown_keys_and_values_get_a_hint`; guidance table in the [case catalogue](../cases/flow-keys.md#sensible-combinations-d30) |
-| Reproducible (D31) | residuals and patch forces bitwise equal on 1 and 4 threads (22 500 cells) | test `results_are_bitwise_equal_on_1_and_4_threads` |
+| Boundary-condition check and guidance (D30) | errors, warnings and notes with the boundary name and what to change; "did you mean" for boundary names, keys and values | `foehn flow --check`, tests `boundary_check_*`, `unknown_keys_and_values_get_a_hint`; guidance table in the [case catalogue](../cases/flow-keys.md#sensible-combinations-d30) |
+| Reproducible (D31) | residuals and boundary forces bitwise equal on 1 and 4 threads (22 500 cells) | test `results_are_bitwise_equal_on_1_and_4_threads` |
 
 ### Couette and Poiseuille flow
 

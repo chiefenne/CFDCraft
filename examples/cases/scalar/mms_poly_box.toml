@@ -5,9 +5,11 @@
 #
 # φ = 1 + sin(πx + 0.5) cos(πy + 0.3) cos(πz/2 + 0.2) on the unit box,
 # u = (1, 0.6, 0.3) m/s, ρ = 1 kg/m³, Γ = 0.2 kg/(m s) (Péclet number about
-# 6), fixed values of the exact solution on all six patches. The report
+# 6), fixed values of the exact solution on all six boundaries. The report
 # gives the L2 error per level and the observed order; the run fails if the
 # order on the finest pair is outside 1.8–2.2.
+
+case_format = "0.6"
 
 [mesh.generate]
 type = "poly"          # dual of a tetrahedral mesh, 14 faces per inner cell
@@ -43,10 +45,12 @@ type = "fixed-value"
 profile = "manufactured"
 
 [solver]
-scheme = "linear-upwind"
-limiter = "none"             # smooth solution: no limiter
 nonorth_correction = true
 tolerance = 1e-10
+
+[solver.momentum]
+scheme = "linear-upwind"
+limiter = "none"             # smooth solution: no limiter
 
 [verification]
 levels = [1, 2, 3]

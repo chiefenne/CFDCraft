@@ -23,24 +23,26 @@ line (recipe 26).
 | `initial.potential_flow` | false | start from potential flow instead of `initial.velocity` (D52): the irrotational velocity that carries the inflow to the pressure boundaries, one Laplace solve with the pressure multigrid and four non-orthogonal correction passes |
 | `pressure.reference_point` | lower corner of the bounding box | the cell containing it holds the pressure level when no boundary fixes it |
 | `pressure.reference_value` | 0 | pressure in that cell (Pa) |
-| `boundary.<patch>` | required for every patch | condition, table below |
+| `boundary.<boundary>` | required for every boundary | condition, table below |
 | `solver.algorithm` | `"simplec"` | `simplec` (Van Doormaal & Raithby 1984) or `simple` |
-| `solver.scheme` | `"linear-upwind"` | convection of momentum: `upwind`, `linear-upwind` or `central` (bounded central, D25) |
-| `solver.central_blending`, `solver.central_bounding` | 1, 0.1 | with `central`: share of the central correction (rest linear upwind) and the bound β (as for the scalar cases) |
-| `solver.limiter` | `"none"` | gradient limiter: `none`, `venkatakrishnan`, `venkatakrishnan-wang` |
-| `solver.limiter_k` | 5 | constant K of the limiter |
+| `solver.momentum.scheme` | `"linear-upwind"` | convection of momentum: `upwind`, `linear-upwind` or `central` (bounded central, D25) |
+| `solver.momentum.central_blending`, `solver.momentum.central_bounding` | 1, 0.1 | with `central`: share of the central correction (rest linear upwind) and the bound β (as for the scalar cases) |
+| `solver.momentum.limiter` | `"none"` | gradient limiter: `none`, `venkatakrishnan`, `venkatakrishnan-wang` |
+| `solver.momentum.limiter_k` | 5 | constant K of the limiter |
 | `solver.nonorth_correction` | true | deferred non-orthogonal and skewness correction of the viscous term |
-| `solver.relaxation_velocity` | 0.7 | under-relaxation α_u of the momentum equations (implicit, Patankar 1980) |
-| `solver.relaxation_pressure` | 1 (SIMPLEC), 0.3 (SIMPLE) | relaxation α_p of the pressure correction |
+| `solver.momentum.relaxation` | 0.7 | under-relaxation α_u of the momentum equations (implicit, Patankar 1980) |
+| `solver.pressure.relaxation` | 1 (SIMPLEC), 0.3 (SIMPLE) | relaxation α_p of the pressure correction |
 | `solver.max_iterations` | 2000 | largest number of outer iterations |
 | `solver.tolerance` | 1e-8 | converged when every scaled residual (momentum, continuity) is below it |
-| `solver.momentum_tolerance` | 1e-2 steady, 1e-8 transient | relative tolerance of each momentum solve (BiCGStab, Jacobi) |
-| `solver.momentum_max_iter` | 50 | largest number of BiCGStab iterations per solve |
-| `solver.pressure_tolerance` | 1e-2 steady, 1e-8 transient | relative tolerance of each pressure-correction solve |
-| `solver.pressure_max_iter` | 100 | largest number of CG iterations per solve |
-| `solver.pressure_preconditioner` | `"amg"` | `amg` (stage 3) or `jacobi` |
-| `solver.amg.*` | as `linear.amg.*` of the [Poisson cases](poisson.md#poisson-case-file-keys) | multigrid settings |
+| `solver.momentum.tolerance` | 1e-2 steady, 1e-8 transient | relative tolerance of each momentum solve (BiCGStab, Jacobi) |
+| `solver.momentum.max_iter` | 50 | largest number of BiCGStab iterations per solve |
+| `solver.pressure.tolerance` | 1e-2 steady, 1e-8 transient | relative tolerance of each pressure-correction solve |
+| `solver.pressure.max_iter` | 100 | largest number of CG iterations per solve |
+| `solver.pressure.preconditioner` | `"amg"` | `amg` (stage 3) or `jacobi` |
+| `solver.pressure.amg.*` | as `linear.amg.*` of the [Poisson cases](poisson.md#poisson-case-file-keys) | multigrid settings |
 | `solver.amg_rebuild` | 10 | rebuild the hierarchy every N outer iterations |
+| `case_format` | current (`"0.6"`; absent = `"0.5"`) | version of the case-file format; keys renamed later are mapped on reading and logged, `foehn case upgrade` rewrites the file |
+| `log.style` | `"asterisk"` | frames of the log: `asterisk` (horizontal rules only) or `box` (drawn with box characters); console and `flow.log` are identical, without colour |
 | `solver.log_every` | 10 | a log line every N outer iterations |
 | `analytic.type` | none | exact solution for the checks: `uniform`, `couette`, `poiseuille` or `pipe-poiseuille` |
 | `analytic.lower`, `analytic.upper` | 0, 1 | channel walls (y) |
@@ -60,7 +62,7 @@ line (recipe 26).
 | `output.directory` | `output/<case name>` | output directory |
 | `output.vtkhdf` | true | write `fields.vtkhdf` |
 | `output.history_every` | 1 | a row of `residuals.csv` every N outer iterations |
-| `output.wall_csv` | true | write `wall_<patch>.csv` for every wall |
+| `output.wall_csv` | true | write `wall_<boundary>.csv` for every wall |
 | `output.lines` | none | sampling lines `[[output.lines]]` with `name`, `from`, `to`, `points` (101) |
 | `output.fields_every` | 0 | transient: write `fields_<step>.vtkhdf` every N steps (0: only the final `fields.vtkhdf`) |
 | `output.fields_at` | none | transient: also write the fields at these steps |
@@ -68,7 +70,7 @@ line (recipe 26).
 | `output.monitor_every` | 1 | a row of `forces.csv` and `probes.csv` every N steps |
 | `output.monitor_interval` | none | transient: a row of `forces.csv` and `probes.csv` at the multiples of this simulated time (s) instead of every `monitor_every` steps, landed on exactly (equally spaced samples for spectra, D66) |
 | `output.probes` | none | point probes `[[output.probes]]` with `name` and `point`: velocity and pressure in `probes.csv` |
-| `output.coefficients` | none | force coefficients C = 2F/(ρU²A) of the sum over `patches`, with `velocity` U, `area` A, `drag_direction` (x), `lift_direction` (y) |
+| `output.coefficients` | none | force coefficients C = 2F/(ρU²A) of the sum over `boundaries`, with `velocity` U, `area` A, `drag_direction` (x), `lift_direction` (y) |
 | `output.derived` | none | derived fields in every `fields*.vtkhdf` (D72): `vorticity`, `q-criterion`, `lambda2`, `enstrophy`, `strain-rate`, `pressure-coefficient`, `total-pressure`, `wall-shear-stress`, `y-plus`; see [Derived fields](#derived-fields-d72) |
 | `output.reference.velocity`, `.pressure`, `.density` | `[output.coefficients] velocity`, 0, `[fluid] density` | reference state U_ref (m/s), p_ref (Pa), ρ_ref (kg/m³) of `pressure-coefficient` |
 
@@ -91,7 +93,7 @@ Transient cases (stage 5):
 | `solver.outer_iterations` | 1 | outer iterations per time step (1: plain PISO; more: PIMPLE-type, for large steps) |
 | `solver.outer_tolerance` | 1e-6 | ends the outer iterations of a step when the residuals at the start of one are below it |
 | `solver.extrapolation` | true | extrapolate the convecting flux, velocity gradients and limiters to the new time in the first outer iteration (keeps plain PISO second order) |
-| `solver.relaxation_velocity` | 1 transient | below 1 needs `outer_iterations` > 1 |
+| `solver.momentum.relaxation` | 1 transient | below 1 needs `outer_iterations` > 1 |
 | `run.restart` | none | restart file to continue from (D42) |
 | `run.restart_every` | 0 | write `restart.h5` every N steps or iterations |
 | `run.restart_at` | none | also write `restart_<N>.h5` at these steps |
@@ -101,7 +103,7 @@ Transient cases (stage 5):
 | `run.limits.max_wall_time` | none | stop after this wall time (s) with the restart file and results, exit code 3 (D83) |
 | `run.limits.max_steps`, `max_iterations` | none | stop after this many time steps (transient) or outer iterations (steady) |
 | `run.limits.max_output` | none | stop when the output directory holds this many bytes |
-| `balance.every` | 0 | the full balance table (mass, kinetic energy per patch and term) in the log every N iterations or steps; 0: at the end only (D89) |
+| `balance.every` | 0 | the full balance table (mass, kinetic energy per boundary and term) in the log every N iterations or steps; 0: at the end only (D89) |
 | `balance.tolerance_step` | 1e-8 | relative mass imbalance of a time step or of the final steady state before the warning `BAL001` |
 | `balance.tolerance_run` | 1e-4 | relative mass imbalance over the run (`BAL002`) |
 | `balance.tolerance_energy` | 1e-2 | negative numerical dissipation of kinetic energy, relative to the largest term (`BAL003`) |
@@ -109,14 +111,14 @@ Transient cases (stage 5):
 | `verification.time_steps` | none | a time-order sweep on one mesh: three or more steps, largest first |
 | `verification.expected_time_order` | none | accepted range of the observed time order on the smallest steps |
 | `verification.benchmark` | none | `schafer-turek-2d1` (steady, Re 20) or `schafer-turek-2d2` (periodic, Re 100) |
-| `verification.benchmark_patch` | `"cylinder"` | patch of the cylinder |
+| `verification.benchmark_boundary` | `"cylinder"` | boundary of the cylinder |
 | `verification.benchmark_tolerance` | none | largest accepted distance from the reference ranges, relative to their midpoints |
 | `verification.evaluation_start` | half the run | start of the evaluation window of 2D-2 (s) |
 | `analytic.type = "taylor-green"` | | the decaying Taylor–Green vortex with `velocity` U (1), `length` L (1, the period) and `pressure` p₀ (0) |
 | `analytic.type = "uniform"` | | uniform flow with `velocity` ([1, 0, 0]), `pressure` (0) and `length` (1, for the Reynolds number): exact between slip walls |
 | `analytic.type = "pipe-poiseuille"` | | Hagen–Poiseuille flow along the x axis with `radius` R (1), `mean_velocity` (1), `x_outlet` (1) and `pressure_outlet` (0) |
 
-Built-in cylinder mesh `[mesh.cylinder]` (D34; patches `inlet`, `outlet`,
+Built-in cylinder mesh `[mesh.cylinder]` (D34; boundaries `inlet`, `outlet`,
 `walls`, `cylinder`, `zmin`, `zmax`): an O-grid around the cylinder that
 fills the square 0 ≤ x, y ≤ height and a graded wake block to the outlet.
 
@@ -147,8 +149,8 @@ least-squares gradient of the solver), S = ½ (G + Gᵀ), Ω = ½ (G − Gᵀ),
 | `strain-rate` | `strain_rate` | √(2 S:S) | 1/s |
 | `pressure-coefficient` | `pressure_coefficient` | (p − p_ref)/(½ ρ_ref U_ref²); needs a reference velocity | - |
 | `total-pressure` | `total_pressure` | p + ½ ρ u·u | Pa |
-| `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude`, on the patch blocks | tangential viscous stress of the fluid on the wall (as `wall_<patch>.csv`), zero off walls | Pa |
-| `y-plus` | `y_plus`, on the patch blocks | d √(τ_w/ρ)/ν, d the wall distance of the cell centroid, zero off walls | - |
+| `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude`, on the boundary blocks | tangential viscous stress of the fluid on the wall (as `wall_<boundary>.csv`), zero off walls | Pa |
+| `y-plus` | `y_plus`, on the boundary blocks | d √(τ_w/ρ)/ν, d the wall distance of the cell centroid, zero off walls | - |
 
 The datasets are written in the order of this table, whatever the order of
 the list. `output.derived` and `output.reference` may change during a run.
@@ -206,7 +208,7 @@ inside the read root of the run (D82).
 90) revolves a 2D mesh of the half plane y ≥ 0 about the x axis (y is the
 radius) into a wedge one cell thick, symmetric about the x–y plane; nodes
 on the axis merge, so the cells next to it become prisms or polyhedra with
-an edge on the axis and there is no axis patch. `zmin` and `zmax` are the
+an edge on the axis and there is no axis boundary. `zmin` and `zmax` are the
 wedge planes and take `type = "wedge"`. The faces are planar, so a wedge
 of θ is a slice of a pipe whose section is a polygon of 360°/θ sides: the
 result differs from the axisymmetric one by about θ²/8 (1e-3 at 5°); the
@@ -220,12 +222,12 @@ unused.
 # Sensible combinations (D30)
 
 The check runs before every solve and with `--check`. Errors stop the run
-and name the boundary and what to change (a missing or unknown patch with
+and name the boundary and what to change (a missing or unknown boundary with
 "did you mean", a net mass flow with no pressure boundary to take it, a
 flow path whose rate is prescribed twice, a wall with a normal velocity, a
 negative mass flow); warnings and notes say what the run will do (no
 pressure boundary: the reference cell holds the level; nothing drives a
-flow; unused turbulence values; a symmetry patch that is not planar; a
+flow; unused turbulence values; a symmetry boundary that is not planar; a
 table that is missing or malformed; a convective outlet in a steady case
 or without a convection velocity; wedge planes that do not form one
 wedge).
@@ -270,9 +272,9 @@ runs bit for bit as before.
 | `constants.<name>` | number or expression of other constants | a named constant; the order does not matter, cycles are errors |
 | `tables.<name>.x`, `.y` | numbers | a piecewise linear table, clamped at the ends, called as `name(arg)` |
 | `tables.<name>.file` | path | the same from a two-column file (CSV or blanks, `#` comments, header allowed) |
-| `boundary.<patch>.velocity`, `normal_velocity`, `mass_flux` | x, y, z, t | inlet and wall values per face |
-| `boundary.<patch>.pressure`, `total_pressure` | x, y, z, t | pressure boundaries per face |
-| `boundary.<patch>.mass_flow` | t | one value for the patch |
+| `boundary.<boundary>.velocity`, `normal_velocity`, `mass_flux` | x, y, z, t | inlet and wall values per face |
+| `boundary.<boundary>.pressure`, `total_pressure` | x, y, z, t | pressure boundaries per face |
+| `boundary.<boundary>.mass_flow` | t | one value for the boundary |
 | `flow.body_force` | x, y, z, t | per cell; an expression is added to the momentum source, a uniform number keeps the kernel path |
 | `fluid.viscosity`, `materials.<name>.viscosity` | x, y, z | per face (properties do not change during a run, D100) |
 

@@ -10,6 +10,8 @@
 # fails if the velocity error is above 1e-9 (the discrete equations hold it
 # to round-off on any mesh).
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "mixed"
 dimension = 2

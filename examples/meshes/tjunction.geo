@@ -4,7 +4,7 @@
 //
 //   gmsh -3 examples/meshes/tjunction.geo -format msh41 -o examples/meshes/tjunction.msh
 //
-// Physical groups name the patches: inlet_main, inlet_branch, outlet,
+// Physical groups name the boundaries: inlet_main, inlet_branch, outlet,
 // wall; the volume is the zone fluid.
 
 SetFactory("OpenCASCADE");

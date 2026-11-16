@@ -11,6 +11,8 @@
 # this mesh); the run fails if the error is above 2e-3. The table's sha256
 # is part of the case hash of the run.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2
@@ -39,9 +41,11 @@ type = "symmetry"
 type = "symmetry"
 
 [solver]
-relaxation_velocity = 0.9
 tolerance = 1e-9
 max_iterations = 5000
+
+[solver.momentum]
+relaxation = 0.9
 
 [analytic]
 type = "poiseuille"

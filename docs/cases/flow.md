@@ -20,8 +20,8 @@ flow with PISO, BDF2 or Crank–Nicolson, when the case has a `[time]` table
 and the boundary conditions (D30); command-line options override the file
 (`foehn flow --help`). Each run writes `flow.log` (the header says what
 is written and how large it is), `residuals.csv` (one row per outer
-iteration; `residuals_level<N>.csv` per level of a sweep), `patches.csv`
-(per patch: area, mass flow, mean pressure, force), `wall_<patch>.csv` (per
+iteration; `residuals_level<N>.csv` per level of a sweep), `boundaries.csv`
+(per boundary: area, mass flow, mean pressure, force), `wall_<boundary>.csv` (per
 wall face: position, pressure, wall shear stress), `line_<name>.csv` for
 each sampling line, `fields.vtkhdf` (velocity, speed, pressure and, with an
 exact solution, the velocity error), `case.resolved.toml` (the case with

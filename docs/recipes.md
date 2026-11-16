@@ -20,7 +20,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30 |
-| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports | 22, 26, 27 |
+| [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log and case upgrades | 22, 26, 27, 36 |
 
 ## All recipes by number
 
@@ -61,6 +61,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="python"></a>33 | [Build, run and study cases from Python](recipes/python.md#python) | [Python](recipes/python.md) |
 | <a id="gci"></a>34 | [Estimate the discretisation uncertainty of a mesh or time-step sweep](recipes/verification.md#gci) | [Verification](recipes/verification.md) |
 | <a id="manual"></a>35 | [Regenerate the verification manual](recipes/verification.md#manual) | [Verification](recipes/verification.md) |
+| <a id="log"></a>36 | [Read the log and upgrade a case file](recipes/runs.md#log) | [Run control and health](recipes/runs.md) |
 
 ## Adding a feature
 

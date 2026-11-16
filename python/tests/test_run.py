@@ -143,7 +143,7 @@ def test_uncertainty_of_a_sweep(tmp_path):
     # three meshes of the Couette flow with a viscosity gradient (D67)
     res = run(CASES / "couette_viscosity.toml", out=tmp_path / "gci")
     assert res.ok
-    e = res.uncertainty["patches.ymin.force_x"]
+    e = res.uncertainty["boundaries.ymin.force_x"]
     assert e["verdict"] == "monotonic"
     assert 1.5 < e["order"] < 2.5
     exact = 0.1 * 4.0 / np.log1p(4.0) * 0.2

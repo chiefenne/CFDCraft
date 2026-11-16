@@ -3,7 +3,7 @@
 //! Schäfer & Turek (1996).
 
 use crate::analytic::{Benchmark, Range};
-use crate::case::{FlowCase, PatchSummary, locate, value_at};
+use crate::case::{BoundarySummary, FlowCase, locate, value_at};
 use crate::simplec::Solution;
 use anyhow::Result;
 use foehncraft_mesh::Geometry;
@@ -60,11 +60,11 @@ impl Probes {
 }
 
 /// Drag and lift coefficients of the case's `[output.coefficients]` from
-/// the patch forces.
-pub fn coefficients(case: &FlowCase, patches: &[PatchSummary]) -> Option<[f64; 2]> {
+/// the boundary forces.
+pub fn coefficients(case: &FlowCase, boundaries: &[BoundarySummary]) -> Option<[f64; 2]> {
     let c = case.output.coefficients.as_ref()?;
     let mut f = [0.0; 3];
-    for p in patches.iter().filter(|p| c.patches.contains(&p.name)) {
+    for p in boundaries.iter().filter(|p| c.boundaries.contains(&p.name)) {
         for (fi, pi) in f.iter_mut().zip(p.force) {
             *fi += pi;
         }

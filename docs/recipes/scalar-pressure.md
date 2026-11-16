@@ -29,7 +29,7 @@ cat output/mms_poly_box/scalar.md          # errors, orders, time per phase
 
 Keys: `verification.levels` (refinement levels of `[mesh.generate]`,
 override with `--levels 1,2,3,4`), `verification.expected_order`,
-`problem.manufactured`, `problem.boundary.<patch>` with `profile =
+`problem.manufactured`, `problem.boundary.<boundary>` with `profile =
 "manufactured"`, `mesh.generate.perturb`. The same checks as tests (one
 level finer with `--ignored`):
 

@@ -86,7 +86,7 @@ fn couette_derived_fields_are_exact_on_every_mesh_type() {
             g("y_plus"),
         );
         let mut walls = 0;
-        for pa in &mesh.patches {
+        for pa in &mesh.boundaries {
             for fc in pa.range() {
                 let b = fc - ni;
                 match pa.name.as_str() {
@@ -302,7 +302,7 @@ fn checks_of_the_derived_keys() {
         .unwrap();
     // or takes the one of the force coefficients
     with(
-        "[output]\nderived = [\"pressure-coefficient\"]\n[output.coefficients]\npatches = [\"ymin\"]\nvelocity = 1.0\narea = 1.0",
+        "[output]\nderived = [\"pressure-coefficient\"]\n[output.coefficients]\nboundaries = [\"ymin\"]\nvelocity = 1.0\narea = 1.0",
     )
     .unwrap();
     let e = with("[output.reference]\nvelocity = -1.0").unwrap_err();

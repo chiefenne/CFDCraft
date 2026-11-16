@@ -5,6 +5,8 @@
 #
 #   target/release/foehn bench g1 examples/cases/bench/g1_gpu_50m.toml
 
+case_format = "0.6"
+
 [mesh]
 cells = 50_000_000
 ordering = "natural"

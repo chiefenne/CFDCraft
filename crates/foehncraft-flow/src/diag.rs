@@ -76,8 +76,8 @@ codes! {
     CASE_SET = "CASE008", Error, "A `--set key=value` that cannot be applied.";
     CASE_MISSING_KEY = "CASE009", Error, "A key that the case needs is missing.";
     // the boundary conditions (D30)
-    BC_NO_CONDITION = "BC001", Error, "A mesh patch without a boundary condition.";
-    BC_NO_PATCH = "BC002", Error, "A boundary condition for a patch the mesh does not have.";
+    BC_NO_CONDITION = "BC001", Error, "A mesh boundary without a boundary condition.";
+    BC_NO_BOUNDARY = "BC002", Error, "A boundary condition for a boundary the mesh does not have.";
     BC_NOT_AVAILABLE = "BC003", Error, "A condition that a later stage brings.";
     BC_INLET_INPUT = "BC004", Error, "A velocity inlet with none or more than one of `velocity`, `normal_velocity` and `profile`.";
     BC_PROFILE_ANALYTIC = "BC005", Error, "`profile = \"analytic\"` without an `[analytic]` table.";
@@ -88,7 +88,7 @@ codes! {
     BC_WALL_NORMAL_VELOCITY = "BC010", Warning, "A wall velocity with a component normal to the wall.";
     BC_EXACT_OUTFLOW = "BC011", Note, "The exact solution leaves the domain through a velocity inlet.";
     BC_INLET_OUTFLOW = "BC012", Warning, "A velocity inlet whose velocity points out of the domain.";
-    BC_SYMMETRY_NOT_PLANAR = "BC013", Warning, "A symmetry patch that is not planar.";
+    BC_SYMMETRY_NOT_PLANAR = "BC013", Warning, "A symmetry boundary that is not planar.";
     BC_UNBALANCED = "BC014", Error, "A net mass flow through the prescribed boundaries and no pressure boundary to balance it.";
     BC_REFERENCE_CELL = "BC015", Note, "No pressure boundary: the pressure level is fixed in the reference cell.";
     BC_OVER_SPECIFIED = "BC016", Error, "A flow path whose flow rate is over-specified.";
@@ -98,14 +98,14 @@ codes! {
     BC_TABLE_RANGE = "BC020", Warning, "Faces of a table inlet outside the range of the table (they take the end values).";
     BC_CONVECTIVE_STEADY = "BC021", Error, "A convective outlet in a steady case.";
     BC_CONVECTIVE_VELOCITY = "BC022", Error, "A convective outlet without `convection_velocity` and no prescribed inflow to take it from.";
-    BC_WEDGE = "BC023", Error, "Wedge patches that do not form one wedge about an axis.";
+    BC_WEDGE = "BC023", Error, "Wedge boundaries that do not form one wedge about an axis.";
     BC_WEDGE_ANGLE = "BC024", Warning, "A wedge wider than 10° (the axisymmetric error grows with the angle).";
     BC_POTENTIAL_CONVECTIVE = "BC025", Error, "A potential-flow start with a convective outlet and no pressure boundary.";
     BC_WALL_MASS_CLOSED = "BC026", Error, "Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure).";
     // expressions (D53)
     EXPR_SYNTAX = "EXPR001", Error, "An expression that cannot be parsed.";
     EXPR_NAME = "EXPR002", Error, "An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint).";
-    EXPR_VARIABLE = "EXPR003", Error, "An expression that uses a variable its key does not take (`t` in a steady case or in a property, x, y, z in a value for a whole patch).";
+    EXPR_VARIABLE = "EXPR003", Error, "An expression that uses a variable its key does not take (`t` in a steady case or in a property, x, y, z in a value for a whole boundary).";
     EXPR_TABLE = "EXPR004", Error, "A `[tables]` entry that is missing, unreadable or not a valid table.";
     EXPR_VALUE = "EXPR005", Error, "An expression or constant whose value is not finite where it is evaluated.";
     // materials and regions (D94-D102, D112)
@@ -169,7 +169,7 @@ pub struct Diagnostic {
     /// Key path in the case file (`fluid.density`), if one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
-    /// Boundary (patch) it concerns, if one.
+    /// Boundary (boundary) it concerns, if one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub boundary: Option<String>,
     /// Line and column in the case file (1-based), if known.

@@ -13,10 +13,10 @@
 
 use crate::analytic::Benchmark;
 use crate::balance::{self, BalanceAction, BalanceSummary, Ledger};
-use crate::bc::{self, BoundaryCondition, InletProfile, Level, inlet_velocity, patch_extent};
+use crate::bc::{self, BoundaryCondition, InletProfile, Level, boundary_extent, inlet_velocity};
 use crate::case::{
-    ErrorNorms, FlowCase, FlowReport, Log, Solve, dimension, error_norms, locate, mesh_for,
-    patch_summaries, write_fields, write_outputs,
+    ErrorNorms, FlowCase, FlowReport, Log, Solve, boundary_summaries, dimension, error_norms,
+    locate, mesh_for, write_fields, write_outputs,
 };
 use crate::control::Control;
 use crate::engine::Steer;
@@ -152,7 +152,7 @@ impl AnalyticFaces {
     fn new(case: &FlowCase, mesh: &foehncraft_mesh::Mesh, ub: &[Vec<f64>; 3]) -> Self {
         let ni = mesh.n_interior_faces();
         let mut faces = Vec::new();
-        for p in &mesh.patches {
+        for p in &mesh.boundaries {
             if let Some(BoundaryCondition::VelocityInlet {
                 profile: Some(InletProfile::Analytic),
                 ..
@@ -182,11 +182,11 @@ impl AnalyticFaces {
         if self.faces.is_empty() || !a.is_transient() {
             return Ok(());
         }
-        for p in &mesh.patches {
+        for p in &mesh.boundaries {
             let Some(b) = case.boundary.get(&p.name) else {
                 continue;
             };
-            let ext = patch_extent(mesh, p);
+            let ext = boundary_extent(mesh, p);
             for f in p.range() {
                 if let Some((fb, _)) = self.faces.iter().find(|x| x.1 == f) {
                     let at = bc::At::numbers(Some(&a));
@@ -282,10 +282,7 @@ pub fn run(
     std::fs::create_dir_all(out)?;
     let control = Control::new(out)?;
     let mut log = log;
-    let mut lg = Log {
-        out: &mut log,
-        text: String::new(),
-    };
+    let mut lg = Log::new(&mut log, case.log.style);
     let time = case.time.context("a transient case needs a [time] table")?;
     let v = &case.verification;
     let specs: Vec<RunSpec> = if !v.time_steps.is_empty() {
@@ -347,10 +344,8 @@ pub fn run(
             case.check_context(),
         );
         if ri == 0 {
-            for f in &findings {
-                lg.line(&f.to_string());
-            }
             rep.findings = findings.clone();
+            lg.frame(&crate::logblocks::banner(steer.build.as_ref(), case));
         }
         if findings.iter().any(|f| f.level == Level::Error) {
             let msg: Vec<String> = findings
@@ -358,21 +353,57 @@ pub fn run(
                 .filter(|f| f.level == Level::Error)
                 .map(|f| f.to_string())
                 .collect();
+            lg.line("");
+            for f in &findings {
+                lg.line(&crate::case::finding_line(f));
+            }
             std::fs::write(out.join("flow.log"), &lg.text)?;
             bail!(
                 "the boundary conditions cannot be run:\n  {}",
                 msg.join("\n  ")
             );
         }
-        if ri == 0 || ri == last {
-            header(&mut lg, case, &mesh, &desc, ri == last, spec.dt);
+        let (quality, _) = foehncraft_mesh::quality::QualityReport::compute(&mesh, &geo);
+        if ri == 0 {
+            let t = case.time.unwrap_or_default();
+            let steps = t.steps.unwrap_or_else(|| {
+                t.end_time
+                    .map_or(0, |e| ((e - t.start_time) / spec.dt).ceil() as usize)
+            });
+            if specs.len() == 1 {
+                lg.frame(&files_frame(case, &mesh, &desc, out, spec.dt));
+            }
+            lg.frame(&crate::logblocks::control_transient(case, spec.dt, steps));
+        }
+        lg.frame(&crate::logblocks::mesh(&quality, &desc));
+        if ri == 0 {
+            lg.frame(&crate::logblocks::fluid(case));
+            lg.frame(&crate::logblocks::solution(case, true));
+            lg.frame(&crate::logblocks::boundaries(case, &quality));
+            let mut any = false;
+            for n in crate::logblocks::notes(case) {
+                if !any {
+                    lg.line("");
+                    any = true;
+                }
+                lg.line(&n);
+            }
+            for f in &findings {
+                if !any {
+                    lg.line("");
+                    any = true;
+                }
+                lg.line(&crate::case::finding_line(f));
+            }
+        }
+        if specs.len() > 1 && ri == last {
+            lg.frame(&files_frame(case, &mesh, &desc, out, spec.dt));
         }
         let label = if specs.len() > 1 {
             format!("{desc}, Δt = {:e} s", spec.dt)
         } else {
             desc.clone()
         };
-        lg.line(&format!("mesh  {label}"));
         let r = run_one(
             case,
             name,
@@ -422,7 +453,7 @@ pub fn run(
             .enumerate()
             .map(|(i, d)| (d[0] / d[1]).ln() / (dts[i] / dts[i + 1]).ln())
             .collect();
-        lg.line(&format!(
+        lg.note(&format!(
             "time sweep: differences of successive solutions [{}], observed time orders {:.3?}",
             diffs
                 .iter()
@@ -498,7 +529,7 @@ pub fn run(
             .windows(2)
             .map(|w| (w[0].l2 / w[1].l2).ln() / (w[0].h / w[1].h).ln())
             .collect();
-        lg.line(&format!("observed orders in space {:.3?}", rep.orders));
+        lg.note(&format!("observed orders in space {:.3?}", rep.orders));
         if let (Some([lo, hi]), Some(&o)) = (v.expected_order, rep.orders.last())
             && !(lo..=hi).contains(&o)
         {
@@ -579,77 +610,50 @@ pub fn run(
     }
     rep.solves = outs.into_iter().map(|o| o.solve).collect();
     rep.seconds = t0.elapsed().as_secs_f64();
-    for f in &rep.failures {
-        lg.line(&format!("FAILED: {f}"));
-    }
+    crate::case::end_frames(&mut lg, &rep);
     std::fs::write(out.join("flow.log"), &lg.text)?;
     std::fs::write(out.join("flow.json"), serde_json::to_string_pretty(&rep)?)?;
     std::fs::write(out.join("flow.md"), rep.to_markdown())?;
     Ok(rep)
 }
 
-fn header<F: FnMut(&str)>(
-    lg: &mut Log<F>,
+/// The files of a transient run: the inputs, the output directory and what
+/// will be written there with its estimated size.
+fn files_frame(
     case: &FlowCase,
     mesh: &foehncraft_mesh::Mesh,
     desc: &str,
-    last: bool,
+    out: &std::path::Path,
     dt: f64,
-) {
+) -> crate::console::Frame {
+    use crate::console::size;
     let t = case.time.unwrap_or_default();
-    let s = &case.solver;
-    lg.line(&format!(
-        "Foehncraft {} flow solver (PISO, transient, laminar)",
-        env!("CARGO_PKG_VERSION")
-    ));
-    lg.line(&format!(
-        "fluid  ρ = {} kg/m³, μ = {} Pa s; convection {}",
-        case.rho(),
-        case.mu(),
-        if case.flow.convection {
-            "on"
-        } else {
-            "off (Stokes)"
-        }
-    ));
     let steps = t.steps.unwrap_or_else(|| {
         t.end_time
             .map_or(0, |e| ((e - t.start_time) / dt).ceil() as usize)
     });
-    lg.line(&format!(
-        "time   {}, Δt = {dt:e} s{}, from t = {} s {}; {} corrector(s), {} outer iteration(s)",
-        t.scheme.label(),
-        if t.adaptive {
-            format!(" (adaptive, Courant number {})", t.max_cfl)
-        } else {
-            String::new()
-        },
-        t.start_time,
-        match (t.end_time, t.steps) {
-            (Some(e), _) => format!("to t = {e} s"),
-            (None, Some(n)) => format!("for {n} steps"),
-            _ => String::new(),
-        },
-        s.correctors,
-        s.outer_iterations
-    ));
-    if last {
-        let nc = mesh.n_cells;
-        let o = &case.output;
-        lg.line(&format!("output for {desc} (about {steps} steps):"));
-        lg.line(&format!(
-            "  history.csv: {} rows, about {} kB",
+    let nc = mesh.n_cells;
+    let o = &case.output;
+    let mut f = crate::logblocks::files(case, desc, out);
+    f.push_rule();
+    f.push_kv(
+        "history.csv",
+        format!(
+            "{} rows, about {}",
             steps / o.history_every + 1,
-            steps / o.history_every * 120 / 1000 + 1
-        ));
-        let walls = case
-            .boundary
-            .values()
-            .filter(|b| matches!(b, BoundaryCondition::Wall { .. }))
-            .count();
-        if walls > 0 || o.coefficients.is_some() {
-            lg.line(&format!(
-                "  forces.csv: {} rows (every {} steps), forces on {walls} wall(s){}",
+            size(steps / o.history_every * 120)
+        ),
+    );
+    let walls = case
+        .boundary
+        .values()
+        .filter(|b| matches!(b, BoundaryCondition::Wall { .. }))
+        .count();
+    if walls > 0 || o.coefficients.is_some() {
+        f.push_kv(
+            "forces.csv",
+            format!(
+                "{} rows (every {} steps), forces on {walls} wall(s){}",
                 steps / o.monitor_every + 1,
                 o.monitor_every,
                 if o.coefficients.is_some() {
@@ -657,57 +661,65 @@ fn header<F: FnMut(&str)>(
                 } else {
                     ""
                 }
-            ));
-        }
-        if !o.probes.is_empty() {
-            lg.line(&format!(
-                "  probes.csv: {} probe(s), {} rows",
+            ),
+        );
+    }
+    if !o.probes.is_empty() {
+        f.push_kv(
+            "probes.csv",
+            format!(
+                "{} probe(s), {} rows",
                 o.probes.len(),
                 steps / o.monitor_every + 1
-            ));
-        }
-        let mb =
-            (nc * (8 * 6) + mesh.face_nodes.len() * 8 + mesh.points.len() * 24) / 1_000_000 + 1;
-        if o.vtkhdf {
-            let series = steps.checked_div(o.fields_every).unwrap_or(0)
-                + o.fields_at.len()
-                + scheduled_outputs(case, steps, dt).0;
-            lg.line(&format!(
-                "  fields.vtkhdf (final){}: about {mb} MB each",
+            ),
+        );
+    }
+    let bytes = nc * (8 * 6) + mesh.face_nodes.len() * 8 + mesh.points.len() * 24;
+    if o.vtkhdf {
+        let series = steps.checked_div(o.fields_every).unwrap_or(0)
+            + o.fields_at.len()
+            + scheduled_outputs(case, steps, dt).0;
+        f.push_kv(
+            "fields.vtkhdf (final)",
+            format!(
+                "about {} each{}",
+                size(bytes),
                 if series > 0 {
-                    format!(" and {series} fields_<step>.vtkhdf")
+                    format!(", and {series} fields_<step>.vtkhdf")
                 } else {
                     String::new()
                 }
-            ));
-        }
-        let r = &case.run;
-        if r.restart_final
-            || r.restart_every > 0
-            || !r.restart_at.is_empty()
-            || r.restart_interval.is_some()
-            || !r.restart_times.is_empty()
-        {
-            lg.line(&format!(
-                "  restart.h5{}: about {} MB",
+            ),
+        );
+    }
+    let r = &case.run;
+    if r.restart_final
+        || r.restart_every > 0
+        || !r.restart_at.is_empty()
+        || r.restart_interval.is_some()
+        || !r.restart_times.is_empty()
+    {
+        f.push_kv(
+            "restart.h5",
+            format!(
+                "about {}{}",
+                size(nc * 8 * 22 + mesh.n_faces() * 8 * 4),
                 if r.restart_at.is_empty() {
                     String::new()
                 } else {
-                    format!(" and restart_<step>.h5 at {:?}", r.restart_at)
-                },
-                (nc * 8 * 22 + mesh.n_faces() * 8 * 4) / 1_000_000 + 1
-            ));
-        }
-        lg.line("  balance.csv, balance.svg, patches.csv, flow.json, flow.md, case.resolved.toml");
-        lg.line(&format!(
-            "  control files in this directory: .stop, .result_N, .read_toml_N{}",
-            if r.reread_every > 0 {
-                format!("; the case file is re-read every {} steps", r.reread_every)
-            } else {
-                String::new()
-            }
-        ));
+                    format!(", and restart_<step>.h5 at {:?}", r.restart_at)
+                }
+            ),
+        );
     }
+    f.push_kv("flow.md, flow.json", "report and its data");
+    f.push_kv("result.json", "summary for programs (exit code, checks)");
+    f.push_kv("balance.csv, balance.svg", "mass and energy ledger");
+    f.push_kv(
+        "boundaries.csv",
+        "area, mass flow, pressure and force per boundary",
+    );
+    f
 }
 
 /// The restart content of the current state.
@@ -811,8 +823,8 @@ fn run_one<F: FnMut(&str)>(
             bail!("{} is the restart file of a steady run", path.display());
         };
         if scheme != time0.scheme {
-            lg.line(&format!(
-                "note: the restart file was written with {}, the case runs {}",
+            lg.note(&format!(
+                "the restart file was written with {}, the case runs {}",
                 scheme.label(),
                 time0.scheme.label()
             ));
@@ -826,7 +838,7 @@ fn run_one<F: FnMut(&str)>(
         if !same {
             let m = "note: the restart file has another cell or face order; the fields were mapped \
                  by identity and the multigrid rebuilt (the continuation is not bit-identical)";
-            lg.line(m);
+            lg.note(m.trim_start_matches("note: "));
             warnings.push(crate::diag::Diagnostic::new(
                 crate::diag::RUN_RESTART_MAPPED,
                 m,
@@ -837,7 +849,7 @@ fn run_one<F: FnMut(&str)>(
         } else {
             dt = dt_next;
         }
-        lg.line(&format!(
+        lg.note(&format!(
             "restart from {} at step {}, t = {:.6e} s",
             path.display(),
             clock.step,
@@ -880,7 +892,9 @@ fn run_one<F: FnMut(&str)>(
         fl.initialise(&u, &p)?;
         if case.initial.potential_flow {
             let it = fl.potential_flow(mesh, geo)?;
-            lg.line(&format!("start  potential flow (D52): {it} CG iterations"));
+            lg.note(&format!(
+                "start from potential flow (D52): {it} CG iterations"
+            ));
         }
         tr.start(&mut fl)?;
     }
@@ -907,7 +921,7 @@ fn run_one<F: FnMut(&str)>(
         cont,
     )?;
     let walls: Vec<String> = mesh
-        .patches
+        .boundaries
         .iter()
         .filter(|p| {
             matches!(
@@ -996,6 +1010,45 @@ fn run_one<F: FnMut(&str)>(
     let mut balance_warned = false;
 
     let ts = Instant::now();
+    let with_error = case.time.is_some_and(|t| t.error_tolerance.is_some());
+    let mut table = {
+        use crate::console::{Col, Group, Table};
+        let mut solvers = vec![Col::int("Outer", 5), Col::int("CG", 5)];
+        if with_error {
+            solvers.push(Col::int("Error", 6));
+        }
+        Table::new(
+            Col::int("Step", 6),
+            vec![
+                Group::new(
+                    "time",
+                    vec![
+                        Col::int("Time [s]", 10),
+                        Col::int("Dt [s]", 8),
+                        Col::int("Cour.", 5),
+                    ],
+                ),
+                Group::new(
+                    "scaled residuals",
+                    vec![
+                        Col::num("ResU"),
+                        Col::num("ResV"),
+                        Col::num("ResW"),
+                        Col::num("ResM"),
+                    ],
+                ),
+                Group::new("solvers", solvers),
+            ],
+            case.log.style,
+            case.log.header_every,
+        )
+    };
+    lg.frame(&crate::console::Frame::new(format!(
+        "Time steps ({}, {})",
+        crate::logblocks::spelled(&case.solver.algorithm(true)).to_uppercase(),
+        case.time.unwrap_or_default().scheme.label()
+    )));
+    lg.line("");
     let mut stopped = false;
     let (mut dt_min, mut dt_max, mut cfl_max) = (f64::INFINITY, 0.0f64, 0.0f64);
     let (mut outer_sum, mut cg_sum, mut nsteps) = (0usize, 0usize, 0usize);
@@ -1064,8 +1117,8 @@ fn run_one<F: FnMut(&str)>(
                 tries += 1;
                 rejected += 1;
                 let hn = (h * (0.9 * e.powf(-0.5)).max(0.2)).max(min_dt);
-                lg.line(&format!(
-                    "      step {} rejected: error {e:.2} of the tolerance at Δt {h:.3e} s, \
+                lg.note(&format!(
+                    "step {} rejected: error {e:.2} of the tolerance at Δt {h:.3e} s, \
                      repeated with Δt {hn:.3e} s",
                     rp.step
                 ));
@@ -1081,7 +1134,7 @@ fn run_one<F: FnMut(&str)>(
             Ok(r) => r,
             Err(e) if crate::divergence::is_divergence(&e, &mut fl) => {
                 // D63: the last valid state, the snapshot and the report
-                lg.line(&format!("      {e:#}"));
+                lg.line(&crate::console::tagged("error", &format!("{e:#}")));
                 let ctx = crate::divergence::Context {
                     name,
                     case: &case,
@@ -1121,10 +1174,16 @@ fn run_one<F: FnMut(&str)>(
                     }
                     Ok((failed, files))
                 })();
-                let e =
-                    crate::divergence::finish(&mut fl, &ctx, mesh, geo, out, prepared, &mut |l| {
-                        lg.line(l)
-                    });
+                let e = crate::divergence::finish(
+                    &mut fl,
+                    &ctx,
+                    mesh,
+                    geo,
+                    out,
+                    prepared,
+                    case.log.style,
+                    &mut |l| lg.line(l),
+                );
                 history.flush()?;
                 balance_csv.flush()?;
                 steer.record.flush();
@@ -1207,10 +1266,7 @@ fn run_one<F: FnMut(&str)>(
                 "step {n}: the relative mass imbalance {:.2e} is above [balance] tolerance_step {:.1e}",
                 bal.mass.relative, case.balance.tolerance_step
             );
-            lg.line(&format!(
-                "      warning {}: {m}",
-                crate::diag::BAL_MASS_STEP
-            ));
+            lg.warn(&format!("{}: {m}", crate::diag::BAL_MASS_STEP));
             steer.event(crate::diag::BAL_MASS_STEP, n, &m);
             if case.balance.action == BalanceAction::Stop {
                 steer.stop_for(crate::diag::BAL_MASS_STEP, format!("stopped: {m}"));
@@ -1223,28 +1279,34 @@ fn run_one<F: FnMut(&str)>(
                 .error
                 .map(|e| format!("  error {e:.2}"))
                 .unwrap_or_default();
-            lg.line(&format!(
-                "step {n:6}  t {:.6e}  Δt {h:.3e}  Courant {:.3}  momentum {:.2e} {:.2e} {:.2e}  \
-                 continuity {:.2e}  outer {}  cg {}{err}",
-                rp.time,
-                rp.cfl,
-                r.momentum[0],
-                r.momentum[1],
-                r.momentum[2],
-                r.continuity,
-                rp.outer,
-                r.pressure_iterations
-            ));
+            let mut cells = vec![
+                crate::console::sci(rp.time, 4),
+                crate::console::sci(h, 2),
+                format!("{:.3}", rp.cfl),
+            ];
+            cells.extend(
+                r.momentum
+                    .iter()
+                    .copied()
+                    .chain([r.continuity])
+                    .map(crate::console::sci3),
+            );
+            cells.push(rp.outer.to_string());
+            cells.push(r.pressure_iterations.to_string());
+            if case.time.is_some_and(|t| t.error_tolerance.is_some()) {
+                cells.push(rp.error.map_or("-".to_string(), |e| format!("{e:.2}")));
+            }
+            let _ = &err;
+            for l in table.row(n, &cells) {
+                lg.line(&l);
+            }
             lg.line(&balance::compact(&bal));
             if case.balance.every > 0 && n.is_multiple_of(case.balance.every) {
-                lg.line(
-                    balance::table(
-                        &format!("      balance of the run up to step {n}"),
-                        &ledger.run(),
-                        true,
-                    )
-                    .trim_end(),
-                );
+                lg.frame(&crate::logblocks::balance_block(
+                    &format!("Balance of the run up to step {n}"),
+                    &ledger.run(),
+                    true,
+                ));
             }
             // the histories reach the disk with every log line, so a run
             // that is killed keeps them up to there
@@ -1293,14 +1355,14 @@ fn run_one<F: FnMut(&str)>(
                 phys: fl.phys.clone(),
             };
             if at_monitor {
-                let patches = patch_summaries(&sol, mesh, geo, &case);
+                let boundaries = boundary_summaries(&sol, mesh, geo, &case);
                 let mut row = format!("{n},{:e}", rp.time);
                 for w in &walls {
-                    if let Some(p) = patches.iter().find(|p| &p.name == w) {
+                    if let Some(p) = boundaries.iter().find(|p| &p.name == w) {
                         let _ = write!(row, ",{:e},{:e},{:e}", p.force[0], p.force[1], p.force[2]);
                     }
                 }
-                let cc = monitor::coefficients(&case, &patches);
+                let cc = monitor::coefficients(&case, &boundaries);
                 if let Some([cd, cl]) = cc {
                     let _ = write!(row, ",{cd:e},{cl:e}");
                 }
@@ -1316,7 +1378,7 @@ fn run_one<F: FnMut(&str)>(
                     pc.row(&row);
                 }
                 if let (Some(_), Some([cd, cl])) =
-                    (bench, benchmark_coefficients(&case, &patches, mesh))
+                    (bench, benchmark_coefficients(&case, &boundaries, mesh))
                 {
                     let (i, j) = (
                         probes.index("benchmark_front").unwrap_or(0),
@@ -1338,8 +1400,8 @@ fn run_one<F: FnMut(&str)>(
                     case.analytic_at(rp.time).as_ref(),
                     Some((n, Some(rp.time))),
                 )?;
-                lg.line(&format!(
-                    "      fields of step {n} written (fields_{n:06}.vtkhdf)"
+                lg.note(&format!(
+                    "fields of step {n} written (fields_{n:06}.vtkhdf)"
                 ));
             }
         }
@@ -1378,7 +1440,7 @@ fn run_one<F: FnMut(&str)>(
                 restart::write(&out.join(format!("restart_{n:06}.h5")), &rs)?;
             }
             if asked {
-                lg.line(&format!("      step {n}: restart.h5 written (SIGUSR1)"));
+                lg.note(&format!("step {n}: restart.h5 written (SIGUSR1)"));
             }
         }
         if req.reread
@@ -1391,7 +1453,7 @@ fn run_one<F: FnMut(&str)>(
             dt = b.time_step;
         }
         if let Some(s) = steer.poll(&case.run.limits, nsteps, true, req.stop) {
-            lg.line(&format!("      step {n}: {}", s.message));
+            lg.note(&format!("step {n}: {}", s.message));
             stopped = true;
             break;
         }
@@ -1406,20 +1468,38 @@ fn run_one<F: FnMut(&str)>(
     }
     let secs = ts.elapsed().as_secs_f64();
     let steps_total = tr.clock.step;
-    lg.line(&format!(
-        "      {} {nsteps} steps to t = {:.6e} s in {secs:.2} s (setup {setup:.2} s), {:.0} ns/cell/step; \
-         Δt {:.3e}–{:.3e} s, largest Courant number {:.3}",
-        if stopped { "stopped after" } else { "done:" },
-        tr.clock.time,
-        1e9 * secs / (nc as f64 * nsteps.max(1) as f64),
-        if nsteps > 0 { dt_min } else { 0.0 },
-        dt_max,
-        cfl_max
-    ));
-    if rejected > 0 {
-        lg.line(&format!(
-            "      {rejected} steps repeated with a shorter Δt (time-integration error above the tolerance)"
-        ));
+    {
+        let mut f = crate::console::Frame::new("Time stepping").kv(
+            "Status",
+            format!(
+                "{} {nsteps} steps to t = {} s",
+                if stopped { "STOPPED after" } else { "DONE:" },
+                crate::console::sci(tr.clock.time, 5)
+            ),
+        );
+        f.push_kv(
+            "Time step",
+            format!(
+                "{} to {} s",
+                crate::console::sci(if nsteps > 0 { dt_min } else { 0.0 }, 3),
+                crate::console::sci(dt_max, 3)
+            ),
+        );
+        f.push_kv("Largest Courant number", format!("{cfl_max:.3}"));
+        f.push_kv(
+            "Solve time",
+            format!(
+                "{secs:.2} s  (setup {setup:.2} s, {:.0} ns per cell and step)",
+                1e9 * secs / (nc as f64 * nsteps.max(1) as f64)
+            ),
+        );
+        if rejected > 0 {
+            f.push_kv(
+                "Repeated steps",
+                format!("{rejected}  (time-integration error above the tolerance)"),
+            );
+        }
+        lg.frame(&f);
     }
     if last && (case.run.restart_final || stopped) && restart::AVAILABLE {
         let rs = restart_of(&mut fl, &tr, mesh, name, dt)?;
@@ -1432,53 +1512,59 @@ fn run_one<F: FnMut(&str)>(
     };
     let analytic_end = case.analytic_at(tr.clock.time);
     let errors = analytic_end.map(|a| error_norms(&sol, mesh, geo, &a, dimension(&case)));
+    let mut verification = crate::console::Frame::new("Verification");
     if let Some(e) = &errors {
-        lg.line(&format!(
-            "      at t = {:.6e} s: velocity error L2 {:.3e}, Linf {:.3e} (relative), pressure Linf {:.3e}",
-            tr.clock.time, e.l2, e.linf, e.pressure_linf
-        ));
+        verification.push_kv(
+            &format!("Error at t = {} s", crate::console::sci(tr.clock.time, 4)),
+            format!(
+                "velocity L2 {}, Linf {} (relative), pressure Linf {}",
+                crate::console::sci3(e.l2),
+                crate::console::sci3(e.linf),
+                crate::console::sci3(e.pressure_linf)
+            ),
+        );
     }
     let reference = case
         .verification
         .reference
         .map(|r| crate::case::compare_reference(&sol, mesh, geo, &loc, r, &case));
     if let Some(r) = &reference {
-        lg.line(&format!(
-            "      {}: largest deviation u {:.4}, v {:.4} (lid speeds)",
-            r.reference, r.u_max_dev, r.v_max_dev
-        ));
+        verification.push_kv(
+            &format!("Reference {}", r.reference),
+            format!(
+                "largest deviation u {:.4}, v {:.4}  (lid speeds)",
+                r.u_max_dev, r.v_max_dev
+            ),
+        );
         if last {
             crate::case::write_reference_svg(out, name, r)?;
         }
     }
-    let patches = patch_summaries(&sol, mesh, geo, &case);
-    let total: f64 = patches.iter().map(|p| p.mass_flow).sum();
+    let boundaries = boundary_summaries(&sol, mesh, geo, &case);
+    let total: f64 = boundaries.iter().map(|p| p.mass_flow).sum();
     let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);
-    let big = patches
+    let big = boundaries
         .iter()
         .map(|p| p.mass_flow.abs().max(case.rho() * umax * p.area))
         .fold(0.0f64, f64::max);
     let mass_imbalance = if big > 0.0 { total / big } else { 0.0 };
-    let coefficients = monitor::coefficients(&case, &patches);
+    let coefficients = monitor::coefficients(&case, &boundaries);
     if let Some([cd, cl]) = coefficients {
-        lg.line(&format!(
-            "      force coefficients C_D {cd:.5}, C_L {cl:.5}"
-        ));
+        verification.push_kv("Force coefficients", format!("C_D {cd:.5}, C_L {cl:.5}"));
     }
     // the chart of the coefficients shows the evaluation window of a periodic
     // benchmark (the impulsive start is orders of magnitude larger)
     let mut chart_start = f64::NEG_INFINITY;
     let benchmark = match bench {
-        Some(b @ Benchmark::SchaferTurek2d1) => {
-            benchmark_coefficients(&case, &patches, mesh).map(|[cd, cl]| {
+        Some(b @ Benchmark::SchaferTurek2d1) => benchmark_coefficients(&case, &boundaries, mesh)
+            .map(|[cd, cl]| {
                 let vals = probes.values(&sol, geo);
                 let (i, j) = (
                     probes.index("benchmark_front").unwrap_or(0),
                     probes.index("benchmark_back").unwrap_or(0),
                 );
                 monitor::steady_benchmark(b, cd, cl, vals[i].1 - vals[j].1)
-            })
-        }
+            }),
         Some(b @ Benchmark::SchaferTurek2d2) => {
             let start = case
                 .verification
@@ -1490,23 +1576,33 @@ fn run_one<F: FnMut(&str)>(
         None => None,
     };
     if let Some(b) = &benchmark {
-        log_benchmark(b, |l| lg.line(l));
+        log_benchmark(b, |l| verification.push_text(l.trim_start().to_string()));
     }
+    if !verification.is_empty() {
+        lg.frame(&verification);
+    }
+    lg.frame(&crate::logblocks::results(&boundaries));
     let run_balance = ledger.run();
-    lg.line(
-        balance::table(
-            &format!(
-                "      balance of the run, t = {:.6e} … {:.6e} s ({} steps, {} with negative numerical dissipation)",
+    lg.frame(&crate::logblocks::balance_block(
+        &format!(
+            "Balance of the run, t = {} to {} s ({} steps, {} with negative numerical dissipation)",
+            crate::console::sci(
                 run_balance.time.unwrap_or(0.0) - run_balance.duration.unwrap_or(0.0),
-                run_balance.time.unwrap_or(0.0),
-                ledger.steps,
-                ledger.negative_steps
+                4
             ),
-            &run_balance,
-            true,
-        )
-        .trim_end(),
-    );
+            crate::console::sci(run_balance.time.unwrap_or(0.0), 4),
+            ledger.steps,
+            ledger.negative_steps
+        ),
+        &run_balance,
+        true,
+    ));
+    lg.frame(&crate::logblocks::run_time(
+        &fl.timings,
+        nc,
+        nsteps,
+        "steps",
+    ));
     if steer.record.on() {
         let mut row = balance::record_row(&run_balance);
         if let Some(m) = row.as_object_mut() {
@@ -1526,7 +1622,7 @@ fn run_one<F: FnMut(&str)>(
             warnings.push(d);
             continue;
         }
-        lg.line(&format!("      warning {}: {}", d.code, d.message));
+        lg.warn(&format!("{}: {}", d.code, d.message));
         steer.event(d.code, steps_total, &d.message);
         warnings.push(d);
     }
@@ -1541,7 +1637,7 @@ fn run_one<F: FnMut(&str)>(
             geo,
             &sol,
             analytic_end.as_ref(),
-            &patches,
+            &boundaries,
             &loc,
             Some((tr.clock.step, Some(tr.clock.time))),
         )?;
@@ -1597,7 +1693,7 @@ fn run_one<F: FnMut(&str)>(
         amg_setups: fl.amg_setups,
         errors,
         reference,
-        patches,
+        boundaries,
         mass_imbalance,
         coefficients,
         transient: Some(TransientSummary {
@@ -1657,10 +1753,10 @@ pub(crate) fn steady_benchmark_of(
     mesh: &foehncraft_mesh::Mesh,
     geo: &foehncraft_mesh::Geometry,
     loc: &Locator,
-    patches: &[crate::case::PatchSummary],
+    boundaries: &[crate::case::BoundarySummary],
 ) -> Option<monitor::BenchmarkResult> {
     let b = case.verification.benchmark?;
-    let [cd, cl] = benchmark_coefficients(case, patches, mesh)?;
+    let [cd, cl] = benchmark_coefficients(case, boundaries, mesh)?;
     let probes = Probes::new(case, &benchmark_points(case, mesh), loc, geo);
     let vals = probes.values(sol, geo);
     let (i, j) = (
@@ -1683,16 +1779,16 @@ pub(crate) fn log_benchmark(b: &monitor::BenchmarkResult, mut line: impl FnMut(&
 
 fn benchmark_coefficients(
     case: &FlowCase,
-    patches: &[crate::case::PatchSummary],
+    boundaries: &[crate::case::BoundarySummary],
     mesh: &foehncraft_mesh::Mesh,
 ) -> Option<[f64; 2]> {
     let b = case.verification.benchmark?;
     let name = case
         .verification
-        .benchmark_patch
+        .benchmark_boundary
         .clone()
         .unwrap_or_else(|| "cylinder".into());
-    let p = patches.iter().find(|p| p.name == name)?;
+    let p = boundaries.iter().find(|p| p.name == name)?;
     let (lo, hi) = mesh.bounding_box();
     let depth = hi[2] - lo[2];
     let u = b.mean_velocity();

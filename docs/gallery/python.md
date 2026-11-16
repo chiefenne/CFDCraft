@@ -19,7 +19,7 @@ the viscosity gradient a from 0.5 to 16 1/m (`constants.a`, and
 `analytic.gradient` for the exact solution). The study writes a case file
 per variant (`v0000/v0000.toml` …), runs each in process, and collects
 the numbers of every run into `study.csv`: status, iterations, residuals,
-velocity errors, and per patch the mass flow, mean pressure and force.
+velocity errors, and per boundary the mass flow, mean pressure and force.
 The wall shear stress (force on the lower wall over its area) follows the
 exact τ = μ0 U a / ln(1 + a); on 32 × 16 cells it is 0.17 % low at
 a = 0.5 and 6.9 % low at a = 16, where the viscosity changes by a factor

@@ -12,6 +12,8 @@
 # second command writes the same file again from restart.h5 (derived.vtkhdf,
 # byte for byte equal to fields.vtkhdf).
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "poly"
 dimension = 2

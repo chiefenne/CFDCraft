@@ -30,7 +30,7 @@ files in the [case catalogue](../cases/poisson.md#poisson-studies-examplescasesp
 ### Iterations over the mesh size
 
 Problem: Γ = 1, φ = 1 + sin(πx + 0.5) cos(πy + 0.3) cos(πz/2 + 0.2) for the
-source and the fixed boundary values on all six patches, nodes perturbed by
+source and the fixed boundary values on all six boundaries, nodes perturbed by
 15 %. Each level is assembled once and solved from φ = 0 to
 ‖b − Aφ‖ ≤ 1e-10 ‖b‖. In-house AMG with the defaults (smoothed
 aggregation, θ = 0.04, Chebyshev degree 2, coarsest level ≤ 256

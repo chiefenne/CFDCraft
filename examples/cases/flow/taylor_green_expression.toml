@@ -10,6 +10,8 @@
 # of every step. The run must give the error of the analytic-profile run:
 # the relative L2 velocity error at t = 0.4 s below 2e-3.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2

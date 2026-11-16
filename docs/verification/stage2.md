@@ -27,7 +27,7 @@ in [gallery 8–9](../gallery/scalar-pressure.md#scalar-mms), the case files in 
 Manufactured solution φ = 1 + sin(πx + 0.5) cos(πy + 0.3) cos(πz/2 + 0.2)
 on the unit box (2D: without the z factor), u = (1, 0.6, 0.3) m/s
 (2D: (1, 0.6, 0)), ρ = 1 kg/m³, Γ = 0.2 kg/(m s), fixed values of the exact
-solution on all boundaries (2D: zero gradient on the two z patches). Nodes
+solution on all boundaries (2D: zero gradient on the two z boundaries). Nodes
 perturbed by 15 % of the local interval, a new random perturbation on every
 level. Linear upwind without a limiter, non-orthogonal correction on. Error:
 volume-weighted L2 norm of φ − φ_exact at the cell centroids; h = (V/N)^(1/3)

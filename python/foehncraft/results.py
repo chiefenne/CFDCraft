@@ -89,7 +89,7 @@ class Result:
 
     def value(self, key: str, solve: int = -1, default=None):
         """A value of a solve by dotted key, e.g. `"errors.l2"`,
-        `"benchmark.cd_max"`, `"patches.outlet.mass_flow"` (list entries
+        `"benchmark.cd_max"`, `"boundaries.outlet.mass_flow"` (list entries
         by their `name` or index)."""
         d: Any = self.solves[solve] if self.solves else {}
         for k in key.split("."):
@@ -118,7 +118,7 @@ class Result:
                     walk(v, f"{path}.{k}" if path else k)
             elif isinstance(d, list):
                 for i, v in enumerate(d):
-                    # entries with a name (patches) by their name
+                    # entries with a name (boundaries) by their name
                     key = v["name"] if isinstance(v, dict) and "name" in v else str(i)
                     walk(v, f"{path}.{key}")
             elif isinstance(d, (int, float)) and not isinstance(d, bool):
@@ -134,7 +134,7 @@ class Result:
     # -- tables
     def table(self, name: str) -> dict[str, list]:
         """A CSV table of the output (`residuals`, `forces`, `probes`,
-        `balance`, `patches`, `line_<name>`, `wall_<patch>`, or a file
+        `balance`, `boundaries`, `line_<name>`, `wall_<boundary>`, or a file
         name), as columns; numbers become floats, comment lines (`#`) are
         skipped."""
         p = self.out / (name if name.endswith(".csv") else f"{name}.csv")
@@ -152,7 +152,7 @@ class Result:
     # -- fields
     def fields(self, file: str = "fields.vtkhdf", block: str = "internal") -> dict:
         """The cell fields of a VTKHDF file of the run as NumPy arrays
-        (needs h5py): `block` is `internal` (the cells) or a patch name
+        (needs h5py): `block` is `internal` (the cells) or a boundary name
         (its faces). Adds `points`, the node coordinates."""
         return read_vtkhdf(self.out / file, block)
 

@@ -15,7 +15,7 @@ def save(name, binary):
 
 
 def box_tet():
-    """Unit box, tetrahedra, six named patches, one fluid zone."""
+    """Unit box, tetrahedra, six named boundaries, one fluid zone."""
     gmsh.model.add("box_tet")
     v = gmsh.model.occ.addBox(0, 0, 0, 1, 1, 1)
     gmsh.model.occ.synchronize()
@@ -66,7 +66,7 @@ def channel_mixed():
 
 def pyramid_block():
     """A hexahedral block next to a tetrahedral block, joined by pyramids
-    (Gmsh's transition), all patches unnamed (no physical surfaces)."""
+    (Gmsh's transition), all boundaries unnamed (no physical surfaces)."""
     gmsh.model.add("pyramids")
     a = gmsh.model.occ.addBox(0, 0, 0, 1, 1, 1)
     b = gmsh.model.occ.addBox(1, 0, 0, 1, 1, 1)

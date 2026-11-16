@@ -689,7 +689,7 @@ impl Transient {
             // the central correction reads cell velocities, not gradients:
             // extrapolate them as well, u* = (1 + ω)uⁿ − ωuⁿ⁻¹, into the
             // corrector scratch (free until the correctors)
-            let central = k == 1 && extrapolate && s.scheme == Scheme::Central;
+            let central = k == 1 && extrapolate && s.momentum.scheme == Scheme::Central;
             if central {
                 for ((d, a), b) in l
                     .delta

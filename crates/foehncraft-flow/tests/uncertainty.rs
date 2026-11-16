@@ -32,7 +32,7 @@ fn wall_shear_of_a_level_sweep() {
     let e = rep
         .uncertainty
         .iter()
-        .find(|e| e.quantity == "patches.ymin.force_x")
+        .find(|e| e.quantity == "boundaries.ymin.force_x")
         .expect("the lower-wall force is monitored");
     assert_eq!(e.verdict, Verdict::Monotonic);
     let p = e.order.unwrap();

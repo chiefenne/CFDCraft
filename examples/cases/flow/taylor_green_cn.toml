@@ -12,6 +12,8 @@
 # 1.8–2.3 (D28 acceptance). The first step is BDF1: a Crank–Nicolson start
 # leaves an error of first order (docs/verification/stage5.md).
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2

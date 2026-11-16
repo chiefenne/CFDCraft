@@ -1,9 +1,11 @@
 # tet 2D mesh: one cell layer thick in z (D3), clustered towards the
 # walls y = 0 and y = 1 and towards x = 0, nodes perturbed in x and y.
-# The patches zmin and zmax take the symmetry condition in a 2D case.
+# The boundaries zmin and zmax take the symmetry condition in a 2D case.
 # Gallery example 5.
 #
 #   foehn mesh examples/cases/mesh/tet_2d.toml
+
+case_format = "0.6"
 
 [mesh.generate]
 type = "tet"
@@ -16,7 +18,7 @@ grading.y = { ratio = 4.0, symmetric = true }   # middle / wall interval
 perturb = 0.1
 seed = 2026
 
-[mesh.patches]          # rename the generator's patches
+[mesh.boundaries]          # rename the generator's boundaries
 xmin = "inlet"
 xmax = "outlet"
 ymin = "bottom"

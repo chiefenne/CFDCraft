@@ -20,7 +20,7 @@
 //! mapping of [`crate::generate::Grading`], so the refined meshes are
 //! nested in the radial and wake directions).
 //!
-//! Patches: `inlet` (x = 0), `outlet` (x = length), `walls` (y = 0 and
+//! Boundaries: `inlet` (x = 0), `outlet` (x = length), `walls` (y = 0 and
 //! y = height), `cylinder`, `zmin`, `zmax`.
 
 use crate::builder::{BoundaryFace, CellSoup};
@@ -28,8 +28,8 @@ use crate::generate::{Grading, hex_faces};
 use crate::mesh::Mesh;
 use serde::{Deserialize, Serialize};
 
-/// Patch names of the cylinder mesh.
-pub const CYLINDER_PATCHES: [&str; 6] = ["inlet", "outlet", "walls", "cylinder", "zmin", "zmax"];
+/// Boundary names of the cylinder mesh.
+pub const CYLINDER_BOUNDARIES: [&str; 6] = ["inlet", "outlet", "walls", "cylinder", "zmin", "zmax"];
 
 /// Specification of a channel with a cylinder (`[mesh.cylinder]`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -231,7 +231,7 @@ impl CylinderSpec {
         }
         let tol = 1e-9 * h;
         let (depth, diameter) = (self.depth, self.diameter);
-        soup.finish(&CYLINDER_PATCHES, move |b: BoundaryFace| {
+        soup.finish(&CYLINDER_BOUNDARIES, move |b: BoundaryFace| {
             let c = b.centroid;
             let name = if b.normal[2].abs() > 0.5 {
                 if c[2] < 0.5 * depth { "zmin" } else { "zmax" }
@@ -277,7 +277,7 @@ mod tests {
     use crate::Geometry;
 
     #[test]
-    fn volume_and_patches() {
+    fn volume_and_boundaries() {
         let s = CylinderSpec {
             n: 8,
             radial: 6,
@@ -295,13 +295,13 @@ mod tests {
         let hole = 0.5 * na * r * r * (std::f64::consts::TAU / na).sin();
         let exact = (2.2 * 0.41 - hole) * 0.01;
         assert!((vol - exact).abs() < 1e-12 * exact, "{vol} {exact}");
-        let names: Vec<&str> = m.patches.iter().map(|p| p.name.as_str()).collect();
-        for p in CYLINDER_PATCHES {
+        let names: Vec<&str> = m.boundaries.iter().map(|p| p.name.as_str()).collect();
+        for p in CYLINDER_BOUNDARIES {
             assert!(names.contains(&p), "{p} missing in {names:?}");
         }
-        let cyl = m.patches.iter().find(|p| p.name == "cylinder").unwrap();
+        let cyl = m.boundaries.iter().find(|p| p.name == "cylinder").unwrap();
         assert_eq!(cyl.len, 32);
-        let inlet = m.patches.iter().find(|p| p.name == "inlet").unwrap();
+        let inlet = m.boundaries.iter().find(|p| p.name == "inlet").unwrap();
         assert_eq!(inlet.len, 8);
     }
 }

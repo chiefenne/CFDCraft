@@ -4,6 +4,8 @@
 #
 #   foehn mesh examples/cases/mesh/poly_partition.toml
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "poly"          # hex | tet | poly | mixed
 dimension = 3          # 2: one cell layer thick in z (D3)

@@ -48,7 +48,7 @@ type = "wedge"
 ```
 
 The axis needs no condition: the cells next to it have an edge there.
-With `lower[1] > 0` the mesh is an annulus and `ymin` stays a patch. A
+With `lower[1] > 0` the mesh is an annulus and `ymin` stays a boundary. A
 wedge of θ is a slice of a polygonal pipe of 360°/θ sides; the difference
 from the axisymmetric result is about θ²/8, so 2–5° suit applications and
 a grid-convergence study takes 0.5–1°.

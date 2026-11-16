@@ -14,7 +14,7 @@
 //! diffusivity = 0.2
 //! velocity = [1.0, 0.6, 0.3]
 //! manufactured = {}            # source and boundary values of the MMS
-//! [problem.boundary.xmin]      # one table per patch (required)
+//! [problem.boundary.xmin]      # one table per boundary (required)
 //! type = "fixed-value"         # fixed-value, fixed-gradient, zero-gradient
 //! profile = "manufactured"     # constant (value), step, linear, manufactured
 //! [solver]                     # crate::solver::Settings
@@ -50,6 +50,8 @@ use std::time::Instant;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct ScalarCase {
+    /// Format of the case file (`case_format`).
+    pub case_format: Option<String>,
     /// The mesh.
     pub mesh: MeshSection,
     /// The problem.
@@ -162,8 +164,9 @@ impl ScalarCase {
     pub fn from_file(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let mut c: Self =
-            toml::from_str(&text).with_context(|| format!("in case file {}", path.display()))?;
+        let (mut c, _notes): (Self, _) = foehncraft_mesh::case_format::read(&text)
+            .with_context(|| format!("in case file {}", path.display()))?;
+        c.case_format = Some(foehncraft_mesh::case_format::CURRENT.into());
         let dir = path.parent().unwrap_or(Path::new("."));
         if let Some(f) = &c.mesh.file {
             c.mesh.file = Some(dir.join(f));

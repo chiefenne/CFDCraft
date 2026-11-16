@@ -210,12 +210,12 @@ impl Discretisation {
         // boundary kinds and values per boundary face
         let mut kind = vec![BoundaryKind::ZeroGradient; nb];
         let mut value = vec![0.0; nb];
-        for p in &mesh.patches {
+        for p in &mesh.boundaries {
             let Some(bc) = problem.boundary.get(&p.name) else {
                 bail!(
-                    "no boundary condition for patch `{}` (patches: {})",
+                    "no boundary condition for boundary `{}` (boundaries: {})",
                     p.name,
-                    mesh.patches
+                    mesh.boundaries
                         .iter()
                         .map(|p| p.name.as_str())
                         .collect::<Vec<_>>()
@@ -230,8 +230,8 @@ impl Discretisation {
         }
         for name in problem.boundary.keys() {
             ensure!(
-                mesh.patch(name).is_some(),
-                "boundary condition for `{name}`, but the mesh has no such patch"
+                mesh.boundary(name).is_some(),
+                "boundary condition for `{name}`, but the mesh has no such boundary"
             );
         }
 

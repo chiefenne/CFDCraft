@@ -8,6 +8,8 @@
 # cells); the run fails if the observed order of the velocity error on the
 # finest pair is outside 1.8–2.2 (D27 acceptance).
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "mixed"
 dimension = 2
@@ -37,9 +39,11 @@ type = "symmetry"
 type = "symmetry"
 
 [solver]
-relaxation_velocity = 0.9
 tolerance = 1e-9
 max_iterations = 5000
+
+[solver.momentum]
+relaxation = 0.9
 
 [analytic]
 type = "poiseuille"
