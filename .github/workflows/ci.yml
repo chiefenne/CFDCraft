@@ -151,15 +151,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ needs.plan.outputs.profile }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          # build-ci is written by warm-ci-cache on main, build-release here
+          shared-key: build-${{ needs.plan.outputs.profile }}
+          save-if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.profile == 'release' }}
       # debug build: debug assertions and overflow checks (full tier only;
       # the PR gate relies on the optimised run below)
       - if: needs.plan.outputs.full == 'true'
         run: cargo test --workspace --locked
       - run: cargo test --workspace --locked --profile "$BUILD_PROFILE"
-      - name: Slow tests (marked #[ignore]; nightly only)
-        if: github.event_name == 'schedule'
+      - name: Slow tests (marked #[ignore]; nightly and manual runs)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: cargo test --workspace --locked --profile "$BUILD_PROFILE" -- --ignored
       - name: G1 smoke run (CPU backends, results bitwise equal)
         run: cargo run --locked --profile "$BUILD_PROFILE" -p foehncraft-cli -- bench g1 examples/cases/bench/g1_ci_small.toml
@@ -195,9 +196,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          # all shards of one OS share one cache entry (same binary)
-          shared-key: cases-${{ needs.plan.outputs.profile }}
-          save-if: ${{ github.ref == 'refs/heads/main' && matrix.set != 'long' }}
+          # the dependencies of the test job's cache (same profile, same OS)
+          shared-key: build-${{ needs.plan.outputs.profile }}
+          save-if: false
       - run: cargo build --locked --profile "$BUILD_PROFILE" -p foehncraft-cli
       - name: Run the cases of set ${{ matrix.set }}
         shell: bash
@@ -238,7 +239,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       HYPRE_DIR: ${{ github.workspace }}/hypre-install
-      BUILD_PROFILE: ${{ needs.plan.outputs.profile }}
+      # always the ci profile: hypre is a reference comparison, not the
+      # shipped build, and so main writes the cache that pull requests read
+      BUILD_PROFILE: ci
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -246,7 +249,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ needs.plan.outputs.profile }}
+          key: ci
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Cache the hypre build
         id: hypre-cache
@@ -333,12 +336,35 @@ jobs:
           path: target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx
 
   # ---------------------------------------------------------------------
+  # Main itself builds with `release`, so nothing else would write the
+  # `ci`-profile cache that pull requests read. This job compiles the
+  # dependencies in the `ci` profile on every OS and saves them; pull
+  # requests then compile only the workspace crates. Main only; no tests.
+  warm-ci-cache:
+    name: Warm the PR build cache (${{ matrix.os }})
+    needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.plan.outputs.code == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: build-ci
+      - run: cargo test --workspace --locked --profile ci --no-run
+      - run: cargo build --locked --profile ci -p foehncraft-cli
+
+  # ---------------------------------------------------------------------
   # The single required check. Green when every job above passed or was
   # skipped on purpose (docs-only PR); red when any failed or was cancelled.
   ci-ok:
     name: CI OK
     if: always()
-    needs: [plan, lint, msrv, test, cases, hypre, mpi, ptx]
+    needs: [plan, lint, msrv, test, cases, hypre, mpi, ptx, warm-ci-cache]
     runs-on: ubuntu-latest
     steps:
       - name: All jobs passed or were skipped

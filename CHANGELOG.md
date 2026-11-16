@@ -15,7 +15,8 @@ bitwise equal), the case catalogue split over parallel jobs
 volumes of field files (11.5 minutes to seconds). Push to main, a nightly run
 at 02:07 Vienna time and pull requests with the label `full-ci` run the full
 tier: `release` profile, debug tests, every case including the cylinder at
-Re 100, and the slow tests. One summary check, "CI OK".
+Re 100, and the slow tests. One summary check, "CI OK". Main warms the `ci`-profile cache that pull
+requests read (without it every PR compiled its dependencies from scratch).
 
 **Run contract for scripts and agents (stage 5, part 4a).** `foehn flow`
 can be driven by a program: `--set key=value` overrides (TOML values),
