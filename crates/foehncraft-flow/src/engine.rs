@@ -1543,7 +1543,7 @@ fn closing_frame(
             first_error.map_or(String::new(), |d| d.code.to_string())
         ),
     };
-    let mut f = crate::console::Frame::new(title);
+    let mut f = crate::console::Frame::new(title).summary();
     if let (Status::Error, Some(d)) = (s.status, first_error) {
         f.push_kv("Reason", &d.message);
     }

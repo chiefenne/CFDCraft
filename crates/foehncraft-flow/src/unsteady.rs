@@ -1278,6 +1278,24 @@ fn run_one<F: FnMut(&str)>(
                 geo,
             );
             let cells: Vec<String> = entries.iter().map(|e| e.text.clone()).collect();
+            // the box of the time step, then the table row
+            lg.line("");
+            let tb = crate::console::Frame::new(format!(
+                "{n:>7}. TIME STEP     TIME = {}     DT = {}",
+                crate::console::sci(rp.time, 5),
+                crate::console::sci(h, 5)
+            ))
+            .plain()
+            .text(format!(
+                "{}COURANT NUMBER = {:.3}     OUTER ITERATIONS = {}",
+                " ".repeat(9),
+                rp.cfl,
+                rp.outer
+            ));
+            for l in tb.render(case.log.style) {
+                lg.line(&l);
+            }
+            lg.line("");
             for l in table.row(n, &cells) {
                 lg.line(&l);
             }
@@ -1453,7 +1471,7 @@ fn run_one<F: FnMut(&str)>(
     let secs = ts.elapsed().as_secs_f64();
     let steps_total = tr.clock.step;
     {
-        let mut f = crate::console::Frame::new("Time stepping").kv(
+        let mut f = crate::console::Frame::new("Time stepping").summary().kv(
             "Status",
             format!(
                 "{} {nsteps} steps to t = {} s",
@@ -1496,7 +1514,7 @@ fn run_one<F: FnMut(&str)>(
     };
     let analytic_end = case.analytic_at(tr.clock.time);
     let errors = analytic_end.map(|a| error_norms(&sol, mesh, geo, &a, dimension(&case)));
-    let mut verification = crate::console::Frame::new("Verification");
+    let mut verification = crate::console::Frame::new("Verification").summary();
     if let Some(e) = &errors {
         verification.push_kv(
             &format!("Error at t = {} s", crate::console::sci(tr.clock.time, 4)),

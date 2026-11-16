@@ -180,46 +180,74 @@ python3 -m tools.plot.energy_budget_chart energy_budget.svg
 <a id="log"></a>
 ## 27. A log that can be circulated
 
-Part of what a run says about itself (D125): the log shows what the case file set, so a log mailed on its own is enough to see the run. The log opens with the name of the code in slanted block letters; every block is framed by asterisk rules (80 columns, no colour); the console and `flow.log` are identical. Excerpt of the transient cavity (Re 100, 64 x 64, BDF2), blocks between the banner and the table left out:
+Part of what a run says about itself (D125): the log shows what the case file set, so a log mailed on its own is enough to see the run. The log opens with the name of the code in block letters with depth; every block is a box of asterisks as wide as its content, centred on the page (no colour, no fixed width: the banner is 141 columns, the other blocks fit their text); the console and `flow.log` are identical. Excerpt of the transient cavity (Re 100, 64 x 64, BDF2), blocks between the banner and the table, most time steps and the lower summaries left out:
 
 ```
-********************************************************************************
-           _____                 _                                     ___   _
-         /::___/               /:/                                   /::_/ /:/
-        /:/    _____   _____  /:/___   _____   _____   ___   _____  /:/_  /:/_
-       /:/_  /::_::/ /::_::/ /::_::/ /::_::/ /::___/ /::_/ /___::/ /::_/ /::_/
-      /::_/ /:/ /:/ /:/_/:/ /:/ /:/ /:/ /:/ /:/     /:/    ___/:/ /:/   /:/
-     /:/   /:/ /:/ /::___/ /:/ /:/ /:/ /:/ /:/     /:/   /::_::/ /:/   /:/
-    /:/   /:/_/:/ /:/___  /:/ /:/ /:/ /:/ /:/___  /:/   /:/_/:/ /:/   /:/_
-   /_/   /_____/ /_____/ /_/ /_/ /_/ /_/ /_____/ /_/   /_____/ /_/   /___/
+*********************************************************************************************************************************************
+*                                                                                                                                           *
+*                  __________                          ____                                                             _______      ____   *
+*                /::::::::/ /                        /::/ /                                                           /:::::/ /    /::/ /   *
+*               /:::_____/_/                        /::/ /                                                           /:::__/_/    /::/ /    *
+*              /::/ /                              /::/ /                                                           /::/ /       /::/ /     *
+*             /::/ /     __________   __________  /::/_______   __________   __________   _______   __________   __/::/____   __/::/____    *
+*            /::/ /    /::::::::/ / /::::::::/ / /::::::::/ / /::::::::/ / /::::::::/ / /:::::/ / /::::::::/ / /::::::::/ / /::::::::/ /    *
+*           /::/____  /:::__:::/ / /:::__:::/ / /:::__:::/ / /:::__:::/ / /:::_____/_/ /:::__/_/ /_____:::/ / /__::::__/_/ /__::::__/_/     *
+*          /:::::/ / /::/ //::/ / /::/ //::/ / /::/ //::/ / /::/ //::/ / /::/ /       /::/ /          /::/ /    /::/ /       /::/ /         *
+*         /:::__/_/ /::/ //::/ / /::/__/::/ / /::/ //::/ / /::/ //::/ / /::/ /       /::/ /     _____/::/ /    /::/ /       /::/ /          *
+*        /::/ /    /::/ //::/ / /::::::::/ / /::/ //::/ / /::/ //::/ / /::/ /       /::/ /    /::::::::/ /    /::/ /       /::/ /           *
+*       /::/ /    /::/ //::/ / /:::_____/_/ /::/ //::/ / /::/ //::/ / /::/ /       /::/ /    /:::__:::/ /    /::/ /       /::/ /            *
+*      /::/ /    /::/ //::/ / /::/ /       /::/ //::/ / /::/ //::/ / /::/ /       /::/ /    /::/ //::/ /    /::/ /       /::/ /             *
+*     /::/ /    /::/__/::/ / /::/_______  /::/ //::/ / /::/ //::/ / /::/_______  /::/ /    /::/__/::/ /    /::/ /       /::/____            *
+*    /::/ /    /::::::::/ / /::::::::/ / /::/ //::/ / /::/ //::/ / /::::::::/ / /::/ /    /::::::::/ /    /::/ /       /:::::/ /            *
+*   /__/_/    /________/_/ /________/_/ /__/_//__/_/ /__/_//__/_/ /________/_/ /__/_/    /________/_/    /__/_/       /_____/_/             *
+*                                                                                                                                           *
+*********************************************************************************************************************************************
+*   Version                            0.5.0  (build ae35d5c-dirty)                                                                         *
+*   Date and time                      2026-11-16 21:43:19 UTC                                                                              *
+*   Host name                          vm                                                                                                   *
+*   Platform                           linux-x86_64, Intel(R) Xeon(R) Processor @ 2.10GHz                                                   *
+*   Features                           hdf5, metis                                                                                          *
+*   Threads / backend                  4 / cpu                                                                                              *
+*********************************************************************************************************************************************
 
-  Version                       0.5.0  (build a1b2c3d)
-  Date and time                 2026-11-16 12:00:00 UTC
-  Host name                     vm
-  Platform                      linux-x86_64, Intel(R) Xeon(R) Processor @
-                                2.10GHz
-  Features                      hdf5, metis
-  Threads / backend             4 / cpu
   ...
-********************************************************************************
-  Time steps (PISO, BDF2)
+
+                                   **********************************************************************
+                                   *         1. TIME STEP     TIME = 1.00000E-01     DT = 1.00000E-01   *
+                                   *            COURANT NUMBER = 4.645     OUTER ITERATIONS = 1         *
+                                   **********************************************************************
 
          -- time ------------------- -- scaled residuals ----------------- -- solvers --
     Step    Time [s]   Dt [s] Cour.       ResU     ResV     ResW     ResM   Outer    CG 
        1  1.0000E-01 1.00E-01 4.645   1.00E+00 0.00E+00 0.00E+00 6.33E-02       1    22
-      50  5.0000E+00 1.00E-01 6.089   1.03E-04 9.33E-05 0.00E+00 1.20E-05       1    22
-  ...
-********************************************************************************
-  Run finished: every check passed
-  Exit code                     0
-  Elapsed time                  0:00:25
-  Results in                    output/cavity_re100_transient
-  Report                        flow.md, result.json
-********************************************************************************
+      balance  mass +0.00e0  kinetic energy: dK/dt +9.006e-4 W, boundary +1.332e-2 W, dissipation 1.217e-2 W, numerical +2.505e-4 W (+1.9e-2)
 
+  ...
+
+                       **********************************************************************************************
+                       *                                                                                            *
+                       *   Time stepping:                                                                           *
+                       *                                                                                            *
+                       *   Status                             DONE: 500 steps to t = 5.00000E+01 s                  *
+                       *   Time step                          1.000E-01 to 1.000E-01 s                              *
+                       *   Largest Courant number             6.095                                                 *
+                       *   Solve time                         21.74 s  (setup 0.02 s, 10618 ns per cell and step)   *
+                       *                                                                                            *
+                       **********************************************************************************************
+
+          ************************************************************************************************************************
+          *                                                                                                                      *
+          *   Run finished: every check passed                                                                                   *
+          *                                                                                                                      *
+          *   Exit code                          0                                                                               *
+          *   Elapsed time                       0:00:22                                                                         *
+          *   Results in                         /tmp/claude-0/-home-user/8486083e-90f2-5e7f-b60b-e659997a40c3/scratchpad/run5   *
+          *   Report                             flow.md, result.json                                                            *
+          *                                                                                                                      *
+          ************************************************************************************************************************
 ```
 
-Before the table, the log lists the input and output files, the run control, the mesh information with its quality, the fluid properties, the solution settings as a matrix per equation and the boundary conditions with their values. After it come the summaries: convergence or time stepping, verification, results per boundary, the ledger, the run time and the warnings. Messages are tagged `[I]`, `[W]` or `[E]`; a failed run ends with `Run FAILED: <code>`, the reason and the exit code. `[log] style = "box"` draws the frames with box characters.
+Before the table, the log lists the input and output files, the run control, the mesh information with its quality, the fluid properties, the solution settings as a matrix per equation and the boundary conditions with their values. After it come the summaries: convergence or time stepping, verification, results per boundary, the ledger, the run time and the warnings. Each time step that is logged starts with a box (step, time, time step, Courant number, outer iterations), the summaries are boxes with a heading, blank rows and dashed rules. Messages read ` %FOEHN-I-CASE, text` (`I`, `W` or `E`, then the capitalised name of the source file that writes the message), so `%FOEHN` finds them in the log and in the code; a failed run ends with `Run FAILED: <code>`, the reason and the exit code. `[log] style = "box"` draws the boxes with box characters.
 
 | | |
 |---|---|

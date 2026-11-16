@@ -8,18 +8,25 @@
 //! steps are a table with a header row, and the end of the run is a
 //! summary, the warnings and a closing frame with the exit code.
 //!
-//! The frames are 80 columns wide. [`Style::Asterisk`] (the default) draws
-//! horizontal rules of asterisks only; [`Style::Box`] draws light box
-//! lines. Nothing here changes a result: only text is produced.
+//! Every frame is a box as wide as its widest line, centred on a page as
+//! wide as the banner. [`Style::Asterisk`] (the default) draws the box
+//! with asterisks; [`Style::Box`] draws light box lines. Nothing here changes a result: only text is produced.
 
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-/// Width of the frames and rules.
-pub const WIDTH: usize = 80;
+/// Width of the page on which the frames are centred: the widest frame,
+/// the banner with the name of the code.
+pub const PAGE: usize = 141;
+
+/// Spaces between the side of a frame and its text.
+const PAD: usize = 3;
 
 /// Width of the label column of a frame.
-const LABEL: usize = 30;
+const LABEL: usize = 35;
+
+/// Longest value on one line of a frame; a longer one is wrapped.
+const VALUE: usize = 60;
 
 /// How frames and rules are drawn (`[log] style`).
 #[derive(
@@ -27,8 +34,7 @@ const LABEL: usize = 30;
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Style {
-    /// Rules of asterisks above and below the title and the block; no
-    /// vertical lines.
+    /// A box of asterisks.
     #[default]
     Asterisk,
     /// Light box lines (`┌─┐│└┘`).
@@ -112,6 +118,11 @@ pub struct Frame {
     title: String,
     /// Lines drawn, centred, in place of the title line (the banner).
     art: Vec<String>,
+    /// A summary box: blank rows above and below, the title as a heading
+    /// with a colon, dashed rules.
+    summary: bool,
+    /// No rule between the title lines and the rows.
+    plain: bool,
     rows: Vec<Row>,
 }
 
@@ -121,34 +132,43 @@ impl Frame {
         Self {
             title: title.into(),
             art: Vec::new(),
+            summary: false,
+            plain: false,
             rows: Vec::new(),
         }
     }
 
-    /// Draws `art`, centred and followed by a blank line, in place of the
-    /// title line; the title stays the name of the frame in the run record.
+    /// Draws the frame as a summary: blank rows above and below, the
+    /// title as a heading with a colon and dashed rules between groups.
+    #[must_use]
+    pub fn summary(mut self) -> Self {
+        self.summary = true;
+        self
+    }
+
+    /// Draws the frame without the rule between the title and the rows
+    /// (the box of a time step).
+    #[must_use]
+    pub fn plain(mut self) -> Self {
+        self.plain = true;
+        self
+    }
+
+    /// Draws `art`, centred between blank lines, in place of the title
+    /// line; the title stays the name of the frame in the run record.
     #[must_use]
     pub fn art(mut self, art: &[&str]) -> Self {
         self.art = art.iter().map(|l| l.trim_end().to_string()).collect();
         self
     }
 
-    /// The title line, or the centred art and a blank line.
-    fn heading(&self) -> Vec<String> {
-        if self.art.is_empty() {
-            return vec![self.title.clone()];
+    /// The title as printed: a summary heading ends with a colon.
+    fn heading_text(&self) -> String {
+        if self.summary && !self.title.contains(':') {
+            format!("{}:", self.title)
+        } else {
+            self.title.clone()
         }
-        let inner = WIDTH - 4;
-        let w = self
-            .art
-            .iter()
-            .map(|l| l.chars().count())
-            .max()
-            .unwrap_or(0);
-        let pad = " ".repeat(inner.saturating_sub(w) / 2);
-        let mut out: Vec<String> = self.art.iter().map(|l| format!("{pad}{l}")).collect();
-        out.push(String::new());
-        out
     }
 
     /// A label and a value.
@@ -227,8 +247,7 @@ impl Frame {
         match r {
             Row::Kv(k, v) => {
                 let mut out = Vec::new();
-                let wrapped: Vec<String> =
-                    v.lines().flat_map(|l| wrap(l, WIDTH - 4 - LABEL)).collect();
+                let wrapped: Vec<String> = v.lines().flat_map(|l| wrap(l, VALUE)).collect();
                 let mut lines = wrapped.iter().map(String::as_str);
                 let first = lines.next().unwrap_or("");
                 if k.chars().count() >= LABEL {
@@ -248,63 +267,90 @@ impl Frame {
         }
     }
 
-    /// The lines of the frame, without the blank line before it.
+    /// The lines of the frame, without the blank line before it: a box of
+    /// the width of its widest line, centred on the page.
     pub fn render(&self, style: Style) -> Vec<String> {
-        let mut out = Vec::new();
-        let inner = WIDTH - 4;
         let rows: Vec<Option<String>> = self.rows.iter().flat_map(|r| self.body(r)).collect();
-        match style {
+        let art_w = self
+            .art
+            .iter()
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(0);
+        let inner = rows
+            .iter()
+            .flatten()
+            .map(|l| l.chars().count())
+            .chain([art_w])
+            .chain(
+                self.art
+                    .is_empty()
+                    .then(|| self.heading_text().chars().count()),
+            )
+            .max()
+            .unwrap_or(0);
+        let (sep, top, bottom, side) = match style {
             Style::Asterisk => {
-                let rule = "*".repeat(WIDTH);
-                out.push(rule.clone());
-                for h in self.heading() {
-                    let l = format!("  {h}");
-                    out.push(if self.art.is_empty() {
-                        l
-                    } else {
-                        l.trim_end().to_string()
-                    });
-                }
-                if rows.is_empty() {
-                    return out;
-                }
-                for r in rows {
-                    match r {
-                        Some(l) => out.push(format!("  {l}")),
-                        None => out.push(format!("  {}", "-".repeat(inner))),
-                    }
-                }
-                out.push(rule);
+                let r = "*".repeat(inner + 2 * PAD + 2);
+                (r.clone(), r.clone(), r, '*')
             }
             Style::Box => {
-                let bar = "─".repeat(WIDTH - 2);
-                let row = |l: &str| {
-                    let n = l.chars().count();
-                    format!("│  {l}{}│", " ".repeat((WIDTH - 4).saturating_sub(n)))
-                };
-                out.push(format!("┌{bar}┐"));
-                let heading = self.heading();
-                for h in &heading {
-                    out.push(row(h));
-                }
-                if rows.is_empty() {
-                    for _ in &heading {
-                        out.pop();
-                    }
-                    out.push(format!("└{bar}┘"));
-                    return out;
-                }
-                out.push(format!("├{bar}┤"));
-                for r in rows {
-                    match r {
-                        Some(l) => out.push(row(&l)),
-                        None => out.push(format!("├{bar}┤")),
-                    }
-                }
-                out.push(format!("└{bar}┘"));
+                let bar = "─".repeat(inner + 2 * PAD);
+                (
+                    format!("├{bar}┤"),
+                    format!("┌{bar}┐"),
+                    format!("└{bar}┘"),
+                    '│',
+                )
             }
+        };
+        let pad = " ".repeat(PAD);
+        let line = |l: &str| {
+            let n = l.chars().count();
+            format!("{side}{pad}{l}{}{pad}{side}", " ".repeat(inner - n))
+        };
+        let mut out = vec![top];
+        let dashes = match style {
+            Style::Asterisk => format!(" {} {side}", "-".repeat(inner + 2 * PAD - 2)),
+            Style::Box => sep.clone(),
+        };
+        if self.art.is_empty() {
+            if self.summary {
+                out.push(line(""));
+                out.push(line(&self.heading_text()));
+                out.push(line(""));
+            } else {
+                out.push(line(&self.title));
+            }
+        } else {
+            let left = " ".repeat((inner - art_w) / 2);
+            out.push(line(""));
+            for a in &self.art {
+                out.push(line(&format!("{left}{a}")));
+            }
+            out.push(line(""));
         }
-        out
+        if !rows.is_empty() {
+            if !self.summary && !self.plain {
+                out.push(sep.clone());
+            }
+            for r in rows {
+                match r {
+                    Some(l) => out.push(line(&l)),
+                    None if self.summary => out.push(dashes.clone()),
+                    None => out.push(sep.clone()),
+                }
+            }
+            if self.summary {
+                out.push(line(""));
+            }
+        } else if self.summary {
+            out.push(line(""));
+        }
+        out.push(bottom);
+        let width = inner + 2 * PAD + 2;
+        let indent = " ".repeat(PAGE.saturating_sub(width) / 2);
+        out.into_iter().map(|l| format!("{indent}{l}")).collect()
     }
 }
 
@@ -468,14 +514,21 @@ pub fn wrap(text: &str, width: usize) -> Vec<String> {
     out
 }
 
-/// A severity tag in front of a message line: ` [I] `, ` [W] `, ` [E] `.
+/// A message line ` %FOEHN-I-CASE, text`: the severity (`I`, `W`, `E`) and
+/// the name of the source file that writes the message, in capitals. The
+/// file is the caller's, so each module tags its own messages.
+#[track_caller]
 pub fn tagged(severity: &str, msg: &str) -> String {
     let t = match severity {
-        "error" => "[E]",
-        "warning" => "[W]",
-        _ => "[I]",
+        "error" => 'E',
+        "warning" => 'W',
+        _ => 'I',
     };
-    format!(" {t} {msg}")
+    let file = std::panic::Location::caller().file();
+    let name = std::path::Path::new(file)
+        .file_stem()
+        .map_or(String::new(), |s| s.to_string_lossy().to_uppercase());
+    format!(" %FOEHN-{t}-{name}, {msg}")
 }
 
 /// A date and time `2026-11-16 17:02:11 UTC` from the ISO form.
@@ -553,38 +606,35 @@ mod tests {
     }
 
     #[test]
-    fn art_replaces_the_title_line_and_fits_the_frame() {
+    fn art_replaces_the_title_line_and_fits_the_page() {
         let f = Frame::new("Foehncraft")
             .art(&crate::logblocks::BANNER_ART)
             .kv("Version", "0.5.0");
         assert_eq!(f.title(), "Foehncraft");
         for s in [Style::Asterisk, Style::Box] {
             let l = f.render(s);
-            assert!(l.iter().all(|x| x.chars().count() <= WIDTH), "{l:?}");
+            assert!(l.iter().all(|x| x.chars().count() == PAGE), "{l:?}");
             assert!(!l.iter().any(|x| x.contains("Foehncraft")), "{l:?}");
-            assert!(l.iter().any(|x| x.contains("/::_::/")), "{l:?}");
+            assert!(l.iter().any(|x| x.contains("/::::::::/")), "{l:?}");
         }
-        let l = f.render(Style::Asterisk);
-        assert!(l[9].is_empty() && l[10].starts_with("  Version"), "{l:?}");
     }
 
     #[test]
-    fn frames_have_the_width_of_the_page() {
+    fn frames_are_boxes_centred_on_the_page() {
         let f = Frame::new("Fluid properties")
             .kv("Density", "1.000E+00 [kg/m3]")
             .rule()
             .text("free text");
         for s in [Style::Asterisk, Style::Box] {
             let l = f.render(s);
-            assert!(l.iter().all(|x| x.chars().count() <= WIDTH), "{l:?}");
-            assert!(l[0].chars().count() == WIDTH);
+            let w = l[0].chars().count();
+            assert!(l.iter().all(|x| x.chars().count() == w), "{l:?}");
+            let indent = l[0].len() - l[0].trim_start().len();
+            assert_eq!(indent, (PAGE - (w - indent)) / 2, "{l:?}");
         }
-        let a = f.render(Style::Asterisk);
-        assert_eq!(a[0], "*".repeat(80));
-        assert_eq!(a[1], "  Fluid properties");
-        assert!(a.contains(&format!("  {:<30}{}", "Density", "1.000E+00 [kg/m3]")));
-        // no vertical lines in the default style
-        assert!(a.iter().all(|x| !x.contains('│')));
+        let l = f.render(Style::Asterisk);
+        assert!(l[1].trim().starts_with("*   Fluid properties"), "{l:?}");
+        assert!(l[1].trim_end().ends_with('*'), "{l:?}");
     }
 
     #[test]
