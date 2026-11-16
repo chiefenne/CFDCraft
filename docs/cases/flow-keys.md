@@ -47,6 +47,9 @@ line (recipe 26).
 | `case_format` | current (`"0.6"`; absent = `"0.5"`) | version of the case-file format; keys renamed later are mapped on reading and logged, `foehn case upgrade` rewrites the file |
 | `log.style` | `"asterisk"` | frames of the log: `asterisk` (horizontal rules only) or `box` (drawn with box characters); console and `flow.log` are identical, without colour |
 | `solver.log_every` | 10 | a log line every N outer iterations |
+| `schedule[].at_iteration` | none | steady: the iteration from whose start the values of `set` hold (one trigger per entry, entries in ascending order, D128) |
+| `schedule[].at_step`, `schedule[].at_time` | none | transient: the step or the time (s) from whose start the values hold; the run lands a step on `at_time` |
+| `schedule[].set` | none | the settings that change, dotted keys of the case file (`solver.momentum.relaxation = 0.9`); only keys a re-read may change, without `run.limits.*` and `run.reread_every` |
 | `analytic.type` | none | exact solution for the checks: `uniform`, `couette`, `poiseuille` or `pipe-poiseuille` |
 | `analytic.lower`, `analytic.upper` | 0, 1 | channel walls (y) |
 | `analytic.wall_velocity` | 1 | Couette: speed of the upper wall |

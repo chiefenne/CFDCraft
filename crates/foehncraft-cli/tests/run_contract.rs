@@ -571,3 +571,52 @@ fn configurable_log_columns_change_no_result() {
     );
     assert!(err.contains("`min.speed`: unknown quantity"), "{err}");
 }
+
+/// `[[schedule]]` (D128): every change of a scheduled setting is an `event`
+/// row of the run record with its key, old and new value, and a case
+/// without a schedule has none.
+#[test]
+fn schedule_changes_are_events_of_the_run_record() {
+    let d = dir("schedule");
+    let case = steady(&d);
+    let mut text = std::fs::read_to_string(&case).unwrap();
+    text.push_str(
+        "[[schedule]]\nat_iteration = 20\nset = { solver.momentum.relaxation = 0.6, solver.log_every = 5 }\n",
+    );
+    std::fs::write(&case, text).unwrap();
+    let out = d.join("out");
+    let o = foehn(&["--json", "--quiet", "flow", s(&case), "--out", s(&out)]);
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let rec = std::fs::read_to_string(out.join("run.jsonl")).unwrap();
+    let rows: Vec<Value> = rec
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let ev: Vec<&Value> = rows.iter().filter(|r| r["code"] == "RUN015").collect();
+    assert_eq!(ev.len(), 2, "{rec}");
+    assert!(ev.iter().all(|e| e["type"] == "event" && e["at"] == 20));
+    let k = ev
+        .iter()
+        .find(|e| e["key"] == "solver.momentum.relaxation")
+        .unwrap();
+    assert_eq!(k["old"], "0.9");
+    assert_eq!(k["new"], "0.6");
+    let log = std::fs::read_to_string(out.join("flow.log")).unwrap();
+    assert!(
+        log.contains("iteration 20: schedule (iteration 20)"),
+        "{log}"
+    );
+    // the plain run has no such events
+    let plain = d.join("plain");
+    let c0 = d.join("plain.toml");
+    std::fs::write(&c0, std::fs::read_to_string(steady(&d)).unwrap()).unwrap();
+    let o = foehn(&["--json", "--quiet", "flow", s(&c0), "--out", s(&plain)]);
+    assert_eq!(o.status.code(), Some(0));
+    let rec = std::fs::read_to_string(plain.join("run.jsonl")).unwrap();
+    assert!(!rec.contains("RUN015"));
+}
