@@ -151,6 +151,13 @@ pub struct RunSection {
     pub restart_every: usize,
     /// Also write a numbered `restart_<N>.h5` at these iterations or steps.
     pub restart_at: Vec<usize>,
+    /// Transient: write `restart.h5` every this much simulated time (s), at
+    /// the multiples of it; the time step is shortened to land on them
+    /// (D66).
+    pub restart_interval: Option<f64>,
+    /// Transient: also write a numbered `restart_<N>.h5` at these simulated
+    /// times (s), landed on exactly (D66).
+    pub restart_times: Vec<f64>,
     /// Write `restart.h5` at the end of the run.
     pub restart_final: bool,
     /// Re-read the case file every N iterations or time steps (0: only on a
@@ -217,6 +224,8 @@ impl Default for RunSection {
             restart: None,
             restart_every: 0,
             restart_at: Vec::new(),
+            restart_interval: None,
+            restart_times: Vec::new(),
             restart_final: true,
             reread_every: 0,
             limits: Limits::default(),
@@ -462,8 +471,19 @@ pub struct OutputSection {
     pub fields_every: usize,
     /// Transient: also write the fields at these steps.
     pub fields_at: Vec<usize>,
+    /// Transient: write `fields_<step>.vtkhdf` every this much simulated
+    /// time (s), at the multiples of it; the time step is shortened to
+    /// land on them (D66).
+    pub fields_interval: Option<f64>,
+    /// Transient: also write the fields at these simulated times (s),
+    /// landed on exactly (D66).
+    pub fields_times: Vec<f64>,
     /// A row of `forces.csv` and `probes.csv` every N steps (transient).
     pub monitor_every: usize,
+    /// Transient: a row of `forces.csv` and `probes.csv` every this much
+    /// simulated time (s) instead of every `monitor_every` steps, landed
+    /// on exactly (D66): equally spaced samples for spectra.
+    pub monitor_interval: Option<f64>,
     /// Point probes: velocity and pressure per step (`probes.csv`).
     pub probes: Vec<Probe>,
     /// Force coefficients of some patches (`forces.csv`, the report).
@@ -480,7 +500,10 @@ impl Default for OutputSection {
             lines: Vec::new(),
             fields_every: 0,
             fields_at: Vec::new(),
+            fields_interval: None,
+            fields_times: Vec::new(),
             monitor_every: 1,
+            monitor_interval: None,
             probes: Vec::new(),
             coefficients: None,
         }
@@ -733,6 +756,43 @@ impl FlowCase {
             CASE_RANGE,
             "[output] monitor_every must be >= 1"
         );
+        // D66: output in simulated time
+        let (o, r) = (&self.output, &self.run);
+        for (key, v) in [
+            ("output.fields_interval", o.fields_interval),
+            ("output.monitor_interval", o.monitor_interval),
+            ("run.restart_interval", r.restart_interval),
+        ] {
+            if let Some(v) = v {
+                crate::need!(
+                    v > 0.0 && v.is_finite(),
+                    CASE_RANGE,
+                    "{key} must be > 0 (s)"
+                );
+                crate::need!(
+                    transient,
+                    CASE_INCONSISTENT,
+                    "{key} schedules output in simulated time and needs a [time] table"
+                );
+            }
+        }
+        for (key, v) in [
+            ("output.fields_times", &o.fields_times),
+            ("run.restart_times", &r.restart_times),
+        ] {
+            if !v.is_empty() {
+                crate::need!(
+                    v.iter().all(|x| x.is_finite()),
+                    CASE_RANGE,
+                    "{key} must hold finite times (s)"
+                );
+                crate::need!(
+                    transient,
+                    CASE_INCONSISTENT,
+                    "{key} schedules output in simulated time and needs a [time] table"
+                );
+            }
+        }
         if let Some(a) = &self.analytic
             && a.is_transient()
             && !transient

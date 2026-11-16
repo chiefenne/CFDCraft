@@ -845,7 +845,10 @@ pub(crate) fn outputs(case: &FlowCase, mesh: &Mesh, steps: usize) -> Vec<OutputE
     if o.vtkhdf {
         add("fields.vtkhdf", 1, fields);
         if transient {
-            let series = steps.checked_div(o.fields_every).unwrap_or(0) + o.fields_at.len();
+            let dt = case.time.map_or(0.0, |t| t.time_step);
+            let series = steps.checked_div(o.fields_every).unwrap_or(0)
+                + o.fields_at.len()
+                + crate::unsteady::scheduled_outputs(case, steps, dt).0;
             add("fields_<step>.vtkhdf", series, fields);
         }
     }
@@ -855,7 +858,11 @@ pub(crate) fn outputs(case: &FlowCase, mesh: &Mesh, steps: usize) -> Vec<OutputE
         || (case.verification.levels.len() <= 1 && case.verification.time_steps.is_empty());
     if crate::restart::AVAILABLE
         && single
-        && (r.restart_final || r.restart_every > 0 || !r.restart_at.is_empty())
+        && (r.restart_final
+            || r.restart_every > 0
+            || !r.restart_at.is_empty()
+            || r.restart_interval.is_some()
+            || !r.restart_times.is_empty())
     {
         // per cell: u, p, the velocity and pressure gradients, the limiters
         // (19 values) and for a transient run the old levels (3 + 12); per
@@ -871,7 +878,12 @@ pub(crate) fn outputs(case: &FlowCase, mesh: &Mesh, steps: usize) -> Vec<OutputE
                 + 2 * mesh.n_interior_faces()) as f64
             + 16384.0;
         add("restart.h5", 1, restart);
-        add("restart_<step>.h5", r.restart_at.len(), restart);
+        let dt = case.time.map_or(0.0, |t| t.time_step);
+        add(
+            "restart_<step>.h5",
+            r.restart_at.len() + crate::unsteady::scheduled_outputs(case, steps, dt).1,
+            restart,
+        );
     }
     let walls: Vec<&String> = case
         .boundary

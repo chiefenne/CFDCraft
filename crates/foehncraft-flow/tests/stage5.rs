@@ -200,6 +200,62 @@ fn error_controlled_steps_restart_bit_identically() {
     let _ = std::fs::remove_dir_all(&db);
 }
 
+/// Output in simulated time (D66): the adaptive steps land on every
+/// scheduled time, so the monitor rows are equally spaced in time, and the
+/// numbered restart file sits at its scheduled time; no step is shorter
+/// than half the step before it.
+#[test]
+fn output_lands_on_scheduled_times() {
+    let time =
+        "scheme = \"bdf2\"\ntime_step = 0.013\nend_time = 0.5\nadaptive = true\nmax_cfl = 1.5";
+    let mut case = cavity(
+        16,
+        time,
+        "[run]\nrestart_times = [0.3337]\nrestart_interval = 0.2",
+    );
+    case.output.monitor_interval = Some(0.05);
+    let d = out("scheduled");
+    let r = run_in(&case, "scheduled", &d);
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    let forces = std::fs::read_to_string(d.join("forces.csv")).unwrap();
+    let times: Vec<f64> = forces
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.starts_with("step"))
+        .map(|l| l.split(',').nth(1).unwrap().parse().unwrap())
+        .collect();
+    assert_eq!(times.len(), 10, "{times:?}");
+    for (k, t) in times.iter().enumerate() {
+        let want = 0.05 * (k + 1) as f64;
+        assert!((t - want).abs() < 1e-12, "row {k} at t = {t}, not {want}");
+    }
+    let numbered: Vec<_> = std::fs::read_dir(&d)
+        .unwrap()
+        .filter_map(|e| {
+            let n = e.unwrap().file_name().into_string().unwrap();
+            n.starts_with("restart_").then_some(n)
+        })
+        .collect();
+    assert_eq!(numbered.len(), 1, "{numbered:?}");
+    let rs = restart::read(&d.join(&numbered[0])).unwrap();
+    let t = rs.transient.unwrap().1.time;
+    assert!((t - 0.3337).abs() < 1e-12, "restart at t = {t}");
+    let hist = std::fs::read_to_string(d.join("history.csv")).unwrap();
+    let dts: Vec<f64> = hist
+        .lines()
+        .filter(|l| !l.starts_with('#') && !l.starts_with("step"))
+        .map(|l| l.split(',').nth(2).unwrap().parse().unwrap())
+        .collect();
+    for w in dts.windows(2).take(dts.len() - 2) {
+        assert!(
+            w[1] >= 0.5 * w[0] * (1.0 - 1e-9),
+            "step {} after {}",
+            w[1],
+            w[0]
+        );
+    }
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 /// Crank–Nicolson with two outer iterations continues bit-identically too
 /// (the explicit operator of the old level and the outer loop).
 #[test]
