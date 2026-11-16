@@ -23,6 +23,7 @@ The catalogue is split by physics; each page has its own table of contents.
 | [Poisson studies (`examples/cases/poisson/`)](cases/poisson.md) | the pressure solver on the Poisson equation, with hypre as the reference; Poisson keys |
 | [Flow cases (`examples/cases/flow/`)](cases/flow.md) | incompressible laminar flow, steady and transient, grouped by physics; what a flow run writes |
 | [Flow case-file keys](cases/flow-keys.md) | every key of a flow case, the derived fields (D72), the boundary conditions (D29) and their sensible combinations (D30), expressions, materials and regions (D53, D102, D112) |
+| [Python scripts (`examples/python/`, `examples/studies/`)](cases/python.md) | cases built, run and studied with the Python package |
 | [Benchmarks (`examples/cases/bench/`)](cases/benchmarks.md) | gate G1, the kernel benchmark; benchmark keys |
 
 ## Sections and keys

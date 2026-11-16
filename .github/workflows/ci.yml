@@ -361,12 +361,57 @@ jobs:
       - run: cargo build --locked --profile ci -p foehncraft-cli
 
   # ---------------------------------------------------------------------
+  # The Python package (D61): the native module built with maturin, the
+  # tests against it and against the command line, ruff.
+  python:
+    name: Python package (ruff, pytest)
+    needs: plan
+    if: needs.plan.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    env:
+      # one target directory for the command line and the native module
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: python
+          workspaces: |
+            . -> target
+            crates/foehncraft-py -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint (ruff)
+        run: |
+          pip install "ruff>=0.5"
+          ruff check python
+          ruff format --check python
+      - name: Format and clippy of the native module
+        run: |
+          cargo fmt --manifest-path crates/foehncraft-py/Cargo.toml --check
+          cargo clippy --locked --manifest-path crates/foehncraft-py/Cargo.toml --all-targets
+      - run: cargo build --locked --profile ci -p foehncraft-cli
+      - name: Build and install the package (maturin)
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install "maturin>=1.7,<2" numpy h5py scipy pytest
+          cd python && maturin develop --release --locked
+      - name: Tests (pytest, in process and through the command line)
+        run: |
+          . .venv/bin/activate
+          FOEHN="$PWD/target/ci/foehn" python -m pytest python/tests -q
+
+  # ---------------------------------------------------------------------
   # The single required check. Green when every job above passed or was
   # skipped on purpose (docs-only PR); red when any failed or was cancelled.
   ci-ok:
     name: CI OK
     if: always()
-    needs: [plan, lint, msrv, test, cases, hypre, mpi, ptx, warm-ci-cache]
+    needs: [plan, lint, msrv, test, cases, hypre, mpi, ptx, python, warm-ci-cache]
     runs-on: ubuntu-latest
     steps:
       - name: All jobs passed or were skipped

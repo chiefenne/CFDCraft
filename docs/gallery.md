@@ -18,6 +18,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets | 21 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
+| [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22 |
 | [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report | 17, 18, 19 |
 
@@ -48,6 +49,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="boundary-conditions"></a>21 | [Boundary conditions: slip walls, wedges, tables, backflow, convective outlets](gallery/boundary-conditions.md#boundary-conditions) | [Boundary conditions](gallery/boundary-conditions.md) |
 | <a id="derived-fields"></a>22 | [Derived fields: vorticity, Q, λ₂, wall shear stress and y⁺](gallery/post-processing.md#derived-fields) | [Post-processing](gallery/post-processing.md) |
 | <a id="expressions-materials"></a>23 | [Expressions and materials: variable viscosity, blowing and suction, water from the database](gallery/properties.md#expressions-materials) | [Expressions and materials](gallery/properties.md) |
+| <a id="python-study"></a>24 | [A parametric study from Python: Couette flow with a viscosity gradient](gallery/python.md#python-study) | [Python](gallery/python.md) |
 
 ## Adding a feature
 

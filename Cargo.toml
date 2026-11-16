@@ -13,7 +13,9 @@ members = [
 ]
 # Built separately with the nightly toolchain for the NVIDIA PTX target
 # (see gpu/ptx-kernels/README.md).
-exclude = ["gpu/ptx-kernels"]
+# The Python bindings need a Python interpreter to build (python/,
+# built with maturin); the solver crates build and test without one.
+exclude = ["gpu/ptx-kernels", "crates/foehncraft-py"]
 
 [workspace.package]
 version = "0.4.0"

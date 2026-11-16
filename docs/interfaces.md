@@ -303,8 +303,8 @@ A code keeps its meaning; a retired code stays in the table.
 ## Engine API (D86)
 
 The command line is a thin layer on `foehncraft_flow::engine`; a Rust
-program (and later the Python bindings, D61) drives a run the
-same way:
+program (and the Python package, D61, through its native module) drives
+a run the same way:
 
 ```rust
 use foehncraft_flow::engine::{self, RunOptions, Roots};
@@ -323,9 +323,23 @@ std::process::exit(out.exit_code());             // out.summary is the result.js
 | `estimate(case, dir, build)` | The estimate (D81). |
 | `run(case, name, dir, opts, log)` | Runs; writes `result.json` and `run.jsonl`; returns the outcome (report and summary). |
 | `Interrupts` | `request_stop`, `request_restart`, and the flags a signal handler sets. |
+| `Observer::new(f)`, `RunOptions::observer` | `f` sees every row of the run record (`run.jsonl`) as it is written: the hook of the Python callbacks; it only reads, so results do not change. |
 | `latest_restart(dir)` | The newest restart file. |
 | `read_result(dir)` | `result.json` of an earlier run. |
 | `diag::of_error(&e)` | The diagnostic of an error. |
+
+## Python package (D61)
+
+`python/foehncraft` on the same engine (native module
+`foehncraft._native`, `crates/foehncraft-py`), or on `foehn --json`
+(`backend="cli"`). The native functions exchange the JSON formats of the
+command line: `check(path, sets, out)` (`foehncraft.check`),
+`run(path, sets, out, observer, log)` (`foehncraft.result`),
+`material_database(name, temperature, pressure)` (`foehncraft.materials`),
+`case_schema()` (D77), `codes()` (D78), `resolved(path, sets)` (the
+resolved case as TOML), `expression(source, env, allowed, points, base)`
+(values of an expression); errors are `FoehncraftError(code, message)`.
+The Python API is in [recipe 33](recipes/python.md#python).
 
 ## C-free core (D87)
 

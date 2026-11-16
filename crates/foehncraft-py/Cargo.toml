@@ -1,0 +1,38 @@
+[package]
+name = "foehncraft-py"
+description = "Python bindings of Foehncraft (the native module of the `foehncraft` package, D61)"
+version = "0.4.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/chiefenne/Foehncraft"
+authors = ["Andreas Ennemoser"]
+publish = false
+
+# Not a member of the solver workspace: PyO3 needs a Python interpreter to
+# build, and the solver crates must build and test without one. maturin
+# builds it from python/pyproject.toml.
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[features]
+default = ["hdf5"]
+# The extension module form (maturin sets it; plain `cargo build` links
+# against libpython instead).
+extension-module = ["pyo3/extension-module"]
+# Restart files and VTKHDF output (HDF5 built from source; needs CMake).
+hdf5 = ["foehncraft-flow/hdf5"]
+
+[dependencies]
+foehncraft-flow = { path = "../foehncraft-flow", default-features = false }
+pyo3 = { version = "0.25", features = ["abi3-py310"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "1.2"
+anyhow = "1"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"

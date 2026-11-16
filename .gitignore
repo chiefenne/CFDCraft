@@ -26,3 +26,11 @@ rustc-ice-*.txt
 # Benchmark and run output
 /output/
 examples/meshes/*.msh
+
+# Python package
+__pycache__/
+*.egg-info/
+/python/foehncraft/_native*.so
+/python/foehncraft/_native*.pyd
+.pytest_cache/
+.ruff_cache/

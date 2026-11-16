@@ -910,6 +910,7 @@ fn flow(a: FlowArgs, out: Out) -> Result<Done> {
         interrupts: signals(),
         build,
         roots,
+        observer: None,
     };
     let o = engine::run(&case, &name, &dir, &opts, |l| out.line(l))?;
     let s = &o.summary;
