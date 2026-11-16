@@ -8,9 +8,9 @@ steady convection–diffusion equation of a scalar φ,
 
 on all four mesh types of the test mesher (D34), on the CPU and on an
 NVIDIA GPU. This page explains the methods, the checks and the results.
-The commands are in [recipes 12–14](../recipes.md#scalar-mms), the pictures
-in [gallery 8–9](../gallery.md#scalar-mms), the case files in the
-[case catalogue](../cases.md#scalar-cases-examplescasesscalar).
+The commands are in [recipes 12–14](../recipes/scalar-pressure.md#scalar-mms), the pictures
+in [gallery 8–9](../gallery/scalar-pressure.md#scalar-mms), the case files in the
+[case catalogue](../cases/scalar.md#scalar-cases-examplescasesscalar).
 
 ## Acceptance checks and results
 
@@ -93,7 +93,7 @@ cells against 311 at 0.9 million).
 
 Pure convection (Γ = 10⁻⁶) of a step at 30° to the x axis on 2 401
 polygonal prisms, profiles along x = 0.8 in
-[gallery 9](../gallery.md#oblique-step):
+[gallery 9](../gallery/scalar-pressure.md#oblique-step):
 
 | Scheme | φ range | Outer iterations |
 |---|---|---:|

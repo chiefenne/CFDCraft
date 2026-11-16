@@ -8,7 +8,7 @@ results and the [recipes](recipes.md) give the other tasks.
 ## 1. Build
 
 You need Rust 1.89 or newer, a C compiler and CMake (see
-[recipe 1](recipes.md#g1-cpu)).
+[recipe 1](recipes/benchmarks.md#g1-cpu)).
 
 ```
 git clone https://github.com/chiefenne/Foehncraft.git && cd Foehncraft
@@ -48,8 +48,8 @@ Next steps:
 
 - change the mesh in `examples/cases/mesh/poly_partition.toml`, for example
   `perturb` or `cells`, and run again;
-- try the other mesh types with [`poly_box.toml`](cases.md#meshes-examplescasesmesh),
-  or read a Gmsh file as in [recipe 8](recipes.md#mesh-gmsh);
+- try the other mesh types with [`poly_box.toml`](cases/meshes.md#meshes-examplescasesmesh),
+  or read a Gmsh file as in [recipe 8](recipes/meshes.md#mesh-gmsh);
 - see what the mesh is good for in the [gallery](gallery.md).
 
 [↑ back to top](#tutorial-your-first-mesh)
