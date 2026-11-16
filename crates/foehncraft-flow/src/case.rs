@@ -2527,6 +2527,7 @@ pub(crate) fn schedule_step<F: FnMut(&str)>(
 /// Re-reads the case file at iteration or step `n` (D40) and applies what
 /// may change during a run; returns the case as it was when something was
 /// applied.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn reread_case<F: FnMut(&str)>(
     case: &mut FlowCase,
     fl: &mut Flow,
