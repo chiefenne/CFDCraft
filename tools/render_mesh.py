@@ -10,6 +10,8 @@ with VTK (the library under ParaView), off screen.
 --half  remove the cells above the mid plane z = zc (use with --top)
 --crop X0 X1 Y0 Y1   keep only the cells inside this x-y window
 --no-edges  do not draw the cell edges (fine meshes, flow fields)
+--diverging blue-white-red colour map, white at the middle of the range
+            (signed fields such as vorticity; use a symmetric --range)
 --zoom F    zoom factor of the camera (default 1.25 with --top, else 1.1;
             long thin domains such as a channel need more)
 """
@@ -30,6 +32,7 @@ ap.add_argument("--range", nargs=2, type=float, default=None)
 ap.add_argument("--categorical", action="store_true")
 ap.add_argument("--no-edges", action="store_true")
 ap.add_argument("--zoom", type=float, default=None)
+ap.add_argument("--diverging", action="store_true")
 a = ap.parse_args()
 
 r = vtk.vtkHDFReader()
@@ -96,10 +99,21 @@ if a.field:
         for i in range(n):
             lut.SetTableValue(i, *colours[i % len(colours)], 1.0)
         lut.SetRange(lo, hi)
+    elif a.diverging:
+        ctf = vtk.vtkColorTransferFunction()
+        ctf.SetColorSpaceToDiverging()
+        ctf.AddRGBPoint(0.0, 0.23, 0.30, 0.75)
+        ctf.AddRGBPoint(0.5, 0.87, 0.87, 0.87)
+        ctf.AddRGBPoint(1.0, 0.71, 0.02, 0.15)
+        lut.SetNumberOfTableValues(256)
+        for i in range(256):
+            lut.SetTableValue(i, *ctf.GetColor(i / 255.0), 1.0)
+        lut.SetRange(lo, hi)
     else:
         lut.SetHueRange(0.667, 0.0)
         lut.SetRange(lo, hi)
-    lut.Build()
+    if not a.diverging:
+        lut.Build()
     m.SetLookupTable(lut)
     m.ScalarVisibilityOn()
     if not a.categorical:

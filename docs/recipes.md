@@ -16,6 +16,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets | 29 |
+| [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30 |
 | [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports | 22, 26, 27 |
 
 ## All recipes by number
@@ -51,6 +52,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="health"></a>27 | [Check the balances and read a divergence report](recipes/runs.md#health) | [Run control and health](recipes/runs.md) |
 | <a id="time-control"></a>28 | [Let the error choose the time step, write output at exact times, start from potential flow](recipes/flow.md#time-control) | [Incompressible flow](recipes/flow.md) |
 | <a id="boundary-conditions"></a>29 | [Use slip walls, wedges, table profiles, backflow treatment and convective outlets](recipes/boundary-conditions.md#boundary-conditions) | [Boundary conditions](recipes/boundary-conditions.md) |
+| <a id="derived-fields"></a>30 | [Write vorticity, Q, λ₂, wall shear stress and other derived fields](recipes/post-processing.md#derived-fields) | [Post-processing](recipes/post-processing.md) |
 
 ## Adding a feature
 

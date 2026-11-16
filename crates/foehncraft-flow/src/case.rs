@@ -39,6 +39,9 @@
 //! vtkhdf = true
 //! history_every = 1              # residual history: every N iterations
 //! wall_csv = true                # one CSV of wall quantities per wall
+//! derived = ["vorticity", "q-criterion"]  # derived fields (D72), crate::derived
+//! [output.reference]             # reference values of pressure-coefficient
+//! velocity = 1.0
 //! [[output.lines]]               # velocity and pressure along a line
 //! name = "vertical"
 //! from = [0.5, 0.0, 0.0]
@@ -493,6 +496,12 @@ pub struct OutputSection {
     pub probes: Vec<Probe>,
     /// Force coefficients of some patches (`forces.csv`, the report).
     pub coefficients: Option<Coefficients>,
+    /// Derived fields written with the fields (D72), from the cell
+    /// gradients: vorticity, q-criterion, lambda2, enstrophy, strain-rate,
+    /// pressure-coefficient, total-pressure, wall-shear-stress, y-plus.
+    pub derived: Vec<crate::derived::Derived>,
+    /// Reference values of the pressure coefficient.
+    pub reference: crate::derived::ReferenceValues,
 }
 
 impl Default for OutputSection {
@@ -511,6 +520,8 @@ impl Default for OutputSection {
             monitor_interval: None,
             probes: Vec::new(),
             coefficients: None,
+            derived: Vec::new(),
+            reference: Default::default(),
         }
     }
 }
@@ -848,6 +859,7 @@ impl FlowCase {
                 "[output.coefficients] patches must name at least one patch"
             );
         }
+        crate::derived::validate(self)?;
         let v = &self.verification;
         if !v.time_steps.is_empty() {
             crate::need!(
@@ -938,7 +950,7 @@ impl FlowCase {
         Ok(())
     }
 
-    fn analytic(&self) -> Option<Analytic> {
+    pub(crate) fn analytic(&self) -> Option<Analytic> {
         self.analytic
             .map(|a| a.with_fluid(self.fluid.density, self.fluid.viscosity))
     }
@@ -2305,10 +2317,11 @@ pub(crate) fn write_fields(
     analytic: Option<&Analytic>,
     at: Option<(usize, Option<f64>)>,
 ) -> Result<()> {
-    use foehncraft_mesh::vtkhdf::{Attr, CellField, write_with};
+    use foehncraft_mesh::vtkhdf::{Attr, CellField, FaceField, write_all};
     if !case.output.vtkhdf {
         return Ok(());
     }
+    let derived = crate::derived::compute(case, &case.output.derived, mesh, geo, fl)?;
     let speed: Vec<f64> = (0..mesh.n_cells).map(|c| norm(fl.u.get(c))).collect();
     let mut fields = vec![
         CellField {
@@ -2342,13 +2355,25 @@ pub(crate) fn write_fields(
             values: &err,
         });
     }
+    for (name, values) in &derived.cells {
+        fields.push(CellField { name, values });
+    }
+    let faces: Vec<FaceField> = derived
+        .faces
+        .iter()
+        .map(|(name, values)| FaceField { name, values })
+        .collect();
     let name = case_name(case);
+    let units = format!(
+        "{FIELD_UNITS}{}",
+        crate::derived::Fields::units(&case.output.derived)
+    );
     let mut attrs = vec![
         ("foehncraft_format", Attr::Str("foehncraft-fields")),
         ("foehncraft_format_version", Attr::U64(1)),
         ("foehncraft_version", Attr::Str(foehncraft_core::VERSION)),
         ("case", Attr::Str(&name)),
-        ("units", Attr::Str(FIELD_UNITS)),
+        ("units", Attr::Str(&units)),
     ];
     match at {
         Some((n, Some(t))) => {
@@ -2358,7 +2383,7 @@ pub(crate) fn write_fields(
         Some((n, None)) => attrs.push(("iteration", Attr::U64(n as u64))),
         None => {}
     }
-    write_with(file, mesh, &fields, &attrs)
+    write_all(file, mesh, &fields, &faces, &attrs)
 }
 
 #[cfg(not(feature = "hdf5"))]

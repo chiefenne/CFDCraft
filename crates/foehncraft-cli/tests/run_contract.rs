@@ -395,3 +395,93 @@ fn sigterm_stops_cleanly_and_restart_latest_continues_bitwise() {
         );
     }
 }
+
+/// `foehn post derive` (D72): the fields of a run with `[output] derived`
+/// again from its restart file, byte for byte, and its errors.
+#[test]
+fn post_derive_from_the_restart_file() {
+    let d = dir("post_derive");
+    let case = steady(&d);
+    let out = d.join("run");
+    let derived = r#"output.derived=["vorticity","q-criterion","lambda2","wall-shear-stress"]"#;
+    let o = foehn(&[
+        "--quiet",
+        "flow",
+        s(&case),
+        "--set",
+        derived,
+        "--set",
+        "run.restart_final=true",
+        "--out",
+        s(&out),
+    ]);
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let o = foehn(&[
+        "--json",
+        "--quiet",
+        "post",
+        "derive",
+        s(&case),
+        "--set",
+        derived,
+        "--out",
+        s(&out),
+    ]);
+    assert_eq!(
+        o.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
+    let v = json(&o);
+    assert_eq!(v["format"], "foehncraft.command");
+    assert_eq!(v["command"], "post");
+    assert_eq!(v["cells"], 256);
+    let names: Vec<&str> = v["datasets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap())
+        .collect();
+    assert!(names.contains(&"q_criterion") && names.contains(&"wall_shear_stress_magnitude"));
+    assert!(
+        bytes(&out.join("fields.vtkhdf")) == bytes(&out.join("derived.vtkhdf")),
+        "post derive differs from the fields of the run"
+    );
+    // another list into another file
+    let file = d.join("vortices.vtkhdf");
+    let o = foehn(&[
+        "--quiet",
+        "post",
+        "derive",
+        s(&case),
+        "--fields",
+        "enstrophy,strain-rate",
+        "--file",
+        s(&file),
+        "--out",
+        s(&out),
+    ]);
+    assert_eq!(o.status.code(), Some(0));
+    assert!(file.exists());
+    // errors with their codes
+    for (args, code) in [
+        (vec!["--fields", "helicity"], "CASE003"),
+        (vec!["--fields", "pressure-coefficient"], "CASE005"),
+        (vec!["--out", s(&d.join("empty"))], "RUN011"),
+    ] {
+        let mut a = vec!["--json", "--quiet", "post", "derive", s(&case)];
+        if !args.contains(&"--out") {
+            a.extend(["--out", s(&out)]);
+        }
+        a.extend(args.iter().copied());
+        let o = foehn(&a);
+        assert_eq!(o.status.code(), Some(1), "{a:?}");
+        assert_eq!(json(&o)["diagnostics"][0]["code"], code, "{a:?}");
+    }
+}

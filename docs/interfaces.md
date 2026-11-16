@@ -19,6 +19,7 @@ code by `foehn schema --markdown`).
 | `--read-root DIR`, `--write-root DIR` | Confines the files of a run (D82): every file read (case, mesh, restart) must lie below a read root and the output directory below a write root. A path outside is `CASE007`. Without roots nothing is confined. |
 | `--check` | Validates the case, checks the boundary conditions and estimates the run (D81) without running it. Exit code 0 when the case can run, 1 when it has an error. |
 | `foehn schema` | The JSON Schema of the case file (draft 2020-12, with `x-unit` and `x-runtime`). `--markdown` prints the key reference instead. |
+| `foehn post derive CASE` | Writes the fields with derived fields (D72) from a restart file of the case (`--restart`, default `latest`), the file the run writes with `[output] derived` at that iteration or step (byte for byte). `--fields a,b` picks the fields (default `output.derived`, or all), `--file` the output (default `derived.vtkhdf`, `derived_<N>.vtkhdf` for `restart_<N>.h5`, next to the restart file). `--set`, `--out`, `--read-root` and `--write-root` as for `flow`. |
 
 ## Exit codes (D64)
 
@@ -61,7 +62,8 @@ The limits may change during a run (a re-read of the case file, D40).
 | `result.json` | `foehncraft.result` | The result summary (D62): status, exit code, stop, overrides, provenance, diagnostics, one entry per solve (mesh hash, iterations, residuals, mass imbalance, patches, coefficients, errors, transient summary), observed orders, and the output files with sizes and SHA-256 hashes. No timings: two identical runs give the same bytes. |
 | `run.jsonl` | `foehncraft.run_record` | The run record (D69), one JSON object per line, flushed at every log line, so it can be followed while the run goes on (`tail -f`). |
 | `flow.log`, `flow.md`, `flow.json` | | The log and the report for people, with timings. |
-| `fields.vtkhdf`, `fields_N.vtkhdf` | VTKHDF 2.x | Fields, with the root attributes `foehncraft_format`, `foehncraft_format_version`, `foehncraft_version`, `case`, `units` and `step`/`time` or `iteration`. |
+| `fields.vtkhdf`, `fields_N.vtkhdf` | VTKHDF 2.x | Fields, with the root attributes `foehncraft_format`, `foehncraft_format_version`, `foehncraft_version`, `case`, `units` and `step`/`time` or `iteration`. The derived fields of `[output] derived` (D72) are cell datasets of the `internal` block; the wall shear stress and y⁺ are cell datasets of the patch blocks (one value per boundary face, zero off walls). `units` names every dataset. |
+| `derived.vtkhdf`, `derived_N.vtkhdf` | VTKHDF 2.x | Written by `foehn post derive`; the same layout and attributes as `fields.vtkhdf`. |
 | `restart.h5` | Foehncraft restart | With `foehncraft_version` and `units`; transient files carry the attribute `dt_prev2` (the step before the last; read as 0 from older files) and, with the error estimate of the time step (D65), the datasets `u_old2_x`, `u_old2_y`, `u_old2_z`, and with a convective outlet (D29) the old boundary velocity `ub_old_x`, `ub_old_y`, `ub_old_z`; optional datasets `point_id`, `points_x`, `points_y`, `points_z` and `volume_<k>` for meshes that move (D91), left out for fixed meshes. |
 | `*.csv` | `foehncraft-<kind>` | Residuals, history, forces, probes, patches, wall and line data, each with a comment preamble (below). |
 | `balance.csv` | `foehncraft-balance` | The conservation ledger (D88, D89, below): one row per time step (every `output.history_every`) or per balance table of a steady run and its final state. |
@@ -195,7 +197,7 @@ same `case_hash` and `commit` are comparable bit for bit.
 | `foehncraft.check` | `foehn flow --check --json`: `case_file`, `ok`, `diagnostics`, `estimate` (cells, faces, steps, host and device memory, output bytes and files, wall time and its basis) |
 | `foehncraft.error` | any command with `--json` that fails before a run: `command`, `exit_code`, `diagnostics` |
 | `foehncraft.info` | `foehn info --json` |
-| `foehncraft.command` | the other commands with `--json` (`mesh`, `scalar`, `poisson`, ...): `command` and the report |
+| `foehncraft.command` | the other commands with `--json` (`mesh`, `scalar`, `poisson`, ...): `command` and the report; `post derive`: `file`, `restart`, `cells`, `iteration`, `step`, `time`, `derived`, `datasets` |
 | `foehncraft.divergence` | `divergence.json` after a divergence (above) |
 
 ## Diagnostics (D78)

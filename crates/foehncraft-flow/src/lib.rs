@@ -18,6 +18,8 @@
 //! - [`checkpoint`]: binomial checkpointing of transient runs for the
 //!   reverse sweep of an adjoint (D59);
 //! - [`control`]: control files and re-reading the case file (D40);
+//! - [`derived`]: derived fields such as vorticity, Q, λ₂ and the wall
+//!   shear stress, at write time and after the run (D72);
 //! - [`monitor`]: probes, force coefficients, histories, benchmarks (D43);
 //! - [`plot`]: small SVG charts of the reports.
 
@@ -29,6 +31,7 @@ pub mod bc;
 pub mod case;
 pub mod checkpoint;
 pub mod control;
+pub mod derived;
 pub mod device;
 pub mod diag;
 pub mod divergence;

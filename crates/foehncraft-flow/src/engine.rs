@@ -941,8 +941,17 @@ pub(crate) fn outputs(case: &FlowCase, mesh: &Mesh, steps: usize) -> Vec<OutputE
 fn fields_bytes(case: &FlowCase, mesh: &Mesh) -> f64 {
     #[cfg(feature = "hdf5")]
     {
-        let n = if case.analytic.is_some() { 6 } else { 5 };
+        let mut n = if case.analytic.is_some() { 6 } else { 5 };
+        let mut faces = 0;
+        for d in crate::derived::sorted(&case.output.derived) {
+            if d.on_faces() {
+                faces += d.datasets().len();
+            } else {
+                n += d.datasets().len();
+            }
+        }
         foehncraft_mesh::vtkhdf::estimate_bytes(mesh, n)
+            + (faces * 8 * mesh.n_boundary_faces()) as f64
     }
     #[cfg(not(feature = "hdf5"))]
     {

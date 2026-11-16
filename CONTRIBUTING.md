@@ -21,8 +21,8 @@ contents:
 
 | Index | Topic pages | Split by |
 |---|---|---|
-| [docs/gallery.md](docs/gallery.md) | `docs/gallery/*.md` | feature (benchmarks, meshes, scalar and pressure, flow, run control) |
-| [docs/recipes.md](docs/recipes.md) | `docs/recipes/*.md` | task area (benchmarks, development, meshes, scalar and pressure, GPU, flow, run control) |
+| [docs/gallery.md](docs/gallery.md) | `docs/gallery/*.md` | feature (benchmarks, meshes, scalar and pressure, flow, boundary conditions, post-processing, run control) |
+| [docs/recipes.md](docs/recipes.md) | `docs/recipes/*.md` | task area (benchmarks, development, meshes, scalar and pressure, GPU, flow, boundary conditions, post-processing, run control) |
 | [docs/cases.md](docs/cases.md) | `docs/cases/*.md` | physics, following the folders of `examples/cases/` |
 
 When you add an entry:
