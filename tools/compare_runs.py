@@ -20,8 +20,9 @@ timings and are skipped.
 branch against main): the files of DIR_A only, in JSON reports only the
 keys both have (output files matched by name, without the provenance
 and the entry of the resolved case),
-and in case.resolved.toml only the tables of DIR_A, so that new files,
-keys and tables are not differences.
+and in case.resolved.toml only the lines of DIR_A (in order), so that
+new files, keys and tables are not differences; HDF5 files are compared
+by their datasets only (a newer version may add attributes and datasets).
 
 Exit code 0 when all files agree, 1 otherwise. Needs h5py and numpy.
 """
@@ -47,10 +48,17 @@ def strip(o):
 
 
 def by_name(files):
-    # the resolved case of a newer version has more tables, so its hash
-    # differs by design; its lines are compared on their own
-    return {f["name"]: f for f in files
-            if isinstance(f, dict) and "name" in f and f["name"] != "case.resolved.toml"}
+    # the resolved case of a newer version has more keys, so its hash
+    # differs by design; its lines are compared on their own. HDF5 files
+    # are compared dataset by dataset, and a newer version may add
+    # attributes or datasets: their hashes and sizes are not compared
+    out = {}
+    for f in files:
+        if isinstance(f, dict) and "name" in f and f["name"] != "case.resolved.toml":
+            if f["name"].endswith((".h5", ".vtkhdf")):
+                f = {k: v for k, v in f.items() if k not in ("sha256", "bytes")}
+            out[f["name"]] = f
+    return out
 
 
 def common(a, b):
@@ -145,8 +153,14 @@ def compare(da, db):
             with h5py.File(pa, "r") as A, h5py.File(pb, "r") as B:
                 bad += h5_diff(A, B, rel)
         elif pa.name == "case.resolved.toml":
-            keep = toml_sections(pa) if COMMON else None
-            if toml_lines(pa, keep) != toml_lines(pb, keep):
+            if COMMON:
+                # every line of DIR_A in its table of DIR_B, in order; a
+                # newer version may add tables and keys
+                keep = toml_sections(pa)
+                la, lb = toml_lines(pa, keep), iter(toml_lines(pb, keep))
+                if not all(any(l == m for m in lb) for l in la):
+                    bad.append(f"{rel}: resolved case differs")
+            elif toml_lines(pa) != toml_lines(pb):
                 bad.append(f"{rel}: resolved case differs")
         elif pa.suffix == ".csv":
             if data_lines(pa) != data_lines(pb):

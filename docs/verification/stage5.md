@@ -616,7 +616,15 @@ gradient of φ is not, next to the inlets, because the correction gradient
 assumes ∂φ/∂n = 0 on every boundary that is not a pressure boundary. The
 start pressure stays, and the run builds its own multigrid.
 
-**The catalogue against part 4b.** CATALOGUE_RESULT
+**The catalogue against part 4b.** The 22 flow cases of the CI sets and
+the scalar cases `oblique_step_2d` (its four variants of part 4b),
+`mms_poly_2d` and `mms_poly_box`, run with the binaries of main and of
+this part: every field, restart dataset, CSV row and report value
+bitwise equal (`tools/compare_runs.py --across-versions`, 263 files).
+What differs by design: the resolved case lists the new keys, and the
+restart file has the attribute `dt_prev2`; the comparison now matches
+the lines of the older resolved case in order and HDF5 files by their
+datasets.
 
 ## Limits of this part of stage 5
 

@@ -841,6 +841,7 @@ instead of 1570 outer iterations.
 | Restart of an error-controlled run with rejections | bit-identical continuation |
 | Output at exact times | monitor rows at multiples of 0.05 s to 1e-12 s, restart at its time, no step below half the one before |
 | Potential start in a channel with uniform inflow | uniform flow to 1e-11 on hexahedra, RMS deviation 1.2 % on polygons perturbed by 15 % (12 % without the non-orthogonal correction) |
+| The catalogue against part 4b | 22 flow cases and the scalar cases bitwise equal without the new keys |
 
 | | |
 |---|---|
