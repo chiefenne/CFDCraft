@@ -18,6 +18,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets | 29 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
+| [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35 |
 | [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30 |
 | [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports | 22, 26, 27 |
 
@@ -58,6 +59,8 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="expressions"></a>31 | [Write boundary values, body forces and the viscosity as expressions](recipes/properties.md#expressions) | [Expressions and materials](recipes/properties.md) |
 | <a id="materials"></a>32 | [Take the fluid properties from the material database](recipes/properties.md#materials) | [Expressions and materials](recipes/properties.md) |
 | <a id="python"></a>33 | [Build, run and study cases from Python](recipes/python.md#python) | [Python](recipes/python.md) |
+| <a id="gci"></a>34 | [Estimate the discretisation uncertainty of a mesh or time-step sweep](recipes/verification.md#gci) | [Verification](recipes/verification.md) |
+| <a id="manual"></a>35 | [Regenerate the verification manual](recipes/verification.md#manual) | [Verification](recipes/verification.md) |
 
 ## Adding a feature
 

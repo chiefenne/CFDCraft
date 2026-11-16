@@ -136,3 +136,16 @@ def test_result_tables(tmp_path):
     assert hist["iteration"][0] == 1.0 and len(hist["continuity"]) == len(hist["iteration"])
     assert "errors.l2" in r.flat()
     assert r.files["result.json"] if "result.json" in r.files else True
+
+
+@needs_native
+def test_uncertainty_of_a_sweep(tmp_path):
+    # three meshes of the Couette flow with a viscosity gradient (D67)
+    res = run(CASES / "couette_viscosity.toml", out=tmp_path / "gci")
+    assert res.ok
+    e = res.uncertainty["patches.ymin.force_x"]
+    assert e["verdict"] == "monotonic"
+    assert 1.5 < e["order"] < 2.5
+    exact = 0.1 * 4.0 / np.log1p(4.0) * 0.2
+    assert abs(e["values"][0] - exact) <= e["band"]
+    assert abs(e["extrapolated"] - exact) < 0.1 * abs(e["values"][0] - exact)

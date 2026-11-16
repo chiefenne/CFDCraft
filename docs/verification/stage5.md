@@ -18,9 +18,15 @@ scripts and agents ([below](#run-contract-part-4a)), part 4b the health
 checks ([below](#health-checks-conservation-ledger-and-divergence-report-part-4b)),
 part 5a the numerics ([below](#numerics-part-5a)), part 5b the boundary
 conditions ([below](#boundary-conditions-part-5b)), part 5c the derived
-fields ([below](#derived-fields-part-5c)). The commands are in
-[recipes 21–28](../recipes.md#transient-flow), the pictures in
-[gallery 14–20](../gallery.md#taylor-green), the case files in the
+fields ([below](#derived-fields-part-5c)), part 6a the expressions,
+materials and regions ([below](#expressions-materials-and-regions-part-6a)),
+part 6b the Python package ([below](#the-python-package-part-6b)), part 6c
+the discretisation uncertainty and the verification manual
+([below](#discretisation-uncertainty-and-the-verification-manual-part-6c)).
+The commands are in
+[recipes 21–35](../recipes.md#transient-flow), the pictures in
+[gallery 14–25](../gallery.md#taylor-green), the generated tables of every
+case in the [verification manual](manual.md), the case files in the
 [case catalogue](../cases/flow.md#flow-cases-examplescasesflow).
 
 ## Acceptance checks and results
@@ -857,12 +863,67 @@ while it grows and stops the run with the `.stop` control file (D40).
 hook only (no row changes when there is no observer); the CI sets run
 unchanged.
 
+## Discretisation uncertainty and the verification manual (part 6c)
+
+The report of every sweep of three or more meshes or time steps gains the
+discretisation uncertainty of its monitored quantities (D67), and the
+verification manual is generated from the cases (D68).
+
+| Check | Result | Where |
+|---|---|---|
+| The estimate (unit tests) | φ = 1 + h² on h = 1, 2, 4: order 2, extrapolated value 1, band 1.25 and GCI 0.625 exactly; unequal ratios (fixed-point iteration); the four verdicts | `uncertainty::tests` in `foehncraft-flow` |
+| A quantity with an exact value | Couette flow with μ0 (1 + 4 y) on 128 to 2 048 cells: the lower-wall force at order 1.75, the finest mesh 0.40 % low, the extrapolated value 0.014 % high, the exact value inside φ1 ± U (U = 2.6e-4 N, GCI 0.52 %) | test `wall_shear_of_a_level_sweep`, `python/tests/test_run.py::test_uncertainty_of_a_sweep`, gallery 25 |
+| A benchmark without an exact solution | cylinder 2D-1 on 6 144, 24 576 and 98 304 cells: C_D 5.5835, 5.5808, 5.5800, order 1.81, extrapolated 5.5797 ± 0.0004 (GCI 0.007 %); C_L order 2.03, extrapolated 0.01071 (GCI 0.77 %); Δp order 0.56, extrapolated 0.11754 Pa; all three extrapolated values inside the reference ranges | case `cylinder_re20_gci` (`long` set), gallery 25 |
+| Sweeps without an exact solution | `levels` no longer need `[analytic]` or a benchmark; `expected_order` without `[analytic]` is refused (CASE005) instead of being ignored | test `sweeps_without_an_exact_solution` |
+| The verification manual | `tools/release/verification_manual.py` writes [manual.md](manual.md), `results.json` and the chart of the observed orders from the case files and a catalogue run: 48 cases with 139 checks, all passed | [recipe 35](../recipes/verification.md#manual) |
+
+**Method.** For a level sweep the size is h ∝ N^(−1/d) with N the cells
+and d the dimension of the mesh (2 for one cell layer); for a time-step
+sweep h is the time step. The three finest solutions give the refinement
+ratios r21 = h2/h1 and r32 = h3/h2 and the differences ε21 = φ2 − φ1,
+ε32 = φ3 − φ2. The ratio R = ε21/ε32 decides the verdict (monotonic for
+0 < R < 1, oscillatory for −1 < R < 0, divergent for |R| ≥ 1, unchanged
+when all three agree to 1e-12 of their size). The observed order is the
+fixed point of p = |ln|ε32/ε21| + q(p)| / ln r21 with
+q(p) = ln((r21^p − s)/(r32^p − s)) and s = sign(ε32/ε21) (Celik et al.
+2008), the extrapolated value φ_ext = (r21^p φ1 − φ2)/(r21^p − 1), the
+band U = 1.25 |ε21|/(r21^p − 1) with the safety factor 1.25 of three
+solutions, and the GCI U/|φ1|. The band is the number to use when the
+quantity has no natural scale (a mean pressure at an arbitrary level, a
+lift that tends to zero); the report then leaves the GCI out. The error
+norms against an exact solution are not repeated; they have their orders
+(`orders`, `time_orders`).
+
+**Monitored quantities.** Per patch the mass flow, the mean pressure and
+the three force components; the drag and lift coefficients; the values of
+a benchmark (C_D, C_L, Δp, Strouhal number, C_D,max, …); the viscous and
+the numerical dissipation of the kinetic-energy ledger. Quantities that
+are zero to round-off on all three meshes (the mass flow through a wall)
+are left out.
+
+**What it shows.** The lid force of the cavity at Re = 100 on 32², 64² and
+128² cells grows by the same step with each refinement (order 0.01): the
+wall shear stress is singular in the two upper corners and the total
+force has no limit. The viscous dissipation behaves the same way. The
+report states this with its order near zero and a band larger than the
+value, which is the expected answer for a quantity at a singularity, and
+the reason why the cavity is not a GCI case.
+
+**The catalogue against part 6b.** The new code runs after the solves and
+only adds to the reports (`uncertainty` in `flow.json` and `result.json`,
+the table in `flow.md`); the CI sets run bitwise unchanged (396 files, the
+only differences are the timings of the mesh reports).
+
 ## Limits of this part of stage 5
 
 - The stepping API of D105 (fields from arrays, n steps at a time, snapshots in
   memory), the start of a study variant from the nearest finished one and the
   reuse of mesh and AMG setup between variants are not in the Python package
-  yet; the scripts of `tools/` are ported in part 6c. Expressions
+  yet; the scripts of `tools/` are ported in part 6d. The uncertainty of
+  probes and of field values, the remapping of a solution onto the finest
+  mesh to estimate its error without an exact solution (D67), and the
+  uncertainty of the periodic values of a transient sweep over meshes come
+  with the validation cases of stage 7. Expressions
   of solution fields, a density that varies in the domain and the thermal
   properties come with the energy equation (L1). Gravity balanced by a
   hydrostatic pressure needs a balanced-force face interpolation, which
@@ -887,6 +948,9 @@ unchanged.
 
 ## References
 
+- I. B. Celik, U. Ghia, P. J. Roache, C. J. Freitas, H. Coleman, P. E. Raad,
+  *Procedure for estimation and reporting of uncertainty due to
+  discretization in CFD applications*, J. Fluids Eng. 130, 078001 (2008)
 - W. J. Cody, W. Waite, *Software Manual for the Elementary Functions*,
   Prentice-Hall (1980)
 - M. Steffen, *A simple method for monotonic interpolation in one

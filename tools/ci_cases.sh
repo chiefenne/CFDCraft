@@ -10,7 +10,7 @@
 #   linux-1  mesh, scalar, poisson, the 3D cavities           about 2.2 min
 #   linux-2  cylinder Re 20, cavity Re 1000, Poiseuille       about 2.7 min
 #   linux-3  Taylor-Green, transient cavity, the rest         about 2.2 min
-#   long     cylinder Re 100: long and short channels (~12 min) full tier only
+#   long     cylinder Re 100 (long and short channels), cylinder Re 20 on three meshes; full tier only
 #   quick    macOS and Windows: mesh, scalar, poisson and the quick flows
 set -euo pipefail
 
@@ -22,7 +22,7 @@ F=examples/cases/flow
 flow_linux_1="$F/cavity_re100.toml $F/cavity_re100_energy.toml $F/cavity_re1000_poly3d.toml $F/couette_hex.toml $F/couette_mixed.toml $F/couette_poly.toml $F/couette_tet.toml $F/channel_slip.toml $F/poiseuille_table.toml $F/couette_derived.toml $F/couette_viscosity.toml $F/couette_transpiration.toml $F/poiseuille_water.toml"
 flow_linux_2="$F/cylinder_re20.toml $F/cavity_re1000.toml $F/taylor_green_cfl10.toml $F/poiseuille_tet.toml $F/poiseuille_hex.toml $F/poiseuille_poly.toml"
 flow_linux_3="$F/taylor_green_error.toml $F/cylinder_potential.toml $F/cavity_re100_budget.toml $F/taylor_green_bdf2.toml $F/taylor_green_cn.toml $F/poiseuille_mixed.toml $F/cavity_re100_transient.toml $F/taylor_green_space.toml $F/cavity_re100_poly3d.toml $F/cavity_re100_tet3d.toml $F/pipe_wedge.toml $F/poiseuille_expression.toml $F/taylor_green_expression.toml $F/channel_ramp.toml"
-flow_long="$F/cylinder_re100.toml $F/cylinder_re100_short.toml $F/cylinder_re100_convective.toml"
+flow_long="$F/cylinder_re100.toml $F/cylinder_re100_short.toml $F/cylinder_re100_convective.toml $F/cylinder_re20_gci.toml"
 flow_quick="$F/cavity_re100_budget.toml $F/couette_hex.toml $F/couette_mixed.toml $F/couette_poly.toml $F/couette_tet.toml $F/cavity_re100.toml $F/cavity_re100_poly3d.toml $F/poiseuille_hex.toml $F/poiseuille_poly.toml $F/taylor_green_space.toml $F/channel_slip.toml $F/poiseuille_table.toml $F/pipe_wedge.toml $F/couette_derived.toml $F/couette_viscosity.toml $F/poiseuille_water.toml"
 
 # prints "COMMAND FILE" lines

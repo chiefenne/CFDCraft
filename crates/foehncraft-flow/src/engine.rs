@@ -1344,6 +1344,9 @@ pub struct ResultSummary {
     pub orders: Vec<f64>,
     /// Observed orders in time.
     pub time_orders: Vec<f64>,
+    /// Discretisation uncertainty of a sweep (D67): per monitored quantity
+    /// the observed order, the extrapolated value and the GCI.
+    pub uncertainty: Vec<crate::uncertainty::Estimate>,
     /// Output files with sizes and SHA-256 hashes (D84).
     pub files: Vec<FileHash>,
 }
@@ -1406,6 +1409,7 @@ pub fn error_summary(
         solves: Vec::new(),
         orders: Vec::new(),
         time_orders: Vec::new(),
+        uncertainty: Vec::new(),
         files: Vec::new(),
     }
 }
@@ -1557,6 +1561,7 @@ pub fn summary_of(
         solves,
         orders: rep.orders.clone(),
         time_orders: rep.time_orders.clone(),
+        uncertainty: rep.uncertainty.clone(),
         files: file_hashes(dir)?,
     })
 }

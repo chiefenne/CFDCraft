@@ -47,8 +47,8 @@ line (recipe 26).
 | `analytic.wall_velocity` | 1 | Couette: speed of the upper wall |
 | `analytic.mean_velocity` | 1 | Poiseuille: mean velocity |
 | `analytic.x_outlet`, `analytic.pressure` / `pressure_outlet` | 1, 0 | Poiseuille: outlet position and pressure; Couette: the constant pressure |
-| `verification.levels` | none | refinement levels of `[mesh.generate]`: an order-of-accuracy sweep |
-| `verification.expected_order` | none | accepted range of the observed order on the finest pair |
+| `verification.levels` | none | refinement levels of `[mesh.generate]` or `[mesh.cylinder]`: a sweep; with `[analytic]` the observed order of the errors, with three or more levels the discretisation uncertainty of the monitored quantities (D67, [recipe 34](../recipes/verification.md#gci)) |
+| `verification.expected_order` | none | accepted range of the observed order on the finest pair (needs `[analytic]`) |
 | `verification.max_error` | none | largest accepted relative L2 velocity error |
 | `verification.reference` | none | `ghia-re100` or `ghia-re1000`: centre-line data of the unit cavity |
 | `verification.reference_tolerance` | none | largest accepted deviation, in lid speeds |

@@ -1,0 +1,5763 @@
+{
+ "format": "foehncraft.verification-manual",
+ "format_version": "1.0",
+ "runs_of": [
+  {
+   "version": "0.4.0",
+   "commit": "5a9bbf6a31910c5ab9510f2b7a94b7707a03fca4-dirty"
+  },
+  {
+   "version": "0.4.0",
+   "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty"
+  }
+ ],
+ "families": [
+  {
+   "family": "flow",
+   "title": "Flow cases (`foehn flow`)",
+   "cases": [
+    {
+     "case": "cavity_re100",
+     "file": "examples/cases/flow/cavity_re100.toml",
+     "description": "Lid-driven cavity at Re = 100 on 64 x 64 hexahedra",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 100",
+       "band": "≤ 0.02",
+       "value": 0.009451437038922844,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cavity_re1000",
+     "file": "examples/cases/flow/cavity_re1000.toml",
+     "description": "Lid-driven cavity at Re = 1000 on 128 x 128 hexahedra",
+     "status": "passed",
+     "cells": "16 384",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 1000",
+       "band": "≤ 0.02",
+       "value": 0.013555305634905035,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cavity_re1000_poly3d",
+     "file": "examples/cases/flow/cavity_re1000_poly3d.toml",
+     "description": "Lid-driven cavity at Re = 1000 on three-dimensional polyhedra",
+     "status": "passed",
+     "cells": "28 227",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 1000",
+       "band": "≤ 0.03",
+       "value": 0.023876910904395365,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.9320137035433063e-22,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cavity_re100_budget",
+     "file": "examples/cases/flow/cavity_re100_budget.toml",
+     "description": "Lid-driven cavity at Re = 100 with a budget",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 100",
+       "band": "≤ 0.02",
+       "value": 0.009451437038922844,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cavity_re100_energy",
+     "file": "examples/cases/flow/cavity_re100_energy.toml",
+     "description": "Lid-driven cavity at Re = 100: the energy budget",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 100",
+       "band": "≤ 0.02",
+       "value": 0.009451437038922844,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cavity_re100_poly3d",
+     "file": "examples/cases/flow/cavity_re100_poly3d.toml",
+     "description": "Lid-driven cavity at Re = 100 on three-dimensional polyhedra",
+     "status": "passed",
+     "cells": "5 445",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 100",
+       "band": "≤ 0.03",
+       "value": 0.013265143539529484,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.824377079554434e-21,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cavity_re100_tet3d",
+     "file": "examples/cases/flow/cavity_re100_tet3d.toml",
+     "description": "Lid-driven cavity at Re = 100 on three-dimensional tetrahedra",
+     "status": "passed",
+     "cells": "24 576",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 100",
+       "band": "≤ 0.03",
+       "value": 0.025417765505278633,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cavity_re100_transient",
+     "file": "examples/cases/flow/cavity_re100_transient.toml",
+     "description": "Lid-driven cavity at Re = 100, run in time to the steady state",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 100",
+       "band": "≤ 0.02",
+       "value": 0.009453619596446028,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_ramp",
+     "file": "examples/cases/flow/channel_ramp.toml",
+     "description": "Start-up of a channel flow with the inflow ramped up in time by a table (D53)",
+     "status": "passed",
+     "cells": "512",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 0.002",
+       "value": 0.0015923697419673113,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 4.644127954426545e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_slip",
+     "file": "examples/cases/flow/channel_slip.toml",
+     "description": "Uniform flow between slip walls",
+     "status": "passed",
+     "cells": "432",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 1e-09",
+       "value": 1.537245036590223e-11,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.0816681710772276e-16,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "couette_derived",
+     "file": "examples/cases/flow/couette_derived.toml",
+     "description": "Derived fields (D72) of plane Couette flow on perturbed poly cells",
+     "status": "passed",
+     "cells": "153",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 1e-09",
+       "value": 6.863919895147139e-11,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.553898379466981e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "couette_hex",
+     "file": "examples/cases/flow/couette_hex.toml",
+     "description": "Plane Couette flow on hexahedra, with convection",
+     "status": "passed",
+     "cells": "128",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 1e-09",
+       "value": 4.4575385319286334e-11,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 7.40148683036352e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "couette_mixed",
+     "file": "examples/cases/flow/couette_mixed.toml",
+     "description": "Plane Couette flow on perturbed mixed cells, Stokes flow",
+     "status": "passed",
+     "cells": "192",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 1e-09",
+       "value": 1.3619913604252416e-10,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 7.839956896706345e-47,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "couette_poly",
+     "file": "examples/cases/flow/couette_poly.toml",
+     "description": "Plane Couette flow on perturbed poly cells, Stokes flow",
+     "status": "passed",
+     "cells": "153",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 1e-09",
+       "value": 6.863919895147139e-11,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.553898379466981e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "couette_tet",
+     "file": "examples/cases/flow/couette_tet.toml",
+     "description": "Plane Couette flow on perturbed tet cells, Stokes flow",
+     "status": "passed",
+     "cells": "256",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 1e-09",
+       "value": 1.6949477781239787e-10,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "couette_transpiration",
+     "file": "examples/cases/flow/couette_transpiration.toml",
+     "description": "Plane Couette flow with transpiration",
+     "status": "passed",
+     "cells": "128 … 2 048",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.9599851096722798,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.6215620879480767e-16,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.8598266481628813,
+      1.9599851096722798
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mass_flow",
+       "values": [
+        -0.02311747353933431,
+        -0.02306891824721334,
+        -0.022875712371392368
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9924385193833585,
+       "extrapolated": -0.023133772238811683,
+       "relative_error": 0.0021003719129753444,
+       "extrapolated_error": 0.0007045413652871025,
+       "gci": 0.0008812976172351942,
+       "band": 2.037337434671298e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        0.000233454034649694,
+        0.0012816986791724994,
+        0.005079282630763528
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.8571063986516831,
+       "extrapolated": -0.00016621174394148083,
+       "relative_error": 4.490154329933657,
+       "extrapolated_error": 2.404558000016458,
+       "gci": 2.139959688375526,
+       "band": 0.0004995822232389685,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        -2.33454034649694e-05,
+        -0.00012816986791724995,
+        -0.0005079282630763528
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.8571063986516831,
+       "extrapolated": 1.6621174394148085e-05,
+       "relative_error": 4.490154329933657,
+       "extrapolated_error": 2.404558000016458,
+       "gci": 2.139959688375526,
+       "band": 4.9958222323896846e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mass_flow",
+       "values": [
+        0.023117473539334642,
+        0.0230689182472132,
+        0.02287571237139237
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9924385193681473,
+       "extrapolated": 0.023133772238812404,
+       "relative_error": 0.0021003719129958753,
+       "extrapolated_error": 0.0007045413653038775,
+       "gci": 0.00088129761725622,
+       "band": 2.0373374347199333e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.mass_flow",
+       "values": [
+        -0.040000000000000015,
+        -0.04,
+        -0.039999999999999994
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 3.4694469519536127e-16,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "unchanged"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        -2.8402773375116382e-05,
+        0.00014517047413007143,
+        0.0015389320733634054
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 3.0053673012024014,
+       "extrapolated": -5.3093774733085026e-05,
+       "relative_error": 6.111137289756887,
+       "extrapolated_error": 0.4650451297180536,
+       "gci": 1.086645704975433,
+       "band": 3.08637516974608e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_x",
+       "values": [
+        0.0007528605906881465,
+        0.000775947646406074,
+        0.0008736829525983128
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.081795621212223,
+       "extrapolated": 0.0007457202740921653,
+       "relative_error": 0.03066577797202134,
+       "extrapolated_error": 0.009575060306190231,
+       "gci": 0.01185531007383237,
+       "band": 8.92539574497657e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        5.7987560130257005e-06,
+        -2.8697143249591405e-05,
+        -0.0003086038534632863
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 3.0204492978448365,
+       "extrapolated": 1.0647633946825629e-05,
+       "relative_error": 5.948844749654794,
+       "extrapolated_error": 0.4553948753324226,
+       "gci": 1.0452409798989497,
+       "band": 6.061097417249911e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mass_flow",
+       "values": [
+        0.039999999999999994,
+        0.04000000000000001,
+        0.04
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 3.4694469519536147e-16,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "unchanged"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        0.000112896008022265,
+        0.0005265734915684696,
+        0.0028937455091450595
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.5165862086244246,
+       "extrapolated": 2.5294503430361873e-05,
+       "relative_error": 3.6642348192207153,
+       "extrapolated_error": 3.463262476493292,
+       "gci": 0.9699358078124718,
+       "band": 0.0001095018807398789,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_x",
+       "values": [
+        -0.04053555944778995,
+        -0.04001682710465886,
+        -0.03817433219331785
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.8285984047208277,
+       "extrapolated": -0.04073883097870666,
+       "relative_error": 0.01279697012197938,
+       "extrapolated_error": 0.004989626016096463,
+       "gci": 0.006268309037973367,
+       "band": 0.00025408941364588847,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        1.1218565799900916e-05,
+        7.518468468227818e-05,
+        0.00044504533383826
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.531601958848355,
+       "extrapolated": -2.1574967312423113e-06,
+       "relative_error": 5.7018089498518805,
+       "extrapolated_error": 6.199806626562599,
+       "gci": 1.4903935549477019,
+       "band": 1.6720078163929037e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        -1.692048853466346e-05,
+        0.00019506770503531544,
+        0.001797176093817043
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.917915931949234,
+       "extrapolated": -4.924790480259096e-05,
+       "relative_error": 12.528491310147341,
+       "extrapolated_error": 0.6564221645065139,
+       "gci": 2.3881857933431765,
+       "band": 4.040927033490938e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        3.3840977069326855e-05,
+        -0.0003901354100706308,
+        -0.0035943521876340844
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.917915931949234,
+       "extrapolated": 9.849580960518183e-05,
+       "relative_error": 12.528491310147361,
+       "extrapolated_error": 0.6564221645065142,
+       "gci": 2.38818579334318,
+       "band": 8.081854066981873e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        -1.6920488534663516e-05,
+        0.0001950677050353154,
+        0.0017971760938170433
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.917915931949234,
+       "extrapolated": -4.9247904802591017e-05,
+       "relative_error": 12.5284913101473,
+       "extrapolated_error": 0.6564221645065131,
+       "gci": 2.3881857933431685,
+       "band": 4.040927033490938e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        -3.3840977069326964e-05,
+        0.00039013541007063067,
+        0.003594352187634085
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.917915931949234,
+       "extrapolated": -9.849580960518195e-05,
+       "relative_error": 12.528491310147322,
+       "extrapolated_error": 0.6564221645065136,
+       "gci": 2.3881857933431725,
+       "band": 8.081854066981873e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.02074565870614523,
+        0.0207498737261445,
+        0.02070652357788825
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 3.362425545888358,
+       "extrapolated": 0.020745204730538515,
+       "relative_error": 0.00020317600221693102,
+       "extrapolated_error": 2.1883399687357027e-05,
+       "gci": 2.7353651018239294e-05,
+       "band": 5.674695083913943e-07,
+       "verdict": "oscillatory"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        -0.00016395939664423653,
+        -0.0005754698304800444,
+        -0.0020100211062893843
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.801598620207143,
+       "extrapolated": 1.567560059722704e-06,
+       "relative_error": 2.509831350067201,
+       "extrapolated_error": 105.5952884722263,
+       "gci": 1.2619508251113236,
+       "band": 0.00020690869587994905,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "couette_viscosity",
+     "file": "examples/cases/flow/couette_viscosity.toml",
+     "description": "Plane Couette flow with a viscosity that grows linearly across the gap, given as an expression of y (D53, D94)",
+     "status": "passed",
+     "cells": "128 … 2 048",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.9590132969360217,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 9.857202629843029e-17,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.8258718470445314,
+      1.9590132969360217
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mass_flow",
+       "values": [
+        -0.06287474943636555,
+        -0.06289920269369198,
+        -0.06299449661708026
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.96235756671328,
+       "extrapolated": -0.06286630849661845,
+       "relative_error": 0.0003889201554780013,
+       "extrapolated_error": 0.00013426809922443696,
+       "gci": 0.00016781259215286728,
+       "band": 1.0551174683878534e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        -0.0026345418522441253,
+        -0.011003903919848405,
+        -0.03995183491046347
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7902706709821792,
+       "extrapolated": 0.0007693013246411391,
+       "relative_error": 3.1767808359070804,
+       "extrapolated_error": 4.424590297531434,
+       "gci": 1.6150071662297953,
+       "band": 0.00425480397110658,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        0.0002634541852244125,
+        0.0011003903919848406,
+        0.003995183491046347
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7902706709821792,
+       "extrapolated": -7.693013246411395e-05,
+       "relative_error": 3.176780835907081,
+       "extrapolated_error": 4.424590297531433,
+       "gci": 1.6150071662297956,
+       "band": 0.00042548039711065805,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mass_flow",
+       "values": [
+        0.06287474943636549,
+        0.06289920269369179,
+        0.06299449661708025
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.962357566724199,
+       "extrapolated": 0.06286630849661852,
+       "relative_error": 0.00038892015547579447,
+       "extrapolated_error": 0.00013426809922245005,
+       "gci": 0.00016781259215020657,
+       "band": 1.0551174683711233e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        -0.0013274702708407824,
+        -0.005568853794133564,
+        -0.020758676426950114
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.840498175656148,
+       "extrapolated": 0.00031562551767312766,
+       "relative_error": 3.1950873902482266,
+       "extrapolated_error": 5.2058395044457555,
+       "gci": 1.5472058250626766,
+       "band": 0.0020538697356423876,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_x",
+       "values": [
+        0.04950733846797223,
+        0.049019371148918876,
+        0.04737742717255409
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7505484691548179,
+       "extrapolated": 0.049713678954112446,
+       "relative_error": 0.009856464398081764,
+       "extrapolated_error": 0.004150577677638332,
+       "gci": 0.00520984596742448,
+       "band": 0.00025792560767528395,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        0.00025497732665934994,
+        0.0010736751367925886,
+        0.004028274483305237
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.8515595679194832,
+       "extrapolated": -5.8832131735972854e-05,
+       "relative_error": 3.2108651418524756,
+       "extrapolated_error": 5.33398075398047,
+       "gci": 1.5384184473712672,
+       "band": 0.0003922618229941535,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        -0.001081714560969979,
+        -0.004770374809141711,
+        -0.018713036024933218
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.918337134830024,
+       "extrapolated": 0.0002452030460605095,
+       "relative_error": 3.41001256825469,
+       "extrapolated_error": 5.411505396646014,
+       "gci": 1.5333499877276253,
+       "band": 0.0016586470087881105,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_x",
+       "values": [
+        -0.049810467772392286,
+        -0.05011965233317122,
+        -0.051248006094571114
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.8676792675370426,
+       "extrapolated": -0.04969377015662304,
+       "relative_error": 0.00620722058246362,
+       "extrapolated_error": 0.002348334920080398,
+       "gci": 0.0029285414539392033,
+       "band": 0.00014587201971155356,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        -0.00021399906670182655,
+        -0.0009507761470461255,
+        -0.0037286494949665865
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9146807358703017,
+       "extrapolated": 5.195628030652502e-05,
+       "relative_error": 3.4428985682020747,
+       "extrapolated_error": 5.118829628281744,
+       "gci": 1.5534842692732265,
+       "band": 0.00033244418376043947,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        -0.00108101265572796,
+        -0.00481014895569113,
+        -0.018836863321385233
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9112636762200326,
+       "extrapolated": 0.00026944639929799545,
+       "relative_error": 3.449669418950464,
+       "extrapolated_error": 5.011976625200358,
+       "gci": 1.5615671193467073,
+       "band": 0.0016880738187824442,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        0.0021620253114559155,
+        0.009620297911382258,
+        0.03767372664277045
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9112636762200315,
+       "extrapolated": -0.0005388927985959989,
+       "relative_error": 3.4496694189504726,
+       "extrapolated_error": 5.01197662520029,
+       "gci": 1.5615671193467124,
+       "band": 0.0033761476375648927,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        -0.0010810126557279601,
+        -0.004810148955691131,
+        -0.018836863321385233
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9112636762200321,
+       "extrapolated": 0.0002694463992979958,
+       "relative_error": 3.4496694189504646,
+       "extrapolated_error": 5.0119766252003535,
+       "gci": 1.5615671193467078,
+       "band": 0.001688073818782445,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        -0.002162025311455916,
+        -0.00962029791138226,
+        -0.03767372664277045
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9112636762200312,
+       "extrapolated": 0.0005388927985959998,
+       "relative_error": 3.449669418950472,
+       "extrapolated_error": 5.011976625200284,
+       "gci": 1.5615671193467129,
+       "band": 0.0033761476375648945,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.049667638709036906,
+        0.049554166043824045,
+        0.04912851515335933
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9073258445405359,
+       "extrapolated": 0.049708884525397484,
+       "relative_error": 0.0022846398210634943,
+       "extrapolated_error": 0.0008297473732186672,
+       "gci": 0.0010380455320768986,
+       "band": 5.155727045072539e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        2.429429245443676e-05,
+        2.3889743417541964e-05,
+        1.934774909718301e-05
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 3.488939409190766,
+       "extrapolated": 2.4333848246003744e-05,
+       "relative_error": 0.016652019714240157,
+       "extrapolated_error": 0.001625546077508666,
+       "gci": 0.0020352409748693725,
+       "band": 4.9444739458729516e-08,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cylinder_potential",
+     "file": "examples/cases/flow/cylinder_potential.toml",
+     "description": "Potential-flow start around the cylinder of Schäfer & Turek",
+     "status": "passed",
+     "cells": "24 576",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.6784721934234383e-16,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cylinder_re100",
+     "file": "examples/cases/flow/cylinder_re100.toml",
+     "description": "Flow around a cylinder in a channel at Re = 100",
+     "status": "passed",
+     "cells": "6 144",
+     "checks": [
+      {
+       "check": "C_D,max (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "3.22 – 3.24",
+       "value": 3.231873290591545,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "C_L,max (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "0.99 – 1.01",
+       "value": 0.9711534974993412,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "St (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "0.295 – 0.305",
+       "value": 0.2954666606258293,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "Δp (Pa) (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "2.46 – 2.5",
+       "value": 2.48192962495015,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 8.747581105273315e-19,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cylinder_re100_convective",
+     "file": "examples/cases/flow/cylinder_re100_convective.toml",
+     "description": "Flow around a cylinder at Re = 100 in a short channel",
+     "status": "passed",
+     "cells": "4 928",
+     "checks": [
+      {
+       "check": "C_D,max (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "3.22 – 3.24",
+       "value": 3.226116153999618,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "C_L,max (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "0.99 – 1.01",
+       "value": 0.9554939944344288,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "St (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "0.295 – 0.305",
+       "value": 0.29518522058937047,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "Δp (Pa) (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "2.46 – 2.5",
+       "value": 2.4779158324652824,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 8.321460235391154e-38,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cylinder_re100_short",
+     "file": "examples/cases/flow/cylinder_re100_short.toml",
+     "description": "Flow around a cylinder at Re = 100 in a short channel",
+     "status": "passed",
+     "cells": "4 928",
+     "checks": [
+      {
+       "check": "C_D,max (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "3.22 – 3.24",
+       "value": 3.2335781185976535,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "C_L,max (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "0.99 – 1.01",
+       "value": 0.9712820548354406,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "St (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "0.295 – 0.305",
+       "value": 0.2951382898418876,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "Δp (Pa) (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "2.46 – 2.5",
+       "value": 2.48249690642456,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.6094039246302852e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cylinder_re20",
+     "file": "examples/cases/flow/cylinder_re20.toml",
+     "description": "Flow around a cylinder in a channel at Re = 20",
+     "status": "passed",
+     "cells": "24 576",
+     "checks": [
+      {
+       "check": "C_D (Schäfer & Turek (1996) 2D-1, Re = 20)",
+       "band": "5.57 – 5.59",
+       "value": 5.580777711748913,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "C_L (Schäfer & Turek (1996) 2D-1, Re = 20)",
+       "band": "0.0104 – 0.011",
+       "value": 0.010362514605150776,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "Δp (Pa) (Schäfer & Turek (1996) 2D-1, Re = 20)",
+       "band": "0.1172 – 0.1176",
+       "value": 0.11750207677095402,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.0155441684929589e-16,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cylinder_re20_gci",
+     "file": "examples/cases/flow/cylinder_re20_gci.toml",
+     "description": "Flow around a cylinder in a channel at Re = 20 on three meshes",
+     "status": "passed",
+     "cells": "6 144 … 98 304",
+     "checks": [
+      {
+       "check": "C_D (Schäfer & Turek (1996) 2D-1, Re = 20)",
+       "band": "5.57 – 5.59",
+       "value": 5.580009767047828,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "C_L (Schäfer & Turek (1996) 2D-1, Re = 20)",
+       "band": "0.0104 – 0.011",
+       "value": 0.010643934471006849,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "Δp (Pa) (Schäfer & Turek (1996) 2D-1, Re = 20)",
+       "band": "0.1172 – 0.1176",
+       "value": 0.11751550040018283,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.0597468005553094e-12,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "patches.inlet.mass_flow",
+       "values": [
+        -0.0008200250244140621,
+        -0.0008201000976562499,
+        -0.0008204003906250002
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9999999999958329,
+       "extrapolated": -0.0008199999999999992,
+       "relative_error": 9.15499404929071e-05,
+       "extrapolated_error": 3.051757812543134e-05,
+       "gci": 3.81458085388582e-05,
+       "band": 3.128051757837134e-08,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.inlet.mean_pressure",
+       "values": [
+        0.06945348228863674,
+        0.06944238483508183,
+        0.0694168284152672
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.2034570733493246,
+       "extrapolated": 0.06946199973540237,
+       "relative_error": 0.00015978253629939587,
+       "extrapolated_error": 0.00012262023549686085,
+       "gci": 0.00015329409132841022,
+       "band": 1.06468084570304e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.inlet.force_x",
+       "values": [
+        -0.00028475927738341093,
+        -0.00028471377782383526,
+        -0.0002846089965025955
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.2034570733277097,
+       "extrapolated": -0.0002847941989151514,
+       "relative_error": 0.00015978253630140327,
+       "extrapolated_error": 0.00012262023550154485,
+       "gci": 0.0001532940913343955,
+       "band": 4.365191467552906e-08,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.outlet.mass_flow",
+       "values": [
+        0.0008200250247999329,
+        0.0008201000976561853,
+        0.0008204003906250974
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.000007417377596,
+       "extrapolated": 0.0008200000006860589,
+       "relative_error": 9.154946981123397e-05,
+       "extrapolated_error": 3.051721201586205e-05,
+       "gci": 3.8145350930003666e-05,
+       "band": 3.12801423423784e-08,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.walls.mean_pressure",
+       "values": [
+        0.02011666886745439,
+        0.020108559660984668,
+        0.020091371628508926
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.0837717572627081,
+       "extrapolated": 0.020123912009852425,
+       "relative_error": 0.0004031088110637385,
+       "extrapolated_error": 0.0003599271550426531,
+       "gci": 0.0004500709365551182,
+       "band": 9.053927997544387e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.walls.force_x",
+       "values": [
+        0.00017374920602206844,
+        0.00017364951770358316,
+        0.00017328957435162266
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.852273508362035,
+       "extrapolated": 0.0001737873907238578,
+       "relative_error": 0.0005737483397341292,
+       "extrapolated_error": 0.0002197207842887808,
+       "gci": 0.000274711340151978,
+       "band": 4.773087723666454e-08,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.walls.force_y",
+       "values": [
+        -1.3579503919801972e-07,
+        -1.2965844014986365e-07,
+        -1.0669942578386473e-07
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.903549479067946,
+       "extrapolated": -1.3803359098540115e-07,
+       "relative_error": 0.0451901563149706,
+       "extrapolated_error": 0.01621744222837893,
+       "gci": 0.0206059790604457,
+       "band": 2.798189734226798e-09,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.cylinder.mean_pressure",
+       "values": [
+        0.028911258436567635,
+        0.028902555281520196,
+        0.02889745880483866
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.00030102996265396064,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "patches.cylinder.force_x",
+       "values": [
+        0.0001116001953409566,
+        0.00011161585121577215,
+        0.00011167063152402193
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.8069532588098303,
+       "extrapolated": 0.00011159393054950212,
+       "relative_error": 0.00014028537107591577,
+       "extrapolated_error": 5.613917731577186e-05,
+       "gci": 7.017003235682875e-05,
+       "band": 7.830989318103333e-09,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.cylinder.force_y",
+       "values": [
+        2.1287868942013702e-07,
+        2.0885950093131078e-07,
+        1.9246705634747112e-07
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.0280548752035528,
+       "extrapolated": 2.141842371259849e-07,
+       "relative_error": 0.018880182416446435,
+       "extrapolated_error": 0.006095442518862598,
+       "gci": 0.007666030999885983,
+       "band": 1.6319346323098705e-09,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        0.019876203747058042,
+        0.019868031114012856,
+        0.019849691190168054
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.1661147848196827,
+       "extrapolated": 0.019882773041888655,
+       "relative_error": 0.00041117675936463044,
+       "extrapolated_error": 0.0003304013387253706,
+       "gci": 0.0004131381748128953,
+       "band": 8.21161853826879e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        -0.017772232358882666,
+        -0.017764936579441722,
+        -0.017748584944280645
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.1643008911344055,
+       "extrapolated": -0.01777811014661426,
+       "relative_error": 0.0004105156456215689,
+       "extrapolated_error": 0.00033061937872583757,
+       "gci": 0.00041341090506393684,
+       "band": 7.3472346644922685e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        0.019876203747058046,
+        0.019868031114012856,
+        0.019849691190168054
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.1661147848190703,
+       "extrapolated": 0.01988277304188867,
+       "relative_error": 0.0004111767593648049,
+       "extrapolated_error": 0.0003304013387258939,
+       "gci": 0.00041313817481338687,
+       "band": 8.211618538278562e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        0.01777223235888267,
+        0.017764936579441722,
+        0.017748584944280645
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.1643008911337196,
+       "extrapolated": 0.01777811014661427,
+       "relative_error": 0.0004105156456217641,
+       "extrapolated_error": 0.00033061937872622767,
+       "gci": 0.0004134109050644883,
+       "band": 7.347234664502071e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "benchmark.C_D",
+       "values": [
+        5.580009767047828,
+        5.580792560788606,
+        5.583531576201095
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.806953258808631,
+       "extrapolated": 5.579696527475104,
+       "relative_error": 0.00014028537107600806,
+       "extrapolated_error": 5.6139177315849604e-05,
+       "gci": 7.017003235695658e-05,
+       "band": 0.00039154946590587984,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "benchmark.C_L",
+       "values": [
+        0.010643934471006849,
+        0.010442975046565536,
+        0.009623352817373554
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.028054875203544,
+       "extrapolated": 0.010709211856299245,
+       "relative_error": 0.018880182416446522,
+       "extrapolated_error": 0.0060954425188627925,
+       "gci": 0.007666030999886081,
+       "band": 8.159673161549456e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "benchmark.Δp (Pa)",
+       "values": [
+        0.11751550040018283,
+        0.11750337225162,
+        0.11748554240219403
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.5559351884652992,
+       "extrapolated": 0.11754129831401465,
+       "relative_error": 0.00010320467105639773,
+       "extrapolated_error": 0.0002194795718769749,
+       "gci": 0.00027440969216773446,
+       "band": 3.224739228975145e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        5.9028596091852925e-05,
+        5.8982800882634244e-05,
+        5.8806790532846296e-05
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9423916784861301,
+       "extrapolated": 5.904470175497485e-05,
+       "relative_error": 0.0007758139656145745,
+       "extrapolated_error": 0.0002727706744757373,
+       "gci": 0.0003410563732716941,
+       "band": 2.0132078902407054e-08,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        2.76887595181065e-08,
+        7.919962612011535e-08,
+        2.988143327344194e-07
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.0920259516015034,
+       "extrapolated": 1.1904650256260475e-08,
+       "relative_error": 1.860352991556894,
+       "extrapolated_error": 1.325877612703943,
+       "gci": 0.7125684545169099,
+       "band": 1.973013657730753e-08,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "5a9bbf6a31910c5ab9510f2b7a94b7707a03fca4-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "pipe_wedge",
+     "file": "examples/cases/flow/pipe_wedge.toml",
+     "description": "Hagen–Poiseuille flow in a pipe on an axisymmetric wedge",
+     "status": "passed",
+     "cells": "256 … 4 096",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 2.0438161092476737,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.0110505129833192e-14,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      2.073858336833298,
+      2.0438161092476737
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mass_flow",
+       "values": [
+        -0.001091026453156903,
+        -0.0010915689439462454,
+        -0.0010937329289630972
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9960199620290835,
+       "extrapolated": -0.0010908449562070353,
+       "relative_error": 0.0004972297305649167,
+       "extrapolated_error": 0.00016638198566619567,
+       "gci": 0.00020794288413301026,
+       "band": 2.26871187334855e-07,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        6.400604709501332,
+        6.387925319771406,
+        6.338454328872051
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9640974878545443,
+       "extrapolated": 6.404974373196669,
+       "relative_error": 0.001980967471886549,
+       "extrapolated_error": 0.000682229692225382,
+       "gci": 0.0008533693091626883,
+       "band": 0.005462079619170601,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        -0.006981888026065345,
+        -0.0069680571329933565,
+        -0.006914093338215486
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9640974878547404,
+       "extrapolated": -0.006986654529234508,
+       "relative_error": 0.0019809674718863374,
+       "extrapolated_error": 0.0006822296922251704,
+       "gci": 0.0008533693091624412,
+       "band": 5.958128961452903e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mass_flow",
+       "values": [
+        0.001091026453177116,
+        0.0010915689439484285,
+        0.0010937329289630966
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.996020008521593,
+       "extrapolated": 0.0010908449562410862,
+       "relative_error": 0.0004972297140301215,
+       "extrapolated_error": 0.0001663819729755245,
+       "gci": 0.00020794286827494524,
+       "band": 2.2687117003748973e-07,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        3.200557407455126,
+        3.1956921270782916,
+        3.174528104345295
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.1210190202265604,
+       "extrapolated": 3.2020097252246784,
+       "relative_error": 0.0015201353256471867,
+       "extrapolated_error": 0.00045356444676336886,
+       "gci": 0.0005672128260257804,
+       "band": 0.001815397211940367,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_x",
+       "values": [
+        0.0069770088922877,
+        0.006964609110314781,
+        0.006913562462114647
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.0415014809531433,
+       "extrapolated": 0.006980987341460576,
+       "relative_error": 0.0017772346523201206,
+       "extrapolated_error": 0.0005698977778182829,
+       "gci": 0.0007127784331180805,
+       "band": 4.9730614660957415e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        0.027930381798245585,
+        0.02788833319502569,
+        0.0277061060032654
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.1156084701066478,
+       "extrapolated": 0.02794299488738533,
+       "relative_error": 0.0015054789985912331,
+       "extrapolated_error": 0.0004513864455323607,
+       "gci": 0.0005644878590837898,
+       "band": 1.57663614246845e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        3.2006828786893,
+        3.19602554714208,
+        3.1755716046378373
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.134803456078519,
+       "extrapolated": 3.202056004684474,
+       "relative_error": 0.0014551055895693792,
+       "extrapolated_error": 0.00042882635193297445,
+       "gci": 0.0005362629035806222,
+       "band": 0.0017164074939667088,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_y",
+       "values": [
+        -0.013965569322114436,
+        -0.013945247944132254,
+        -0.013856001066893827
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.134803456074482,
+       "extrapolated": -0.013971560695518342,
+       "relative_error": 0.0014551055895733087,
+       "extrapolated_error": 0.0004288263519355573,
+       "gci": 0.0005362629035840136,
+       "band": 7.489216754880913e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        -3.2006524104951453,
+        -3.195995123282349,
+        -3.1755413754849027
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.1348034560731795,
+       "extrapolated": -3.2020255234191604,
+       "relative_error": 0.0014551055895743565,
+       "extrapolated_error": 0.00042882635193640503,
+       "gci": 0.0005362629035850267,
+       "band": 0.0017163911550185415,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        3.2006828786893005,
+        3.1960255471420798,
+        3.1755716046378377
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.1348034560781812,
+       "extrapolated": 3.202056004684475,
+       "relative_error": 0.0014551055895696565,
+       "extrapolated_error": 0.000428826351933113,
+       "gci": 0.0005362629035808872,
+       "band": 0.0017164074939675568,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_y",
+       "values": [
+        -0.013965569322114436,
+        -0.013945247944132254,
+        -0.013856001066893829
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.1348034560744535,
+       "extrapolated": -0.013971560695518342,
+       "relative_error": 0.0014551055895733087,
+       "extrapolated_error": 0.0004288263519355573,
+       "gci": 0.0005362629035840273,
+       "band": 7.489216754881104e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        3.2006524104951457,
+        3.1959951232823496,
+        3.1755413754849027
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.134803456073211,
+       "extrapolated": 3.202025523419161,
+       "relative_error": 0.0014551055895743565,
+       "extrapolated_error": 0.000428826351936405,
+       "gci": 0.0005362629035850115,
+       "band": 0.0017163911550184929,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.006979473452269961,
+        0.0069735198123534224,
+        0.006945729343688138
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.22274629134943,
+       "extrapolated": 0.006981096665450942,
+       "relative_error": 0.0008530213571630132,
+       "extrapolated_error": 0.00023251549989472973,
+       "gci": 0.00029071196990756364,
+       "band": 2.029016476226944e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        4.93355245263262e-06,
+        5.026495190412969e-06,
+        5.667255239470183e-06
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.7853701519905423,
+       "extrapolated": 4.917783778791385e-06,
+       "relative_error": 0.018838907394357115,
+       "extrapolated_error": 0.0032064593626988684,
+       "gci": 0.003995263553147148,
+       "band": 1.9710842301542822e-08,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "poiseuille_expression",
+     "file": "examples/cases/flow/poiseuille_expression.toml",
+     "description": "Plane Poiseuille flow with the inlet profile, the outlet pressure and the body force given as expressions (D53)",
+     "status": "passed",
+     "cells": "512 … 8 192",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.8845319903505815,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 5.987003998828121e-13,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.9780493610857488,
+      1.8845319903505815
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mass_flow",
+       "values": [
+        -0.10001279752028137,
+        -0.10005151203141711,
+        -0.10020286829831725
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9670020812627413,
+       "extrapolated": -0.09999949150101428,
+       "relative_error": 0.0003870955727229734,
+       "extrapolated_error": 0.00013306086928409588,
+       "gci": 0.00016630395805580802,
+       "band": 1.6632524083856898e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        1.2021404037048538,
+        1.1983492570449314,
+        1.1840239756711082
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9178573032034432,
+       "extrapolated": 1.2035048055648445,
+       "relative_error": 0.003153663788554518,
+       "extrapolated_error": 0.0011336904129355774,
+       "gci": 0.0014187214070272795,
+       "band": 0.0017055023249884919,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        -0.12021404037048541,
+        -0.11983492570449313,
+        -0.11840239756711085
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9178573032031685,
+       "extrapolated": -0.12035048055648455,
+       "relative_error": 0.0031536637885550014,
+       "extrapolated_error": 0.0011336904129360607,
+       "gci": 0.0014187214070278643,
+       "band": 0.00017055023249891956,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mass_flow",
+       "values": [
+        0.10001279752207717,
+        0.10005151203227061,
+        0.10020286829856781
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9670021106305486,
+       "extrapolated": 0.09999949150349789,
+       "relative_error": 0.00038709556329421065,
+       "extrapolated_error": 0.00013306086240264697,
+       "gci": 0.00016630394945618522,
+       "band": 1.663252322408321e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        0.6011313156640133,
+        0.5994825192848415,
+        0.5938711026605277
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7669517891102553,
+       "extrapolated": 0.6018173590726147,
+       "relative_error": 0.0027428223022294925,
+       "extrapolated_error": 0.0011399528416038381,
+       "gci": 0.0014265672714196631,
+       "band": 0.0008575542607517238,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_x",
+       "values": [
+        0.11993409136608192,
+        0.11975512087072104,
+        0.11914301538221965
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7740585363548054,
+       "extrapolated": 0.1200080416095787,
+       "relative_error": 0.001492240390720897,
+       "extrapolated_error": 0.0006162107347552864,
+       "gci": 0.0007707383556925751,
+       "band": 9.243780437097703e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        -0.12022911962696106,
+        -0.11990757610567868,
+        -0.11882067454741115
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.757135353685982,
+       "extrapolated": -0.12036420703845013,
+       "relative_error": 0.002674422987376517,
+       "extrapolated_error": 0.0011223221156262638,
+       "gci": 0.0014044789222881935,
+       "band": 0.00016885926436133257,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        0.601130151234869,
+        0.5993989071042416,
+        0.5939412054827956
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.6564843429876344,
+       "extrapolated": 0.6019344556572908,
+       "relative_error": 0.0028799821919945584,
+       "extrapolated_error": 0.0013361993400817548,
+       "gci": 0.0016724839470484713,
+       "band": 0.0010053805280271382,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_x",
+       "values": [
+        0.1199371911433387,
+        0.1197590836478814,
+        0.11906274508743109
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9670406843640382,
+       "extrapolated": 0.11999840376080018,
+       "relative_error": 0.0014850063917574833,
+       "extrapolated_error": 0.000510111931017803,
+       "gci": 0.0006379653475075976,
+       "band": 7.651577182684523e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        0.1202308690140173,
+        0.11990013408632404,
+        0.11881980020259074
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7077299385695932,
+       "extrapolated": 0.12037679450059231,
+       "relative_error": 0.0027508320484210206,
+       "extrapolated_error": 0.0012122393454686116,
+       "gci": 0.001517138316595835,
+       "band": 0.00018240685821878055,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        0.6011861638540629,
+        0.5996476122793832,
+        0.5944469511390766
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571222333566363,
+       "extrapolated": 0.6018325511086026,
+       "relative_error": 0.002559193253577801,
+       "extrapolated_error": 0.00107403172751128,
+       "gci": 0.0013439831399226342,
+       "band": 0.0008079840681746268,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        -1.202372327708128,
+        -1.1992952245587656,
+        -1.1888939022781517
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571222333552714,
+       "extrapolated": -1.2036651022172102,
+       "relative_error": 0.002559193253580382,
+       "extrapolated_error": 0.0010740317275136737,
+       "gci": 0.0013439831399257953,
+       "band": 0.0016159681363530573,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        0.601186163854063,
+        0.5996476122793833,
+        0.5944469511390765
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571222333566978,
+       "extrapolated": 0.6018325511086027,
+       "relative_error": 0.0025591932535778007,
+       "extrapolated_error": 0.0010740317275112798,
+       "gci": 0.0013439831399225527,
+       "band": 0.0008079840681745778,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        1.2023723277081282,
+        1.1992952245587658,
+        1.1888939022781515
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.757122233355333,
+       "extrapolated": 1.203665102217211,
+       "relative_error": 0.0025591932535803815,
+       "extrapolated_error": 0.001074031727514042,
+       "gci": 0.0013439831399257136,
+       "band": 0.0016159681363529593,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.23994197563862527,
+        0.23977503065712127,
+        0.2391173321956495
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.978053569918635,
+       "extrapolated": 0.23999876713983115,
+       "relative_error": 0.0006957723051985949,
+       "extrapolated_error": 0.0002366324705859603,
+       "gci": 0.0002958605984566764,
+       "band": 7.098937650732093e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        0.00034927283204486126,
+        0.0003499208024607403,
+        0.0003855180963875937
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 5.779695816726223,
+       "extrapolated": 0.000349260818488727,
+       "relative_error": 0.0018551984478306764,
+       "extrapolated_error": 3.439709093694562e-05,
+       "gci": 4.2994884772288246e-05,
+       "band": 1.5016945167859597e-08,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "poiseuille_hex",
+     "file": "examples/cases/flow/poiseuille_hex.toml",
+     "description": "Plane Poiseuille flow on hex cells",
+     "status": "passed",
+     "cells": "512 … 8 192",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.8845316446539826,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 5.986217458786081e-13,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.978049360981361,
+      1.8845316446539826
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mass_flow",
+       "values": [
+        -0.10001279752028137,
+        -0.10005151203141711,
+        -0.10020286829831725
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9670020812627413,
+       "extrapolated": -0.09999949150101428,
+       "relative_error": 0.0003870955727229734,
+       "extrapolated_error": 0.00013306086928409588,
+       "gci": 0.00016630395805580802,
+       "band": 1.6632524083856898e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        2.4021404037189837,
+        2.3983492570723888,
+        2.3840239757446637
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.917857303632531,
+       "extrapolated": 2.403504805573627,
+       "relative_error": 0.0015782369093519804,
+       "extrapolated_error": 0.0005676717814247958,
+       "gci": 0.0007099927696410813,
+       "band": 0.0017055023183031866,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        -0.24021404037189845,
+        -0.23983492570723883,
+        -0.23840239757446643
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9178573036319548,
+       "extrapolated": -0.2403504805573628,
+       "relative_error": 0.0015782369093524883,
+       "extrapolated_error": 0.0005676717814250033,
+       "gci": 0.0007099927696416955,
+       "band": 0.00017055023183046625,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mass_flow",
+       "values": [
+        0.10001279752207694,
+        0.10005151203226366,
+        0.10020286829857311
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9670021109976552,
+       "extrapolated": 0.09999949150350453,
+       "relative_error": 0.0003870955632270517,
+       "extrapolated_error": 0.00013306086233394275,
+       "gci": 0.00016630394937047053,
+       "band": 1.6632523215510603e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        1.2011313153507068,
+        1.1994825192637637,
+        1.1938711027168045
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7669520249221753,
+       "extrapolated": 1.201817358478922,
+       "relative_error": 0.0013727026061773364,
+       "extrapolated_error": 0.0005708380923067004,
+       "gci": 0.0007139551681895922,
+       "band": 0.000857553910269,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_x",
+       "values": [
+        0.11993409126290476,
+        0.11975512086703186,
+        0.11914301538321997
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7740593272824032,
+       "extrapolated": 0.12000804140799995,
+       "relative_error": 0.0014922395624825933,
+       "extrapolated_error": 0.0006162099158320186,
+       "gci": 0.0007707373307757328,
+       "band": 9.243768136898436e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        -0.24022911956334075,
+        -0.23990757610094884,
+        -0.23882067455871175
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571355966366646,
+       "extrapolated": -0.2403642069177826,
+       "relative_error": 0.001338486620507841,
+       "extrapolated_error": 0.0005620111087839715,
+       "gci": 0.0007029089286063284,
+       "band": 0.0001688591930523094,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        1.2011301515829735,
+        1.1993989071099815,
+        1.1939412055438687
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.6564840430586698,
+       "extrapolated": 1.2019344564093457,
+       "relative_error": 0.00144134627767889,
+       "extrapolated_error": 0.0006691752799690492,
+       "gci": 0.0008370292192232806,
+       "band": 0.0010053810329650368,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_x",
+       "values": [
+        0.11993719125005325,
+        0.11975908365113727,
+        0.11906274508796146
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9670398519815662,
+       "extrapolated": 0.11999840395052733,
+       "relative_error": 0.0014850072530434046,
+       "extrapolated_error": 0.0005101126219921159,
+       "gci": 0.0006379662121071384,
+       "band": 7.65158755925659e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        0.24023086908462896,
+        0.23990013408699112,
+        0.2388198002151385
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.707729617599617,
+       "extrapolated": 0.24037679464885436,
+       "relative_error": 0.0013767381306909426,
+       "extrapolated_error": 0.000607070097754559,
+       "gci": 0.0007592985696499059,
+       "band": 0.00018240695528171257,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        1.201186163867957,
+        1.1996476122655764,
+        1.1944469512039422
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571221855572319,
+       "extrapolated": 1.2018325511645482,
+       "relative_error": 0.0012808602435332652,
+       "extrapolated_error": 0.0005378347390947533,
+       "gci": 0.0006726552012031994,
+       "band": 0.0008079841207390999,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        -2.4023723277359186,
+        -2.399295224531151,
+        -2.3888939024078812
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571221855545018,
+       "extrapolated": -2.403665102329107,
+       "relative_error": 0.0012808602435358508,
+       "extrapolated_error": 0.0005378347390973375,
+       "gci": 0.000672655201206365,
+       "band": 0.0016159682414858077,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        1.2011861638679573,
+        1.1996476122655761,
+        1.1944469512039422
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571221855567538,
+       "extrapolated": 1.201832551164549,
+       "relative_error": 0.0012808602435336346,
+       "extrapolated_error": 0.0005378347390951225,
+       "gci": 0.0006726552012037099,
+       "band": 0.0008079841207397133,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        2.402372327735919,
+        2.3992952245311505,
+        2.3888939024078812
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.757122185554024,
+       "extrapolated": 2.4036651023291085,
+       "relative_error": 0.0012808602435362203,
+       "extrapolated_error": 0.0005378347390977067,
+       "gci": 0.0006726552012068755,
+       "band": 0.001615968241487034,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.23994197563863107,
+        0.2397750306570397,
+        0.23911733219579184
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9780535686724219,
+       "extrapolated": 0.2399987671399324,
+       "relative_error": 0.0006957723055627267,
+       "extrapolated_error": 0.00023663247098357679,
+       "gci": 0.00029586059895402093,
+       "band": 7.098937662665649e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        0.0003491460573323557,
+        0.00034944349180723866,
+        0.00038330203735387203
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 6.830804314595974,
+       "extrapolated": 0.00034914342132705007,
+       "relative_error": 0.0008518912605099838,
+       "extrapolated_error": 7.5499211631038404e-06,
+       "gci": 9.437330202859523e-06,
+       "band": 3.2950066320719632e-09,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "poiseuille_mixed",
+     "file": "examples/cases/flow/poiseuille_mixed.toml",
+     "description": "Plane Poiseuille flow on mixed cells",
+     "status": "passed",
+     "cells": "768 … 12 288",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.8777931619570996,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 8.387957078901196e-14,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.9434578876789042,
+      1.8777931619570996
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mass_flow",
+       "values": [
+        -0.10001220703124998,
+        -0.10004882812499996,
+        -0.10019531250000001
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.00000000000123,
+       "extrapolated": -0.10000000000000002,
+       "relative_error": 0.0003661662394725264,
+       "extrapolated_error": 0.0001220703124996114,
+       "gci": 0.00015256926644671256,
+       "band": 1.5258789062474557e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        2.398178147079132,
+        2.39476290334202,
+        2.3838391142491213
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.6774129164569007,
+       "extrapolated": 2.3997315624520437,
+       "relative_error": 0.0014240992652158984,
+       "extrapolated_error": 0.0006473288084456658,
+       "gci": 0.0008096851430761139,
+       "band": 0.0019417692161397767,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        -0.23981781470791294,
+        -0.23947629033420212,
+        -0.2383839114249122
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.677412916458677,
+       "extrapolated": -0.23997315624520366,
+       "relative_error": 0.0014240992652142335,
+       "extrapolated_error": 0.0006473288084438404,
+       "gci": 0.0008096851430737168,
+       "band": 0.0001941769216134026,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mass_flow",
+       "values": [
+        0.10001220703119386,
+        0.10004882812474845,
+        0.10019531249983221
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.0000000085229255,
+       "extrapolated": 0.10000000000010514,
+       "relative_error": 0.00036616623751911664,
+       "extrapolated_error": 0.00012207031088702291,
+       "gci": 0.0001525692644311992,
+       "band": 1.5258788860890055e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        1.1991369914531689,
+        1.1978443577939182,
+        1.1939465245888408
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.5923588925795578,
+       "extrapolated": 1.1997783633510355,
+       "relative_error": 0.0010779699637855594,
+       "extrapolated_error": 0.000534575316123584,
+       "gci": 0.0006685765496747625,
+       "band": 0.0008017148723331347,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_x",
+       "values": [
+        0.11994426915441972,
+        0.11979583621724577,
+        0.11926224792437802
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.8459157529952241,
+       "extrapolated": 0.1200014729204128,
+       "relative_error": 0.0012375158748339748,
+       "extrapolated_error": 0.00047669219886174887,
+       "gci": 0.000596149428358975,
+       "band": 7.150470749134234e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        -0.2398322621602432,
+        -0.23958640871235143,
+        -0.23885168292198114
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.5794073291353816,
+       "extrapolated": -0.23995590163130395,
+       "relative_error": 0.001025105820531782,
+       "extrapolated_error": 0.0005152591381175058,
+       "gci": 0.0006444059587057077,
+       "band": 0.00015454933882593015,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        1.1989289514451271,
+        1.1974508422614463,
+        1.1932557881643326
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.504936573827939,
+       "extrapolated": 1.1997330924301282,
+       "relative_error": 0.001232858028742418,
+       "extrapolated_error": 0.0006702665701853737,
+       "gci": 0.0008383951609808429,
+       "band": 0.0010051762312514305,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_x",
+       "values": [
+        0.1199482996877155,
+        0.11981382827136844,
+        0.1193344192989064
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.83395736852226,
+       "extrapolated": 0.12000072239870715,
+       "relative_error": 0.0011210781369736826,
+       "extrapolated_error": 0.00043685329507829395,
+       "gci": 0.0005463052741070982,
+       "band": 6.552838873957779e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        0.2397854195618976,
+        0.2394899888343859,
+        0.2386535323719645
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.5014705624525795,
+       "extrapolated": 0.23994674149009143,
+       "relative_error": 0.0012320629338158787,
+       "extrapolated_error": 0.0006723238965113481,
+       "gci": 0.0008409702750511684,
+       "band": 0.00020165241024222886,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        1.1990922312520125,
+        1.197826357922626,
+        1.194092005858207
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.5607248997166439,
+       "extrapolated": 1.1997413902920762,
+       "relative_error": 0.0010556930454504693,
+       "extrapolated_error": 0.0005410824743702871,
+       "gci": 0.0006767192538914153,
+       "band": 0.0008114488000798542,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        -2.398184462504025,
+        -2.395652715845252,
+        -2.388184011716414
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.5607248997166439,
+       "extrapolated": -2.3994827805841523,
+       "relative_error": 0.0010556930454504693,
+       "extrapolated_error": 0.0005410824743702871,
+       "gci": 0.0006767192538914153,
+       "band": 0.0016228976001597085,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        1.1990922312520125,
+        1.197826357922626,
+        1.194092005858207
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.5607248997166439,
+       "extrapolated": 1.1997413902920762,
+       "relative_error": 0.0010556930454504693,
+       "extrapolated_error": 0.0005410824743702871,
+       "gci": 0.0006767192538914153,
+       "band": 0.0008114488000798542,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        2.398184462504025,
+        2.395652715845252,
+        2.388184011716414
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.5607248997166439,
+       "extrapolated": 2.3994827805841523,
+       "relative_error": 0.0010556930454504693,
+       "extrapolated_error": 0.0005410824743702871,
+       "gci": 0.0006767192538914153,
+       "band": 0.0016228976001597085,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.2399646394901011,
+        0.2398577345426297,
+        0.23942727196647837
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.009559195748696,
+       "extrapolated": 0.2399999613826508,
+       "relative_error": 0.0004455029195074713,
+       "extrapolated_error": 0.0001471745759716568,
+       "gci": 0.00018399529939460853,
+       "band": 4.4152365687100454e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        -7.346769819960297e-05,
+        -0.00012831368781152097,
+        -0.0001863834317508417
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.08240053911127888,
+       "extrapolated": 0.0008596314995094619,
+       "relative_error": 0.746532026400337,
+       "extrapolated_error": 1.0854641765006592,
+       "gci": 15.876011168438028,
+       "band": 0.0011663739971363312,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "poiseuille_poly",
+     "file": "examples/cases/flow/poiseuille_poly.toml",
+     "description": "Plane Poiseuille flow on poly cells",
+     "status": "passed",
+     "cells": "561 … 8 385",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 2.0026704557492656,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.8440869671461673e-13,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      2.0073175897113305,
+      2.0026704557492656
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mass_flow",
+       "values": [
+        -0.10000319938007031,
+        -0.10001287800785431,
+        -0.10005071707457931
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 2.0444827790677853,
+       "extrapolated": -0.10000000451972772,
+       "relative_error": 9.678318137822769e-05,
+       "extrapolated_error": 3.1948601981878875e-05,
+       "gci": 3.993447662668388e-05,
+       "band": 3.993575428237026e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        2.4036621400970675,
+        2.4075481241085184,
+        2.4171148537477674
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 1.358363335127789,
+       "extrapolated": 2.401112647969,
+       "relative_error": 0.001616693106167565,
+       "extrapolated_error": 0.001061796134481166,
+       "gci": 0.0013258373990761145,
+       "band": 0.0031868651600840234,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        -0.24036621400970679,
+        -0.24075481241085192,
+        -0.24171148537477677
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 1.358363335127542,
+       "extrapolated": -0.24011126479689993,
+       "relative_error": 0.0016166931061677495,
+       "extrapolated_error": 0.0010617961344816982,
+       "gci": 0.001325837399076636,
+       "band": 0.0003186865160085277,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mass_flow",
+       "values": [
+        0.10000319938036274,
+        0.10001287800870794,
+        0.10005071707503937
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 2.0444826775670903,
+       "extrapolated": 0.10000000451954089,
+       "relative_error": 9.678318698966497e-05,
+       "extrapolated_error": 3.194860677463237e-05,
+       "gci": 3.9934482617107134e-05,
+       "band": 3.993576027310195e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        1.1998911527168292,
+        1.199626436114668,
+        1.1992522222409443
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 0.536462981843698,
+       "extrapolated": 1.2004907430899086,
+       "relative_error": 0.0002206171797848736,
+       "extrapolated_error": 0.0004994543910734872,
+       "gci": 0.0006246299630198235,
+       "band": 0.0007494879663493265,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_x",
+       "values": [
+        0.12000456621502083,
+        0.12001754087191618,
+        0.12007614471662238
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 2.2588200422657394,
+       "extrapolated": 0.12000102445087542,
+       "relative_error": 0.00010811802670999082,
+       "extrapolated_error": 2.951444924421703e-05,
+       "gci": 3.6891972709135674e-05,
+       "band": 4.427205181776213e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        -0.2399737710361629,
+        -0.23991762515118767,
+        -0.23983696010629843
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 0.560424110610707,
+       "extrapolated": -0.2400944543357724,
+       "relative_error": 0.00023396675700353313,
+       "extrapolated_error": 0.0005026492591982598,
+       "gci": 0.0006286275531719036,
+       "band": 0.00015085412451189772,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        1.1999311716436754,
+        1.1995873883641721,
+        1.198912067826539
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 1.0237695847002388,
+       "extrapolated": 1.2002717406768322,
+       "relative_error": 0.0002865024991661173,
+       "extrapolated_error": 0.0002837432738062939,
+       "gci": 0.0003547797586279605,
+       "band": 0.000425711291445909,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_x",
+       "values": [
+        0.12001447972266342,
+        0.12005300144525566,
+        0.12021544627352375
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 2.1568445777112824,
+       "extrapolated": 0.12000298133532496,
+       "relative_error": 0.0003209756246184129,
+       "extrapolated_error": 9.581751395272029e-05,
+       "gci": 0.00011976041729558496,
+       "band": 1.4372984173098692e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        0.23999138918758467,
+        0.23992795145707133,
+        0.2398107239860762
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 0.933212468620721,
+       "extrapolated": 0.2400627357451262,
+       "relative_error": 0.00026433336099304335,
+       "extrapolated_error": 0.00029719963542067197,
+       "gci": 0.0003716099866282908,
+       "band": 8.918319692690327e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        1.199913918463685,
+        1.1996263166092345,
+        1.1991703832633303
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 0.7061556816728397,
+       "extrapolated": 1.200379096425596,
+       "relative_error": 0.0002396854057819896,
+       "extrapolated_error": 0.0003875258768636668,
+       "gci": 0.0004845951392358574,
+       "band": 0.0005814724523889528,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        -2.399827836927364,
+        -2.3992526332184685,
+        -2.3983407665266605
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 0.7061556816858382,
+       "extrapolated": -2.4007581928511557,
+       "relative_error": 0.0002396854057797696,
+       "extrapolated_error": 0.00038752587685090916,
+       "gci": 0.0004845951392201305,
+       "band": 0.0011629449047401606,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        1.199913918463685,
+        1.1996263166092345,
+        1.1991703832633303
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 0.7061556816728397,
+       "extrapolated": 1.200379096425596,
+       "relative_error": 0.0002396854057819896,
+       "extrapolated_error": 0.0003875258768636668,
+       "gci": 0.0004845951392358574,
+       "band": 0.0005814724523889528,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        2.399827836927364,
+        2.3992526332184685,
+        2.3983407665266605
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 0.7061556816858382,
+       "extrapolated": 2.4007581928511557,
+       "relative_error": 0.0002396854057797696,
+       "extrapolated_error": 0.00038752587685090916,
+       "gci": 0.0004845951392201305,
+       "band": 0.0011629449047401606,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.24007503900906202,
+        0.24029466021955576,
+        0.2411205393386893
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 1.9867793422891797,
+       "extrapolated": 0.2399986229977658,
+       "relative_error": 0.0009148023526321151,
+       "extrapolated_error": 0.0003184018739012563,
+       "gci": 0.00039787565802142154,
+       "band": 9.552001412024899e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        -3.6825455232702975e-05,
+        -0.0001910838786245983,
+        -0.000672467189991921
+       ],
+       "ratios": [
+        1.9771421064483226,
+        1.955384722187607
+       ],
+       "order": 1.7100298315784639,
+       "extrapolated": 3.3038135194439226e-05,
+       "relative_error": 4.188907439626315,
+       "extrapolated_error": 2.1146348005410793,
+       "gci": 2.3714435431167322,
+       "band": 8.732948803392775e-05,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "poiseuille_table",
+     "file": "examples/cases/flow/poiseuille_table.toml",
+     "description": "Plane Poiseuille flow with the inlet profile read from a table",
+     "status": "passed",
+     "cells": "512",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 0.002",
+       "value": 0.0015923697725977928,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.2720266467228569e-14,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "poiseuille_tet",
+     "file": "examples/cases/flow/poiseuille_tet.toml",
+     "description": "Plane Poiseuille flow on tet cells",
+     "status": "passed",
+     "cells": "1 024 … 16 384",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.8028807481080926,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.5486655378063553e-13,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.9319990196366565,
+      1.8028807481080926
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mass_flow",
+       "values": [
+        -0.10001220703124998,
+        -0.10004882812499996,
+        -0.10019531250000001
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.00000000000123,
+       "extrapolated": -0.10000000000000002,
+       "relative_error": 0.0003661662394725264,
+       "extrapolated_error": 0.0001220703124996114,
+       "gci": 0.00015256926644671256,
+       "band": 1.5258789062474557e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        2.4005944004414994,
+        2.400191501906389,
+        2.3966774180712083
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 3.1246601448548943,
+       "extrapolated": 2.4006465758068147,
+       "relative_error": 0.00016783282300269207,
+       "extrapolated_error": 2.173388029755524e-05,
+       "gci": 2.716794083662056e-05,
+       "band": 6.521920664391727e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        -0.2400594400441497,
+        -0.24001915019063902,
+        -0.23966774180712086
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 3.124660144868821,
+       "extrapolated": -0.2400646575806811,
+       "relative_error": 0.0001678328230011198,
+       "extrapolated_error": 2.1733880297023437e-05,
+       "gci": 2.7167940836069834e-05,
+       "band": 6.521920664259512e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mass_flow",
+       "values": [
+        0.10001220703117403,
+        0.10004882812491936,
+        0.10019531249923631
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.999999993456741,
+       "extrapolated": 0.09999999999985178,
+       "relative_error": 0.0003661662394263196,
+       "extrapolated_error": 0.00012207031322268632,
+       "gci": 0.00015256926735025852,
+       "band": 1.5258789152828593e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        1.1991050296842938,
+        1.1976293664861866,
+        1.1928738506678973
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.6882383532575465,
+       "extrapolated": 1.199768956429309,
+       "relative_error": 0.0012306371515226928,
+       "extrapolated_error": 0.0005533788330306511,
+       "gci": 0.0006921065383971171,
+       "band": 0.000829908431269369,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_x",
+       "values": [
+        0.11996372981382573,
+        0.11986205017113308,
+        0.11948121293669912
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.905143671988737,
+       "extrapolated": 0.12000076534516707,
+       "relative_error": 0.0008475865401188776,
+       "extrapolated_error": 0.0003086274594566852,
+       "gci": 0.0003859034247143987,
+       "band": 4.629441417666816e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        -0.23982569238318996,
+        -0.23954257098717216,
+        -0.238632752247853
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.6841583692322093,
+       "extrapolated": -0.2399535973850858,
+       "relative_error": 0.0011805298806994873,
+       "extrapolated_error": 0.0005330405682168706,
+       "gci": 0.0006666560649987414,
+       "band": 0.00015988125236977605,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        1.199005137832033,
+        1.1974283108562607,
+        1.1924839178759183
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.6487690503997698,
+       "extrapolated": 1.1997434702977217,
+       "relative_error": 0.0013151127764335093,
+       "extrapolated_error": 0.0006154086135642331,
+       "gci": 0.0007697344681771086,
+       "band": 0.0009229155821107607,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_x",
+       "values": [
+        0.11996967555647396,
+        0.11989032100165503,
+        0.11960468041740334
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.847816035415494,
+       "extrapolated": 0.12000020183781171,
+       "relative_error": 0.0006614551089752312,
+       "extrapolated_error": 0.0002543852499432127,
+       "gci": 0.0003180624728306278,
+       "band": 3.8157851672180236e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        0.2398017173045523,
+        0.23948959138418918,
+        0.23851448516804552
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.6434312067498418,
+       "extrapolated": 0.23994866373837934,
+       "relative_error": 0.0013016000213489306,
+       "extrapolated_error": 0.0006124078023091526,
+       "gci": 0.0007659788443069035,
+       "band": 0.00018368304228375175,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        1.1990946370674496,
+        1.197665382935378,
+        1.1931202405328
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.669063034592154,
+       "extrapolated": 1.199750234186698,
+       "relative_error": 0.0011919443952872213,
+       "extrapolated_error": 0.0005464446687045373,
+       "gci": 0.0006834292921737351,
+       "band": 0.0008194963990603288,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        -2.398189274134899,
+        -2.395330765870756,
+        -2.3862404810656
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.669063034592154,
+       "extrapolated": -2.399500468373396,
+       "relative_error": 0.0011919443952872213,
+       "extrapolated_error": 0.0005464446687045373,
+       "gci": 0.0006834292921737351,
+       "band": 0.0016389927981206576,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        1.1990946370674496,
+        1.197665382935378,
+        1.1931202405328
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.669063034592154,
+       "extrapolated": 1.199750234186698,
+       "relative_error": 0.0011919443952872213,
+       "extrapolated_error": 0.0005464446687045373,
+       "gci": 0.0006834292921737351,
+       "band": 0.0008194963990603288,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        2.398189274134899,
+        2.395330765870756,
+        2.3862404810656
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.669063034592154,
+       "extrapolated": 2.399500468373396,
+       "relative_error": 0.0011919443952872213,
+       "extrapolated_error": 0.0005464446687045373,
+       "gci": 0.0006834292921737351,
+       "band": 0.0016389927981206576,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.23998827291785133,
+        0.23995249475619856,
+        0.2398067341596083
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.0264496030350263,
+       "extrapolated": 0.2399999118386661,
+       "relative_error": 0.0001490829581702427,
+       "extrapolated_error": 4.849552120914945e-05,
+       "gci": 6.0622341423397506e-05,
+       "band": 1.4548651018437484e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        -7.035227735924243e-05,
+        -0.00012292715831402345,
+        -0.0001814300046739381
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.1541331400929395,
+       "extrapolated": 0.0003959321758218886,
+       "relative_error": 0.7473088708460135,
+       "extrapolated_error": 1.1776876991954568,
+       "gci": 8.28481448440051,
+       "band": 0.0005828555664764138,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "poiseuille_water",
+     "file": "examples/cases/flow/poiseuille_water.toml",
+     "description": "Plane Poiseuille flow of water at 40 °C from the material database (D94-D102)",
+     "status": "passed",
+     "cells": "2 048",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 0.001",
+       "value": 0.00039978084672949205,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.2094345673548958e-13,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "taylor_green_bdf2",
+     "file": "examples/cases/flow/taylor_green_bdf2.toml",
+     "description": "Taylor–Green vortex, time order of BDF2 with plain PISO",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "observed order in time (finest pair)",
+       "band": "1.8 – 2.3",
+       "value": 2.20828669449708,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 5.8596374396547694e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [
+      2.348884665291193,
+      2.4215233935179477,
+      2.20828669449708
+     ],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        -0.36673406123597707,
+        -0.3667395515582147,
+        -0.3667527582006452
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.2663010005575634,
+       "extrapolated": -0.36673015475756254,
+       "relative_error": 1.4970854409101586e-05,
+       "extrapolated_error": 1.0652187620378995e-05,
+       "gci": 1.331509269057407e-05,
+       "band": 4.8830980181477015e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        0.005730219706812142,
+        0.005730305493097105,
+        0.005730511846885081
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.2663010005575634,
+       "extrapolated": 0.005730158668086915,
+       "relative_error": 1.4970854409101586e-05,
+       "extrapolated_error": 1.0652187620378995e-05,
+       "gci": 1.331509269057407e-05,
+       "band": 7.629840653355784e-08,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mean_pressure",
+       "values": [
+        -0.36673406123596075,
+        -0.3667395515581924,
+        -0.36675275820061526
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.2663010013021527,
+       "extrapolated": -0.366730154757554,
+       "relative_error": 1.4970854392754699e-05,
+       "extrapolated_error": 1.0652187599187745e-05,
+       "gci": 1.3315092664273475e-05,
+       "band": 4.88309800850216e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.force_x",
+       "values": [
+        -0.005730219706811887,
+        -0.005730305493096756,
+        -0.005730511846884613
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.2663010013021527,
+       "extrapolated": -0.005730158668086781,
+       "relative_error": 1.4970854392754699e-05,
+       "extrapolated_error": 1.0652187599187745e-05,
+       "gci": 1.3315092664273475e-05,
+       "band": 7.629840638284626e-08,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        -0.366734061236001,
+        -0.36673955155820986,
+        -0.3667527582006381
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.2663010078648465,
+       "extrapolated": -0.36673015475764087,
+       "relative_error": 1.4970854330692903e-05,
+       "extrapolated_error": 1.0652187472036237e-05,
+       "gci": 1.331509250541022e-05,
+       "band": 4.88309795024213e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        0.005730219706812516,
+        0.005730305493097029,
+        0.00573051184688497
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.2663010078648465,
+       "extrapolated": 0.005730158668088139,
+       "relative_error": 1.4970854330692903e-05,
+       "extrapolated_error": 1.0652187472036237e-05,
+       "gci": 1.331509250541022e-05,
+       "band": 7.629840547253328e-08,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        -0.3667340612359436,
+        -0.36673955155819116,
+        -0.3667527582005877
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.266300994241414,
+       "extrapolated": -0.3667301547574927,
+       "relative_error": 1.4970854436197507e-05,
+       "extrapolated_error": 1.0652187719526957e-05,
+       "gci": 1.3315092814444189e-05,
+       "band": 4.883098063574648e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        -0.005730219706811619,
+        -0.005730305493096737,
+        -0.005730511846884183
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.266300994241414,
+       "extrapolated": -0.005730158668085824,
+       "relative_error": 1.4970854436197507e-05,
+       "extrapolated_error": 1.0652187719526957e-05,
+       "gci": 1.3315092814444189e-05,
+       "band": 7.629840724335387e-08,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        -0.232386665470792,
+        -0.23239169982691177,
+        -0.23240540673830587
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.445024343930984,
+       "extrapolated": -0.23238374306318102,
+       "relative_error": 2.166370479803807e-05,
+       "extrapolated_error": 1.2575783367920457e-05,
+       "gci": 1.5719531524540954e-05,
+       "band": 3.653009513751067e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        0.232386665470792,
+        0.23239169982691177,
+        0.23240540673830587
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.445024343930984,
+       "extrapolated": 0.23238374306318102,
+       "relative_error": 2.166370479803807e-05,
+       "extrapolated_error": 1.2575783367920457e-05,
+       "gci": 1.5719531524540954e-05,
+       "band": 3.653009513751067e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        -0.23238666547079195,
+        -0.23239169982691182,
+        -0.23240540673830584
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.4450243438904045,
+       "extrapolated": -0.23238374306318077,
+       "relative_error": 2.166370479851582e-05,
+       "extrapolated_error": 1.2575783368756542e-05,
+       "gci": 1.5719531525586436e-05,
+       "band": 3.653009513994023e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        -0.23238666547079195,
+        -0.23239169982691182,
+        -0.23240540673830584
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.4450243438904045,
+       "extrapolated": -0.23238374306318077,
+       "relative_error": 2.166370479851582e-05,
+       "extrapolated_error": 1.2575783368756542e-05,
+       "gci": 1.5719531525586436e-05,
+       "band": 3.653009513994023e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.0032829056203858174,
+        0.0032845343114976345,
+        0.0032878181031430935
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.0116495753474366,
+       "extrapolated": 0.003281302917296915,
+       "relative_error": 0.0004961126819191706,
+       "extrapolated_error": 0.0004884349690649016,
+       "gci": 0.0006102456460179141,
+       "band": 2.0033788611281845e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        2.1212504059000322e-05,
+        2.1231585732884965e-05,
+        2.124204045498906e-05
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0008995483904950373,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "taylor_green_cfl10",
+     "file": "examples/cases/flow/taylor_green_cfl10.toml",
+     "description": "Taylor–Green vortex at Courant number 9 with outer correctors",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "observed order in time (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.998399114141631,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.465863768187484e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [
+      1.9683774333216526,
+      1.998399114141631
+     ],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        -0.40799401968183563,
+        -0.40806846412552905,
+        -0.40836182822817274
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9784562675577222,
+       "extrapolated": -0.4079687045720671,
+       "relative_error": 0.00018246454629770284,
+       "extrapolated_error": 6.205159730354135e-05,
+       "gci": 7.755968392719223e-05,
+       "band": 3.1643887210707816e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        0.006374906557528682,
+        0.006376069751961391,
+        0.006380653566065199
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9784562675577222,
+       "extrapolated": 0.006374511008938548,
+       "relative_error": 0.00018246454629770284,
+       "extrapolated_error": 6.205159730354135e-05,
+       "gci": 7.755968392719223e-05,
+       "band": 4.944357376673096e-07,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mean_pressure",
+       "values": [
+        -0.40799401968183974,
+        -0.4080684641255213,
+        -0.40836182822818273
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9784562678752955,
+       "extrapolated": -0.4079687045720827,
+       "relative_error": 0.00018246454626858442,
+       "extrapolated_error": 6.205159727537307e-05,
+       "gci": 7.755968389193644e-05,
+       "band": 3.1643887196323983e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.force_x",
+       "values": [
+        -0.006374906557528746,
+        -0.00637606975196127,
+        -0.006380653566065355
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9784562678752955,
+       "extrapolated": -0.006374511008938792,
+       "relative_error": 0.00018246454626858442,
+       "extrapolated_error": 6.205159727537307e-05,
+       "gci": 7.755968389193644e-05,
+       "band": 4.944357374425622e-07,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        -0.40799401968183546,
+        -0.4080684641255307,
+        -0.40836182822817163
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.978456267508572,
+       "extrapolated": -0.4079687045720651,
+       "relative_error": 0.00018246454630219285,
+       "extrapolated_error": 6.205159730803187e-05,
+       "gci": 7.755968393264165e-05,
+       "band": 3.1643887212931135e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        0.006374906557528679,
+        0.0063760697519614174,
+        0.006380653566065182
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.978456267508572,
+       "extrapolated": 0.006374511008938517,
+       "relative_error": 0.00018246454630219285,
+       "extrapolated_error": 6.205159730803187e-05,
+       "gci": 7.755968393264165e-05,
+       "band": 4.94435737702049e-07,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        -0.40799401968183924,
+        -0.4080684641255199,
+        -0.408361828228184
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9784562679056115,
+       "extrapolated": -0.4079687045720832,
+       "relative_error": 0.00018246454626640773,
+       "extrapolated_error": 6.205159727292378e-05,
+       "gci": 7.75596838888272e-05,
+       "band": 3.1643887195055386e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        -0.006374906557528738,
+        -0.006376069751961248,
+        -0.006380653566065375
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9784562679056115,
+       "extrapolated": -0.0063745110089388,
+       "relative_error": 0.00018246454626640773,
+       "extrapolated_error": 6.205159727292378e-05,
+       "gci": 7.75596838888272e-05,
+       "band": 4.944357374227404e-07,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        -0.31602456152904557,
+        -0.31614081989511983,
+        -0.3166036006709828
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9929943976327775,
+       "extrapolated": -0.31598555681448615,
+       "relative_error": 0.00036787762796587886,
+       "extrapolated_error": 0.00012343828291595078,
+       "gci": 0.000154278809733638,
+       "band": 4.8755893199295996e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        0.31602456152904557,
+        0.31614081989511983,
+        0.3166036006709828
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9929943976327775,
+       "extrapolated": 0.31598555681448615,
+       "relative_error": 0.00036787762796587886,
+       "extrapolated_error": 0.00012343828291595078,
+       "gci": 0.000154278809733638,
+       "band": 4.8755893199295996e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        -0.3160245615290457,
+        -0.3161408198951198,
+        -0.3166036006709828
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.992994397635017,
+       "extrapolated": -0.31598555681448637,
+       "relative_error": 0.0003678776279653517,
+       "extrapolated_error": 0.00012343828291559936,
+       "gci": 0.0001542788097330971,
+       "band": 4.875589319912508e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        -0.3160245615290457,
+        -0.3161408198951198,
+        -0.3166036006709828
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.992994397635017,
+       "extrapolated": -0.31598555681448637,
+       "relative_error": 0.0003678776279653517,
+       "extrapolated_error": 0.00012343828291559936,
+       "gci": 0.0001542788097330971,
+       "band": 4.875589319912508e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.002282343751694886,
+        0.0023205044836262087,
+        0.002402577470182045
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.1048186096958845,
+       "extrapolated": 0.00224918122169076,
+       "relative_error": 0.016719975640384646,
+       "extrapolated_error": 0.014744267684751896,
+       "gci": 0.01816254123611929,
+       "band": 4.1453162505157576e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        1.1679494001041145e-05,
+        1.2017545750923637e-05,
+        1.2868163062159342e-05
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.3312661009974796,
+       "extrapolated": 1.1456539135917337e-05,
+       "relative_error": 0.028944040713780657,
+       "extrapolated_error": 0.019460926417544638,
+       "gci": 0.023861785568785498,
+       "band": 2.786935814047604e-07,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "taylor_green_cn",
+     "file": "examples/cases/flow/taylor_green_cn.toml",
+     "description": "Taylor–Green vortex, time order of Crank–Nicolson with plain PISO",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "observed order in time (finest pair)",
+       "band": "1.8 – 2.3",
+       "value": 1.9983982140568453,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 5.859637241000424e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [
+      2.398456415858265,
+      2.4075984096220306,
+      1.9983982140568453
+     ],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        -0.3666694252684721,
+        -0.3666100934804013,
+        -0.36649264187002195
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9851893274892406,
+       "extrapolated": -0.3667299942952836,
+       "relative_error": 0.00016181275007422395,
+       "extrapolated_error": 0.00016515972992021838,
+       "gci": 0.00020648376520315286,
+       "band": 7.571128351431021e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        0.005729209769819877,
+        0.00572828271063127,
+        0.005726447529219093
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9851893274892406,
+       "extrapolated": 0.005730156160863806,
+       "relative_error": 0.00016181275007422395,
+       "extrapolated_error": 0.00016515972992021838,
+       "gci": 0.00020648376520315286,
+       "band": 1.182988804911097e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.mean_pressure",
+       "values": [
+        -0.3666694252684687,
+        -0.3666100934803746,
+        -0.3664926418700229
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9851893265841105,
+       "extrapolated": -0.36672999429538067,
+       "relative_error": 0.0001618127501376591,
+       "extrapolated_error": 0.00016515973019430192,
+       "gci": 0.0002064837655458927,
+       "band": 7.571128363998171e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.xmax.force_x",
+       "values": [
+        -0.005729209769819823,
+        -0.005728282710630853,
+        -0.005726447529219108
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9851893265841105,
+       "extrapolated": -0.005730156160865323,
+       "relative_error": 0.0001618127501376591,
+       "extrapolated_error": 0.00016515973019430192,
+       "gci": 0.0002064837655458927,
+       "band": 1.1829888068747142e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        -0.36666942526849045,
+        -0.3666100934803924,
+        -0.36649264187001324
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9851893268257962,
+       "extrapolated": -0.366729994295386,
+       "relative_error": 0.0001618127501483984,
+       "extrapolated_error": 0.00016515973014949464,
+       "gci": 0.00020648376548969356,
+       "band": 7.57112836193797e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        0.005729209769820163,
+        0.0057282827106311315,
+        0.005726447529218957
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9851893268257962,
+       "extrapolated": 0.005730156160865406,
+       "relative_error": 0.0001618127501483984,
+       "extrapolated_error": 0.00016515973014949464,
+       "gci": 0.00020648376548969356,
+       "band": 1.1829888065528078e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        -0.36666942526844276,
+        -0.3666100934803747,
+        -0.3664926418700029
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9851893274639971,
+       "extrapolated": -0.36672999429525355,
+       "relative_error": 0.00016181275006666728,
+       "extrapolated_error": 0.00016515972991841549,
+       "gci": 0.00020648376520081125,
+       "band": 7.571128351344553e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        -0.005729209769819418,
+        -0.005728282710630855,
+        -0.0057264475292187955
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9851893274639971,
+       "extrapolated": -0.005730156160863337,
+       "relative_error": 0.00016181275006666728,
+       "extrapolated_error": 0.00016515972991841549,
+       "gci": 0.00020648376520081125,
+       "band": 1.1829888048975864e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        -0.23225565040200616,
+        -0.23212930376805185,
+        -0.23187849066683922
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9892254797858344,
+       "extrapolated": -0.23238390560409564,
+       "relative_error": 0.000543998106119763,
+       "extrapolated_error": 0.0005519108638615522,
+       "gci": 0.0006902695470890714,
+       "band": 0.00016031900261187049,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        0.23225565040200616,
+        0.23212930376805185,
+        0.23187849066683922
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9892254797858344,
+       "extrapolated": 0.23238390560409564,
+       "relative_error": 0.000543998106119763,
+       "extrapolated_error": 0.0005519108638615522,
+       "gci": 0.0006902695470890714,
+       "band": 0.00016031900261187049,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        -0.2322556504020062,
+        -0.23212930376805183,
+        -0.2318784906668392
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9892254797852005,
+       "extrapolated": -0.23238390560409586,
+       "relative_error": 0.000543998106120002,
+       "extrapolated_error": 0.0005519108638623877,
+       "gci": 0.0006902695470899857,
+       "band": 0.00016031900261208285,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        -0.2322556504020062,
+        -0.23212930376805183,
+        -0.2318784906668392
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.9892254797852005,
+       "extrapolated": -0.23238390560409586,
+       "relative_error": 0.000543998106120002,
+       "extrapolated_error": 0.0005519108638623877,
+       "gci": 0.0006902695470899857,
+       "band": 0.00016031900261208285,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.0032829047515364252,
+        0.0032845311309600083,
+        0.003287802297732523
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.0081414456998004,
+       "extrapolated": 0.003281296574022674,
+       "relative_error": 0.0004954086538215595,
+       "extrapolated_error": 0.0004901042857518147,
+       "gci": 0.0006123302515092232,
+       "band": 2.010221892189123e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        2.122514028715444e-05,
+        2.1258413456831833e-05,
+        2.1306953255308472e-05
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 0.5448088116845428,
+       "extrapolated": 2.1152622389788955e-05,
+       "relative_error": 0.00156763014176783,
+       "extrapolated_error": 0.0034283171149734606,
+       "gci": 0.004270754891628158,
+       "band": 9.064737170685871e-08,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "taylor_green_error",
+     "file": "examples/cases/flow/taylor_green_error.toml",
+     "description": "Taylor–Green vortex with the time step from the time-integration error and output at exact simulated times (D66)",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 5.859233985572747e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "taylor_green_expression",
+     "file": "examples/cases/flow/taylor_green_expression.toml",
+     "description": "Taylor–Green vortex with the exact velocity on the sides written as expressions of x, y and t (D53)",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 0.002",
+       "value": 0.000548129700267019,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 6.449650238916462e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "taylor_green_space",
+     "file": "examples/cases/flow/taylor_green_space.toml",
+     "description": "Taylor–Green vortex, space order of the transient solver",
+     "status": "passed",
+     "cells": "256 … 16 384",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 2.091573788165456,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.373212117203734e-17,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      3.015779008073409,
+      2.5506300536876165,
+      2.091573788165456
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "patches.xmin.mean_pressure",
+       "values": [
+        -0.3669884176488944,
+        -0.3667527582006452,
+        -0.36672770204704785
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0006421441029636938,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "patches.xmin.force_x",
+       "values": [
+        0.0229367761030559,
+        0.022922047387540324,
+        0.02292048137794049
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0006421441029636938,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "patches.xmax.mean_pressure",
+       "values": [
+        -0.3669884176485256,
+        -0.36675275820061526,
+        -0.36672770204707533
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0006421441020408887,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "patches.xmax.force_x",
+       "values": [
+        -0.02293677610303285,
+        -0.022922047387538454,
+        -0.02292048137794221
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0006421441020408887,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "patches.ymin.mean_pressure",
+       "values": [
+        -0.3669884176489069,
+        -0.3667527582006381,
+        -0.36672770204705896
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0006421441030170672,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "patches.ymin.force_y",
+       "values": [
+        0.02293677610305668,
+        0.02292204738753988,
+        0.022920481377941185
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0006421441030170672,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "patches.ymax.mean_pressure",
+       "values": [
+        -0.36698841764850637,
+        -0.3667527582005877,
+        -0.36672770204706956
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0006421441020636116,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "patches.ymax.force_y",
+       "values": [
+        -0.022936776103031648,
+        -0.022922047387536733,
+        -0.022920481377941847
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0006421441020636116,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "patches.zmin.mean_pressure",
+       "values": [
+        -0.23371247855573615,
+        -0.23240540673830587,
+        -0.22793333411243064
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7746052049525707,
+       "extrapolated": -0.23425226885574554,
+       "relative_error": 0.005592648820069616,
+       "extrapolated_error": 0.0023043119396286313,
+       "gci": 0.0028870425712028947,
+       "band": 0.0006747378750117539,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmin.force_z",
+       "values": [
+        0.23371247855573615,
+        0.23240540673830587,
+        0.22793333411243064
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7746052049525707,
+       "extrapolated": 0.23425226885574554,
+       "relative_error": 0.005592648820069616,
+       "extrapolated_error": 0.0023043119396286313,
+       "gci": 0.0028870425712028947,
+       "band": 0.0006747378750117539,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.mean_pressure",
+       "values": [
+        -0.23371247855573618,
+        -0.23240540673830584,
+        -0.22793333411243064
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7746052049525005,
+       "extrapolated": -0.23425226885574565,
+       "relative_error": 0.005592648820069853,
+       "extrapolated_error": 0.0023043119396289856,
+       "gci": 0.0028870425712032156,
+       "band": 0.000674737875011829,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "patches.zmax.force_z",
+       "values": [
+        -0.23371247855573618,
+        -0.23240540673830584,
+        -0.22793333411243064
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7746052049525005,
+       "extrapolated": -0.23425226885574565,
+       "relative_error": 0.005592648820069853,
+       "extrapolated_error": 0.0023043119396289856,
+       "gci": 0.0028870425712032156,
+       "band": 0.000674737875011829,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.013147842919720602,
+        0.013151272412572374,
+        0.013138661519509882
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.8786032925432354,
+       "extrapolated": 0.013146561914541608,
+       "relative_error": 0.0002608407229012893,
+       "extrapolated_error": 9.744031841330759e-05,
+       "gci": 0.00012178853090359351,
+       "band": 1.6012564737439857e-06,
+       "verdict": "oscillatory"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        1.6197520877106117e-05,
+        8.496816181995624e-05,
+        0.0004962877198553227
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.5803949761871383,
+       "extrapolated": 2.3910225356937955e-06,
+       "relative_error": 4.245751029717878,
+       "extrapolated_error": 5.774307073775084,
+       "gci": 1.0654792827684119,
+       "band": 1.72581229267654e-05,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.4.0",
+      "commit": "717c25c32a377d078164741bd2fdbbae536dc359-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    }
+   ]
+  },
+  {
+   "family": "scalar",
+   "title": "Scalar transport (`foehn scalar`)",
+   "cases": [
+    {
+     "case": "mms_hex_box",
+     "file": "examples/cases/scalar/mms_hex_box.toml",
+     "description": "Convection–diffusion with a manufactured solution on hexahedral meshes",
+     "status": "passed",
+     "cells": "512 … 32 768",
+     "checks": [
+      {
+       "check": "observed order (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.8734477570830477,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.6988837358064435,
+      1.8734477570830477
+     ],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    },
+    {
+     "case": "mms_mixed_box",
+     "file": "examples/cases/scalar/mms_mixed_box.toml",
+     "description": "Convection–diffusion with a manufactured solution on mixed meshes (hexahedra, prisms, tetrahedra and transitional polyhedra)",
+     "status": "passed",
+     "cells": "1 344 … 95 232",
+     "checks": [
+      {
+       "check": "observed order (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.9403012318334323,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.6837232301811218,
+      1.9403012318334323
+     ],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    },
+    {
+     "case": "mms_poly_2d",
+     "file": "examples/cases/scalar/mms_poly_2d.toml",
+     "description": "Convection–diffusion with a manufactured solution on 2D polygonal meshes (one cell thick, D3)",
+     "status": "passed",
+     "cells": "289 … 16 641",
+     "checks": [
+      {
+       "check": "observed order (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.9784754323965201,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.786005303651764,
+      1.9072233778286465,
+      1.9784754323965201
+     ],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    },
+    {
+     "case": "mms_poly_box",
+     "file": "examples/cases/scalar/mms_poly_box.toml",
+     "description": "Convection–diffusion with a manufactured solution on polyhedral meshes",
+     "status": "passed",
+     "cells": "729 … 35 937",
+     "checks": [
+      {
+       "check": "observed order (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.975953115448994,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.8295549247708007,
+      1.975953115448994
+     ],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    },
+    {
+     "case": "mms_tet_box",
+     "file": "examples/cases/scalar/mms_tet_box.toml",
+     "description": "Convection–diffusion with a manufactured solution on tetrahedral meshes",
+     "status": "passed",
+     "cells": "3 072 … 196 608",
+     "checks": [
+      {
+       "check": "observed order (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.9705300725174295,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.9204034440451838,
+      1.9705300725174295
+     ],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    },
+    {
+     "case": "oblique_step_2d",
+     "file": "examples/cases/scalar/oblique_step_2d.toml",
+     "description": "Oblique step: pure convection of a discontinuity at 30° to the x axis on a 2D polygonal mesh, with five convection schemes (stages 2 and 5, D25)",
+     "status": "passed",
+     "cells": "2 401",
+     "checks": [
+      {
+       "check": "range of the solution (upwind)",
+       "band": "0 – 1 (± 1e-6)",
+       "value": "-2.332e-33 … 1",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "range of the solution (venkatakrishnan)",
+       "band": "0 – 1 (± 1e-6)",
+       "value": "-1.825e-20 … 1",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "range of the solution (venkatakrishnan-wang)",
+       "band": "0 – 1 (± 1e-6)",
+       "value": "-1.825e-20 … 1",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "range of the solution (bounded-central)",
+       "band": "0 – 1 (± 1e-6)",
+       "value": "-4.268e-35 … 1",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    },
+    {
+     "case": "poisson_amg_poly_box",
+     "file": "examples/cases/scalar/poisson_amg_poly_box.toml",
+     "description": "Poisson problem with a manufactured solution on polyhedral meshes, solved by the stage-3 pressure solver inside the outer iterations of the scalar solver",
+     "status": "passed",
+     "cells": "729 … 35 937",
+     "checks": [
+      {
+       "check": "observed order (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.8991511750945482,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.7499466382465927,
+      1.8991511750945482
+     ],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    }
+   ]
+  },
+  {
+   "family": "poisson",
+   "title": "Pressure equation (`foehn poisson`)",
+   "cases": [
+    {
+     "case": "poisson_hex_box",
+     "file": "examples/cases/poisson/poisson_hex_box.toml",
+     "description": "The pressure solver on hexahedral meshes",
+     "status": "passed",
+     "cells": "512 … 262 144",
+     "checks": [
+      {
+       "check": "amg: iterations finest / coarsest level",
+       "band": "≤ 1.5",
+       "value": 1.2,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "amg-double: iterations finest / coarsest level",
+       "band": "≤ 1.5",
+       "value": 1.2,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "largest difference to the reference solution",
+       "band": "≤ 1e-06",
+       "value": 1.1761383014594828e-09,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    },
+    {
+     "case": "poisson_mixed_box",
+     "file": "examples/cases/poisson/poisson_mixed_box.toml",
+     "description": "The pressure solver on mixed meshes (hexahedra, prisms, tetrahedra and transitional polyhedra)",
+     "status": "passed",
+     "cells": "1 344 … 95 232",
+     "checks": [
+      {
+       "check": "amg: iterations finest / coarsest level",
+       "band": "≤ 1.5",
+       "value": 1.3,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "amg-double: iterations finest / coarsest level",
+       "band": "≤ 1.5",
+       "value": 1.3,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "largest difference to the reference solution",
+       "band": "≤ 1e-06",
+       "value": 9.724286744461864e-10,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    },
+    {
+     "case": "poisson_poly_box",
+     "file": "examples/cases/poisson/poisson_poly_box.toml",
+     "description": "The pressure solver on polyhedral meshes",
+     "status": "passed",
+     "cells": "729 … 274 625",
+     "checks": [
+      {
+       "check": "amg: iterations finest / coarsest level",
+       "band": "≤ 1.5",
+       "value": 1.1,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "amg-double: iterations finest / coarsest level",
+       "band": "≤ 1.5",
+       "value": 1.1,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "largest difference to the reference solution",
+       "band": "≤ 1e-06",
+       "value": 1.111324719288965e-09,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    },
+    {
+     "case": "poisson_tet_box",
+     "file": "examples/cases/poisson/poisson_tet_box.toml",
+     "description": "The pressure solver on tetrahedral meshes",
+     "status": "passed",
+     "cells": "3 072 … 196 608",
+     "checks": [
+      {
+       "check": "amg: iterations finest / coarsest level",
+       "band": "≤ 1.5",
+       "value": 1.1818181818181819,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "amg-double: iterations finest / coarsest level",
+       "band": "≤ 1.5",
+       "value": 1.1818181818181819,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "largest difference to the reference solution",
+       "band": "≤ 1e-06",
+       "value": 1.6461677464398161e-09,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": []
+    }
+   ]
+  }
+ ]
+}

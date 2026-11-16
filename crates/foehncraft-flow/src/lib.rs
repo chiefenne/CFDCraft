@@ -50,4 +50,5 @@ pub mod restart;
 pub mod schema;
 pub mod simplec;
 pub mod transient;
+pub mod uncertainty;
 pub mod unsteady;

@@ -1,0 +1,62 @@
+# Flow around a cylinder in a channel at Re = 20 on three meshes: the
+# discretisation uncertainty of the drag, the lift and the pressure
+# difference (D67, stage 5 part 6c).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cylinder_re20_gci.toml
+#
+# The benchmark 2D-1 of Schäfer & Turek (1996) of cylinder_re20.toml on the
+# built-in meshes refine 0, 1 and 2 (6 144, 24 576 and 98 304 hexahedra).
+# The report gives for C_D, C_L and Δp (and the patch forces and the
+# dissipation) the observed order of the three solutions, the value
+# extrapolated to zero cell size and the band φ1 ± U of the grid
+# convergence index after Celik et al. (2008); flow.md and `uncertainty`
+# in result.json. Every mesh is held to the reference ranges of the
+# benchmark with a band of 8 % of the range midpoint (the coarse mesh is
+# 7 % low in C_L); the finest one is the mesh of docs/verification/stage5.md.
+# About 5 minutes on four cores (the `long` set of tools/ci_cases.sh).
+
+[mesh.cylinder]
+refine = 0
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[flow]
+convection = true
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 0.3
+profile_axes = ["y"]
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.walls]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+relaxation_velocity = 0.5      # the finest mesh diverges with the default 0.7
+max_iterations = 12000
+tolerance = 1e-7
+log_every = 500
+
+[verification]
+benchmark = "schafer-turek-2d1"
+benchmark_tolerance = 0.08    # the coarse mesh is 7 % low in C_L
+levels = [0, 1, 2]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

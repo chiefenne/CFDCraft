@@ -66,6 +66,7 @@ Couette and Poiseuille flow, the lid-driven cavity and the steady cylinder.
 | `flow/cavity_re1000_poly3d.toml` | generated poly 3D, 28 227 polyhedra | Re = 1000 on polyhedra, deviation ≤ 3 % | [gallery 12](../gallery/flow.md#cavity), [recipe 19](../recipes/flow.md#flow-cavity) |
 | `flow/cylinder_re20.toml` | built-in cylinder mesh, refine 1: 24 576 hexahedra | Schäfer & Turek 2D-1, steady, Re = 20: C_D, C_L, Δp within 0.5 % of the reference ranges | [gallery 15](../gallery/flow.md#cylinder), [recipe 23](../recipes/flow.md#cylinder) |
 | `flow/cylinder_potential.toml` | built-in cylinder mesh, refine 1: 24 576 hexahedra | the potential-flow start (D52) around the cylinder, written without outer iterations | [gallery 20](../gallery/flow.md#time-control), [recipe 28](../recipes/flow.md#time-control) |
+| `flow/cylinder_re20_gci.toml` | built-in cylinder mesh, refine 0 to 2: 6 144 to 98 304 hexahedra (3 levels) | the benchmark 2D-1 on three meshes: observed order, extrapolated value and grid convergence index of C_D, C_L and Δp (D67); every mesh within 8 % of the reference ranges (about 16 minutes, in the `long` set) | [gallery 25](../gallery/verification.md#gci), [recipe 34](../recipes/verification.md#gci) |
 
 ## Transient flow
 

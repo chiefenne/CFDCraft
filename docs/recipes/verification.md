@@ -1,0 +1,91 @@
+# Verification
+
+Part of the [Recipes](../recipes.md): the discretisation uncertainty of a sweep (D67) and the generated verification manual (D68).
+
+| # | Recipe |
+|---|---|
+| 34 | [Estimate the discretisation uncertainty of a mesh or time-step sweep](#gci) |
+| 35 | [Regenerate the verification manual](#manual) |
+
+---
+
+<a id="gci"></a>
+## 34. Estimate the discretisation uncertainty of a mesh or time-step sweep
+
+A sweep of three or more meshes (`[verification] levels`, the refinement
+levels of `[mesh.generate]` or `[mesh.cylinder]`) or of three or more
+time steps (`[verification] time_steps`) reports the uncertainty of its
+monitored quantities after Celik et al. (2008). No exact solution is
+needed: a case without `[analytic]` may have levels too (an
+`expected_order` still needs one, it checks the error norms).
+
+```toml
+[mesh.cylinder]
+refine = 0                     # the coarsest level
+
+[verification]
+levels = [0, 1, 2]             # 6 144, 24 576 and 98 304 cells
+benchmark = "schafer-turek-2d1"
+benchmark_tolerance = 0.08
+```
+
+```
+target/release/foehn flow examples/cases/flow/cylinder_re20_gci.toml
+grep -A 25 "Discretisation uncertainty" output/cylinder_re20_gci/flow.md
+python3 -c "import json; [print(e['quantity'], e['order'], e['extrapolated'], e['band'], e['verdict']) for e in json.load(open('output/cylinder_re20_gci/result.json'))['uncertainty']]"
+```
+
+From Python:
+
+```python
+from foehncraft import run
+res = run("examples/cases/flow/couette_viscosity.toml")
+e = res.uncertainty["patches.ymin.force_x"]
+print(e["order"], e["extrapolated"], e["band"], e["gci"], e["verdict"])
+```
+
+**Reading the table.** The cell size is h ∝ N^(−1/d) (N cells, d = 2 for
+a one-layer mesh) or the time step; φ1 is the finest solution. `Order`
+is the observed order p of the three solutions, `Extrapolated` the
+Richardson value φ1 + (φ1 − φ2)/(r^p − 1), `± band` the uncertainty
+U = 1.25 |φ1 − φ2| / (r^p − 1) of φ1 in its own unit and `GCI` the band
+relative to |φ1| (left out where |φ1| is smaller than its band, for
+example the mean pressure of a cavity, whose level is arbitrary). The
+verdict:
+
+| Verdict | Ratio R = (φ1 − φ2)/(φ2 − φ3) | Meaning |
+|---|---|---|
+| `monotonic` | 0 < R < 1 | the solutions converge from one side: order, extrapolation and band are meaningful |
+| `oscillatory` | −1 < R < 0 | they converge and change direction: the order is that of the magnitudes, the band an estimate |
+| `divergent` | \|R\| ≥ 1 | the differences do not fall: no order, refine further or look for a singularity |
+| `unchanged` | φ1 = φ2 = φ3 to round-off | nothing to estimate (a quantity the scheme reproduces exactly) |
+
+Quantities at a singularity converge slowly or not at all: the force on
+the lid of the lid-driven cavity and its viscous dissipation grow with
+every refinement (the shear stress is singular in the two upper corners),
+and the report says so with an order near zero. The error norms against
+an exact solution are not in the table; their observed orders are
+reported as before (`orders`, `time_orders`).
+
+Keys: `verification.levels`, `verification.time_steps`,
+`verification.benchmark`, `verification.reference`.
+
+<a id="manual"></a>
+## 35. Regenerate the verification manual
+
+The manual ([docs/verification/manual.md](../verification/manual.md),
+D68) is generated from the case files and the reports of a catalogue run:
+every check of every case with its band and its value, the uncertainty
+tables of the sweeps and a chart of the observed orders. Regenerate it
+for a release and after a change of a scheme:
+
+```
+cargo build --release -p foehncraft-cli
+for s in linux-1 linux-2 linux-3 long; do bash tools/ci_cases.sh $s target/release/foehn; done
+python3 tools/release/verification_manual.py output
+git diff --stat docs/verification docs/figures/verification
+```
+
+The script exits with 1 when a case failed and lists the cases without a
+report (for example when the `long` set was not run). It writes no dates
+and no timings, so the same reports give the same files.
