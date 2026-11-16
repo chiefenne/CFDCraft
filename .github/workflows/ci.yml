@@ -2,17 +2,24 @@
 # runners. GPU tests run on the maintainer's machine and are not part of
 # these checks.
 #
-# Two tiers, one workflow:
-#   fast PR gate   pull requests: everything except the long cases, built
-#                  with the `ci` profile (release optimisation, no LTO, 16
-#                  codegen units), test cases sharded over parallel jobs.
-#                  Target: under 5 minutes with a warm cache.
-#   full tier      push to main, the nightly schedule, workflow_dispatch, and
-#                  pull requests with the label `full-ci`: the shipped
-#                  `release` profile, every case on every platform, the long
-#                  cases, and the tests marked slow.
+# Three tiers, one workflow (see docs/recipes/development.md, "CI tiers"):
+#   PR gate     pull requests: Linux only, `ci` profile (release optimisation,
+#               no LTO, 16 codegen units), cases sharded over three jobs.
+#               macOS and Windows join when the PR touches platform-sensitive
+#               files (build files, I/O, restart, run control, the CLI).
+#               Target: about 5 minutes with a warm cache.
+#   main        push to main: only what the PR gate did not run: macOS and
+#               Windows tests and quick cases, MPI on macOS, the long Linux
+#               cases and the debug-build tests. A newer merge cancels the
+#               older run (squash merges: the newer commit contains it).
+#   full        the nightly schedule, workflow_dispatch and pull requests
+#               with the label `full-ci`: the shipped `release` profile,
+#               every job on every platform, the long cases, and (nightly,
+#               manual) the tests marked slow.
+# Why: GitHub Free runs 20 jobs and only 5 macOS jobs at once per account;
+# full runs after every merge kept PRs queueing for macOS runners.
 # The bitwise-reproducibility tests (thread counts, AMG, G1 backends) are in
-# both tiers.
+# every tier.
 #
 # Branch protection needs only one required check: "CI OK" (last job).
 name: CI
@@ -32,13 +39,13 @@ on:
 permissions:
   contents: read
 
-# One run per PR (a new push cancels the old run). Every other run (push to
-# main, nightly, manual) gets a group of its own: with a shared group GitHub
-# keeps only one *pending* run and cancels the older pending ones, which is
-# how the first nightly run and a merge commit were cancelled.
+# One run per PR and one run for pushes to main: a new push cancels the
+# older run of its group. Nightly and manual runs get a group of their own:
+# with a shared group GitHub keeps only one *pending* run and cancels the
+# older pending ones, which is how the first nightly run was cancelled.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || github.event_name == 'push' && 'ci-main' || format('ci-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 # bash everywhere, also on Windows (Git Bash), so that "$BUILD_PROFILE" means
 # the same in every step
@@ -48,6 +55,9 @@ defaults:
 
 env:
   CARGO_TERM_COLOR: always
+  # HDF5 file locks are flaky on the macOS runners ("unable to lock file",
+  # errno 35, in stop_file_ends_the_run); every test writes its own files
+  HDF5_USE_FILE_LOCKING: "FALSE"
   RUSTFLAGS: -D warnings
   RUSTDOCFLAGS: -D warnings
 
@@ -60,18 +70,31 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code || 'true' }}
+      tier: ${{ steps.tier.outputs.tier }}
       full: ${{ steps.tier.outputs.full }}
       profile: ${{ steps.tier.outputs.profile }}
+      gate: ${{ steps.tier.outputs.gate }}
+      debug: ${{ steps.tier.outputs.debug }}
+      warm: ${{ steps.tier.outputs.warm }}
+      test_os: ${{ steps.tier.outputs.test_os }}
+      mpi_os: ${{ steps.tier.outputs.mpi_os }}
       cases: ${{ steps.tier.outputs.cases }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
         id: filter
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         with:
-          # "code" is everything that can change a build or a result; a PR
-          # that only touches docs/, *.md, assets/ or LICENSE skips the
-          # code jobs (CI OK still reports, so the PR can be merged).
+          # "code" is everything that can change a build or a result; a PR or
+          # a merge that only touches docs/, *.md, assets/ or LICENSE skips
+          # the code jobs (CI OK still reports, so the PR can be merged). On
+          # a push the change is measured against the previous main commit.
+          #
+          # "platform": files where macOS and Windows behave differently
+          # (build files, toolchain, file I/O, restart, run control, the CLI
+          # and its process handling). A PR touching them also runs the
+          # macOS and Windows jobs. One brace pattern per filter, because
+          # with "every" a file has to match every pattern of a filter.
           predicate-quantifier: every
           filters: |
             code:
@@ -80,25 +103,57 @@ jobs:
               - '!**/*.md'
               - '!assets/**'
               - '!LICENSE'
+            platform:
+              - '{Cargo.toml,Cargo.lock,**/Cargo.toml,**/Cargo.lock,**/build.rs,rust-toolchain*,.github/**,tools/check/ci_cases.py,crates/foehncraft-parallel/**,crates/foehncraft-cli/**,crates/foehncraft-bench/src/sysinfo.rs,crates/foehncraft-mesh/src/vtkhdf.rs,crates/foehncraft-flow/src/restart.rs,crates/foehncraft-flow/src/control.rs,crates/foehncraft-flow/src/console.rs,crates/foehncraft-flow/src/checkpoint.rs}'
+            deps:
+              - '{Cargo.lock,**/Cargo.lock,rust-toolchain*}'
       - id: tier
         env:
-          FULL: ${{ github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+          EVENT: ${{ github.event_name }}
+          LABEL_FULL: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+          PLATFORM: ${{ steps.filter.outputs.platform || 'false' }}
+          DEPS: ${{ steps.filter.outputs.deps || 'false' }}
         run: |
-          if [ "$FULL" = "true" ]; then
-            echo "full=true"         >> "$GITHUB_OUTPUT"
-            echo "profile=release"   >> "$GITHUB_OUTPUT"
-            echo 'cases=[{"os":"ubuntu-latest","set":"linux-1"},{"os":"ubuntu-latest","set":"linux-2"},{"os":"ubuntu-latest","set":"linux-3"},{"os":"ubuntu-latest","set":"long"},{"os":"macos-latest","set":"quick"},{"os":"windows-latest","set":"quick"}]' >> "$GITHUB_OUTPUT"
+          linux='{"os":"ubuntu-latest","set":"linux-1"},{"os":"ubuntu-latest","set":"linux-2"},{"os":"ubuntu-latest","set":"linux-3"}'
+          long='{"os":"ubuntu-latest","set":"long"}'
+          quick='{"os":"macos-latest","set":"quick"},{"os":"windows-latest","set":"quick"}'
+          if [ "$EVENT" = "pull_request" ] && [ "$LABEL_FULL" != "true" ]; then
+            tier=pr; profile=ci; gate=true; debug=false; warm=false
+            if [ "$PLATFORM" = "true" ]; then
+              test_os='["ubuntu-latest","macos-latest","windows-latest"]'
+              mpi_os='["ubuntu-latest","macos-latest"]'
+              cases="[$linux,$quick]"
+            else
+              test_os='["ubuntu-latest"]'
+              mpi_os='["ubuntu-latest"]'
+              cases="[$linux]"
+            fi
+          elif [ "$EVENT" = "push" ]; then
+            # the PR gate already ran Linux; main adds the other platforms,
+            # the long cases and the debug build, and warms the PR cache
+            # when the dependencies changed
+            tier=main; profile=ci; gate=false; debug=true; warm=$DEPS
+            test_os='["ubuntu-latest","macos-latest","windows-latest"]'
+            mpi_os='["macos-latest"]'
+            cases="[$long,$quick]"
           else
-            echo "full=false"        >> "$GITHUB_OUTPUT"
-            echo "profile=ci"        >> "$GITHUB_OUTPUT"
-            echo 'cases=[{"os":"ubuntu-latest","set":"linux-1"},{"os":"ubuntu-latest","set":"linux-2"},{"os":"ubuntu-latest","set":"linux-3"},{"os":"macos-latest","set":"quick"},{"os":"windows-latest","set":"quick"}]' >> "$GITHUB_OUTPUT"
+            tier=full; profile=release; gate=true; debug=true; warm=true
+            test_os='["ubuntu-latest","macos-latest","windows-latest"]'
+            mpi_os='["ubuntu-latest","macos-latest"]'
+            cases="[$linux,$long,$quick]"
           fi
+          full=false; [ "$tier" = "full" ] && full=true
+          {
+            echo "tier=$tier"; echo "full=$full"; echo "profile=$profile"
+            echo "gate=$gate"; echo "debug=$debug"; echo "warm=$warm"
+            echo "test_os=$test_os"; echo "mpi_os=$mpi_os"; echo "cases=$cases"
+          } | tee -a "$GITHUB_OUTPUT"
 
   # ---------------------------------------------------------------------
   lint:
     name: Format, clippy, docs
     needs: plan
-    if: needs.plan.outputs.code == 'true'
+    if: needs.plan.outputs.code == 'true' && needs.plan.outputs.gate == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -124,7 +179,7 @@ jobs:
   msrv:
     name: Minimum Rust version
     needs: plan
-    if: needs.plan.outputs.code == 'true'
+    if: needs.plan.outputs.code == 'true' && needs.plan.outputs.gate == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -145,7 +200,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: ${{ fromJSON(needs.plan.outputs.test_os) }}
     env:
       BUILD_PROFILE: ${{ needs.plan.outputs.profile }}
     steps:
@@ -156,9 +211,10 @@ jobs:
           # build-ci is written by warm-ci-cache on main, build-release here
           shared-key: build-${{ needs.plan.outputs.profile }}
           save-if: ${{ github.ref == 'refs/heads/main' && needs.plan.outputs.profile == 'release' }}
-      # debug build: debug assertions and overflow checks (full tier only;
-      # the PR gate relies on the optimised run below)
-      - if: needs.plan.outputs.full == 'true'
+      # debug build: debug assertions and overflow checks (full tier on
+      # every platform, main on Linux; the PR gate relies on the optimised
+      # run below)
+      - if: needs.plan.outputs.full == 'true' || (needs.plan.outputs.debug == 'true' && runner.os == 'Linux')
         run: cargo test --workspace --locked
       - run: cargo test --workspace --locked --profile "$BUILD_PROFILE"
       - name: Slow tests (marked #[ignore]; nightly and manual runs)
@@ -167,7 +223,7 @@ jobs:
       - name: G1 smoke run (CPU backends, results bitwise equal)
         run: cargo run --locked --profile "$BUILD_PROFILE" -p foehncraft-cli -- bench g1 examples/cases/bench/g1_ci_small.toml
       - name: Without HDF5 and METIS
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.plan.outputs.tier != 'main'
         run: |
           cargo test -p foehncraft-mesh --no-default-features --locked
           cargo test -p foehncraft-fv --no-default-features --locked
@@ -237,7 +293,7 @@ jobs:
   hypre:
     name: Pressure solver against hypre (D20)
     needs: plan
-    if: needs.plan.outputs.code == 'true'
+    if: needs.plan.outputs.code == 'true' && needs.plan.outputs.gate == 'true'
     runs-on: ubuntu-latest
     env:
       HYPRE_DIR: ${{ github.workspace }}/hypre-install
@@ -290,7 +346,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ fromJSON(needs.plan.outputs.mpi_os) }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -318,7 +374,7 @@ jobs:
   ptx:
     name: Single-source GPU kernels compile to PTX (G1, stages 2, 3 and 5)
     needs: plan
-    if: needs.plan.outputs.code == 'true'
+    if: needs.plan.outputs.code == 'true' && needs.plan.outputs.gate == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -338,14 +394,15 @@ jobs:
           path: target/nvptx64-nvidia-cuda/release/foehncraft_ptx_kernels.ptx
 
   # ---------------------------------------------------------------------
-  # Main itself builds with `release`, so nothing else would write the
-  # `ci`-profile cache that pull requests read. This job compiles the
-  # dependencies in the `ci` profile on every OS and saves them; pull
-  # requests then compile only the workspace crates. Main only; no tests.
+  # Nothing else writes the `ci`-profile cache that pull requests read. This
+  # job compiles the dependencies in the `ci` profile on every OS and saves
+  # them; pull requests then compile only the workspace crates. Nightly and
+  # manual runs, and pushes to main that change Cargo.lock or the toolchain
+  # (the cache key changes with them); no tests.
   warm-ci-cache:
     name: Warm the PR build cache (${{ matrix.os }})
     needs: plan
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.plan.outputs.code == 'true'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.plan.outputs.code == 'true' && needs.plan.outputs.warm == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -366,7 +423,7 @@ jobs:
   python:
     name: Python package (ruff, pytest)
     needs: plan
-    if: needs.plan.outputs.code == 'true'
+    if: needs.plan.outputs.code == 'true' && needs.plan.outputs.gate == 'true'
     runs-on: ubuntu-latest
     env:
       # one target directory for the command line and the native module

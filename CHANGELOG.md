@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **CI: shorter waits with parallel work.** Pull requests run on Linux
+  only (about 5 minutes); macOS and Windows join when a pull request touches
+  build files, the toolchain, the workflow, the command line, MPI, VTKHDF,
+  restart, run control or the console. Pushes to main run only what the
+  gate did not (macOS and Windows tests and quick cases, MPI on macOS, the
+  long cases, debug tests), skip docs-only merges, and a newer merge
+  cancels the older run. The full tier runs nightly, by hand and with the
+  label `full-ci`. HDF5 file locking is off in CI (flaky on macOS).
 - **Outer iterations in the log.** Every logged time step shows the
   residuals and the linear iterations of each outer iteration under its
   box. New `docs/sayings.md` (*Residuen-gaffen*), linked from the README.

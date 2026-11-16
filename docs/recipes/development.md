@@ -40,7 +40,7 @@ python3 -m tools.check.ci_cases --check                               # every fl
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --workspace --all-targets --features foehncraft-cuda/cuda,foehncraft-cli/cuda -- -D warnings
 python3 -m tools.check.backend                          # D60: CUDA only in crates/foehncraft-cuda and gpu/
-cargo test --workspace --profile ci                     # what a pull request runs (--release on main)
+cargo test --workspace --profile ci                     # what a pull request runs (--release nightly)
 cargo test -p foehncraft-mesh --no-default-features      # without HDF5 and METIS
 cargo test -p foehncraft-fv --no-default-features
 python3 gpu/ptx-kernels/build.py && python3 -m tools.check.kernels     # PTX, and R10: no atomics, no f32, no FMA
@@ -52,20 +52,32 @@ pip install -r tools/requirements-ci.txt
 python3 -m tools.check.vtkhdf output/*/mesh.vtkhdf output/*/fields.vtkhdf output/*/*/fields.vtkhdf
 ```
 
-The workflow is `.github/workflows/ci.yml`. It has two tiers:
+The workflow is `.github/workflows/ci.yml`. It has three tiers, so that
+pull requests never wait for macOS runners (GitHub Free runs 20 jobs and
+only 5 macOS jobs at once per account):
 
-- **Pull requests** (fast gate, about 5 minutes): the `ci` profile (release
-  optimisation without LTO, results bitwise equal to `release`), all tests
-  including the bitwise-reproducibility tests on Linux, macOS and Windows,
-  the case catalogue in three parallel Linux jobs, the quick cases on macOS
-  and Windows, hypre, MPI and PTX. Code jobs are skipped when only `docs/`,
-  Markdown files, `assets/` or `LICENSE` change.
-- **Full tier**: every push to main, every night at 02:07 Vienna time (01:07
-  UTC), a pull request with the label `full-ci`, or by hand (Actions, CI,
-  *Run workflow*): the `release` profile, debug tests, the cylinder at
-  Re 100, and in nightly and manual runs also the tests marked slow
-  (`--ignored`). Main also builds the dependencies in the `ci` profile
-  once, so that pull requests start from a warm cache.
+- **Pull requests** (gate, about 5 minutes): Linux only. The `ci` profile
+  (release optimisation without LTO, results bitwise equal to `release`),
+  all tests including the bitwise-reproducibility tests, the case catalogue
+  in three parallel jobs, hypre, MPI, PTX and the Python package. A pull
+  request that touches platform-sensitive files (`Cargo.toml`, `Cargo.lock`,
+  `build.rs`, the toolchain, `.github/`, the command line, MPI, VTKHDF,
+  restart, run control, console) also runs the tests, quick cases and MPI on
+  macOS and Windows. Code jobs are skipped when only `docs/`, Markdown files,
+  `assets/` or `LICENSE` change.
+- **Main** (every push to main whose change is not docs-only): what the
+  gate did not run: tests and quick cases on macOS and Windows, MPI on
+  macOS, the long cases (cylinder at Re 100) and the debug-build tests on
+  Linux. A newer merge cancels the older main run; with squash merges the
+  newer commit contains the older one. When `Cargo.lock` or the toolchain
+  changes, main also builds the dependencies in the `ci` profile, so that
+  pull requests start from a warm cache. After a merge, watch this run and
+  fix forward at once if macOS or Windows fail.
+- **Full tier**: every night at 02:07 Vienna time (01:07 UTC), a pull
+  request with the label `full-ci`, or by hand (Actions, CI, *Run
+  workflow*): the `release` profile, every job on every platform, debug
+  tests, the long cases, and in nightly and manual runs also the tests
+  marked slow (`--ignored`).
 
 The check "CI OK" sums up all jobs.
 
