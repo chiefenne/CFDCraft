@@ -60,7 +60,7 @@ The limits may change during a run (a re-read of the case file, D40).
 
 | File | Format | Contents |
 |---|---|---|
-| `result.json` | `foehncraft.result` | The result summary (D62): status, exit code, stop, overrides, provenance, diagnostics, one entry per solve (mesh hash, iterations, residuals, mass imbalance, patches, coefficients, errors, transient summary), observed orders, and the output files with sizes and SHA-256 hashes. No timings: two identical runs give the same bytes. |
+| `result.json` | `foehncraft.result` | The result summary (D62): status, exit code, stop, overrides, provenance, diagnostics, one entry per solve (mesh hash, iterations, residuals, mass imbalance, patches, coefficients, errors, transient summary), observed orders, the discretisation uncertainty of a sweep of three or more meshes or time steps (`uncertainty`, D67: per quantity the values, ratios, order, extrapolated value, band, GCI and verdict), and the output files with sizes and SHA-256 hashes. No timings: two identical runs give the same bytes. |
 | `run.jsonl` | `foehncraft.run_record` | The run record (D69), one JSON object per line, flushed at every log line, so it can be followed while the run goes on (`tail -f`). |
 | `flow.log`, `flow.md`, `flow.json` | | The log and the report for people, with timings. |
 | `fields.vtkhdf`, `fields_N.vtkhdf` | VTKHDF 2.x | Fields, with the root attributes `foehncraft_format`, `foehncraft_format_version`, `foehncraft_version`, `case`, `units` and `step`/`time` or `iteration`. The derived fields of `[output] derived` (D72) are cell datasets of the `internal` block; the wall shear stress and y⁺ are cell datasets of the patch blocks (one value per boundary face, zero off walls). `units` names every dataset. |

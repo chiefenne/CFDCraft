@@ -447,8 +447,10 @@ fn y_axis() -> [f64; 3] {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct VerificationSection {
-    /// Refinement levels of `[mesh.generate]`; two or more give an
-    /// order-of-accuracy sweep (needs `[analytic]`).
+    /// Refinement levels of `[mesh.generate]`; two or more give a sweep:
+    /// with `[analytic]` the observed order of accuracy, with three or
+    /// more the discretisation uncertainty of the monitored quantities
+    /// (D67), also without an exact solution.
     pub levels: Vec<u32>,
     /// Accepted range of the observed order on the finest pair.
     pub expected_order: Option<[f64; 2]>,
@@ -1160,10 +1162,13 @@ impl FlowCase {
                 CASE_INCONSISTENT,
                 "[verification] levels need a [mesh.generate] or [mesh.cylinder] table"
             );
+        }
+        if v.expected_order.is_some() {
             crate::need!(
-                self.analytic.is_some() || v.benchmark.is_some(),
+                self.analytic.is_some(),
                 CASE_INCONSISTENT,
-                "[verification] levels need an [analytic] solution or a benchmark"
+                "[verification] expected_order needs an [analytic] solution (without one the sweep \
+                 reports the observed orders of the monitored quantities, D67)"
             );
         }
         if v.max_error.is_some() {
@@ -1347,6 +1352,11 @@ pub struct FlowReport {
     pub orders: Vec<f64>,
     /// Observed time orders of a time-step sweep.
     pub time_orders: Vec<f64>,
+    /// Discretisation uncertainty of the monitored quantities of a sweep
+    /// over three or more meshes or time steps (D67).
+    pub uncertainty: Vec<crate::uncertainty::Estimate>,
+    /// What the sweep of `uncertainty` varies: `meshes` or `time steps`.
+    pub uncertainty_of: &'static str,
     /// The run was stopped early: `.stop`, a signal or a limit.
     pub stopped: bool,
     /// Why it stopped early.
@@ -1580,6 +1590,8 @@ pub fn run_steered(
         solves: Vec::new(),
         orders: Vec::new(),
         time_orders: Vec::new(),
+        uncertainty: Vec::new(),
+        uncertainty_of: "",
         stopped: false,
         stop: None,
         warnings: Vec::new(),
@@ -2118,6 +2130,21 @@ pub fn run_steered(
                 true,
             ),
         )?;
+    }
+    if levels.len() >= 3 && rep.solves.len() == levels.len() {
+        let d = f64::from(dimension(&case));
+        let sizes: Vec<f64> = rep
+            .solves
+            .iter()
+            .map(|s| (s.cells as f64).powf(-1.0 / d))
+            .collect();
+        let js: Vec<serde_json::Value> = rep
+            .solves
+            .iter()
+            .map(|s| serde_json::to_value(s).unwrap_or_default())
+            .collect();
+        rep.uncertainty = crate::uncertainty::sweep(&js, &sizes);
+        rep.uncertainty_of = "meshes";
     }
     for s in &rep.solves {
         if let (Some(max), Some(e)) = (v.max_error, &s.errors)
@@ -2899,6 +2926,10 @@ impl FlowReport {
         if !self.time_orders.is_empty() {
             let _ = writeln!(s, "\nObserved time orders: {:.3?}", self.time_orders);
         }
+        s.push_str(&crate::uncertainty::markdown(
+            &self.uncertainty,
+            self.uncertainty_of,
+        ));
         if self.solves.iter().any(|v| v.transient.is_some()) {
             let _ = writeln!(
                 s,

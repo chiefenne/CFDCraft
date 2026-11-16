@@ -320,6 +320,8 @@ pub fn run(
         solves: Vec::new(),
         orders: Vec::new(),
         time_orders: Vec::new(),
+        uncertainty: Vec::new(),
+        uncertainty_of: "",
         stopped: false,
         stop: None,
         warnings: Vec::new(),
@@ -467,6 +469,25 @@ pub fn run(
                 true,
             ),
         )?;
+    }
+    if specs.len() >= 3 && outs.len() == specs.len() {
+        let js: Vec<serde_json::Value> = outs
+            .iter()
+            .map(|o| serde_json::to_value(&o.solve).unwrap_or_default())
+            .collect();
+        let (sizes, of): (Vec<f64>, &'static str) = if v.time_steps.is_empty() {
+            let d = f64::from(dimension(case));
+            (
+                outs.iter()
+                    .map(|o| (o.solve.cells as f64).powf(-1.0 / d))
+                    .collect(),
+                "meshes",
+            )
+        } else {
+            (specs.iter().map(|s| s.dt).collect(), "time steps")
+        };
+        rep.uncertainty = crate::uncertainty::sweep(&js, &sizes);
+        rep.uncertainty_of = of;
     }
     if v.levels.len() >= 2 && v.time_steps.is_empty() && outs.len() == specs.len() {
         let e: Vec<&ErrorNorms> = outs

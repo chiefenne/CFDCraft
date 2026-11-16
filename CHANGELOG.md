@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+**Discretisation uncertainty and the verification manual (stage 5 part
+6c, D67, D68).** A sweep of three or more meshes or time steps reports
+for every monitored quantity (patch mass flows, mean pressures and forces,
+force coefficients, benchmark values, viscous and numerical dissipation)
+the observed order by the fixed-point iteration of Celik et al. (2008),
+the extrapolated value, the band φ1 ± U, the grid convergence index and a
+verdict (monotonic, oscillatory, divergent, unchanged): a table in
+`flow.md` and `uncertainty` in `flow.json` and `result.json` (an
+addition; `Result.uncertainty` in Python). Level sweeps no longer need an
+exact solution or a benchmark; `expected_order` without `[analytic]` is
+now refused (CASE005) instead of being ignored. New case
+`cylinder_re20_gci.toml` (the benchmark 2D-1 on 6 144 to 98 304 cells,
+`long` set): C_D extrapolates to 5.5797 ± 0.0004 inside the reference
+range. New script `tools/release/verification_manual.py` writes
+`docs/verification/manual.md`, `results.json` and a chart of the observed
+orders from the case files and a catalogue run. Gallery 25, recipes 34
+and 35 on new Verification pages; `tools/gci_chart.py`. Runs are bitwise
+unchanged.
+
 **The Python package (stage 5 part 6b, D61, D62).** `python/` holds the
 package `foehncraft` with a native module (`crates/foehncraft-py`, PyO3,
 built with maturin, abi3 for Python 3.10+): `Case` (read, change with

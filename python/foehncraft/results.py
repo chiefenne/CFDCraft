@@ -71,6 +71,13 @@ class Result:
         return self.summary.get("time_orders", [])
 
     @property
+    def uncertainty(self) -> dict[str, dict]:
+        """Discretisation uncertainty of a sweep of three or more meshes or
+        time steps (D67), by quantity: `values` (finest first), `order`,
+        `extrapolated`, `band` (φ1 ± band), `gci`, `verdict`."""
+        return {e["quantity"]: e for e in self.summary.get("uncertainty", [])}
+
+    @property
     def diagnostics(self) -> list[dict]:
         """Errors, failed checks, warnings and notes with their codes."""
         return self.summary.get("diagnostics", [])
