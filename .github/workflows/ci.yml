@@ -205,7 +205,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
+          # pip installs (and so a pip cache) only on Linux, for the VTK check
+          cache: ${{ runner.os == 'Linux' && 'pip' || '' }}
           cache-dependency-path: tools/requirements-ci.txt
       - name: Run the cases of set ${{ matrix.set }}
         shell: bash
