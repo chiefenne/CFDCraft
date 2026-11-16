@@ -10,37 +10,33 @@
 
 ---
 
-> **Status: stage 4 done (laminar steady flow, release 0.4).** The
-> requirements are in [docs/requirements.md](docs/requirements.md). The code
-> so far is the workspace, continuous integration, the GPU kernel benchmark
-> that decided the GPU backend ([G1](docs/benchmarks/g1.md)), the
-> polyhedral mesh (Gmsh reader, test mesher, quality report, partitioning,
-> VTKHDF output), the finite-volume operators on a scalar transport
-> equation on the CPU and the GPU ([stage 2](docs/verification/stage2.md)),
-> the pressure solver: aggregation AMG with CG in mixed precision, with
-> hypre as the reference ([stage 3](docs/verification/stage3.md)), and the
-> first flow solver: steady incompressible laminar flow with SIMPLEC, the
-> Rhie–Chow interpolation and checked boundary conditions, verified on
-> Couette, Poiseuille and the lid-driven cavity
-> ([stage 4](docs/verification/stage4.md)). Stage 5 is in progress: the
-> transient core is in (PISO with BDF2 and Crank–Nicolson, adaptive time
-> step, restart, control files, verified on the Taylor–Green vortex and the
-> cylinder benchmark of Schäfer & Turek, [stage 5](docs/verification/stage5.md)),
-> the whole flow loop runs on NVIDIA GPUs with results bitwise equal to
-> the CPU, the kernels are ready for a discrete adjoint (dual-number
-> derivatives, transposed matrices, binomial checkpointing), every run
-> books its mass and kinetic-energy balance, and the numerics gained a
-> bounded central scheme, a time step chosen by the time-integration
-> error, output at exact times and a potential-flow start, and the
-> boundary conditions gained slip walls, axisymmetric wedges, inlet
-> profiles from tables, backflow treatment at pressure outlets and a
-> convective outlet, and the output gained derived fields (vorticity, Q,
-> λ₂, wall shear stress, y⁺ and more), also from restart files with
-> `foehn post derive`, and boundary values, body forces and viscosities
-> can be written as expressions of space and time, with fluid properties
-> from a built-in material database (`foehn materials`), and the Python
-> package `foehncraft` builds, runs and studies cases in process or through
-> the command line.
+> **Status: stage 5 done (transient laminar flow, run control and Python,
+> release 0.5).** The requirements are in
+> [docs/requirements.md](docs/requirements.md). The code so far is the
+> workspace, continuous integration, the GPU kernel benchmark that decided
+> the GPU backend ([G1](docs/benchmarks/g1.md)), the polyhedral mesh (Gmsh
+> reader, test mesher, quality report, partitioning, VTKHDF output), the
+> finite-volume operators on a scalar transport equation on the CPU and
+> the GPU ([stage 2](docs/verification/stage2.md)), the pressure solver:
+> aggregation AMG with CG in mixed precision, with hypre as the reference
+> ([stage 3](docs/verification/stage3.md)), the steady laminar flow solver
+> with SIMPLEC, the Rhie–Chow interpolation and checked boundary
+> conditions ([stage 4](docs/verification/stage4.md)), and transient
+> laminar flow ([stage 5](docs/verification/stage5.md)): PISO with BDF2 and
+> Crank–Nicolson, outer correctors, a time step from the integration
+> error, restart and control files, verified on the Taylor–Green vortex and
+> the cylinder benchmark of Schäfer & Turek; the whole flow loop on NVIDIA
+> GPUs with results bitwise equal to the CPU; adjoint-ready kernels; a run
+> contract for scripts and agents with a mass and kinetic-energy ledger and
+> a divergence report; the boundary conditions of D29 (slip walls, wedges,
+> table profiles, backflow, convective outlets); derived fields; boundary
+> values, body forces and viscosities as expressions, with fluid
+> properties from a built-in material database; the Python package
+> `foehncraft`, which builds, runs and studies cases in process or through
+> the command line; and the grid convergence index of every sweep, with
+> every case and its pass bands in the generated
+> [verification manual](docs/verification/manual.md). Next is stage 6
+> (turbulence and wall functions).
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)

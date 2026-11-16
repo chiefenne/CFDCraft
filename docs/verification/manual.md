@@ -4,7 +4,7 @@
 
 Every verification case of the [case catalogue](../cases.md) with its pass bands and the result of its run. The cases check themselves (a run outside its band exits with code 1, R5); this page collects the bands and the values. The explanations stay on the stage pages ([stage 2](stage2.md), [stage 3](stage3.md), [stage 4](stage4.md), [stage 5](stage5.md)). The same data as JSON: [results.json](results.json).
 
-Runs of Foehncraft 0.4.0 (5a9bbf6a3191), 0.4.0 (717c25c32a37): 48 of 48 cases passed, 0 without a run.
+Runs of Foehncraft 0.5.0 (7afe9c9cc2b1): 48 of 48 cases passed, 0 without a run.
 
 ![Observed orders against their bands](../figures/verification/orders.svg)
 
