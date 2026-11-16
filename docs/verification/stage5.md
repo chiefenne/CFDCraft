@@ -425,7 +425,8 @@ kinetic energy; a run that diverges explains itself. No result changes:
 the flow cases of the catalogue give bitwise the fields, CSV files and
 report values of part 4a (`tools/compare_runs.py --across-versions`; the
 resolved case gains the `[balance]` table, the reports the `balance`
-values).
+values; one new warning, `BAL003` on the Taylor–Green sweep at Courant
+number 10, see below).
 
 | Check | Result | Where |
 |---|---|---|
@@ -445,32 +446,58 @@ momentum rows use (non-orthogonal and skewness corrections included), and
 a wall gives work F·u_b and dissipation F·(u_b − u_P). The ledger books
 this discrete viscous dissipation, which converges to ∫ μ ∇u:∇u dV, so the
 remainder holds only what the convection scheme, the Rhie–Chow coupling
-and the iteration error take out. A first version used μ ∇u:∇u with the
+and the iteration error take out. The ledger splits it. The momentum rows
+hold the pressure as the volume source −∇p_P V_P (least-squares cell
+gradient), so their budget has −Σ u_P·∇p_P V_P where the exact one has
+the boundary pressure work; the difference, the discrete −∫ p ∇·u dV of
+the cell velocities, is the pressure part (`pressure_dissipation`), the
+rest the scheme part (`scheme_dissipation`). A first version used μ ∇u:∇u with the
 least-squares cell gradients: it left 12 % to 15 % of the cavity's lid
 power unexplained, nearly all of it in the cells at the corners, where
 the gradient of the cell is not the gradient of the face differences.
 
 **Measured** (64 x 64 is the catalogue case):
 
-| Case | Mesh | Boundary power | Viscous dissipation | Numerical dissipation |
-|---|---|---|---|---|
-| cavity, steady (W) | 16² | 1.9670e-3 | 1.9267e-3 | 4.03e-5 (2.05 %) |
-| | 32² | 2.4499e-3 | 2.4110e-3 | 3.88e-5 (1.59 %) |
-| | 64² | 2.9194e-3 | 2.8771e-3 | 4.23e-5 (1.45 %) |
-| | 128² | 3.3851e-3 | 3.3399e-3 | 4.51e-5 (1.33 %) |
-| Taylor–Green, over 0.4 s (J) | 16² | | 1.8324e-3 | 4.07e-4 |
-| | 32² | | 1.8317e-3 | 7.38e-5 |
-| | 64² | | 1.8302e-3 | 1.20e-5 |
+| Case | Mesh | Boundary power | Viscous dissipation | Numerical dissipation | of it pressure | of it schemes |
+|---|---|---|---|---|---|---|
+| cavity, steady (W) | 16² | 1.9670e-3 | 1.9267e-3 | 4.03e-5 (2.05 %) | 7.63e-5 | −3.60e-5 |
+| | 32² | 2.4499e-3 | 2.4110e-3 | 3.88e-5 (1.59 %) | 5.68e-5 | −1.80e-5 |
+| | 64² | 2.9194e-3 | 2.8771e-3 | 4.23e-5 (1.45 %) | 5.12e-5 | −8.81e-6 |
+| | 128² | 3.3851e-3 | 3.3399e-3 | 4.51e-5 (1.33 %) | 4.95e-5 | −4.40e-6 |
+| cavity, first-order upwind (W) | 16² | 2.1294e-3 | 1.8905e-3 | 2.39e-4 | 5.55e-5 | 1.83e-4 |
+| | 32² | 2.5830e-3 | 2.3758e-3 | 2.07e-4 | 4.95e-5 | 1.58e-4 |
+| | 64² | 3.0139e-3 | 2.8541e-3 | 1.60e-4 | 4.82e-5 | 1.12e-4 |
+| Taylor–Green, over 0.4 s (J) | 16² | | 1.8324e-3 | 4.07e-4 | 1.27e-4 | 2.80e-4 |
+| | 32² | | 1.8317e-3 | 7.38e-5 | 1.60e-5 | 5.78e-5 |
+| | 64² | | 1.8302e-3 | 1.20e-5 | 1.42e-6 | 1.06e-5 |
+| Poiseuille, tetrahedra (W) | levels 0, 1, 2 | 0.2396 to 0.2399 | | −1.81e-4, −1.23e-4, −7.04e-5 | −3.71e-4, −1.73e-4, −8.33e-5 | 1.90e-4, 5.04e-5, 1.29e-5 |
+| Poiseuille, polyhedra (W) | levels 0, 1, 2 | 0.2405 to 0.2400 | | −6.72e-4, −1.91e-4, −3.68e-5 | −8.11e-4, −2.10e-4, −4.07e-5 | 1.39e-4, 1.87e-5, 3.86e-6 |
+| Poiseuille, perturbed hexahedra (W) | levels 0, 1, 2 | 0.2395 to 0.2403 | | 3.83e-4, 3.49e-4, 3.49e-4 | 3.87e-4, 3.51e-4, 3.49e-4 | ≈ 0 |
 
 On the cavity the share falls, slowly: the lid meets the side walls in
 two singular corners, where the velocity jumps and the pressure goes like
-1/r, so the lid power grows with the mesh and the dissipation of the
-schemes in the corner cells stays of the same size. In Stokes flow
-(convection off) the numerical part is 4.88e-5 W on all three meshes: the
-pressure–velocity coupling at the corners. On the smooth Taylor–Green
-vortex the numerical dissipation falls with order 2.46 and 2.62. A handful of
-steps (1 or 2 of 20 to 80) have a negative numerical dissipation within
-round-off of the start; they are counted (`negative_steps`), as D90 asks.
+1/r, so the lid power grows with the mesh and the pressure part in the
+corner cells stays of the same size (in Stokes flow, convection off, the
+numerical part is 4.88e-5 W on all three meshes). The scheme part of linear upwind is slightly negative
+there and falls with first order; first-order upwind makes it positive and
+an order of magnitude larger. On the smooth Taylor–Green vortex the numerical
+dissipation falls with order 2.46 and 2.62, its pressure part with order
+2.99 and 3.5, its scheme part with 2.27 and 2.45. The first steps (1 or 2
+of 20 to 80) alternate in sign: the analytic start field is not a
+discrete solution. They are counted (`negative_steps`), as D90 asks.
+
+On distorted cells the pressure part holds a consistency error of either
+sign: on tetrahedra, mixed cells and polyhedra the Poiseuille flow's
+total numerical dissipation is negative, at most 0.28 % of the boundary
+power, and falls with the mesh; on randomly perturbed hexahedra (the
+same relative distortion on every level) the pressure part is positive
+and constant. Hence `[balance] tolerance_energy` (default 1e-2): `BAL003`
+warns when the discretisation adds more than 1 % of the largest term. In
+the catalogue it fires once, on the Taylor–Green sweep at Courant number
+10, where the run with the largest time step adds 2 % (the scheme part). The mass ledger of a
+transient step now uses the mass flows at the end of the step, where the
+discrete continuity equation holds: the cylinder at Re 100 started with a
+mass imbalance of 2e-3 from its start field and now books 4e-14.
 
 **Cost.** Steady runs evaluate the ledger at the table cadence and at the
 end. Transient runs evaluate it every step, since the trapezoidal rule

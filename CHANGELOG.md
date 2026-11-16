@@ -41,16 +41,19 @@ catalogue gives bitwise the fields of main.
 part 4b).** Every flow run books mass and kinetic energy (D88): storage,
 the terms of each patch (viscous work, convected energy, pressure work,
 mass flow), the body force, the viscous dissipation of the discrete
-operator, and the remainder, the numerical dissipation of the schemes,
-which the second law wants positive (D90 part 4). Steady runs give the
+operator, and the remainder, the numerical dissipation, which the second
+law wants positive (D90 part 4), split into its pressure part (the
+momentum interpolation) and the part of the convection and time
+schemes. Steady runs give the
 table every `[balance] every` iterations and at the end; transient runs a
 compact line with every progress line and a time-integrated ledger of the
 run (trapezoidal rule). `balance.csv`, `balance.svg`, `balance` rows in
 `run.jsonl`, `solves[].balance` in `result.json`, tolerances with the
-codes `BAL001`–`BAL003` and an optional stop. Measured: on the lid-driven
+codes `BAL001`–`BAL003` (the new key `[balance] tolerance_energy` for
+the negative numerical dissipation) and an optional stop. Measured: on the lid-driven
 cavity the numerical dissipation is positive, about 1.5 % of the lid
 power and falling with the mesh; on the Taylor–Green vortex it falls with
-order 2.5. A run that diverges (D63) now writes its last valid state and
+order 2.5, its pressure part with order 3. A run that diverges (D63) now writes its last valid state and
 restart file, a VTKHDF snapshot of the failing cells and their
 neighbours, and a report (`divergence.md`, `divergence.json`) with the
 likely causes ranked by their evidence and a `--set` fix for each, and

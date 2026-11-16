@@ -740,8 +740,14 @@ is left, the dissipation of the numerical schemes. The second law asks
 that this rest is not negative. In the steady lid-driven cavity the lid
 works on the fluid and everything ends up as dissipation; the schemes take
 about 1.5 % of it, falling slowly with the mesh because the two corners
-where the lid meets the walls are singular. On the smooth Taylor–Green
-vortex the numerical dissipation falls with order 2.5.
+where the lid meets the walls are singular. The ledger splits the rest in
+two: the pressure part, which the momentum interpolation of the face
+fluxes dissipates, and the part of the convection and time schemes. In
+the cavity the pressure part is nearly all of it and stays of the same
+size at the singular corners, while the linear-upwind correction gives
+back a little, less with every refinement. On the smooth Taylor–Green
+vortex both parts are positive: the numerical dissipation falls with
+order 2.5, its pressure part with order 3.
 
 ```
 $ foehn flow cavity_re100_energy.toml
@@ -751,6 +757,8 @@ $ foehn flow cavity_re100_energy.toml
           viscous dissipation                          +2.877098e-3 W
           storage                                       +0.000000e0 W
           numerical dissipation (+1.45e-2)             +4.234029e-5 W
+            of it pressure                             +5.115046e-5 W
+            of it schemes                              -8.810171e-6 W
 ```
 
 When a run diverges it keeps its last valid state and says why:
@@ -765,11 +773,11 @@ Error RUN014: the solution diverged in outer iteration 16 ...
 
 | Check | Result |
 |---|---|
-| Cavity Re 100, 16² to 128² | numerical dissipation 2.05 %, 1.59 %, 1.45 %, 1.33 % of the lid power, positive; mass ledger zero |
-| Taylor–Green, 16² to 64², fixed Courant number | numerical dissipation 4.1e-4, 7.4e-5, 1.2e-5 J over 0.4 s; mass imbalance at round-off |
+| Cavity Re 100, 16² to 128² | numerical dissipation 2.05 %, 1.59 %, 1.45 %, 1.33 % of the lid power, positive; pressure part 7.6e-5 to 5.0e-5 W, scheme part −3.6e-5 to −4.4e-6 W; mass ledger zero |
+| Taylor–Green, 16² to 64², fixed Courant number | numerical dissipation 4.1e-4, 7.4e-5, 1.2e-5 J over 0.4 s (pressure part 1.3e-4, 1.6e-5, 1.4e-6 J); mass imbalance at round-off |
 | Steady divergence (SIMPLE, no relaxation) | `RUN014`, the first cause is the relaxation; its fix runs |
 | Transient divergence (time step 100 times too large) | the first cause is the time step, with a smaller one as the fix |
-| The catalogue against part 4a | fields, CSV files and report values bitwise equal |
+| The catalogue against part 4a | fields, CSV files and report values bitwise equal; one new warning, `BAL003` on the Courant-10 Taylor–Green sweep |
 
 | | |
 |---|---|

@@ -1017,8 +1017,10 @@ target/release/foehn flow examples/cases/flow/cavity_re100_energy.toml --out out
 
 The log shows the full table every 100 iterations (`[balance] every`) and
 at the end; for the steady cavity the lid power goes into the viscous
-dissipation and, about 1.5 %, into the numerical dissipation of the
-schemes, which the second law wants positive (D90 part 4). The same
+dissipation and, about 1.5 %, into the numerical dissipation, which the
+second law wants positive (D90 part 4); its two parts, the pressure part
+of the momentum interpolation and the part of the convection scheme,
+follow in the table. The same
 table is in `flow.md`, the history in `balance.csv`, the bars in
 `balance.svg`, the values under `solves[].balance` in `result.json`.
 
