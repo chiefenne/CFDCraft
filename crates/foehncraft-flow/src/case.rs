@@ -1485,12 +1485,14 @@ impl<'a, F: FnMut(&str)> Log<'a, F> {
         self.text.push('\n');
     }
 
-    /// An information line, ` [I] ...`.
+    /// An information line, ` %FOEHN-I-<FILE>, ...`.
+    #[track_caller]
     pub(crate) fn note(&mut self, msg: &str) {
         self.line(&crate::console::tagged("note", msg));
     }
 
-    /// A warning line, ` [W] ...`.
+    /// A warning line, ` %FOEHN-W-<FILE>, ...`.
+    #[track_caller]
     pub(crate) fn warn(&mut self, msg: &str) {
         self.line(&crate::console::tagged("warning", msg));
     }
@@ -1549,7 +1551,8 @@ pub(crate) fn end_frames<F: FnMut(&str)>(lg: &mut Log<F>, rep: &FlowReport) {
     for f in &rep.failures {
         rows.push(format!("[E] FAILED: {f}"));
     }
-    let mut fr = crate::console::Frame::new(format!("Warnings and failed checks ({})", rows.len()));
+    let mut fr = crate::console::Frame::new(format!("Warnings and failed checks ({})", rows.len()))
+        .summary();
     if rows.is_empty() {
         fr.push_text("none");
     }
@@ -2157,7 +2160,7 @@ pub fn run_steered(
         {
             let wall = ts.elapsed().as_secs_f64();
             let _ = secs;
-            let mut f = crate::console::Frame::new("Convergence").kv(
+            let mut f = crate::console::Frame::new("Convergence").summary().kv(
                 "Status",
                 if converged {
                     format!(
@@ -2202,7 +2205,7 @@ pub fn run_steered(
         };
         let sol = &fl_host;
         let errors = analytic.map(|a| error_norms(sol, &mesh, &geo, &a, dimension(&case)));
-        let mut verification = crate::console::Frame::new("Verification");
+        let mut verification = crate::console::Frame::new("Verification").summary();
         if let Some(e) = &errors {
             verification.push_kv(
                 "Velocity error L2 / Linf",

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Log look (D125).** The log opens with "Foehncraft" in block letters
+  with depth, on one row. Every block is a box of asterisks as wide as its
+  content and centred on the page, which has no fixed width any more
+  (the banner is 141 columns). Summaries have blank rows, a heading and
+  dashed rules; a logged time step starts with a box (step, time, dt,
+  Courant number, outer iterations). Messages read
+  `%FOEHN-I-CASE, text`: severity and the capitalised name of the source
+  file that writes them. Only text changes; results, CSV and JSON are
+  bitwise the same. Gallery 27 updated.
 - **Cell-quality remediation (D50).** Steady runs on tetrahedra with skewed
   faces (Gmsh meshes without `Mesh.OptimizeNetgen = 1`) diverged with the
   least-squares pressure gradient. The solver now measures the face

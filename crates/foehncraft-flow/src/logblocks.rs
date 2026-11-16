@@ -27,9 +27,29 @@ pub fn spelled<T: Serialize>(v: &T) -> String {
         .unwrap_or_default()
 }
 
+/// The name of the code in block letters drawn with depth (133 columns),
+/// on top of the banner of every log.
+pub const BANNER_ART: [&str; 15] = [
+    r"               __________                          ____                                                             _______      ____",
+    r"             /::::::::/ /                        /::/ /                                                           /:::::/ /    /::/ /",
+    r"            /:::_____/_/                        /::/ /                                                           /:::__/_/    /::/ /",
+    r"           /::/ /                              /::/ /                                                           /::/ /       /::/ /",
+    r"          /::/ /     __________   __________  /::/_______   __________   __________   _______   __________   __/::/____   __/::/____",
+    r"         /::/ /    /::::::::/ / /::::::::/ / /::::::::/ / /::::::::/ / /::::::::/ / /:::::/ / /::::::::/ / /::::::::/ / /::::::::/ /",
+    r"        /::/____  /:::__:::/ / /:::__:::/ / /:::__:::/ / /:::__:::/ / /:::_____/_/ /:::__/_/ /_____:::/ / /__::::__/_/ /__::::__/_/",
+    r"       /:::::/ / /::/ //::/ / /::/ //::/ / /::/ //::/ / /::/ //::/ / /::/ /       /::/ /          /::/ /    /::/ /       /::/ /",
+    r"      /:::__/_/ /::/ //::/ / /::/__/::/ / /::/ //::/ / /::/ //::/ / /::/ /       /::/ /     _____/::/ /    /::/ /       /::/ /",
+    r"     /::/ /    /::/ //::/ / /::::::::/ / /::/ //::/ / /::/ //::/ / /::/ /       /::/ /    /::::::::/ /    /::/ /       /::/ /",
+    r"    /::/ /    /::/ //::/ / /:::_____/_/ /::/ //::/ / /::/ //::/ / /::/ /       /::/ /    /:::__:::/ /    /::/ /       /::/ /",
+    r"   /::/ /    /::/ //::/ / /::/ /       /::/ //::/ / /::/ //::/ / /::/ /       /::/ /    /::/ //::/ /    /::/ /       /::/ /",
+    r"  /::/ /    /::/__/::/ / /::/_______  /::/ //::/ / /::/ //::/ / /::/_______  /::/ /    /::/__/::/ /    /::/ /       /::/____",
+    r" /::/ /    /::::::::/ / /::::::::/ / /::/ //::/ / /::/ //::/ / /::::::::/ / /::/ /    /::::::::/ /    /::/ /       /:::::/ /",
+    r"/__/_/    /________/_/ /________/_/ /__/_//__/_/ /__/_//__/_/ /________/_/ /__/_/    /________/_/    /__/_/       /_____/_/",
+];
+
 /// The version, the date and the host.
 pub fn banner(build: Option<&BuildInfo>, case: &FlowCase) -> Frame {
-    let mut f = Frame::new("Foehncraft  -  general purpose CFD solver").kv(
+    let mut f = Frame::new("Foehncraft").art(&BANNER_ART).kv(
         "Version",
         match build {
             Some(b) => format!(
@@ -536,7 +556,7 @@ pub fn balance_block(title: &str, b: &crate::balance::Balance, integrated: bool)
         None => (title, None),
     };
     let text = crate::balance::table(head, b, integrated);
-    let mut f = Frame::new(head);
+    let mut f = Frame::new(head).summary();
     if let Some(d) = detail {
         f.push_text(d.to_string());
         f.push_rule();
@@ -549,7 +569,7 @@ pub fn balance_block(title: &str, b: &crate::balance::Balance, integrated: bool)
 
 /// Mass flow, mean pressure and force per boundary.
 pub fn results(bs: &[crate::case::BoundarySummary]) -> Frame {
-    let mut f = Frame::new("Results per boundary");
+    let mut f = Frame::new("Results per boundary").summary();
     f.push_text(format!(
         "{:<16}{:>11}{:>11}{:>11}{:>11}{:>11}",
         "Boundary", "Mass flow", "Mean p", "Force x", "Force y", "Force z"
@@ -576,7 +596,7 @@ pub fn results(bs: &[crate::case::BoundarySummary]) -> Frame {
 /// The run time analysis of one solve.
 pub fn run_time(t: &crate::simplec::Timings, cells: usize, iterations: usize, unit: &str) -> Frame {
     let total = t.total();
-    let mut f = Frame::new("Run time analysis");
+    let mut f = Frame::new("Run time analysis").summary();
     time_rows(
         &mut f,
         &[

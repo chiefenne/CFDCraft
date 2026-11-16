@@ -975,6 +975,7 @@ pub(crate) fn finish(
                 "time step"
             };
             let mut f = crate::console::Frame::new("Divergence")
+                .summary()
                 .kv(
                     "Diverged in",
                     format!("{unit} {}, {} first", rep.at, rep.first_variable),
