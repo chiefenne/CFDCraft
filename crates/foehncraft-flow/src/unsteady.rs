@@ -611,6 +611,8 @@ pub fn run(
     rep.solves = outs.into_iter().map(|o| o.solve).collect();
     rep.seconds = t0.elapsed().as_secs_f64();
     crate::case::end_frames(&mut lg, &rep);
+    lg.sync(&mut steer.record);
+    steer.record.flush();
     std::fs::write(out.join("flow.log"), &lg.text)?;
     std::fs::write(out.join("flow.json"), serde_json::to_string_pretty(&rep)?)?;
     std::fs::write(out.join("flow.md"), rep.to_markdown())?;
@@ -1011,45 +1013,18 @@ fn run_one<F: FnMut(&str)>(
     let mut balance_warned = false;
 
     let ts = Instant::now();
-    let with_error = case.time.is_some_and(|t| t.error_tolerance.is_some());
-    let mut table = {
-        use crate::console::{Col, Group, Table};
-        let mut solvers = vec![Col::int("Outer", 5), Col::int("CG", 5)];
-        if with_error {
-            solvers.push(Col::int("Error", 6));
-        }
-        Table::new(
-            Col::int("Step", 6),
-            vec![
-                Group::new(
-                    "time",
-                    vec![
-                        Col::int("Time [s]", 10),
-                        Col::int("Dt [s]", 8),
-                        Col::int("Cour.", 5),
-                    ],
-                ),
-                Group::new(
-                    "scaled residuals",
-                    vec![
-                        Col::num("ResU"),
-                        Col::num("ResV"),
-                        Col::num("ResW"),
-                        Col::num("ResM"),
-                    ],
-                ),
-                Group::new("solvers", solvers),
-            ],
-            case.log.style,
-            case.log.header_every,
-        )
-    };
+    let mut cols = crate::logcols::Columns::build(&case, mesh, geo, &loc, true)?;
+    let mut table = cols.table("Step", case.log.style, case.log.header_every);
+    if steer.record.on() {
+        steer.record.row(&cols.record_header("step", "Step"));
+    }
     lg.frame(&crate::console::Frame::new(format!(
         "Time steps ({}, {})",
         crate::logblocks::spelled(&case.solver.algorithm(true)).to_uppercase(),
         case.time.unwrap_or_default().scheme.label()
     )));
     lg.line("");
+    lg.sync(&mut steer.record);
     let mut stopped = false;
     let (mut dt_min, mut dt_max, mut cfl_max) = (f64::INFINITY, 0.0f64, 0.0f64);
     let (mut outer_sum, mut cg_sum, mut nsteps) = (0usize, 0usize, 0usize);
@@ -1187,6 +1162,7 @@ fn run_one<F: FnMut(&str)>(
                 );
                 history.flush()?;
                 balance_csv.flush()?;
+                lg.sync(&mut steer.record);
                 steer.record.flush();
                 std::fs::write(out.join("flow.log"), &lg.text)?;
                 return Err(e);
@@ -1275,31 +1251,38 @@ fn run_one<F: FnMut(&str)>(
         }
         let log_now = n == first_step + 1 || n.is_multiple_of(case.solver.log_every);
         if log_now {
+            lg.sync(&mut steer.record);
             steer.record.flush();
-            let err = rp
-                .error
-                .map(|e| format!("  error {e:.2}"))
-                .unwrap_or_default();
-            let mut cells = vec![
-                crate::console::sci(rp.time, 4),
-                crate::console::sci(h, 2),
-                format!("{:.3}", rp.cfl),
-            ];
-            cells.extend(
-                r.momentum
-                    .iter()
-                    .copied()
-                    .chain([r.continuity])
-                    .map(crate::console::sci3),
+            let sol = if cols.needs_state() {
+                Some(Solution {
+                    state: fl.state()?,
+                    disc: &fl.disc,
+                    phys: fl.phys.clone(),
+                })
+            } else {
+                None
+            };
+            let entries = cols.eval(
+                &crate::logcols::RowCtx {
+                    index: n,
+                    res: r,
+                    time: Some(crate::logcols::TimeInfo {
+                        time: rp.time,
+                        dt: h,
+                        courant: rp.cfl,
+                        outer: rp.outer,
+                        error: rp.error,
+                    }),
+                    sol: sol.as_ref(),
+                },
+                geo,
             );
-            cells.push(rp.outer.to_string());
-            cells.push(r.pressure_iterations.to_string());
-            if case.time.is_some_and(|t| t.error_tolerance.is_some()) {
-                cells.push(rp.error.map_or("-".to_string(), |e| format!("{e:.2}")));
-            }
-            let _ = &err;
+            let cells: Vec<String> = entries.iter().map(|e| e.text.clone()).collect();
             for l in table.row(n, &cells) {
                 lg.line(&l);
+            }
+            if steer.record.on() {
+                steer.record.row(&cols.record_row("step", n, &entries));
             }
             lg.line(&balance::compact(&bal));
             if case.balance.every > 0 && n.is_multiple_of(case.balance.every) {

@@ -45,6 +45,14 @@ pub struct LogSection {
     /// Repeat the header row of the iteration or time-step table every N
     /// rows (0: only once).
     pub header_every: usize,
+    /// Columns of the iteration or time-step table, as
+    /// `<kind>.<target>.<quantity>` (see `foehn schema`): residuals, linear
+    /// iterations, values at probes or in cells, extremes with their cells,
+    /// boundary mass flows, time quantities. Without it the default set
+    /// is shown. May be set only before the run.
+    pub columns: Option<Vec<String>>,
+    /// Significant digits of the numbers in the table (1 to 8).
+    pub digits: usize,
 }
 
 impl Default for LogSection {
@@ -52,6 +60,8 @@ impl Default for LogSection {
         Self {
             style: Style::Asterisk,
             header_every: 40,
+            columns: None,
+            digits: 3,
         }
     }
 }
@@ -168,6 +178,20 @@ impl Frame {
                 Row::Rule => None,
             })
             .collect()
+    }
+
+    /// The frame as a row of the run record: its title and the rows with
+    /// label, value and unit (`section`, run record 1.1).
+    pub fn record(&self) -> serde_json::Value {
+        let rows: Vec<serde_json::Value> = self
+            .pairs()
+            .into_iter()
+            .map(|(label, value)| {
+                let (value, unit) = split_unit(&value);
+                serde_json::json!({"label": label, "value": value, "unit": unit})
+            })
+            .collect();
+        serde_json::json!({"type": "section", "title": self.title, "rows": rows})
     }
 
     fn body(&self, r: &Row) -> Vec<Option<String>> {
@@ -369,6 +393,18 @@ impl Table {
         out.push(l.trim_end().to_string());
         out
     }
+}
+
+/// `1.000E+00 [kg/m3]` as the value and its unit (empty when there is
+/// none at the end).
+fn split_unit(v: &str) -> (String, String) {
+    if let Some(stripped) = v.strip_suffix(']')
+        && let Some((val, unit)) = stripped.rsplit_once(" [")
+        && !unit.contains(['[', ']', ' '])
+    {
+        return (val.trim_end().to_string(), unit.to_string());
+    }
+    (v.to_string(), String::new())
 }
 
 /// Breaks a line at spaces into lines of at most `width` characters (a

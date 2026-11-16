@@ -41,7 +41,7 @@ use std::time::Instant;
 /// Version of the machine formats of this module (D80): `result.json`,
 /// `run.jsonl`, the check report and the error object. Within a major
 /// version only additive changes.
-pub const FORMAT_VERSION: &str = "1.0";
+pub const FORMAT_VERSION: &str = "1.1";
 
 /// Output files that record wall-clock times; every other file of a run is
 /// byte-identical between two runs of the same case (D84).
@@ -468,7 +468,7 @@ pub struct Provenance {
     pub reproducible_mode: bool,
     /// SHA-256 of the resolved case without the keys that do not change
     /// the results (`run.threads`, `run.backend`, `run.ptx`,
-    /// `output.directory`).
+    /// `output.directory`, the `[log]` table).
     pub case_hash: String,
     /// SHA-256 of the resolved property program (D94 (3)).
     pub properties_hash: String,
@@ -520,6 +520,8 @@ pub fn case_hash(case: &FlowCase) -> String {
     c.run.backend = "cpu".into();
     c.run.ptx = crate::case::RunSection::default().ptx;
     c.output.directory = None;
+    // how the log looks does not change a result
+    c.log = crate::console::LogSection::default();
     let mut text = toml::to_string_pretty(&c).unwrap_or_default();
     // the contents of the profile tables (the case names only their paths)
     for (name, b) in &case.boundary {
