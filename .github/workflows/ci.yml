@@ -81,6 +81,13 @@ jobs:
       cases: ${{ steps.tier.outputs.cases }}
     steps:
       - uses: actions/checkout@v4
+      # also on docs-only changes: the number tables can be generated (no
+      # number used twice, every topic page listed) and the changelog
+      # fragments are well named
+      - name: Docs indexes and changelog fragments
+        run: |
+          python3 -m tools.docs.indexes
+          python3 -m tools.release.changelog --print > /dev/null
       - uses: dorny/paths-filter@v3
         id: filter
         if: github.event_name == 'pull_request' || github.event_name == 'push'
@@ -165,6 +172,10 @@ jobs:
           # PRs restore main's cache but never write their own: the 10 GB
           # repository cache stays warm instead of evicting main's entries.
           save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Lock file of the Python crate is current
+        run: |
+          cargo metadata --locked --format-version 1 --manifest-path crates/foehncraft-py/Cargo.toml > /dev/null || {
+            echo "::error::crates/foehncraft-py/Cargo.lock is out of date: run cargo update -w --manifest-path crates/foehncraft-py/Cargo.toml"; exit 1; }
       - run: cargo fmt --all --check
       - name: Every flow case is in a CI case set
         run: python3 -m tools.check.ci_cases --check

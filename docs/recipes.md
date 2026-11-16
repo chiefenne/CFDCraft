@@ -69,4 +69,4 @@ The recipes are split by topic; each page has its own table of contents. The num
 ## Adding a feature
 
 Every feature ships with a gallery example, case files and a recipe (D18,
-as in PyAeroFlow); see [CONTRIBUTING.md](../CONTRIBUTING.md). Put the recipe on the topic page that fits, or start a new page when a new physics or topic begins. Give it the next free number, an `<a id>` anchor, a line in that page's table of contents and a row in both tables above; name the case-file keys it uses.
+as in PyAeroFlow); see [CONTRIBUTING.md](../CONTRIBUTING.md). Put the recipe on the topic page that fits, or start a new page when a new physics or topic begins. Number it with its pull request (a second recipe of the same pull request gets a letter: 54b), give it an `<a id>` anchor and a line in that page's table of contents, and name the case-file keys it uses. The two tables above are regenerated after the merge (`python -m tools.docs.indexes`); pull requests leave them alone. A new topic page also needs a row in the first table.

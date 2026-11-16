@@ -90,7 +90,8 @@ The check "CI OK" sums up all jobs.
 
 A release is a Git tag `v<stage>` (D46) plus a GitHub release. Steps:
 
-1. A pull request moves the `## Unreleased` section of `CHANGELOG.md` to
+1. A pull request runs `python -m tools.release.changelog` (moves the
+   fragments of `changelog.d/` into `## Unreleased`), then moves that section to
    `## <version> (YYYY-MM-DD) – ...` and adds a row to the summary table.
 2. After the merge: GitHub, Actions, **Release**, *Run workflow*, version
    `0.1`, first with *dry run* checked (prints the notes), then without.
