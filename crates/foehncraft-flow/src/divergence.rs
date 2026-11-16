@@ -460,7 +460,7 @@ pub fn analyse(
             last_valid_speed: norm(valid.u.get(c)),
         })
         .collect();
-    let rho = case.fluid.density;
+    let rho = case.rho();
     let dt = ctx.dt.unwrap_or(0.0);
     let co = if transient {
         Some(courant(mesh, geo, &valid.mass_flux, rho, dt))
@@ -926,7 +926,7 @@ pub(crate) fn finish(
         let valid = Solution {
             state: fl.state()?,
             disc: &fl.disc,
-            phys: fl.phys,
+            phys: fl.phys.clone(),
         };
         let (rep, layer) = analyse(ctx, mesh, geo, &fl.bc.mom_kind, &failed, &valid);
         write(out, rep, mesh, &failed, &valid, &layer, &files)

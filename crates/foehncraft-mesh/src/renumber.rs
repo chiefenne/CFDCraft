@@ -124,7 +124,12 @@ pub fn rcm_order(n: usize, adj: impl Fn(usize, &mut Vec<usize>)) -> Vec<usize> {
 pub fn shuffled(n: usize, seed: u64) -> Vec<u32> {
     let mut p: Vec<u32> = (0..n as u32).collect();
     for i in (1..n).rev() {
-        let j = (foehncraft_core::rng::bits([seed, i as u64, 0x5eed]) % (i as u64 + 1)) as usize;
+        let j = (foehncraft_core::rng::keyed([
+            foehncraft_core::rng::stream::MESH,
+            seed,
+            i as u64,
+            0x5eed,
+        ]) % (i as u64 + 1)) as usize;
         p.swap(i, j);
     }
     p

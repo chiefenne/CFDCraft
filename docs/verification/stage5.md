@@ -769,10 +769,69 @@ main and of this part (`tools/compare_runs.py --across-versions`, 360
 files): all flow, scalar and Poisson results bitwise equal; the mesh
 reports differ only in their timings.
 
+## Expressions, materials and regions (part 6a)
+
+Values as expressions (D53), the material database and regions (D102,
+D112), the stream word of the random numbers (D121) and the walls with a
+mass flux and exchange coefficients (D124 W3, W4). A number in the case
+file stays a number, and a uniform body force keeps the kernel path, so a
+case without the new keys runs as in part 5c (the catalogue below).
+
+| Check | Result | Where |
+|---|---|---|
+| Elementary functions (D93 (6)) | the in-house `sqrt` is correctly rounded; `exp`, `ln`, `sin`, `cos`, `atan`, `atan2` within 2 ulp, `log10`, `tan`, `asin`, `acos`, `sinh`, `cosh`, `tanh` within 3 ulp of the platform library over 20 000 to 50 000 points each (exp from −740 to 709, ln from 1e-6 to 1e6 and at subnormals, sin and cos from −100 to 100); `pow` exact for integer exponents, within 4 ulp for half-integer and 16 ulp for other exponents | unit tests of `foehncraft_core::math` |
+| Expression language | precedence, right-associative power, comparisons, `if`, `clamp`, tables, constants in any order; constant folding by the same machine; syntax errors with the place, unknown and reserved names with the nearest name, variables a key does not take, cycles between constants: EXPR001–EXPR005 | unit tests of `foehncraft_flow::expr` and `foehncraft_kernels::expr`; test `bad_expressions_are_refused` |
+| Expression against the analytic profile | the inlet parabola as a string: relative L2 velocity error equal to that of `profile = "analytic"` to 1e-9 relative (1.602e-3 on 512 cells) | test `expressions_match_the_analytic_profile_and_the_pressure_gradient` |
+| Body force expression | half of the driving pressure gradient as a body force expression: velocity errors 1.602e-3, 4.066e-4, 1.101e-4 on three meshes, those of `poiseuille_hex.toml`, orders 1.98, 1.89 | case `poiseuille_expression` |
+| Variable viscosity | μ = μ0 (1 + 4 y) as an expression in plane Couette flow against u = U ln(1 + a y)/ln(1 + a): observed orders 1.83, 1.96 | case `couette_viscosity` |
+| Wall mass flux (W3) | blowing and suction 0.2 kg/(m² s), Re = 4, against u = U (e^(Re η) − 1)/(e^Re − 1): observed orders 1.86, 1.96; a closed volume whose walls add mass is refused (BC026) | case `couette_transpiration`, test `wall_mass_flux_in_a_closed_volume` |
+| Time-dependent values | the Taylor–Green velocity on the four sides as expressions of x, y and t: error 5.48e-4 at t = 0.4 s; an inflow ramped by a table in t, adaptive BDF2: steady Poiseuille flow at t = 4 s, error 1.59e-3 | cases `taylor_green_expression`, `channel_ramp` |
+| Material database | air at 300 K: ρ = 1.1766 kg/m³ (ideal gas), μ = 1.846e-5 Pa s (Sutherland); water at 300 K: ρ = 996.56 kg/m³, μ = 0.8538 mPa s (monotone cubic in the IAPWS tables); outside the range clamped with warning MAT003; a cycle of `base` (MAT004), an unknown material with the nearest name (MAT001), a density that varies (MAT002) refused | unit tests of `foehncraft_flow::materials`; test `materials_and_regions` |
+| Water in a 1 mm channel | `material = "water"` at 313.15 K, Poiseuille flow on 2 048 cells: error 4.0e-4 | case `poiseuille_water` |
+| Regions (D112) | a solid or porous region refused (REG001), an unknown zone or a zone in two regions refused (REG002), also by `foehn flow --check` | test `materials_and_regions` |
+| Wall exchange (W4) | Couette flow on hex, tet, poly and mixed cells: shear μU/H = 0.1 Pa and the coefficient μ/Δn on every wall face to 1e-9 | test `couette_derived_fields_are_exact_on_every_mesh_type` |
+| Stream word (D121) | stream 0 gives the numbers of the former three-word key, so every perturbed mesh is unchanged; different streams give different numbers for the same key | unit test `streams` of `foehncraft_core::rng` |
+
+**Expressions.** A string is parsed by a precedence parser, checked for
+the names and variables its key allows, and compiled into a program of a
+small stack machine (32-bit words, constants and tables in side arrays).
+The parts that depend on no variable are folded into constants by running
+the same machine, so a folded constant has the bits it would have at run
+time. The machine and the elementary functions are `no_std` and shared by
+the CPU and GPU builds. Space-dependent values are evaluated once per
+face or cell when the case is set up; time-dependent ones at the new time
+level of every step (and again when an adaptive step is rejected). The
+functions follow Cody and Waite (1980): argument reduction with a split
+constant (ln 2, π/2 in three parts), then a polynomial on the reduced
+interval; `sqrt` is the integer square root of the scaled mantissa, so
+correctly rounded.
+
+**Materials.** The database is a TOML file compiled into the binary
+(`crates/foehncraft-flow/data/materials.toml`), every property with its
+source; its SHA-256 and the text of the resolved property program enter
+the case hash and the provenance of every output file. Tables use linear
+or monotone cubic interpolation (Steffen 1990: no overshoot between the
+points, exact at them). The data of the five fluids were entered from the
+cited references and are to be checked against them before the energy
+equation uses them. The properties are evaluated once at
+`[fluid] temperature` and `operating_pressure` (isothermal until L1).
+
+**The catalogue against part 5c.** Every case of the CI sets linux-1 to
+linux-3 (the 27 flow cases of part 5c in them, the scalar, Poisson and mesh
+cases) run with the binaries of main and of this part
+(`tools/compare_runs.py --across-versions`, 343 files): all flow, scalar
+and Poisson results bitwise equal; the mesh reports differ only in their
+timings. The six new cases pass in the same sets.
+
 ## Limits of this part of stage 5
 
-- The further stage-5 items (expressions, the Python package) follow in
-  their own pull requests. The derived fields of the turbulence models,
+- The Python package (6b) follows in its own pull request. Expressions
+  of solution fields, a density that varies in the domain and the thermal
+  properties come with the energy equation (L1). Gravity balanced by a
+  hydrostatic pressure needs a balanced-force face interpolation, which
+  comes with buoyancy (L1): with a large body force the zero-gradient wall
+  pressure and the Rhie–Chow face velocity give spurious velocities near
+  walls. The derived fields of the turbulence models,
   cut planes and integrals over surfaces (D72, D73) come later; a restart
   file of a moving mesh is not read by `post derive` yet.
 - The turbulence values of the backflow at pressure outlets are accepted
@@ -790,6 +849,17 @@ reports differ only in their timings.
 - One partition only, as in stage 4, and one GPU.
 
 ## References
+
+- W. J. Cody, W. Waite, *Software Manual for the Elementary Functions*,
+  Prentice-Hall (1980)
+- M. Steffen, *A simple method for monotonic interpolation in one
+  dimension*, Astron. Astrophys. 239, 443–450 (1990)
+- W. Wagner, A. Pruß, *The IAPWS formulation 1995 for the thermodynamic
+  properties of ordinary water substance for general and scientific use*,
+  J. Phys. Chem. Ref. Data 31, 387–535 (2002)
+- M. L. Huber et al., *New international formulation for the viscosity of
+  H₂O*, J. Phys. Chem. Ref. Data 38, 101–125 (2009)
+- F. M. White, *Viscous Fluid Flow*, 3rd ed., McGraw-Hill (2006)
 
 - J. C. R. Hunt, A. A. Wray, P. Moin, *Eddies, streams, and convergence
   zones in turbulent flows*, Center for Turbulence Research, Proceedings

@@ -7,6 +7,7 @@
 //!   rows, Rhie–Chow mass flux, pressure correction, boundary values;
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
+//! - [`expr`]: the stack machine of the compiled case-file expressions (D53);
 //! - [`adjoint`]: the transposed matrix and product for the adjoint (D59);
 //! - [`amg`]: the smoothers, transfers and coarse solve of the algebraic
 //!   multigrid V-cycle (stage 3), generic over float32 and float64.
@@ -35,6 +36,7 @@ pub mod adjoint;
 pub mod amg;
 pub mod blas;
 pub mod entry;
+pub mod expr;
 pub mod face;
 pub mod flow;
 pub mod fv;

@@ -36,7 +36,9 @@
 > profiles from tables, backflow treatment at pressure outlets and a
 > convective outlet, and the output gained derived fields (vorticity, Q,
 > λ₂, wall shear stress, y⁺ and more), also from restart files with
-> `foehn post derive`.
+> `foehn post derive`, and boundary values, body forces and viscosities
+> can be written as expressions of space and time, with fluid properties
+> from a built-in material database (`foehn materials`).
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)

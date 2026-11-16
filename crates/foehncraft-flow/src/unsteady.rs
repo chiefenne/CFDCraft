@@ -23,7 +23,7 @@ use crate::engine::Steer;
 use crate::monitor::{self, History, Probes};
 use crate::plot::{self, Series};
 use crate::restart::{self, Restart};
-use crate::simplec::{self, Flow, Physics, Solution, Target};
+use crate::simplec::{self, Flow, Solution, Target};
 use crate::transient::{ErrorControl, StepReport, TimeScheme, Transient};
 
 /// Times of an output schedule in simulated time (D66): the multiples of
@@ -189,7 +189,8 @@ impl AnalyticFaces {
             let ext = patch_extent(mesh, p);
             for f in p.range() {
                 if let Some((fb, _)) = self.faces.iter().find(|x| x.1 == f) {
-                    let v = inlet_velocity(b, geo, f, Some(&a), &ext).unwrap_or([0.0; 3]);
+                    let at = bc::At::numbers(Some(&a));
+                    let v = inlet_velocity(b, None, geo, f, at, &ext).unwrap_or([0.0; 3]);
                     for (ub, vi) in self.ub.iter_mut().zip(v) {
                         ub[*fb] = vi;
                     }
@@ -197,6 +198,59 @@ impl AnalyticFaces {
             }
         }
         fl.set_boundary_velocity(&self.ub)
+    }
+}
+
+/// Boundary values and the body force that depend on t (D53): evaluated
+/// on the host at the new time level before each step and uploaded.
+struct TimeValues {
+    values: bc::Compiled,
+    boundary: bool,
+    source: bool,
+}
+
+impl TimeValues {
+    fn new(case: &FlowCase) -> Result<Self> {
+        let values = case.compiled_boundaries()?;
+        let (source, boundary) = crate::case::time_dependent(case, &values)?;
+        Ok(Self {
+            values,
+            boundary,
+            source,
+        })
+    }
+
+    /// The values of time `t` on the faces and in the cells.
+    fn update(
+        &self,
+        case: &FlowCase,
+        mesh: &foehncraft_mesh::Mesh,
+        geo: &foehncraft_mesh::Geometry,
+        fl: &mut Flow,
+        t: f64,
+    ) -> Result<()> {
+        if self.boundary {
+            let a = case.analytic_at(t);
+            let arr = bc::arrays(
+                mesh,
+                geo,
+                &case.boundary,
+                fl.phys.rho,
+                bc::At {
+                    analytic: a.as_ref(),
+                    values: &self.values,
+                    t,
+                },
+            )?;
+            fl.set_boundary_velocity(&arr.ub)?;
+            fl.set_boundary_pressure(&arr.pset)?;
+        }
+        if self.source
+            && let Some(src) = crate::case::momentum_source(case, geo, mesh.n_cells, t)?
+        {
+            fl.set_momentum_source(src)?;
+        }
+        Ok(())
     }
 }
 
@@ -272,20 +326,22 @@ pub fn run(
         failures: Vec::new(),
         seconds: 0.0,
     };
-    std::fs::write(
-        out.join("case.resolved.toml"),
-        toml::to_string_pretty(case)?,
-    )?;
+    std::fs::write(out.join("case.resolved.toml"), case.resolved_toml()?)?;
     let mut outs: Vec<RunOut> = Vec::new();
     let last = specs.len() - 1;
     for (ri, spec) in specs.iter().enumerate() {
         let (mesh, geo, desc) = mesh_for(case, spec.level)?;
+        let values = case.compiled_boundaries()?;
         let findings = bc::check(
             &mesh,
             &geo,
             &case.boundary,
-            case.fluid.density,
-            analytic.as_ref(),
+            case.rho(),
+            bc::At {
+                analytic: analytic.as_ref(),
+                values: &values,
+                t: case.time.map_or(0.0, |t| t.start_time),
+            },
             case.check_context(),
         );
         if ri == 0 {
@@ -527,8 +583,8 @@ fn header<F: FnMut(&str)>(
     ));
     lg.line(&format!(
         "fluid  ρ = {} kg/m³, μ = {} Pa s; convection {}",
-        case.fluid.density,
-        case.fluid.viscosity,
+        case.rho(),
+        case.mu(),
         if case.flow.convection {
             "on"
         } else {
@@ -672,15 +728,22 @@ fn run_one<F: FnMut(&str)>(
 ) -> Result<RunOut> {
     let mut case = case0.clone();
     let t_setup = Instant::now();
-    let phys = Physics {
-        rho: case.fluid.density,
-        mu: case.fluid.viscosity,
-        body_force: case.flow.body_force,
-        convection: case.flow.convection,
-    };
+    let phys = crate::case::physics(&case)?;
+    let phys = crate::case::physics_on(&case, &phys, mesh, geo)?;
     let time0 = case.time.context("[time]")?;
     let analytic0 = case.analytic_at(time0.start_time);
-    let arrays = bc::arrays(mesh, geo, &case.boundary, phys.rho, analytic0.as_ref())?;
+    let tv = TimeValues::new(&case)?;
+    let arrays = bc::arrays(
+        mesh,
+        geo,
+        &case.boundary,
+        phys.rho,
+        bc::At {
+            analytic: analytic0.as_ref(),
+            values: &tv.values,
+            t: time0.start_time,
+        },
+    )?;
     let ub0 = arrays.ub.clone();
     let disc = simplec::discretisation(mesh, geo, &arrays)?;
     let loc = Locator::new(mesh, geo);
@@ -708,6 +771,9 @@ fn run_one<F: FnMut(&str)>(
         &target,
     )?;
     let nc = mesh.n_cells;
+    if let Some(src) = crate::case::momentum_source(&case, geo, nc, time0.start_time)? {
+        fl.set_momentum_source(src)?;
+    }
     let mut tr = Transient::new(&mut fl, time0.scheme, time0.start_time)?;
     let mut af = AnalyticFaces::new(&case, mesh, &ub0);
     let mut dt = dt0;
@@ -789,6 +855,7 @@ fn run_one<F: FnMut(&str)>(
             }
         };
         af.update(&case, mesh, geo, &mut fl, time0.start_time)?;
+        tv.update(&case, mesh, geo, &mut fl, time0.start_time)?;
         fl.initialise(&u, &p)?;
         if case.initial.potential_flow {
             let it = fl.potential_flow(mesh, geo)?;
@@ -890,7 +957,7 @@ fn run_one<F: FnMut(&str)>(
         let sol = Solution {
             state: fl.state()?,
             disc: &fl.disc,
-            phys: fl.phys,
+            phys: fl.phys.clone(),
         };
         let r = balance::rates(
             &sol,
@@ -958,6 +1025,7 @@ fn run_one<F: FnMut(&str)>(
         let mut tries = 0;
         let stepped = loop {
             af.update(&case, mesh, geo, &mut fl, t0 + h)?;
+            tv.update(&case, mesh, geo, &mut fl, t0 + h)?;
             fl.keep_valid()?;
             let r = tr.step(&mut fl, h);
             // a step whose error exceeds the tolerance is taken back and
@@ -981,6 +1049,7 @@ fn run_one<F: FnMut(&str)>(
                     rp.step
                 ));
                 af.update(&case, mesh, geo, &mut fl, t0)?;
+                tv.update(&case, mesh, geo, &mut fl, t0)?;
                 tr.reject(&mut fl)?;
                 h = hn;
                 continue;
@@ -1011,7 +1080,7 @@ fn run_one<F: FnMut(&str)>(
                         let sol = Solution {
                             state: fl.state()?,
                             disc: &fl.disc,
-                            phys: fl.phys,
+                            phys: fl.phys.clone(),
                         };
                         write_fields(
                             &case,
@@ -1090,7 +1159,7 @@ fn run_one<F: FnMut(&str)>(
             let sol = Solution {
                 state: fl.state()?,
                 disc: &fl.disc,
-                phys: fl.phys,
+                phys: fl.phys.clone(),
             };
             let r = balance::rates(
                 &sol,
@@ -1200,7 +1269,7 @@ fn run_one<F: FnMut(&str)>(
             let sol = Solution {
                 state: fl.state()?,
                 disc: &fl.disc,
-                phys: fl.phys,
+                phys: fl.phys.clone(),
             };
             if at_monitor {
                 let patches = patch_summaries(&sol, mesh, geo, &case);
@@ -1338,7 +1407,7 @@ fn run_one<F: FnMut(&str)>(
     let sol = Solution {
         state: fl.state()?,
         disc: &fl.disc,
-        phys: fl.phys,
+        phys: fl.phys.clone(),
     };
     let analytic_end = case.analytic_at(tr.clock.time);
     let errors = analytic_end.map(|a| error_norms(&sol, mesh, geo, &a, dimension(&case)));
@@ -1366,7 +1435,7 @@ fn run_one<F: FnMut(&str)>(
     let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);
     let big = patches
         .iter()
-        .map(|p| p.mass_flow.abs().max(case.fluid.density * umax * p.area))
+        .map(|p| p.mass_flow.abs().max(case.rho() * umax * p.area))
         .fold(0.0f64, f64::max);
     let mass_imbalance = if big > 0.0 { total / big } else { 0.0 };
     let coefficients = monitor::coefficients(&case, &patches);
@@ -1606,7 +1675,7 @@ fn benchmark_coefficients(
     let (lo, hi) = mesh.bounding_box();
     let depth = hi[2] - lo[2];
     let u = b.mean_velocity();
-    let q = 0.5 * case.fluid.density * u * u * Benchmark::DIAMETER * depth;
+    let q = 0.5 * case.rho() * u * u * Benchmark::DIAMETER * depth;
     Some([p.force[0] / q, p.force[1] / q])
 }
 

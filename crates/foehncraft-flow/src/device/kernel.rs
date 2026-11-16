@@ -88,6 +88,8 @@ pub struct KernelFlow<E: Exec> {
     /// the mesh block.
     conv: Buf3,
     beta: Buf,
+    /// Prescribed pressures per boundary face (time-dependent values, D53).
+    pset: Buf,
 }
 
 impl<E: Exec> KernelFlow<E> {
@@ -122,10 +124,16 @@ impl<E: Exec> KernelFlow<E> {
         let dgeo = f64s(&d.dgeo)?;
         let weight = f64s(&d.weight)?;
         let volume = f64s(&d.cell_volume)?;
-        let pset = f64s(&s.bc.pset)?;
 
-        // the viscosity is constant in laminar flow (stage 6: per face)
-        let mu_face = f64s(&vec![s.mu; nf])?;
+        // the viscosity per face: one value, or the property program's
+        // values (D94; stage 6 adds the eddy viscosity)
+        let mu_face = match s.mu_face {
+            Some(m) => f64s(m)?,
+            None => f64s(&vec![s.mu; nf])?,
+        };
+        let pset_buf = x.alloc(nb)?;
+        x.upload(pset_buf, &s.bc.pset)?;
+        let pset = x.raw(pset_buf);
         let closed = x.alloc(nb)?;
         let conv = Buf3 {
             x: x.alloc(nb)?,
@@ -196,6 +204,7 @@ impl<E: Exec> KernelFlow<E> {
             masks,
             conv,
             beta,
+            pset: pset_buf,
             lsq_u,
             lsq_p,
             rho: s.rho,
@@ -725,6 +734,11 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
 
     fn convective_buffers(&self) -> (Buf3, Buf) {
         (self.conv, self.beta)
+    }
+
+    fn set_pressure_values(&mut self, v: &[f64]) -> Result<()> {
+        let b = self.pset;
+        self.x.upload(b, v)
     }
 
     fn close_backflow(&mut self, m: Buf) -> Result<()> {

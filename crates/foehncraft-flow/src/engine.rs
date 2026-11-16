@@ -425,6 +425,10 @@ pub struct Provenance {
     /// the results (`run.threads`, `run.backend`, `run.ptx`,
     /// `output.directory`).
     pub case_hash: String,
+    /// SHA-256 of the resolved property program (D94 (3)).
+    pub properties_hash: String,
+    /// SHA-256 of the built-in material database.
+    pub materials_database: String,
 }
 
 fn provenance(case: &FlowCase, build: &BuildInfo, gpu: Option<String>) -> Provenance {
@@ -444,6 +448,8 @@ fn provenance(case: &FlowCase, build: &BuildInfo, gpu: Option<String>) -> Proven
         ranks: 1,
         reproducible_mode: false,
         case_hash: case_hash(case),
+        properties_hash: properties_hash(case),
+        materials_database: crate::materials::database_hash(),
     }
 }
 
@@ -476,7 +482,23 @@ pub fn case_hash(case: &FlowCase) -> String {
             text.push_str(&format!("\n# table of {name}: {}", t.sha256));
         }
     }
+    for (name, t) in &case.tables {
+        if let Some(h) = t.sha256() {
+            text.push_str(&format!("\n# table {name}: {h}"));
+        }
+    }
+    if let Ok(p) = case.properties() {
+        text.push('\n');
+        text.push_str(&p.text());
+    }
     sha256(text.as_bytes())
+}
+
+/// SHA-256 of the resolved property program of a case (D94 (3)).
+pub fn properties_hash(case: &FlowCase) -> String {
+    case.properties()
+        .map(|p| sha256(p.text().as_bytes()))
+        .unwrap_or_default()
 }
 
 /// SHA-256 of a mesh: points, faces, cells, patches and the global
@@ -1171,13 +1193,24 @@ pub fn check_case(
     let level = case.verification.levels.first().copied();
     match crate::case::mesh_for(case, level) {
         Ok((mesh, geo, _)) => {
+            // the property program on this mesh: regions name existing zones (D112)
+            if let Err(e) = crate::case::physics(case)
+                .and_then(|p| crate::case::physics_on(case, &p, &mesh, &geo))
+            {
+                rep.diagnostics.push(diag::of_error(&e));
+            }
+            let t0 = case.time.map_or(0.0, |t| t.start_time);
+            let values = case.compiled_boundaries().unwrap_or_default();
             let findings = crate::bc::check(
                 &mesh,
                 &geo,
                 &case.boundary,
-                case.fluid.density,
-                case.analytic_at(case.time.map_or(0.0, |t| t.start_time))
-                    .as_ref(),
+                case.rho(),
+                crate::bc::At {
+                    analytic: case.analytic_at(t0).as_ref(),
+                    values: &values,
+                    t: t0,
+                },
                 case.check_context(),
             );
             rep.diagnostics

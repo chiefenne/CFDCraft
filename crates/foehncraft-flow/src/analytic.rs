@@ -50,6 +50,52 @@ pub enum Analytic {
         #[serde(default)]
         pressure: f64,
     },
+    /// Plane Couette flow with the viscosity μ = μ₀ (1 + a (y − y₀)) (an
+    /// expression of y, D53): the shear stress is constant, so
+    /// u = U ln(1 + a (y − y₀)) / ln(1 + a H), p constant. Verifies the
+    /// viscosity per face of the property program (D94).
+    CouetteViscosity {
+        /// y of the wall at rest.
+        #[serde(default)]
+        lower: f64,
+        /// y of the moving wall.
+        #[serde(default = "one")]
+        upper: f64,
+        /// Speed of the upper wall U (m/s).
+        #[serde(default = "one")]
+        wall_velocity: f64,
+        /// The relative viscosity gradient a (1/m).
+        gradient: f64,
+        /// The constant pressure (Pa).
+        #[serde(default)]
+        pressure: f64,
+    },
+    /// Plane Couette flow with transpiration: fluid enters through the
+    /// lower wall and leaves through the upper one at the normal speed V
+    /// (the wall mass flux of D124 W3), u = U (1 − e^{Re_w η})/(1 − e^{Re_w}),
+    /// v = V, η = (y − y₀)/H, Re_w = V H/ν, p constant (an exact solution
+    /// of the Navier–Stokes equations; Schlichting & Gersten, Boundary-Layer
+    /// Theory, 2017, §5.2).
+    CouetteTranspiration {
+        /// y of the wall at rest (blowing).
+        #[serde(default)]
+        lower: f64,
+        /// y of the moving wall (suction).
+        #[serde(default = "one")]
+        upper: f64,
+        /// Speed of the upper wall U (m/s).
+        #[serde(default = "one")]
+        wall_velocity: f64,
+        /// The transpiration speed V (m/s), > 0 from the lower to the
+        /// upper wall.
+        transpiration_velocity: f64,
+        /// The constant pressure (Pa).
+        #[serde(default)]
+        pressure: f64,
+        /// Kinematic viscosity ν (m²/s), set by the case from `[fluid]`.
+        #[serde(default)]
+        nu: f64,
+    },
     /// Plane Poiseuille flow: u = 6 U_m η (1 − η), η = (y − y₀)/H,
     /// p = p_out + G (x_out − x) with G = 12 μ U_m / H².
     Poiseuille {
@@ -138,6 +184,31 @@ impl Analytic {
                 wall_velocity,
                 ..
             } => [wall_velocity * (x[1] - lower) / (upper - lower), 0.0, 0.0],
+            Self::CouetteViscosity {
+                lower,
+                upper,
+                wall_velocity,
+                gradient,
+                ..
+            } => [
+                wall_velocity * (gradient * (x[1] - lower)).ln_1p()
+                    / (gradient * (upper - lower)).ln_1p(),
+                0.0,
+                0.0,
+            ],
+            Self::CouetteTranspiration {
+                lower,
+                upper,
+                wall_velocity,
+                transpiration_velocity: v,
+                nu,
+                ..
+            } => {
+                let h = upper - lower;
+                let re = v * h / nu;
+                let eta = (x[1] - lower) / h;
+                [wall_velocity * (re * eta).exp_m1() / re.exp_m1(), v, 0.0]
+            }
             Self::Poiseuille {
                 lower,
                 upper,
@@ -177,7 +248,10 @@ impl Analytic {
     /// Exact pressure at `x`.
     pub fn pressure(&self, x: [f64; 3]) -> f64 {
         match *self {
-            Self::Uniform { pressure, .. } | Self::Couette { pressure, .. } => pressure,
+            Self::Uniform { pressure, .. }
+            | Self::Couette { pressure, .. }
+            | Self::CouetteViscosity { pressure, .. }
+            | Self::CouetteTranspiration { pressure, .. } => pressure,
             Self::Poiseuille {
                 lower,
                 upper,
@@ -244,7 +318,8 @@ impl Analytic {
                 *nu = viscosity / density;
                 *rho = density;
             }
-            Self::Uniform { .. } | Self::Couette { .. } => {}
+            Self::CouetteTranspiration { nu, .. } => *nu = viscosity / density,
+            Self::Uniform { .. } | Self::Couette { .. } | Self::CouetteViscosity { .. } => {}
         }
         self
     }
@@ -252,9 +327,10 @@ impl Analytic {
     /// Length scale of the Reynolds number (channel height or period).
     pub fn length_scale(&self) -> f64 {
         match *self {
-            Self::Couette { lower, upper, .. } | Self::Poiseuille { lower, upper, .. } => {
-                upper - lower
-            }
+            Self::Couette { lower, upper, .. }
+            | Self::CouetteViscosity { lower, upper, .. }
+            | Self::CouetteTranspiration { lower, upper, .. }
+            | Self::Poiseuille { lower, upper, .. } => upper - lower,
             Self::PipePoiseuille { radius, .. } => 2.0 * radius,
             Self::Uniform { length, .. } => length,
             Self::TaylorGreen { length, .. } => length,
@@ -265,7 +341,9 @@ impl Analytic {
     pub fn velocity_scale(&self) -> f64 {
         match *self {
             Self::Uniform { velocity: v, .. } => (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt(),
-            Self::Couette { wall_velocity, .. } => wall_velocity.abs(),
+            Self::Couette { wall_velocity, .. }
+            | Self::CouetteViscosity { wall_velocity, .. }
+            | Self::CouetteTranspiration { wall_velocity, .. } => wall_velocity.abs(),
             Self::Poiseuille { mean_velocity, .. } => 1.5 * mean_velocity.abs(),
             Self::PipePoiseuille { mean_velocity, .. } => 2.0 * mean_velocity.abs(),
             Self::TaylorGreen { velocity, .. } => velocity.abs(),

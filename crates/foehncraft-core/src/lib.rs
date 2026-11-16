@@ -9,6 +9,8 @@
 //! - [`dual`]: forward-mode dual numbers, a [`Real`] whose kernels return
 //!   exact derivatives next to their results (requirement D59).
 //! - [`index`]: local (per rank) and global index types.
+//! - [`math`]: elementary functions written in Foehncraft, the same bits on
+//!   every CPU and GPU (D93 (6)), for expressions and properties.
 //! - [`repro`]: reductions with a fixed summation order (requirement D31).
 //! - [`rng`]: counter-based random numbers keyed by identity, step and event,
 //!   independent of thread or rank order (requirement D47).
@@ -17,6 +19,7 @@
 pub mod date;
 pub mod dual;
 pub mod index;
+pub mod math;
 pub mod real;
 pub mod repro;
 pub mod rng;

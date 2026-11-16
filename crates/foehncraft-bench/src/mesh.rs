@@ -197,7 +197,8 @@ fn cell_face_lists(n_cells: usize, owner: &[u32], neighbour: &[u32]) -> (Vec<u32
 fn shuffled_labels(n: usize, seed: u64) -> Vec<u32> {
     let mut p: Vec<u32> = (0..n as u32).collect();
     for i in (1..n).rev() {
-        let j = (rng::bits([seed, i as u64, 0x5eed]) % (i as u64 + 1)) as usize;
+        let j = (rng::keyed([foehncraft_core::rng::stream::MESH, seed, i as u64, 0x5eed])
+            % (i as u64 + 1)) as usize;
         p.swap(i, j);
     }
     p

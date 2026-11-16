@@ -373,14 +373,23 @@ pub fn run(
             for d in 0..3 {
                 x[d] = lo[d]
                     + (hi[d] - lo[d])
-                        * foehncraft_core::rng::uniform([case.check.seed, i, d as u64]);
+                        * foehncraft_core::rng::uniform_keyed([
+                            foehncraft_core::rng::stream::MESH,
+                            case.check.seed,
+                            i,
+                            d as u64,
+                        ]);
             }
             if loc.locate_search(x).is_none() {
                 continue;
             }
             r.inside += 1;
-            let hint = (foehncraft_core::rng::bits([case.check.seed, i, 7]) % mesh.n_cells as u64)
-                as usize;
+            let hint = (foehncraft_core::rng::keyed([
+                foehncraft_core::rng::stream::MESH,
+                case.check.seed,
+                i,
+                7,
+            ]) % mesh.n_cells as u64) as usize;
             let tw = Instant::now();
             let tr = loc.track(loc.start(hint), x);
             walk_time += tw.elapsed().as_secs_f64();

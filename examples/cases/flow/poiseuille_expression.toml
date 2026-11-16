@@ -1,0 +1,79 @@
+# Plane Poiseuille flow with the inlet profile, the outlet pressure and the
+# body force given as expressions (D53, stage 5 part 6a).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/poiseuille_expression.toml
+#
+# The case of poiseuille_hex.toml on the coarse mesh, with the exact
+# parabola written as an expression of y with named constants instead of
+# `profile = "analytic"`; half of the driving pressure gradient is replaced
+# by a body force in x, an expression, so it takes the momentum-source
+# path. The errors are bitwise those of poiseuille_hex.toml on all three
+# levels, and the observed order must be second. The pressure carries only
+# the other half of the gradient, so its error against the analytic field
+# (pressure Linf 0.5) is expected; the check measures the velocity.
+#
+# Gravity balanced by a hydrostatic outlet pressure is not part of this
+# case: the wall pressure is extrapolated with zero gradient and the
+# Rhie-Chow face velocity carries no body-force term yet, so a large
+# gravity produces spurious velocities near the walls. A balanced-force
+# interpolation comes with buoyancy (L1, energy).
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [32, 16, 1]
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.1
+
+[constants]
+u_mean = 1.0
+h = 1.0
+viscosity = 0.1
+density = 1.0
+# the pressure gradient of the exact solution, 12 μ U_m / h²
+gradient = "12 * viscosity * u_mean / h^2"
+
+[flow]
+# half of the driving pressure gradient (N/m³)
+body_force = ["0.5 * gradient", 0.0, 0.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = ["6 * u_mean * (y / h) * (1 - y / h)", 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = "0.0 * density"   # an expression that folds to zero
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+relaxation_velocity = 0.9
+tolerance = 1e-9
+max_iterations = 5000
+
+[analytic]
+type = "poiseuille"
+mean_velocity = 1.0
+x_outlet = 2.0
+
+[verification]
+levels = [0, 1, 2]
+expected_order = [1.8, 2.2]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

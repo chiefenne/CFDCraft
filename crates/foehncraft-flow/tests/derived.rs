@@ -109,6 +109,29 @@ fn couette_derived_fields_are_exact_on_every_mesh_type() {
             }
         }
         assert!(walls > 0);
+        // the wall exchange of D124 W4: τ = μ U / H on the walls, and the
+        // momentum coefficient μ / Δn with the normal distance of the cells
+        let (m, gx, w) =
+            derived::wall_exchange_from_restart(&case, &dir.join("restart.h5")).unwrap();
+        assert_eq!(w.faces.len(), walls, "{t}");
+        assert!(w.heat.is_none() && w.mass.is_none());
+        for (i, &fc) in w.faces.iter().enumerate() {
+            assert!(
+                (foehncraft_mesh::geometry::norm(w.shear[i]) - 0.1).abs() < 1e-9,
+                "{t}"
+            );
+            let c = m.owner[fc] as usize;
+            let y = gx.cell_centroid[c][1];
+            let dn = if gx.face_centroid[fc][1] < 0.5 {
+                y
+            } else {
+                1.0 - y
+            };
+            assert!(
+                (w.momentum[i] - 0.1 / dn).abs() < 1e-9 * w.momentum[i],
+                "{t}"
+            );
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

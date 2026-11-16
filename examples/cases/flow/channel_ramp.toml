@@ -1,0 +1,71 @@
+# Start-up of a channel flow with the inflow ramped up in time by a table
+# (D53, stage 5 part 6a).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_ramp.toml
+#
+# The channel of poiseuille_hex.toml starts at rest; the inlet takes the
+# Poiseuille parabola times ramp(t), a table that rises linearly from 0 to
+# 1 in 0.5 s and then stays at 1 (piecewise linear, constant beyond the
+# ends). BDF2 with an adaptive time step to t = 4 s (about two viscous
+# times h²/ν); then the flow is steady and the run fails if the velocity
+# differs from the exact Poiseuille solution by more than 2e-3 (the error
+# of this mesh is 1.6e-3, that of poiseuille_hex.toml on it).
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [32, 16, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.1
+
+[constants]
+u_mean = 1.0
+
+[tables.ramp]
+x = [0.0, 0.5]           # t (s)
+y = [0.0, 1.0]           # factor of the inflow
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = ["6 * u_mean * y * (1 - y) * ramp(t)", 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[analytic]
+type = "poiseuille"
+mean_velocity = 1.0
+x_outlet = 2.0
+
+[time]
+scheme = "bdf2"
+time_step = 0.01
+end_time = 4.0
+adaptive = true
+max_cfl = 2.0
+max_time_step = 0.1
+
+[verification]
+max_error = 2e-3
+
+[[output.probes]]
+name = "centre"
+point = [1.0, 0.5, 0.05]
+
+[output]
+wall_csv = false
+vtkhdf = false

@@ -215,8 +215,10 @@ pub struct Setup<'a> {
     pub bc: &'a BoundaryArrays,
     /// Density.
     pub rho: f64,
-    /// Dynamic viscosity (constant in laminar flow).
+    /// Dynamic viscosity (when it is the same on every face).
     pub mu: f64,
+    /// Viscosity per face (D94), or `None` for `mu` everywhere.
+    pub mu_face: Option<&'a [f64]>,
     /// ε² of the Venkatakrishnan limiter per cell (empty: unused).
     pub eps2: &'a [f64],
     /// CPU threads.
@@ -270,6 +272,9 @@ pub trait FlowDevice {
     /// flux in `m` becomes 0, the closed state is kept on the device for
     /// the pressure correction of this iteration).
     fn close_backflow(&mut self, m: Buf) -> Result<()>;
+    /// New prescribed pressures (or total pressures) of the boundary faces
+    /// (time-dependent boundary values, D53).
+    fn set_pressure_values(&mut self, v: &[f64]) -> Result<()>;
     /// Least-squares gradient of `phi` with boundary values `value`, where
     /// `zero_gradient` (one of [`Lsq`]'s masks, by `mask`) is 1 the owner
     /// value is used instead.

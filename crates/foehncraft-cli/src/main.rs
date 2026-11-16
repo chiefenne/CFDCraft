@@ -7,7 +7,7 @@
 //! 3), `flow` (steady incompressible laminar flow with SIMPLEC; stage 4)
 //! and `bench g1` (the GPU kernel gate of stage 0), `schema` (the JSON
 //! Schema of the flow case file, D77), `post derive` (derived fields from
-//! a restart file, D72).
+//! a restart file, D72), `materials` (the material database, D94).
 //!
 //! Output streams (D79): human text on standard output, or with `--json`
 //! on standard error and one JSON object on standard output (the result
@@ -112,6 +112,10 @@ enum Command {
     /// default, unit and description of every key, and whether it may
     /// change during a run.
     Schema(SchemaArgs),
+    /// List the built-in material database (D94) with the density and
+    /// viscosity of each material at a temperature, or show one material
+    /// with its property forms, data range and sources.
+    Materials(MaterialsArgs),
     /// Post-processing of a finished or stopped flow run.
     Post {
         #[command(subcommand)]
@@ -159,6 +163,18 @@ struct DeriveArgs {
     /// `latest` looks.
     #[arg(long)]
     out: Option<PathBuf>,
+}
+
+#[derive(clap::Args)]
+struct MaterialsArgs {
+    /// One material (default: all).
+    name: Option<String>,
+    /// Temperature (K) at which the properties are evaluated.
+    #[arg(long, default_value_t = foehncraft_flow::materials::DEFAULT_TEMPERATURE)]
+    temperature: f64,
+    /// Operating pressure (Pa) of the ideal-gas densities.
+    #[arg(long, default_value_t = foehncraft_flow::materials::DEFAULT_PRESSURE)]
+    pressure: f64,
 }
 
 #[derive(clap::Args)]
@@ -353,6 +369,7 @@ fn main() {
         Command::Flow(_) => "flow",
         Command::Bench { .. } => "bench",
         Command::Schema(_) => "schema",
+        Command::Materials(_) => "materials",
         Command::Post { .. } => "post",
     };
     let res = match cli.command {
@@ -362,6 +379,7 @@ fn main() {
         Command::Poisson(a) => poisson(a, out),
         Command::Flow(a) => flow(a, out),
         Command::Schema(a) => schema(a, out),
+        Command::Materials(a) => materials(a, out),
         Command::Post {
             post: Post::Derive(a),
         } => derive(a, out),
@@ -558,6 +576,75 @@ fn signals() -> Interrupts {
         }
     }
     i
+}
+
+fn materials(a: MaterialsArgs, out: Out) -> Result<Done> {
+    use foehncraft_flow::materials as m;
+    anyhow::ensure!(
+        a.temperature > 0.0 && a.pressure > 0.0,
+        "--temperature and --pressure must be > 0"
+    );
+    let cond = m::Conditions {
+        temperature: a.temperature,
+        pressure: a.pressure,
+    };
+    let names: Vec<String> = match &a.name {
+        Some(n) => vec![n.clone()],
+        None => m::database().keys().cloned().collect(),
+    };
+    let mut list = Vec::new();
+    for n in &names {
+        list.push(m::describe(n, cond)?);
+    }
+    if a.name.is_none() {
+        out.line(&format!(
+            "material database ({} materials) at T = {} K, p = {} Pa",
+            list.len(),
+            a.temperature,
+            a.pressure
+        ));
+        out.line(&format!(
+            "  {:<18} {:<7} {:>12} {:>12}  {:<16} description",
+            "name", "kind", "ρ (kg/m³)", "μ (Pa s)", "range (K)"
+        ));
+        for d in &list {
+            let range = d["temperature_range"]
+                .as_array()
+                .map(|r| format!("{}–{}", r[0], r[1]))
+                .unwrap_or_default();
+            out.line(&format!(
+                "  {:<18} {:<7} {:>12.6} {:>12.5e}  {:<16} {}",
+                d["name"].as_str().unwrap_or(""),
+                d["kind"].as_str().unwrap_or(""),
+                d["density"]["value"].as_f64().unwrap_or(f64::NAN),
+                d["viscosity"]["value"].as_f64().unwrap_or(f64::NAN),
+                range,
+                d["description"].as_str().unwrap_or("")
+            ));
+        }
+    } else if let Some(d) = list.first() {
+        out.line(&format!(
+            "{}: {}",
+            d["name"].as_str().unwrap_or(""),
+            d["description"].as_str().unwrap_or("")
+        ));
+        for what in ["density", "viscosity"] {
+            out.line(&format!(
+                "  {what:<10} {} ({})",
+                d[what]["value"].as_f64().unwrap_or(f64::NAN),
+                d[what]["origin"].as_str().unwrap_or("")
+            ));
+        }
+        for w in d["warnings"].as_array().into_iter().flatten() {
+            out.line(&format!("  warning: {}", w.as_str().unwrap_or("")));
+        }
+    }
+    Ok(Done::ok(json!({
+        "format": "foehncraft.materials",
+        "format_version": engine::FORMAT_VERSION,
+        "database_sha256": m::database_hash(),
+        "materials": list,
+    })))
 }
 
 fn schema(a: SchemaArgs, out: Out) -> Result<Done> {
