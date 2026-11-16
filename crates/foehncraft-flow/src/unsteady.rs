@@ -1323,6 +1323,43 @@ fn run_one<F: FnMut(&str)>(
                 lg.line(&l);
             }
             lg.line("");
+            // the residuals of every outer iteration of this step
+            let mut outer_table = crate::console::Table::new(
+                crate::console::Col::int("Outer", 6),
+                vec![
+                    crate::console::Group::new(
+                        "scaled residuals",
+                        ["ResU", "ResV", "ResW", "ResM"]
+                            .map(crate::console::Col::num)
+                            .into(),
+                    ),
+                    crate::console::Group::new(
+                        "linear iterations",
+                        vec![
+                            crate::console::Col::int("U", 4),
+                            crate::console::Col::int("V", 4),
+                            crate::console::Col::int("W", 4),
+                            crate::console::Col::int("P", 4),
+                        ],
+                    ),
+                ],
+                case.log.style,
+                0,
+            );
+            for (k, o) in tr.outer_log.iter().enumerate() {
+                let cells: Vec<String> = o
+                    .momentum
+                    .iter()
+                    .chain([&o.continuity])
+                    .map(|v| crate::console::sci3(*v))
+                    .chain(o.momentum_iterations.iter().map(ToString::to_string))
+                    .chain([o.pressure_iterations.to_string()])
+                    .collect();
+                for l in outer_table.row(k + 1, &cells) {
+                    lg.line(&l);
+                }
+            }
+            lg.line("");
             for l in table.row(n, &cells) {
                 lg.line(&l);
             }

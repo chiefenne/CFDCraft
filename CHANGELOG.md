@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Outer iterations in the log.** Every logged time step shows the
+  residuals and the linear iterations of each outer iteration under its
+  box. New `docs/sayings.md` (*Residuen-gaffen*), linked from the README.
 - **Log look (D125).** The log opens with "Foehncraft" in block letters
   with depth, on one row. Every block is a box of asterisks as wide as its
   content and centred on the page, which has no fixed width any more
