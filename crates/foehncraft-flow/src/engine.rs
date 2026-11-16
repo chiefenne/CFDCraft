@@ -1193,6 +1193,12 @@ pub fn check_case(
     let level = case.verification.levels.first().copied();
     match crate::case::mesh_for(case, level) {
         Ok((mesh, geo, _)) => {
+            // the property program on this mesh: regions name existing zones (D112)
+            if let Err(e) = crate::case::physics(case)
+                .and_then(|p| crate::case::physics_on(case, &p, &mesh, &geo))
+            {
+                rep.diagnostics.push(diag::of_error(&e));
+            }
             let t0 = case.time.map_or(0.0, |t| t.start_time);
             let values = case.compiled_boundaries().unwrap_or_default();
             let findings = crate::bc::check(
