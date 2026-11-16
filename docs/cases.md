@@ -212,6 +212,7 @@ re-reads the case file at N and applies what may change during a run.
 | `flow/cavity_re100_poly3d.toml` | generated poly 3D, 5 445 polyhedra | the same on polyhedra | recipe 19 |
 | `flow/cavity_re1000_poly3d.toml` | generated poly 3D, 28 227 polyhedra | Re = 1000 on polyhedra, deviation ≤ 3 % | gallery 12, recipe 19 |
 | `flow/cavity_re100_budget.toml` | generated hex 2D, 64 × 64 | the cavity at Re = 100 with `[run.limits]` (wall time, iterations, output volume), run the way a script or an agent runs it; a tighter limit stops it with exit code 3 and `--restart latest` continues bitwise | gallery 18, recipe 26 |
+| `flow/cavity_re100_energy.toml` | generated hex 2D, 64 × 64 | the cavity at Re = 100 with the balance table every 100 iterations: the lid power goes into viscous and numerical dissipation, the numerical part positive (D90 part 4) | gallery 19, recipe 27 |
 | `flow/cavity_re100_transient.toml` | generated hex 2D, 64 × 64 | the cavity at Re = 100 time-stepped (PISO, BDF2, Courant number 6) to its steady state: the SIMPLEC solution, deviation from Ghia ≤ 2 % | recipe 21 |
 | `flow/taylor_green_bdf2.toml` | generated hex 2D, 64 × 64 | Taylor–Green vortex, plain PISO with BDF2 over five time steps: time order 1.8–2.3 required | gallery 14, recipe 21 |
 | `flow/taylor_green_cn.toml` | generated hex 2D, 64 × 64 | the same with Crank–Nicolson | gallery 14, recipe 21 |
@@ -314,6 +315,11 @@ Transient cases (stage 5):
 | `run.limits.max_wall_time` | none | stop after this wall time (s) with the restart file and results, exit code 3 (D83) |
 | `run.limits.max_steps`, `max_iterations` | none | stop after this many time steps (transient) or outer iterations (steady) |
 | `run.limits.max_output` | none | stop when the output directory holds this many bytes |
+| `balance.every` | 0 | the full balance table (mass, kinetic energy per patch and term) in the log every N iterations or steps; 0: at the end only (D89) |
+| `balance.tolerance_step` | 1e-8 | relative mass imbalance of a time step or of the final steady state before the warning `BAL001` |
+| `balance.tolerance_run` | 1e-4 | relative mass imbalance over the run (`BAL002`) |
+| `balance.tolerance_energy` | 1e-2 | negative numerical dissipation of kinetic energy, relative to the largest term (`BAL003`) |
+| `balance.action` | `"warn"` | `"stop"`: a transient run stops at the step with exit code 3 |
 | `verification.time_steps` | none | a time-order sweep on one mesh: three or more steps, largest first |
 | `verification.expected_time_order` | none | accepted range of the observed time order on the smallest steps |
 | `verification.benchmark` | none | `schafer-turek-2d1` (steady, Re 20) or `schafer-turek-2d2` (periodic, Re 100) |

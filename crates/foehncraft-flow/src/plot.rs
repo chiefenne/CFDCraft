@@ -203,3 +203,65 @@ pub fn chart(
     s.push_str("</svg>\n");
     s
 }
+
+/// A horizontal bar chart of signed values around zero (the balance at
+/// the end of a run): positive bars to the right in blue, negative bars to
+/// the left in orange, the values in a column on the right.
+pub fn bars(title: &str, xlabel: &str, bars: &[(String, f64)]) -> String {
+    let (x0, x1, top, w) = (240.0, 560.0, 50.0, 680.0);
+    let row = 26.0;
+    let h = top + row * bars.len().max(1) as f64 + 60.0;
+    let big = bars
+        .iter()
+        .map(|b| b.1.abs())
+        .filter(|v| v.is_finite())
+        .fold(0.0f64, f64::max)
+        .max(1e-300);
+    let lo = if bars.iter().any(|b| b.1 < 0.0) {
+        -big
+    } else {
+        0.0
+    };
+    let hi = if bars.iter().any(|b| b.1 > 0.0) {
+        big
+    } else {
+        0.0
+    };
+    let (lo, hi) = if hi <= lo { (-1.0, 1.0) } else { (lo, hi) };
+    let px = |v: f64| x0 + (v - lo) / (hi - lo) * (x1 - x0);
+    let y1 = top + row * bars.len().max(1) as f64;
+    let mut s = format!(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}" font-family="sans-serif" font-size="12"><rect width="{w}" height="{h}" fill="#fff"/><text x="{}" y="28" text-anchor="middle" font-size="15">{title}</text><text x="{}" y="{}" text-anchor="middle">{xlabel}</text>"##,
+        0.5 * w,
+        0.5 * (x0 + x1),
+        y1 + 40.0
+    );
+    for (i, (label, v)) in bars.iter().enumerate() {
+        // + 0.0: no "-0" for a zero term
+        let v = &(*v + 0.0);
+        let y = top + row * i as f64;
+        let (a, b) = (px(v.min(0.0)), px(v.max(0.0)));
+        let c = if *v >= 0.0 { COLOURS[0] } else { COLOURS[1] };
+        let _ = write!(
+            s,
+            r##"<text x="{}" y="{:.1}" text-anchor="end">{label}</text><rect x="{a:.1}" y="{:.1}" width="{:.1}" height="{}" fill="{c}"/><text x="{}" y="{:.1}" text-anchor="end" font-size="11">{v:+.4e}</text>"##,
+            x0 - 10.0,
+            y + 17.0,
+            y + 4.0,
+            (b - a).max(0.5),
+            row - 8.0,
+            w - 12.0,
+            y + 17.0
+        );
+    }
+    let z = px(0.0);
+    let _ = write!(
+        s,
+        r##"<line x1="{z:.1}" x2="{z:.1}" y1="{}" y2="{y1}" stroke="#444"/><line x1="{x0}" x2="{x1}" y1="{y1}" y2="{y1}" stroke="#444"/><text x="{x0}" y="{}" text-anchor="middle">{lo:.2e}</text><text x="{x1}" y="{}" text-anchor="middle">{hi:.2e}</text>"##,
+        top - 4.0,
+        y1 + 16.0,
+        y1 + 16.0
+    );
+    s.push_str("</svg>\n");
+    s
+}

@@ -328,6 +328,12 @@ pub struct Residuals {
 }
 
 impl Residuals {
+    /// Every residual is finite (a NaN does not hide behind
+    /// [`max`](Self::max), which skips it).
+    pub fn finite(&self) -> bool {
+        self.continuity.is_finite() && self.momentum.iter().all(|r| r.is_finite())
+    }
+
     /// The largest residual.
     pub fn max(&self) -> f64 {
         self.momentum
@@ -470,6 +476,11 @@ pub struct Flow {
     pub(crate) w: Work,
     pub(crate) transient: bool,
     pub(crate) iteration: usize,
+    /// Device copies of the last valid u, p and ṁ and its iteration, for
+    /// the divergence report (D63).
+    valid: Option<(Buf3, Buf, Buf, usize)>,
+    /// The residuals of the outer iteration or corrector that diverged.
+    pub(crate) diverged: Option<Residuals>,
 }
 
 fn disc_with(
@@ -674,7 +685,51 @@ impl Flow {
             w,
             transient,
             iteration: 0,
+            valid: None,
+            diverged: None,
         })
+    }
+
+    /// Keeps a device copy of the current u, p and ṁ as the last valid
+    /// state (D63): three cell fields and one face field, copied on the
+    /// device, against the dozens of passes of an iteration.
+    pub fn keep_valid(&mut self) -> Result<()> {
+        let (nc, nf) = (self.disc.n_cells, self.disc.n_faces);
+        let v = match self.valid {
+            Some(v) => v,
+            None => {
+                let u = Buf3 {
+                    x: self.dev.alloc(nc)?,
+                    y: self.dev.alloc(nc)?,
+                    z: self.dev.alloc(nc)?,
+                };
+                (u, self.dev.alloc(nc)?, self.dev.alloc(nf)?, 0)
+            }
+        };
+        for (a, b) in self.f.u.all().into_iter().zip(v.0.all()) {
+            self.dev.copy(a, b)?;
+        }
+        self.dev.copy(self.f.p, v.1)?;
+        self.dev.copy(self.f.mass_flux, v.2)?;
+        self.valid = Some((v.0, v.1, v.2, self.iteration));
+        Ok(())
+    }
+
+    /// Puts the last valid state of [`keep_valid`](Self::keep_valid) back
+    /// with its boundary values and gradients; false when none was kept.
+    pub fn rewind(&mut self) -> Result<bool> {
+        let Some((u, p, m, it)) = self.valid else {
+            return Ok(false);
+        };
+        for (a, b) in u.all().into_iter().zip(self.f.u.all()) {
+            self.dev.copy(a, b)?;
+        }
+        self.dev.copy(p, self.f.p)?;
+        self.dev.copy(m, self.f.mass_flux)?;
+        self.iteration = it;
+        self.update_boundaries()?;
+        self.gradients()?;
+        Ok(true)
     }
 
     /// Sets velocity and pressure and starts from the fluxes of the
@@ -1040,14 +1095,16 @@ impl Flow {
         self.corrections(self.w.m, s.alpha_p(false))?;
         self.dev.sync()?;
         self.timings.pressure_assembly += t.elapsed().as_secs_f64();
-        anyhow::ensure!(
-            res.max().is_finite(),
-            "the solution diverged in outer iteration {} (residuals {:?}, continuity {:.3e}); \
-             lower [solver] relaxation_velocity or start from upwind",
-            self.iteration,
-            res.momentum,
-            res.continuity
-        );
+        if !res.finite() {
+            self.diverged = Some(res);
+            return Err(crate::diag::err(crate::diag::Diagnostic::new(
+                crate::diag::RUN_DIVERGED,
+                format!(
+                    "the solution diverged in outer iteration {} (residuals {:?}, continuity {:.3e})",
+                    self.iteration, res.momentum, res.continuity
+                ),
+            )));
+        }
         std::mem::swap(&mut self.f.mass_flux, &mut self.w.mc);
         Ok(res)
     }

@@ -19,7 +19,7 @@ scalar_cases() { ls examples/cases/scalar/*.toml | grep -v '_gpu\.toml$'; }
 poisson_cases() { ls examples/cases/poisson/*.toml | grep -v '_gpu\.toml$'; }
 
 F=examples/cases/flow
-flow_linux_1="$F/cavity_re100.toml $F/cavity_re1000_poly3d.toml $F/couette_hex.toml $F/couette_mixed.toml $F/couette_poly.toml $F/couette_tet.toml"
+flow_linux_1="$F/cavity_re100.toml $F/cavity_re100_energy.toml $F/cavity_re1000_poly3d.toml $F/couette_hex.toml $F/couette_mixed.toml $F/couette_poly.toml $F/couette_tet.toml"
 flow_linux_2="$F/cylinder_re20.toml $F/cavity_re1000.toml $F/taylor_green_cfl10.toml $F/poiseuille_tet.toml $F/poiseuille_hex.toml $F/poiseuille_poly.toml"
 flow_linux_3="$F/cavity_re100_budget.toml $F/taylor_green_bdf2.toml $F/taylor_green_cn.toml $F/poiseuille_mixed.toml $F/cavity_re100_transient.toml $F/taylor_green_space.toml $F/cavity_re100_poly3d.toml $F/cavity_re100_tet3d.toml"
 flow_long="$F/cylinder_re100.toml"

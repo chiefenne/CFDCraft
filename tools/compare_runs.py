@@ -17,8 +17,11 @@ Logs, Markdown reports, SVG plots and the run record (run.jsonl) carry
 timings and are skipped.
 
 --across-versions compares the runs of two versions of Foehncraft (a
-branch against main): the files of DIR_A only, and in JSON reports only
-the keys both have, so that new files and new keys are not differences.
+branch against main): the files of DIR_A only, in JSON reports only the
+keys both have (output files matched by name, without the provenance
+and the entry of the resolved case),
+and in case.resolved.toml only the tables of DIR_A, so that new files,
+keys and tables are not differences.
 
 Exit code 0 when all files agree, 1 otherwise. Needs h5py and numpy.
 """
@@ -43,9 +46,22 @@ def strip(o):
     return o
 
 
+def by_name(files):
+    # the resolved case of a newer version has more tables, so its hash
+    # differs by design; its lines are compared on their own
+    return {f["name"]: f for f in files
+            if isinstance(f, dict) and "name" in f and f["name"] != "case.resolved.toml"}
+
+
 def common(a, b):
-    """a and b reduced to the keys both have (--across-versions)."""
+    """a and b reduced to the keys both have (--across-versions); the
+    output files of a result are matched by name, and the provenance
+    (commit, case hash) differs between versions by design."""
     if isinstance(a, dict) and isinstance(b, dict):
+        a = {k: v for k, v in a.items() if k != "provenance"}
+        if isinstance(a.get("files"), list) and isinstance(b.get("files"), list):
+            a = dict(a, files=by_name(a["files"]))
+            b = dict(b, files=by_name(b["files"]))
         ks = [k for k in a if k in b]
         pairs = [common(a[k], b[k]) for k in ks]
         return dict(zip(ks, (p[0] for p in pairs))), dict(zip(ks, (p[1] for p in pairs)))
@@ -59,7 +75,10 @@ def data_lines(p):
     return [l for l in p.read_bytes().split(b"\n") if not l.startswith(b"#")]
 
 
-def toml_lines(p):
+def toml_lines(p, sections=None):
+    """The lines of a resolved case, without the device keys of [run];
+    with `sections`, only the lines of those tables (a newer version adds
+    tables, which are not differences)."""
     out, section = [], ""
     for line in p.read_text().splitlines():
         s = line.strip()
@@ -67,8 +86,13 @@ def toml_lines(p):
             section = s
         elif section == "[run]" and s.split("=")[0].strip() in RUN_KEYS:
             continue
-        out.append(line)
+        if sections is None or (section in sections and s):
+            out.append(line)
     return out
+
+
+def toml_sections(p):
+    return {line.strip() for line in p.read_text().splitlines() if line.strip().startswith("[")} | {""}
 
 
 def bits(x):
@@ -121,7 +145,8 @@ def compare(da, db):
             with h5py.File(pa, "r") as A, h5py.File(pb, "r") as B:
                 bad += h5_diff(A, B, rel)
         elif pa.name == "case.resolved.toml":
-            if toml_lines(pa) != toml_lines(pb):
+            keep = toml_sections(pa) if COMMON else None
+            if toml_lines(pa, keep) != toml_lines(pb, keep):
                 bad.append(f"{rel}: resolved case differs")
         elif pa.suffix == ".csv":
             if data_lines(pa) != data_lines(pb):
