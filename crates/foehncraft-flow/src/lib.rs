@@ -33,6 +33,7 @@
 mod adjoint_tests;
 pub mod analytic;
 pub mod balance;
+pub mod banner_art;
 pub mod bc;
 pub mod case;
 pub mod checkpoint;
