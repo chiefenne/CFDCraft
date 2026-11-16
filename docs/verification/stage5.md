@@ -823,9 +823,46 @@ cases) run with the binaries of main and of this part
 and Poisson results bitwise equal; the mesh reports differ only in their
 timings. The six new cases pass in the same sets.
 
+## The Python package (part 6b)
+
+The package `foehncraft` (D61) and its study layer (D62): `python/` with
+the native module `crates/foehncraft-py` (PyO3, built with maturin; not a
+member of the solver workspace, so the solver crates build and test
+without a Python interpreter). It runs the engine of the command line
+(D86) in process, or drives `foehn` itself.
+
+| Check | Result | Where |
+|---|---|---|
+| TOML round trip | every case file of `examples/cases/` (flow, scalar, Poisson, mesh) reads, writes and reads back to the same table; writing is stable; floats keep their bits (also subnormals, −0 and the largest double) | `python/tests/test_case.py` |
+| Relative paths | a case saved to another directory keeps its table file | `test_saved_elsewhere_keeps_the_relative_paths` |
+| Expression objects | rendering with the precedence of the language (−x², (−x)², right-associative power, chains of − and /, logic); seven expressions with every operator and function against Python's math at 200 points: equal to 1e-14 relative; constants, tables, the variables an expression uses; errors with EXPR001–EXPR003 | `python/tests/test_expr.py` |
+| A case built in Python is its case file | the inflow of `poiseuille_hex.toml` built from expression objects and the same case written by hand: every dataset of `fields.vtkhdf` bitwise equal, the same errors | `test_a_case_built_in_python_is_its_case_file` |
+| In process and the command line | `couette_poly.toml` through the native module and through `foehn`: every dataset of `fields.vtkhdf` bitwise equal, the same `solves` of `result.json` | `test_the_command_line_gives_the_same_run` |
+| Callbacks | every outer iteration and time step reaches Python as the row of `run.jsonl`; a true return value stops the run (exit code 3, restart file, final output); an exception in a callback stops the run and is raised; errors of the case carry their codes (MAT001) | `test_callbacks_*`, `test_steps_of_a_transient_run`, `test_an_exception_*`, `test_errors_*` |
+| Materials | the database from Python with the values of the solver; a material built in Python passes the check | `python/tests/test_materials_study.py` |
+| Studies | grid, list, Latin hypercube (one sample per stratum) and Sobol samples; a study of two variants writes `study.csv`, and run again reads the results back instead of running | `test_variants`, `test_study_runs_tabulates_and_resumes` |
+| Gallery 24 | six viscosity gradients of `couette_viscosity.toml`: wall shear stress against μ0 U a / ln(1 + a), 0.17 % low at a = 0.5 to 6.9 % at a = 16 on 32 × 16 cells (2.1 % on 64 × 32) | `examples/studies/couette_viscosity_study.py` |
+
+**How a run talks to Python.** The engine gains an `Observer`, a
+function that sees every row of the run record as it is written; the
+native module passes it a Python callable that gets the row as JSON and
+whose true return value sets the stop request of D64. The run releases
+the GIL and takes it back only between outer iterations or time steps, so
+Python never runs per cell, and the observer only reads: a run with
+callbacks is bitwise the run without (D31). Ctrl-C in Python stops the
+run like SIGINT. With the command line, the package follows `run.jsonl`
+while it grows and stops the run with the `.stop` control file (D40).
+
+**The catalogue against part 6a.** The engine change is the observer
+hook only (no row changes when there is no observer); the CI sets run
+unchanged.
+
 ## Limits of this part of stage 5
 
-- The Python package (6b) follows in its own pull request. Expressions
+- The stepping API of D105 (fields from arrays, n steps at a time, snapshots in
+  memory), the start of a study variant from the nearest finished one and the
+  reuse of mesh and AMG setup between variants are not in the Python package
+  yet; the scripts of `tools/` are ported in part 6c. Expressions
   of solution fields, a density that varies in the domain and the thermal
   properties come with the energy equation (L1). Gravity balanced by a
   hydrostatic pressure needs a balanced-force face interpolation, which

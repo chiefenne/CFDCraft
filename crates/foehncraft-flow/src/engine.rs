@@ -333,9 +333,41 @@ fn dir_bytes(dir: &Path) -> u64 {
 // ---------------------------------------------------------------------------
 // run record (D69)
 
+/// A function that sees every row of the run record as it is written
+/// (header, iterations, steps, balances, events, end): the hook of the
+/// Python package for monitors and stop criteria at iteration or step
+/// level (D61). It runs on the thread of the run, between iterations or
+/// steps; it reads, it never changes the state, so results do not depend
+/// on it (D31).
+#[derive(Clone)]
+pub struct Observer(Arc<std::sync::Mutex<ObserverFn>>);
+
+/// The function of an [`Observer`].
+pub type ObserverFn = dyn FnMut(&serde_json::Value) + Send;
+
+impl Observer {
+    /// Wraps `f`.
+    pub fn new(f: impl FnMut(&serde_json::Value) + Send + 'static) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(f)))
+    }
+
+    fn call(&self, v: &serde_json::Value) {
+        if let Ok(mut f) = self.0.lock() {
+            f(v);
+        }
+    }
+}
+
+impl std::fmt::Debug for Observer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Observer")
+    }
+}
+
 /// The run record: JSON lines, buffered and flushed with the log lines.
 pub(crate) struct Record {
     file: Option<std::io::BufWriter<std::fs::File>>,
+    observer: Option<Observer>,
 }
 
 impl Record {
@@ -344,15 +376,24 @@ impl Record {
             std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;
         Ok(Self {
             file: Some(std::io::BufWriter::new(f)),
+            observer: None,
         })
     }
 
     fn none() -> Self {
-        Self { file: None }
+        Self {
+            file: None,
+            observer: None,
+        }
     }
 
     /// Appends one row.
     pub(crate) fn row(&mut self, v: &impl Serialize) {
+        if let Some(o) = &self.observer
+            && let Ok(j) = serde_json::to_value(v)
+        {
+            o.call(&j);
+        }
         if let Some(f) = self.file.as_mut()
             && let Ok(s) = serde_json::to_string(v)
         {
@@ -367,9 +408,9 @@ impl Record {
         }
     }
 
-    /// True when rows are written.
+    /// True when rows are written or observed.
     pub(crate) fn on(&self) -> bool {
-        self.file.is_some()
+        self.file.is_some() || self.observer.is_some()
     }
 }
 
@@ -1266,6 +1307,8 @@ pub struct RunOptions {
     pub build: BuildInfo,
     /// File confinement.
     pub roots: Roots,
+    /// Sees every row of the run record ([`Observer`]).
+    pub observer: Option<Observer>,
 }
 
 /// The result summary (`result.json`, D62): what a study or an agent needs
@@ -1387,6 +1430,7 @@ pub fn run(
     })?;
     let mut case = case.clone();
     let mut steer = Steer::new(opts.interrupts.clone(), dir, true)?;
+    steer.record.observer = opts.observer.clone();
     let res = resolve_latest(&mut case, dir)
         .and_then(|()| check_paths(&case, &opts.roots))
         .and_then(|()| {

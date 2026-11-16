@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+**The Python package (stage 5 part 6b, D61, D62).** `python/` holds the
+package `foehncraft` with a native module (`crates/foehncraft-py`, PyO3,
+built with maturin, abi3 for Python 3.10+): `Case` (read, change with
+dotted keys, write; the TOML round trip holds for every example case;
+relative paths kept when saved elsewhere), expression objects with Python
+operators that render the strings of the case file (`foehncraft.expr`,
+evaluated with the solver's own compiler), `run` in process or through
+`foehn` with callbacks on every iteration or time step that can stop the
+run, `Result` (summary, CSV tables, VTKHDF fields), the material database
+and material builders, and `foehncraft.study` (grid, list, Latin
+hypercube, Sobol; one case file per variant, `study.csv`, resume). The
+engine gains `engine::Observer` (sees every row of the run record) and
+`RunOptions::observer`; runs are bitwise unchanged. New CI job "Python
+package" (ruff, pytest). New scripts `examples/python/poiseuille_inflow.py`
+and `examples/studies/couette_viscosity_study.py`; gallery 24, recipe 33
+on the new Python pages, case catalogue page "Python scripts".
+
 **Expressions, materials and regions (stage 5 part 6a, D53, D102, D112,
 D121, D124 W3/W4).** Boundary values (velocity, normal velocity, pressure,
 total pressure, mass flow), the body force and the viscosity may be
