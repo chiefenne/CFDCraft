@@ -286,7 +286,7 @@ pub fn run(
             &case.boundary,
             case.fluid.density,
             analytic.as_ref(),
-            true,
+            case.check_context(),
         );
         if ri == 0 {
             for f in &findings {

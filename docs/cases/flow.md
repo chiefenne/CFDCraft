@@ -8,6 +8,7 @@ On this page:
 - [Transient flow](#transient-flow)
 - [Runs driven by programs, balances](#runs-driven-by-programs-balances)
 - [The flow loop on a GPU](#the-flow-loop-on-a-gpu)
+- [Boundary conditions](#boundary-conditions)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -98,3 +99,18 @@ CPU = GPU bitwise, not run by CI.
 
 The adjoint-ready kernels of stage 5 (D59) have no case file: their
 checks are tests on generated meshes (gallery 17, recipe 25).
+
+## Boundary conditions
+
+Slip walls, axisymmetric wedges, inlet profiles from tables, backflow
+treatment at pressure outlets and the convective outlet (D29, stage 5
+part 5b); the keys are on the [key page](flow-keys.md#boundary-conditions-d29).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/cylinder_re100.toml` | built-in cylinder mesh, refine 0: 6 144 hexahedra | Schäfer & Turek 2D-2, periodic, Re = 100: C_D,max, C_L,max, St, Δp within 2.5 % (about 8 minutes; Linux, on main, nightly and with the label `full-ci`) | gallery 15, recipe 23 |
+| `flow/channel_slip.toml` | generated mixed 2D, perturbed by 20 %, 432 cells | uniform flow between slip walls, exact (error ≤ 1e-9 required) | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |
+| `flow/poiseuille_table.toml` | generated hex 2D, 512 cells | the inlet profile read from `poiseuille_profile.csv`: the run with the exact parabola | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |
+| `flow/pipe_wedge.toml` | generated hex 2D revolved into a 0.5° wedge, perturbed, 256 to 4 096 cells (3 levels) | Hagen–Poiseuille flow on the axisymmetric wedge, observed order 1.8–2.2 required | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |
+| `flow/cylinder_re100_short.toml` | built-in cylinder mesh with the outlet 5.5 D behind the cylinder, 4 928 hexahedra | the Re = 100 vortex street through a static pressure outlet with backflow treatment (Linux, on main, nightly and with the label `full-ci`) | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |
+| `flow/cylinder_re100_convective.toml` | as `cylinder_re100_short.toml` | the same with a convective outlet (Linux, on main, nightly and with the label `full-ci`) | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |

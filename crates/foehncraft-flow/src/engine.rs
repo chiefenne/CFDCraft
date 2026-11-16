@@ -469,7 +469,14 @@ pub fn case_hash(case: &FlowCase) -> String {
     c.run.backend = "cpu".into();
     c.run.ptx = crate::case::RunSection::default().ptx;
     c.output.directory = None;
-    sha256(toml::to_string_pretty(&c).unwrap_or_default().as_bytes())
+    let mut text = toml::to_string_pretty(&c).unwrap_or_default();
+    // the contents of the profile tables (the case names only their paths)
+    for (name, b) in &case.boundary {
+        if let Some(t) = b.table() {
+            text.push_str(&format!("\n# table of {name}: {}", t.sha256));
+        }
+    }
+    sha256(text.as_bytes())
 }
 
 /// SHA-256 of a mesh: points, faces, cells, patches and the global
@@ -668,8 +675,9 @@ fn show_roots(r: &[PathBuf]) -> String {
 /// and the restart file must lie inside the read roots.
 pub fn load(path: &Path, sets: &[String], roots: &Roots) -> Result<FlowCase> {
     roots.check_read(path, "the case file")?;
-    let case = FlowCase::from_file_with(path, sets)?;
+    let mut case = FlowCase::from_file_unloaded(path, sets)?;
     check_paths(&case, roots)?;
+    case.load_tables()?;
     Ok(case)
 }
 
@@ -682,6 +690,11 @@ pub fn check_paths(case: &FlowCase, roots: &Roots) -> Result<()> {
         && r.as_os_str() != LATEST
     {
         roots.check_read(r, "the restart file")?;
+    }
+    for b in case.boundary.values() {
+        if let Some(t) = b.table_path() {
+            roots.check_read(t, "the profile table")?;
+        }
     }
     Ok(())
 }
@@ -1156,7 +1169,7 @@ pub fn check_case(
                 case.fluid.density,
                 case.analytic_at(case.time.map_or(0.0, |t| t.start_time))
                     .as_ref(),
-                true,
+                case.check_context(),
             );
             rep.diagnostics
                 .extend(findings.iter().map(crate::bc::Finding::diagnostic));

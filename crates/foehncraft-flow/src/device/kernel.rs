@@ -84,6 +84,10 @@ pub struct KernelFlow<E: Exec> {
     /// The parts of the residual scale, 3 n_cells each.
     rs_v: Buf,
     rs_w: Buf,
+    /// Convective-outlet buffers c and β (per boundary face), addressed by
+    /// the mesh block.
+    conv: Buf3,
+    beta: Buf,
 }
 
 impl<E: Exec> KernelFlow<E> {
@@ -119,8 +123,16 @@ impl<E: Exec> KernelFlow<E> {
         let weight = f64s(&d.weight)?;
         let volume = f64s(&d.cell_volume)?;
         let pset = f64s(&s.bc.pset)?;
+
         // the viscosity is constant in laminar flow (stage 6: per face)
         let mu_face = f64s(&vec![s.mu; nf])?;
+        let closed = x.alloc(nb)?;
+        let conv = Buf3 {
+            x: x.alloc(nb)?,
+            y: x.alloc(nb)?,
+            z: x.alloc(nb)?,
+        };
+        let beta = x.alloc(nb)?;
         let m = Mesh {
             n_cells: nc as u64,
             n_faces: nf as u64,
@@ -147,11 +159,18 @@ impl<E: Exec> KernelFlow<E> {
             pb_rule: x.alloc_u32(&s.bc.pb_rule)?,
             pset,
             mu_face,
+            closed: x.raw(closed),
+            conv: Raw3 {
+                x: x.raw(conv.x),
+                y: x.raw(conv.y),
+                z: x.raw(conv.z),
+            },
+            beta: x.raw(beta),
         };
         let pca: Vec<f64> =
             s.bc.flux_kind
                 .iter()
-                .map(|&kind| if kind == k::FLUX_PRESSURE { 0.0 } else { 1.0 })
+                .map(|&kind| if kind == k::FLUX_FIXED { 1.0 } else { 0.0 })
                 .collect();
         let mut buf = |v: &[f64]| -> Result<Buf> {
             let b = x.alloc(v.len())?;
@@ -175,6 +194,8 @@ impl<E: Exec> KernelFlow<E> {
             rs_v: x.alloc(3 * nc)?,
             rs_w: x.alloc(3 * nc)?,
             masks,
+            conv,
+            beta,
             lsq_u,
             lsq_p,
             rho: s.rho,
@@ -380,6 +401,25 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     fn sum_sq(&mut self, x: Buf) -> Result<f64> {
         let r = self.r(x);
         self.sum_sq_raw(r)
+    }
+
+    fn dot(&mut self, x: Buf, y: Buf) -> Result<f64> {
+        let (rx, ry) = (self.r(x), self.r(y));
+        ensure!(
+            rx.len == ry.len,
+            "dot product of {} and {} values",
+            rx.len,
+            ry.len
+        );
+        let n = rx.len as usize;
+        let nbk = n.div_ceil(BLOCK);
+        let mut out = self.r(self.blocks);
+        ensure!(nbk as u64 <= out.len, "dot product of {n} values: too long");
+        out.len = nbk as u64;
+        let a = e::DotArgs { x: rx, y: ry, out };
+        self.go::<e::BlockDot>(nbk, &a)?;
+        let sums = self.x.download(self.blocks)?;
+        Ok(combine_block_sums(&sums[..nbk]))
     }
 
     fn min_max(&mut self, x: Buf) -> Result<(f64, f64)> {
@@ -681,6 +721,18 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     fn courant(&mut self, m: Buf, dt: f64, out: Buf) -> Result<()> {
         let factor = dt / (2.0 * self.rho);
         self.unary::<e::Courant>(self.nc, factor, m, out)
+    }
+
+    fn convective_buffers(&self) -> (Buf3, Buf) {
+        (self.conv, self.beta)
+    }
+
+    fn close_backflow(&mut self, m: Buf) -> Result<()> {
+        let args = e::CloseArgs {
+            m: self.m,
+            mass_flux: self.r(m),
+        };
+        self.go::<e::CloseBackflow>(self.nb, &args)
     }
 
     fn pressure_faces(&mut self, dc: Buf, out: Buf) -> Result<()> {

@@ -1,0 +1,69 @@
+# Flow around a cylinder at Re = 100 in a short channel: a convective
+# outlet (stage 5, D29).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cylinder_re100_convective.toml
+#
+# The short channel of cylinder_re100_short.toml (outlet 5.5 D behind the
+# cylinder centre) with a convective outlet: the velocity leaves by
+# ∂u/∂t + U_c ∂u/∂n = 0 with U_c the mean outflow speed, so the vortices
+# pass the outlet with little reflection. No boundary fixes the pressure;
+# the outlet velocity is balanced with the inflow in every iteration and
+# the pressure level is fixed in the reference cell. On 4 928 cells
+# C_D,max 3.226, St 0.2952 and Δp 2.478 Pa lie inside the reference
+# ranges and C_L,max is 0.955, 1.6 % below the long channel on the same
+# near-wake cells (0.971); the run fails if a value lies further from its
+# range than 4 % of the range midpoint. Compare with
+# cylinder_re100_short.toml and cylinder_re100.toml; docs/verification/
+# stage5.md has the numbers.
+
+[mesh.cylinder]
+refine = 0
+length = 0.75           # the outlet 5.5 D behind the cylinder centre
+wake = 26               # the near wake of the 2.2 m channel, cell for cell
+wake_ratio = 2.28
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[flow]
+convection = true
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 1.5
+profile_axes = ["y"]
+[boundary.outlet]
+type = "convective-outlet"   # U_c = the mean outflow speed
+[boundary.walls]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+log_every = 500
+
+[time]
+scheme = "bdf2"
+time_step = 0.0005
+end_time = 8.0
+adaptive = true
+max_cfl = 0.8
+
+[verification]
+benchmark = "schafer-turek-2d2"
+benchmark_tolerance = 0.04
+evaluation_start = 5.0
+
+[output]
+vtkhdf = false
+fields_every = 0
+wall_csv = false

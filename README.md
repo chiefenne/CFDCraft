@@ -31,7 +31,10 @@
 > derivatives, transposed matrices, binomial checkpointing), every run
 > books its mass and kinetic-energy balance, and the numerics gained a
 > bounded central scheme, a time step chosen by the time-integration
-> error, output at exact times and a potential-flow start.
+> error, output at exact times and a potential-flow start, and the
+> boundary conditions gained slip walls, axisymmetric wedges, inlet
+> profiles from tables, backflow treatment at pressure outlets and a
+> convective outlet.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)

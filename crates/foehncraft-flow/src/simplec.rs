@@ -504,6 +504,60 @@ pub struct Flow {
     /// one (the extrapolated velocity of a time step, set by
     /// [`crate::transient`]).
     pub(crate) central_u: Option<Buf3>,
+    /// Some boundary face suppresses backflow (D29).
+    no_backflow: bool,
+    /// The convective outlets (D29), if any.
+    pub(crate) conv: Option<Convective>,
+}
+
+/// The convective outlets of a transient run (D29): the device buffers of
+/// the outlet equation and of the global mass balance.
+///
+/// Per time step [`crate::transient`] sets the old-level part c and β of
+/// [`foehncraft_kernels::flow::UB_CONVECTIVE`]. When no boundary fixes the
+/// pressure, the outlet velocities are shifted along the face normals after
+/// every boundary update, by one common speed, so that the outflow through
+/// the convective outlets equals the prescribed inflow exactly (the
+/// pressure-correction equation is then compatible; its level is fixed in
+/// the reference cell). Between time steps the outlets *hold*: β = 0 and
+/// c = u_b, so a boundary update reproduces the boundary values of the last
+/// step bitwise (a restart, a rejected step, a rewind).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Convective {
+    /// c (per boundary face; the device buffer the boundary values read).
+    pub c: Buf3,
+    /// β (per boundary face).
+    pub beta: Buf,
+    /// U_c/Δn on the faces of outlets with a given convection velocity.
+    given_dn: Buf,
+    /// 1/Δn on the faces of outlets with the default convection velocity.
+    default_dn: Buf,
+    /// Area vectors of the convective faces (0 elsewhere).
+    area: Buf3,
+    /// Unit normals of the convective faces (0 elsewhere).
+    normal: Buf3,
+    /// Total area of the convective faces (m²).
+    area_total: f64,
+    /// Mass flux out of the domain through the other boundaries that fix
+    /// the flux (kg/s; negative for a net inflow).
+    pub q_other: f64,
+    /// Shift the outlet velocities to the mass balance (no pressure
+    /// boundary).
+    balance: bool,
+    /// Between time steps: β = 0, c = u_b, no balance shift.
+    pub hold: bool,
+}
+
+impl Convective {
+    /// The default convection velocity: the mean outflow speed through the
+    /// convective outlets that carries the prescribed net inflow, ≥ 0.
+    pub fn default_velocity(&self, rho: f64) -> f64 {
+        if self.area_total > 0.0 {
+            (-self.q_other / (rho * self.area_total)).max(0.0)
+        } else {
+            0.0
+        }
+    }
 }
 
 fn disc_with(
@@ -694,6 +748,90 @@ impl Flow {
         } else {
             Some(reference_cell.unwrap_or(0))
         };
+        let no_backflow = bc.flux_kind.contains(&k::FLUX_PRESSURE_NO_BACKFLOW);
+        let conv = if bc.ub_rule.contains(&k::UB_CONVECTIVE) {
+            let (c, beta) = dev.convective_buffers();
+            let ni = disc.n_interior;
+            let mut given = vec![0.0; nb];
+            let mut default = vec![0.0; nb];
+            let mut area = [vec![0.0; nb], vec![0.0; nb], vec![0.0; nb]];
+            let mut normal = [vec![0.0; nb], vec![0.0; nb], vec![0.0; nb]];
+            let mut area_total = 0.0;
+            for fb in 0..nb {
+                if bc.ub_rule[fb] != k::UB_CONVECTIVE {
+                    continue;
+                }
+                let f = fb + ni;
+                let sv = [
+                    disc.face_area.x[f],
+                    disc.face_area.y[f],
+                    disc.face_area.z[f],
+                ];
+                let a = (sv[0] * sv[0] + sv[1] * sv[1] + sv[2] * sv[2]).sqrt();
+                let o = disc.owner[f] as usize;
+                // the distance from the owner centroid to the face plane
+                let dn = (0..3)
+                    .map(|i| {
+                        let xf = [
+                            disc.face_centroid.x[f],
+                            disc.face_centroid.y[f],
+                            disc.face_centroid.z[f],
+                        ];
+                        let xc = [
+                            disc.cell_centroid.x[o],
+                            disc.cell_centroid.y[o],
+                            disc.cell_centroid.z[o],
+                        ];
+                        (xf[i] - xc[i]) * sv[i] / a
+                    })
+                    .sum::<f64>();
+                anyhow::ensure!(
+                    dn > 0.0,
+                    "a convective-outlet face lies behind the centroid of its cell"
+                );
+                if bc.convection[fb] > 0.0 {
+                    given[fb] = bc.convection[fb] / dn;
+                } else {
+                    default[fb] = 1.0 / dn;
+                }
+                for i in 0..3 {
+                    area[i][fb] = sv[i];
+                    normal[i][fb] = sv[i] / a;
+                }
+                area_total += a;
+            }
+            let mut put = |v: &[f64]| -> Result<Buf> {
+                let b = dev.alloc(nb)?;
+                dev.upload(b, v)?;
+                Ok(b)
+            };
+            let given_dn = put(&given)?;
+            let default_dn = put(&default)?;
+            let area = Buf3 {
+                x: put(&area[0])?,
+                y: put(&area[1])?,
+                z: put(&area[2])?,
+            };
+            let normal = Buf3 {
+                x: put(&normal[0])?,
+                y: put(&normal[1])?,
+                z: put(&normal[2])?,
+            };
+            Some(Convective {
+                c,
+                beta,
+                given_dn,
+                default_dn,
+                area,
+                normal,
+                area_total,
+                q_other: fixed_outflow(&disc, &bc, &bc.ub, phys.rho),
+                balance: !bc.has_pressure(),
+                hold: true,
+            })
+        } else {
+            None
+        };
         Ok(Self {
             disc,
             bc,
@@ -711,6 +849,8 @@ impl Flow {
             valid: None,
             diverged: None,
             central_u: None,
+            no_backflow,
+            conv,
         })
     }
 
@@ -763,6 +903,27 @@ impl Flow {
         self.dev.upload(self.f.u.y, &u.y)?;
         self.dev.upload(self.f.u.z, &u.z)?;
         self.dev.upload(self.f.p, p)?;
+        if let Some(cv) = self.conv {
+            // the convective outlets start from the owner velocity
+            let (ni, nb) = (
+                self.disc.n_interior,
+                self.disc.n_faces - self.disc.n_interior,
+            );
+            let mut c = [vec![0.0; nb], vec![0.0; nb], vec![0.0; nb]];
+            for (fb, &rule) in self.bc.ub_rule.iter().enumerate().take(nb) {
+                if rule == k::UB_CONVECTIVE {
+                    let o = self.disc.owner[fb + ni] as usize;
+                    c[0][fb] = u.x[o];
+                    c[1][fb] = u.y[o];
+                    c[2][fb] = u.z[o];
+                }
+            }
+            for (b, v) in cv.c.all().into_iter().zip(&c) {
+                self.dev.upload(b, v)?;
+            }
+            self.dev.fill(cv.beta, 0.0)?;
+            self.conv = Some(Convective { hold: true, ..cv });
+        }
         self.update_boundaries()?;
         self.gradients()?;
         let a = self.flux_args(None, self.w.zero_face, None);
@@ -901,7 +1062,49 @@ impl Flow {
         put(f.psi, &s.psi)?;
         self.dev.upload(f.p, &s.p)?;
         self.dev.upload(f.mass_flux, &s.mass_flux)?;
-        self.dev.upload(f.pb, &s.pb)
+        self.dev.upload(f.pb, &s.pb)?;
+        self.hold_convective(f.ub)
+    }
+
+    /// The convective outlets hold the boundary velocity `ub` (β = 0,
+    /// c = `ub`), so that boundary updates reproduce it bitwise.
+    pub(crate) fn hold_convective(&mut self, ub: Buf3) -> Result<()> {
+        let Some(cv) = self.conv else { return Ok(()) };
+        for (a, b) in ub.all().into_iter().zip(cv.c.all()) {
+            self.dev.copy(a, b)?;
+        }
+        self.dev.fill(cv.beta, 0.0)?;
+        self.conv = Some(Convective { hold: true, ..cv });
+        Ok(())
+    }
+
+    /// The convective outlets of a time step from the old boundary levels:
+    /// c = (−a₁ u_bⁿ − a₂ u_bⁿ⁻¹)/a₀ and β = U_c Δt/(a₀ Δn).
+    pub(crate) fn step_convective(
+        &mut self,
+        ub_old: Buf3,
+        ub_old2: Buf3,
+        [a0, a1, a2]: [f64; 3],
+        dt: f64,
+    ) -> Result<()> {
+        let Some(cv) = self.conv else { return Ok(()) };
+        for ((c, a), b) in cv.c.all().into_iter().zip(ub_old.all()).zip(ub_old2.all()) {
+            self.dev.lincomb(c, -a1 / a0, a, -a2 / a0, b)?;
+        }
+        let uc = cv.default_velocity(self.phys.rho);
+        let s = dt / a0;
+        self.dev
+            .lincomb(cv.beta, s, cv.given_dn, s * uc, cv.default_dn)?;
+        self.conv = Some(Convective { hold: false, ..cv });
+        Ok(())
+    }
+
+    /// Backflow suppression after the predicted fluxes `m` (D29).
+    pub(crate) fn close_backflow(&mut self, m: Buf) -> Result<()> {
+        if self.no_backflow {
+            self.dev.close_backflow(m)?;
+        }
+        Ok(())
     }
 
     /// New prescribed boundary velocity (time-dependent conditions); faces
@@ -910,7 +1113,12 @@ impl Flow {
         let s = self.f.ub_set;
         self.dev.upload(s.x, &ub[0])?;
         self.dev.upload(s.y, &ub[1])?;
-        self.dev.upload(s.z, &ub[2])
+        self.dev.upload(s.z, &ub[2])?;
+        if let Some(cv) = self.conv {
+            let q = fixed_outflow(&self.disc, &self.bc, ub, self.phys.rho);
+            self.conv = Some(Convective { q_other: q, ..cv });
+        }
+        Ok(())
     }
 
     pub(crate) fn flux_args(
@@ -945,7 +1153,26 @@ impl Flow {
             ub_set: f.ub_set,
             ub: f.ub,
             pb: f.pb,
-        })
+        })?;
+        // the mass balance of the convective outlets: one normal speed δ on
+        // all of them, ρ Σ (u_b + δ n̂)·S = −(the other fixed fluxes)
+        if let Some(cv) = self.conv
+            && cv.balance
+            && !cv.hold
+            && cv.area_total > 0.0
+        {
+            let rho = self.phys.rho;
+            let ub = self.f.ub;
+            let mut q = 0.0;
+            for (u, a) in ub.all().into_iter().zip(cv.area.all()) {
+                q += self.dev.dot(u, a)?;
+            }
+            let delta = -(rho * q + cv.q_other) / (rho * cv.area_total);
+            for (u, n) in ub.all().into_iter().zip(cv.normal.all()) {
+                self.dev.lincomb(u, 1.0, u, delta, n)?;
+            }
+        }
+        Ok(())
     }
 
     /// Step 2: gradients and limiters.
@@ -1197,6 +1424,7 @@ impl Flow {
         let t = Instant::now();
         let a = self.flux_args(Some(self.w.d), self.w.relax, None);
         self.dev.mass_flux(&a, self.w.m)?;
+        self.close_backflow(self.w.m)?;
         res.continuity = self.continuity(self.w.m)?;
         self.dev.sync()?;
         self.timings.pressure_assembly += t.elapsed().as_secs_f64();
@@ -1223,6 +1451,24 @@ impl Flow {
         std::mem::swap(&mut self.f.mass_flux, &mut self.w.mc);
         Ok(res)
     }
+}
+
+/// Mass flux (kg/s) out of the domain through the boundary faces that fix
+/// the flux with the prescribed velocity `ub`, without the convective
+/// outlets (in face order).
+fn fixed_outflow(disc: &Discretisation, bc: &BoundaryArrays, ub: &[Vec<f64>; 3], rho: f64) -> f64 {
+    let ni = disc.n_interior;
+    let mut q = 0.0;
+    for (fb, (&kind, &rule)) in bc.flux_kind.iter().zip(&bc.ub_rule).enumerate() {
+        if kind == k::FLUX_FIXED && rule == k::UB_FIXED {
+            let f = fb + ni;
+            q += rho
+                * (ub[0][fb] * disc.face_area.x[f]
+                    + ub[1][fb] * disc.face_area.y[f]
+                    + ub[2][fb] * disc.face_area.z[f]);
+        }
+    }
+    q
 }
 
 /// Cell velocities from face mass fluxes, u_P = Σ_f ±ṁ_f (x_f − x_P)/(ρ V_P):

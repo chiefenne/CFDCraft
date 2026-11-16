@@ -8,6 +8,7 @@
 //! - [`quality`]: the mesh quality report;
 //! - [`generate`]: the built-in generator for canonical test meshes (D34);
 //! - [`cylinder`]: the built-in channel with a cylinder (Schäfer & Turek);
+//! - [`wedge`]: axisymmetric wedge meshes revolved from a 2D mesh;
 //! - [`gmsh`]: the Gmsh `.msh` 4.1 reader (D33);
 //! - [`renumber`]: reverse Cuthill–McKee renumbering of the cells;
 //! - [`locate`]: point location and cell-to-cell particle tracking (D47);
@@ -27,6 +28,7 @@ pub mod mesh;
 pub mod partition;
 pub mod quality;
 pub mod renumber;
+pub mod wedge;
 
 pub use geometry::Geometry;
 pub use mesh::{CellShape, Mesh, Patch};

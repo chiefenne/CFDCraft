@@ -7,33 +7,48 @@
 //! | type | velocity | pressure | mass flux |
 //! |---|---|---|---|
 //! | `wall` | `velocity` (default 0; a moving wall keeps only its tangential part) | extrapolated | 0 |
-//! | `velocity-inlet` | `velocity`, `normal_velocity`, `profile = "analytic"` or `profile = "parabolic"` (with `max_velocity`, `profile_axes`) | extrapolated | ρ u_b·S |
+//! | `slip-wall` | no shear stress, zero normal component (as `symmetry`, on any surface) | extrapolated | 0 |
+//! | `velocity-inlet` | `velocity`, `normal_velocity`, `profile = "analytic"`, `profile = "parabolic"` (with `max_velocity`, `profile_axes`) or `profile = "table"` (with `table`, `table_coordinate`) | extrapolated | ρ u_b·S |
 //! | `mass-flow-inlet` | normal, from `mass_flow` (kg/s) spread by area | extrapolated | prescribed |
 //! | `static-pressure-inlet` | normal to the face, from the flux | `pressure` | Rhie–Chow |
 //! | `total-pressure-inlet` | normal to the face, from the flux | p₀ − ½ρu_n² from `total_pressure` | Rhie–Chow |
-//! | `static-pressure-outlet` | extrapolated | `pressure` | Rhie–Chow |
-//! | `total-pressure-outlet` | extrapolated | p₀ − ½ρu_n² from `total_pressure` | Rhie–Chow |
+//! | `static-pressure-outlet` | extrapolated; backflow by `backflow` | `pressure`; backflow by `backflow` | Rhie–Chow |
+//! | `total-pressure-outlet` | extrapolated; backflow by `backflow` | p₀ − ½ρu_n² from `total_pressure` | Rhie–Chow |
+//! | `convective-outlet` | ∂u/∂t + U_c ∂u/∂n = 0 (transient runs; `convection_velocity` U_c) | extrapolated | ρ u_b·S, balanced with the inflow |
 //! | `symmetry` | no shear stress, zero normal component (implicit per component) | extrapolated | 0 |
+//! | `wedge` | as `symmetry`: the two side planes of an axisymmetric wedge mesh | extrapolated | 0 |
 //! | `periodic` | not available before stage 6 (needs the periodic face pairing) | | |
+//!
+//! **Backflow at pressure outlets** (`backflow`): with `"total-pressure"`
+//! (the default) a face where the flow enters takes the prescribed pressure
+//! as the total pressure of the entering fluid and lets it enter normal to
+//! the face; `"zero-gradient"` keeps the static pressure and the
+//! extrapolated velocity; `"suppress"` closes such a face for the outer
+//! iteration (no flux; the face acts as a slip wall, with the extrapolated
+//! pressure), so no fluid enters. A closed face opens again when the
+//! prescribed pressure would drive the flow out of it.
 //!
 //! Static and total pressure conditions combine freely, for example a static
 //! pressure inlet with a total pressure outlet. Turbulence values at inlets
-//! (`turbulence_intensity`, `turbulence_length_scale`, `viscosity_ratio`) are
-//! accepted for the turbulence models of stage 6 and reported as unused in
-//! laminar flow.
+//! and, for the backflow, at pressure outlets (`turbulence_intensity`,
+//! `turbulence_length_scale`, `viscosity_ratio`) are accepted for the
+//! turbulence models of stage 6 and reported as unused in laminar flow.
 
 use crate::analytic::Analytic;
 use crate::diag;
 use anyhow::Result;
 use foehncraft_kernels::flow::{
-    FLUX_FIXED, FLUX_PRESSURE, MOM_FIXED, MOM_OUTFLOW, MOM_SYMMETRY, PB_EXTRAPOLATE, PB_FIXED,
-    PB_TOTAL, UB_EXTRAPOLATE, UB_FIXED, UB_FROM_FLUX, UB_SYMMETRY,
+    FLUX_FIXED, FLUX_PRESSURE, FLUX_PRESSURE_NO_BACKFLOW, MOM_FIXED, MOM_OUTFLOW, MOM_SYMMETRY,
+    PB_EXTRAPOLATE, PB_FIXED, PB_NO_BACKFLOW, PB_OUTLET, PB_TOTAL, PB_TOTAL_NO_BACKFLOW,
+    UB_CONVECTIVE, UB_EXTRAPOLATE, UB_FIXED, UB_FROM_FLUX, UB_NO_BACKFLOW, UB_OUTLET, UB_SYMMETRY,
 };
-use foehncraft_mesh::geometry::{dot, norm, scale, sub};
+use foehncraft_mesh::geometry::{cross, dot, norm, scale, sub};
 use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Inlet profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -47,6 +62,165 @@ pub enum InletProfile {
     /// each axis a of `profile_axes` (developed laminar inflow; two axes for
     /// a duct).
     Parabolic,
+    /// A table of the velocity over one coordinate of the face centroid
+    /// (`table`, `table_coordinate`), interpolated linearly (measured or
+    /// computed profiles).
+    Table,
+}
+
+/// The coordinate of a table profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TableCoordinate {
+    /// x of the face centroid.
+    X,
+    /// y of the face centroid.
+    Y,
+    /// z of the face centroid.
+    Z,
+    /// The distance of the face centroid from the axis through
+    /// `table_origin` along `table_direction` (pipes, annuli, wedges).
+    Radius,
+}
+
+/// What [`BoundaryCondition::Wall`]-free outlets do where the flow enters
+/// (D29, backflow treatment).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Backflow {
+    /// The prescribed pressure is the total pressure of the entering fluid,
+    /// which enters normal to the face.
+    #[default]
+    TotalPressure,
+    /// Static pressure kept, velocity extrapolated (zero normal gradient).
+    ZeroGradient,
+    /// The face is closed while the flow would enter.
+    Suppress,
+}
+
+/// A velocity profile read from a table file (D29): rows of a coordinate
+/// and either the normal speed into the domain (two columns) or the three
+/// velocity components (four columns), the coordinate increasing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProfileTable {
+    /// The file it was read from.
+    pub path: PathBuf,
+    /// SHA-256 of the file (provenance, D85).
+    pub sha256: String,
+    /// Coordinate values, strictly increasing.
+    pub s: Vec<f64>,
+    /// Values per row: `[u_n]` or `[u_x, u_y, u_z]`.
+    pub values: Vec<Vec<f64>>,
+}
+
+impl ProfileTable {
+    /// Reads and parses a table file.
+    pub fn read(path: &Path) -> std::result::Result<Self, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("reading {}: {e}", path.display()))?;
+        let text = String::from_utf8_lossy(&bytes);
+        let mut t = Self::parse(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+        t.path = path.to_path_buf();
+        t.sha256 = crate::engine::sha256(&bytes);
+        Ok(t)
+    }
+
+    /// Parses the text of a table: `#` starts a comment; columns are
+    /// separated by commas, semicolons or white space; a first line that is
+    /// not numeric is a header and skipped.
+    pub fn parse(text: &str) -> std::result::Result<Self, String> {
+        let mut s = Vec::new();
+        let mut values = Vec::new();
+        let mut width = None;
+        for (i, raw) in text.lines().enumerate() {
+            let line = raw.split('#').next().unwrap_or("").trim();
+            if line.is_empty() {
+                continue;
+            }
+            let cols: Vec<&str> = line
+                .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
+                .filter(|c| !c.is_empty())
+                .collect();
+            let nums: std::result::Result<Vec<f64>, _> =
+                cols.iter().map(|c| c.parse::<f64>()).collect();
+            let Ok(nums) = nums else {
+                if s.is_empty() && width.is_none() {
+                    // the header
+                    width = Some(cols.len());
+                    continue;
+                }
+                return Err(format!("line {}: not a number in `{line}`", i + 1));
+            };
+            if nums.len() != 2 && nums.len() != 4 {
+                return Err(format!(
+                    "line {}: {} columns; a table has 2 (coordinate, normal speed) or 4 \
+                     (coordinate, u_x, u_y, u_z)",
+                    i + 1,
+                    nums.len()
+                ));
+            }
+            if width.is_some_and(|w| w != nums.len())
+                || values
+                    .first()
+                    .is_some_and(|v: &Vec<f64>| v.len() + 1 != nums.len())
+            {
+                return Err(format!(
+                    "line {}: {} columns, unlike the lines before",
+                    i + 1,
+                    nums.len()
+                ));
+            }
+            if nums.iter().any(|x| !x.is_finite()) {
+                return Err(format!("line {}: a value that is not finite", i + 1));
+            }
+            if let Some(&last) = s.last()
+                && nums[0] <= last
+            {
+                return Err(format!(
+                    "line {}: the coordinate {} does not increase (after {last})",
+                    i + 1,
+                    nums[0]
+                ));
+            }
+            s.push(nums[0]);
+            values.push(nums[1..].to_vec());
+        }
+        if s.len() < 2 {
+            return Err(format!("{} rows; a table needs at least 2", s.len()));
+        }
+        Ok(Self {
+            path: PathBuf::new(),
+            sha256: String::new(),
+            s,
+            values,
+        })
+    }
+
+    /// True for a table of the normal speed (two columns).
+    pub fn is_normal(&self) -> bool {
+        self.values[0].len() == 1
+    }
+
+    /// The values at coordinate `x`, linear between the rows and constant
+    /// beyond the ends; the flag is true when `x` is outside the rows.
+    pub fn at(&self, x: f64) -> (Vec<f64>, bool) {
+        let n = self.s.len();
+        if x <= self.s[0] {
+            return (self.values[0].clone(), x < self.s[0]);
+        }
+        if x >= self.s[n - 1] {
+            return (self.values[n - 1].clone(), x > self.s[n - 1]);
+        }
+        let i = self.s.partition_point(|&v| v <= x) - 1;
+        let t = (x - self.s[i]) / (self.s[i + 1] - self.s[i]);
+        let v = self.values[i]
+            .iter()
+            .zip(&self.values[i + 1])
+            .map(|(a, b)| a + t * (b - a))
+            .collect();
+        (v, false)
+    }
 }
 
 /// A coordinate axis.
@@ -135,6 +309,23 @@ pub enum BoundaryCondition {
         /// Axes across which the parabolic profile varies.
         #[serde(default)]
         profile_axes: Vec<Axis>,
+        /// The table of a table profile (a file relative to the case file:
+        /// coordinate and normal speed, or coordinate and u_x, u_y, u_z).
+        #[serde(default)]
+        table: Option<PathBuf>,
+        /// The coordinate of the table.
+        #[serde(default)]
+        table_coordinate: Option<TableCoordinate>,
+        /// A point on the axis of `table_coordinate = "radius"` (m).
+        #[serde(default)]
+        table_origin: [f64; 3],
+        /// The direction of the axis of `table_coordinate = "radius"`.
+        #[serde(default)]
+        table_direction: Option<[f64; 3]>,
+        /// The table, read with the case.
+        #[serde(skip)]
+        #[schemars(skip)]
+        table_data: Option<Arc<ProfileTable>>,
         /// Turbulence values (stage 6).
         #[serde(default)]
         turbulence_intensity: Option<f64>,
@@ -193,14 +384,50 @@ pub enum BoundaryCondition {
         /// Static pressure (Pa).
         #[serde(default)]
         pressure: f64,
+        /// Treatment of the faces where the flow enters.
+        #[serde(default)]
+        backflow: Backflow,
+        /// Turbulence values of the backflow (stage 6).
+        #[serde(default)]
+        turbulence_intensity: Option<f64>,
+        /// Turbulence length scale of the backflow (stage 6).
+        #[serde(default)]
+        turbulence_length_scale: Option<f64>,
+        /// Viscosity ratio of the backflow (stage 6).
+        #[serde(default)]
+        viscosity_ratio: Option<f64>,
     },
     /// Prescribed total pressure, velocity extrapolated.
     TotalPressureOutlet {
         /// Total pressure (Pa).
         total_pressure: f64,
+        /// Treatment of the faces where the flow enters.
+        #[serde(default)]
+        backflow: Backflow,
+        /// Turbulence values of the backflow (stage 6).
+        #[serde(default)]
+        turbulence_intensity: Option<f64>,
+        /// Turbulence length scale of the backflow (stage 6).
+        #[serde(default)]
+        turbulence_length_scale: Option<f64>,
+        /// Viscosity ratio of the backflow (stage 6).
+        #[serde(default)]
+        viscosity_ratio: Option<f64>,
     },
+    /// Non-reflecting outlet of a transient run: the velocity is convected
+    /// out of the domain, ∂u/∂t + U_c ∂u/∂n = 0.
+    ConvectiveOutlet {
+        /// Convection velocity U_c (m/s); by default the mean outflow
+        /// speed that carries the prescribed inflow.
+        #[serde(default)]
+        convection_velocity: Option<f64>,
+    },
+    /// Wall without friction: no shear stress and no flow through it.
+    SlipWall,
     /// Symmetry plane (also the two side planes of a 2D case).
     Symmetry,
+    /// One of the two side planes of an axisymmetric wedge mesh (D3).
+    Wedge,
     /// Periodic pair (stage 6).
     Periodic {
         /// The partner patch.
@@ -220,7 +447,10 @@ impl BoundaryCondition {
             Self::TotalPressureInlet { .. } => "total-pressure-inlet",
             Self::StaticPressureOutlet { .. } => "static-pressure-outlet",
             Self::TotalPressureOutlet { .. } => "total-pressure-outlet",
+            Self::ConvectiveOutlet { .. } => "convective-outlet",
+            Self::SlipWall => "slip-wall",
             Self::Symmetry => "symmetry",
+            Self::Wedge => "wedge",
             Self::Periodic { .. } => "periodic",
         }
     }
@@ -269,6 +499,18 @@ impl BoundaryCondition {
                 turbulence_length_scale,
                 viscosity_ratio,
                 ..
+            }
+            | Self::StaticPressureOutlet {
+                turbulence_intensity,
+                turbulence_length_scale,
+                viscosity_ratio,
+                ..
+            }
+            | Self::TotalPressureOutlet {
+                turbulence_intensity,
+                turbulence_length_scale,
+                viscosity_ratio,
+                ..
             } => InletTurbulence {
                 turbulence_intensity,
                 turbulence_length_scale,
@@ -276,6 +518,62 @@ impl BoundaryCondition {
             },
             _ => InletTurbulence::default(),
         }
+    }
+
+    /// True for the conditions with no flow through them and no shear
+    /// stress (symmetry planes, slip walls, wedge planes).
+    pub fn is_symmetry_like(&self) -> bool {
+        matches!(self, Self::Symmetry | Self::SlipWall | Self::Wedge)
+    }
+
+    /// The table of a table profile.
+    pub fn table(&self) -> Option<&ProfileTable> {
+        match self {
+            Self::VelocityInlet { table_data, .. } => table_data.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// The file of a table profile.
+    pub fn table_path(&self) -> Option<&Path> {
+        match self {
+            Self::VelocityInlet {
+                profile: Some(InletProfile::Table),
+                table: Some(t),
+                ..
+            } => Some(t),
+            _ => None,
+        }
+    }
+
+    /// Makes the paths of the condition relative to `dir` (the directory
+    /// of the case file).
+    pub fn resolve_paths(&mut self, dir: &Path) {
+        if let Self::VelocityInlet { table: Some(t), .. } = self {
+            *t = dir.join(&*t);
+        }
+    }
+
+    /// Reads the table of a table profile, `table` relative to `dir`;
+    /// nothing for other conditions.
+    pub fn load_table(&mut self, dir: &Path) -> Result<()> {
+        if let Self::VelocityInlet {
+            profile: Some(InletProfile::Table),
+            table: Some(t),
+            table_data,
+            ..
+        } = self
+        {
+            let path = dir.join(&*t);
+            let data = ProfileTable::read(&path).map_err(|e| {
+                diag::err(diag::Diagnostic::new(
+                    diag::BC_TABLE,
+                    format!("table profile: {e}"),
+                ))
+            })?;
+            *table_data = Some(Arc::new(data));
+        }
+        Ok(())
     }
 }
 
@@ -425,6 +723,10 @@ pub fn inlet_velocity(
         profile,
         max_velocity,
         profile_axes,
+        table_coordinate,
+        table_origin,
+        table_direction,
+        table_data,
         ..
     } = bc
     else {
@@ -432,6 +734,17 @@ pub fn inlet_velocity(
     };
     if let Some(InletProfile::Analytic) = profile {
         return analytic.map(|a| a.velocity(geo.face_centroid[f]));
+    }
+    if let Some(InletProfile::Table) = profile {
+        let (t, c) = (table_data.as_ref()?, (*table_coordinate)?);
+        let x = table_position(geo.face_centroid[f], c, *table_origin, *table_direction)?;
+        let (v, _) = t.at(x);
+        let s = geo.face_area[f];
+        return Some(if t.is_normal() {
+            scale(s, -v[0] / norm(s))
+        } else {
+            [v[0], v[1], v[2]]
+        });
     }
     if let Some(InletProfile::Parabolic) = profile {
         let x = geo.face_centroid[f];
@@ -457,6 +770,60 @@ pub fn inlet_velocity(
     normal_velocity.map(|un| scale(n, -un))
 }
 
+/// The table coordinate of point `x`.
+pub fn table_position(
+    x: [f64; 3],
+    c: TableCoordinate,
+    origin: [f64; 3],
+    direction: Option<[f64; 3]>,
+) -> Option<f64> {
+    Some(match c {
+        TableCoordinate::X => x[0],
+        TableCoordinate::Y => x[1],
+        TableCoordinate::Z => x[2],
+        TableCoordinate::Radius => {
+            let d = direction?;
+            let l = norm(d);
+            if l == 0.0 {
+                return None;
+            }
+            let d = scale(d, 1.0 / l);
+            let r = sub(x, origin);
+            norm(sub(r, scale(d, dot(r, d))))
+        }
+    })
+}
+
+/// The plane of a planar patch: unit normal and a point, if every face
+/// normal agrees with the first to `tol` (the distance of their tips).
+fn patch_plane(
+    geo: &Geometry,
+    p: &foehncraft_mesh::Patch,
+    tol: f64,
+) -> Option<([f64; 3], [f64; 3])> {
+    if p.len == 0 {
+        return None;
+    }
+    let s0 = geo.face_area[p.start];
+    let n0 = scale(s0, 1.0 / norm(s0));
+    let planar = p.range().all(|f| {
+        let s = geo.face_area[f];
+        norm(sub(scale(s, 1.0 / norm(s)), n0)) <= tol
+    });
+    planar.then(|| (n0, geo.face_centroid[p.start]))
+}
+
+/// What the check of the conditions needs to know about the case.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CheckContext {
+    /// Laminar flow (turbulence values unused).
+    pub laminar: bool,
+    /// A transient case (`[time]`).
+    pub transient: bool,
+    /// The potential-flow start (D52).
+    pub potential_flow: bool,
+}
+
 /// Checks the combination of boundary conditions on the whole domain (D30)
 /// before the run. Errors stop the run; warnings and notes go to the log.
 /// Every finding names the boundary and says what to change.
@@ -466,8 +833,9 @@ pub fn check(
     bcs: &BTreeMap<String, BoundaryCondition>,
     rho: f64,
     analytic: Option<&Analytic>,
-    laminar: bool,
+    ctx: CheckContext,
 ) -> Vec<Finding> {
+    let laminar = ctx.laminar;
     let mut out = Vec::new();
     let mut push = |level, code, patch: Option<&str>, message: String| {
         out.push(Finding {
@@ -487,8 +855,9 @@ pub fn check(
                 Some(&p.name),
                 format!(
                     "no boundary condition: add a table [boundary.{}] with a `type` \
-                     (wall, velocity-inlet, mass-flow-inlet, static-pressure-inlet, \
-                     total-pressure-inlet, static-pressure-outlet, total-pressure-outlet, symmetry)",
+                     (wall, slip-wall, velocity-inlet, mass-flow-inlet, static-pressure-inlet, \
+                     total-pressure-inlet, static-pressure-outlet, total-pressure-outlet, \
+                     convective-outlet, symmetry, wedge)",
                     p.name
                 ),
             );
@@ -531,8 +900,43 @@ pub fn check(
                 profile,
                 max_velocity,
                 profile_axes,
+                table,
+                table_coordinate,
+                table_direction,
+                table_data,
                 ..
             } => {
+                if *profile == Some(InletProfile::Table) {
+                    let missing = match (table, table_coordinate) {
+                        (None, _) => Some("`table` (the file of the profile)"),
+                        (_, None) => Some("`table_coordinate` (x, y, z or radius)"),
+                        _ if *table_coordinate == Some(TableCoordinate::Radius)
+                            && table_direction.is_none_or(|d| norm(d) == 0.0) =>
+                        {
+                            Some("`table_direction` (the axis of the radius)")
+                        }
+                        _ if table_data.is_none() => Some("the table data (the file was not read)"),
+                        _ => None,
+                    };
+                    if let Some(m) = missing {
+                        push(
+                            Level::Error,
+                            diag::BC_TABLE,
+                            Some(name),
+                            format!("`profile = \"table\"` needs {m}"),
+                        );
+                    }
+                } else if table.is_some() || table_coordinate.is_some() || table_direction.is_some()
+                {
+                    push(
+                        Level::Warning,
+                        diag::BC_PROFILE_UNUSED,
+                        Some(name),
+                        "`table`, `table_coordinate` and `table_direction` are only used with \
+                         `profile = \"table\"`"
+                            .into(),
+                    );
+                }
                 let given = usize::from(velocity.is_some())
                     + usize::from(normal_velocity.is_some())
                     + usize::from(profile.is_some());
@@ -577,6 +981,30 @@ pub fn check(
                         "`max_velocity` and `profile_axes` are only used with \
                          `profile = \"parabolic\"`"
                             .into(),
+                    );
+                }
+            }
+            BoundaryCondition::ConvectiveOutlet {
+                convection_velocity,
+            } => {
+                if !ctx.transient {
+                    push(
+                        Level::Error,
+                        diag::BC_CONVECTIVE_STEADY,
+                        Some(name),
+                        "a convective outlet convects the flow out in time and needs a [time] \
+                         table; for a steady case use static-pressure-outlet"
+                            .into(),
+                    );
+                }
+                if let Some(u) = convection_velocity
+                    && !(*u > 0.0 && u.is_finite())
+                {
+                    push(
+                        Level::Error,
+                        diag::CASE_RANGE,
+                        Some(name),
+                        format!("convection_velocity = {u} m/s must be > 0"),
                     );
                 }
             }
@@ -629,6 +1057,40 @@ pub fn check(
                     );
                 }
             }
+            BoundaryCondition::VelocityInlet {
+                profile: Some(InletProfile::Table),
+                table_coordinate: Some(c),
+                table_origin,
+                table_direction,
+                table_data: Some(t),
+                ..
+            } => {
+                let outside = p
+                    .range()
+                    .filter(|&f| {
+                        table_position(geo.face_centroid[f], *c, *table_origin, *table_direction)
+                            .is_some_and(|x| t.at(x).1)
+                    })
+                    .count();
+                if outside > 0 {
+                    push(
+                        Level::Warning,
+                        diag::BC_TABLE_RANGE,
+                        Some(&p.name),
+                        format!(
+                            "{outside} of {} faces lie outside the coordinate range [{}, {}] of \
+                             the table {} and take its end values",
+                            p.len,
+                            t.s[0],
+                            t.s[t.s.len() - 1],
+                            t.path.display()
+                        ),
+                    );
+                }
+            }
+            _ => {}
+        }
+        match bc {
             BoundaryCondition::VelocityInlet { profile, .. } => {
                 let ext = patch_extent(mesh, p);
                 let out_faces = p
@@ -691,7 +1153,76 @@ pub fn check(
             _ => {}
         }
     }
+    // the wedge planes of an axisymmetric case: two planes that meet in
+    // the axis
+    let wedges: Vec<&foehncraft_mesh::Patch> = mesh
+        .patches
+        .iter()
+        .filter(|p| matches!(bcs.get(&p.name), Some(BoundaryCondition::Wedge)))
+        .collect();
+    if !wedges.is_empty() {
+        let planes: Vec<Option<([f64; 3], [f64; 3])>> =
+            wedges.iter().map(|p| patch_plane(geo, p, 1e-6)).collect();
+        if wedges.len() != 2 {
+            push(
+                Level::Error,
+                diag::BC_WEDGE,
+                Some(&wedges[0].name),
+                format!(
+                    "{} wedge patch(es); an axisymmetric wedge has exactly two side planes \
+                     (the other boundaries are walls, inlets, outlets or symmetry planes)",
+                    wedges.len()
+                ),
+            );
+        } else if let [Some((n1, _)), Some((n2, _))] = planes[..] {
+            let axis = cross(n1, n2);
+            if norm(axis) < 1e-9 {
+                push(
+                    Level::Error,
+                    diag::BC_WEDGE,
+                    Some(&wedges[0].name),
+                    format!(
+                        "the wedge planes `{}` and `{}` are parallel: a wedge mesh is the 2D mesh \
+                         revolved by a small angle about the axis (for a plane 2D case use \
+                         symmetry)",
+                        wedges[0].name, wedges[1].name
+                    ),
+                );
+            } else {
+                let angle = (-dot(n1, n2)).clamp(-1.0, 1.0).acos().to_degrees();
+                if angle > 10.0 {
+                    push(
+                        Level::Warning,
+                        diag::BC_WEDGE_ANGLE,
+                        Some(&wedges[0].name),
+                        format!(
+                            "the wedge is {angle:.2}° wide; 1° to 5° keeps the error of the \
+                             planar faces small"
+                        ),
+                    );
+                }
+            }
+        } else {
+            for (p, pl) in wedges.iter().zip(&planes) {
+                if pl.is_none() {
+                    push(
+                        Level::Error,
+                        diag::BC_WEDGE,
+                        Some(&p.name),
+                        "the wedge patch is not planar; each side plane of a wedge mesh is one \
+                         plane through the axis"
+                            .into(),
+                    );
+                }
+            }
+        }
+    }
     // the domain as a whole: pressure level, mass balance, flow paths
+    let convective: Vec<&str> = present
+        .iter()
+        .filter(|(_, b)| matches!(b, BoundaryCondition::ConvectiveOutlet { .. }))
+        .map(|(n, _)| *n)
+        .collect();
     let pressure: Vec<&str> = present
         .iter()
         .filter(|(_, b)| b.is_pressure())
@@ -712,7 +1243,51 @@ pub fn check(
         .filter(|&(_, &v)| v < 0.0)
         .map(|(n, _)| n.as_str())
         .collect();
-    if pressure.is_empty() {
+    // the convection velocity of the outlets without one: the mean outflow
+    // speed that carries the prescribed inflow
+    for &(name, bc) in &present {
+        if let BoundaryCondition::ConvectiveOutlet {
+            convection_velocity: None,
+        } = bc
+            && net >= -1e-12 * scale_q.max(f64::MIN_POSITIVE)
+        {
+            push(
+                Level::Error,
+                diag::BC_CONVECTIVE_VELOCITY,
+                Some(name),
+                "no prescribed inflow gives the mean outflow speed: set `convection_velocity` \
+                 (m/s), for example the bulk velocity"
+                    .into(),
+            );
+        }
+    }
+    if ctx.potential_flow && !convective.is_empty() && pressure.is_empty() {
+        push(
+            Level::Error,
+            diag::BC_POTENTIAL_CONVECTIVE,
+            Some(convective[0]),
+            "the potential-flow start needs a boundary that takes up the inflow: with \
+             convective outlets and no pressure boundary start without `potential_flow`"
+                .into(),
+        );
+    }
+    if pressure.is_empty() && !convective.is_empty() {
+        push(
+            Level::Note,
+            diag::BC_REFERENCE_CELL,
+            None,
+            format!(
+                "the convective outlet(s) {} carry the prescribed inflow (their velocity is \
+                 balanced with it in every iteration); the pressure level is fixed in the \
+                 reference cell ([pressure] reference_point, reference_value)",
+                convective
+                    .iter()
+                    .map(|n| format!("`{n}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        );
+    } else if pressure.is_empty() {
         if scale_q > 0.0 && net.abs() > 1e-9 * scale_q {
             push(
                 Level::Error,
@@ -736,7 +1311,7 @@ pub fn check(
                     .into(),
             );
         }
-    } else if outlets.is_empty() && !inflow.is_empty() {
+    } else if outlets.is_empty() && convective.is_empty() && !inflow.is_empty() {
         push(
             Level::Error,
             diag::BC_OVER_SPECIFIED,
@@ -824,12 +1399,17 @@ pub struct BoundaryArrays {
     /// Stencil point of the pressure gradient per patch (`ZeroGradient` at
     /// walls and symmetry planes).
     pub p_points: BTreeMap<String, foehncraft_fv::problem::BoundaryKind>,
+    /// Convection velocity U_c (m/s) of the faces of convective outlets
+    /// that give one, 0 for the default (and on all other faces).
+    pub convection: Vec<f64>,
 }
 
 impl BoundaryArrays {
     /// True when some face fixes the pressure.
     pub fn has_pressure(&self) -> bool {
-        self.flux_kind.contains(&FLUX_PRESSURE)
+        self.flux_kind
+            .iter()
+            .any(|&k| k == FLUX_PRESSURE || k == FLUX_PRESSURE_NO_BACKFLOW)
     }
 }
 
@@ -855,6 +1435,7 @@ pub fn arrays(
         p_zero_gradient: vec![0.0; nb],
         u_points: BTreeMap::new(),
         p_points: BTreeMap::new(),
+        convection: vec![0.0; nb],
     };
     use foehncraft_fv::problem::BoundaryKind as K;
     for (pi, p) in mesh.patches.iter().enumerate() {
@@ -864,11 +1445,12 @@ pub fn arrays(
         let area: f64 = p.range().map(|f| norm(geo.face_area[f])).sum();
         let ext = patch_extent(mesh, p);
         let outlet = bc.is_pressure_outlet();
-        let wall_like = matches!(
-            bc,
-            BoundaryCondition::Wall { .. } | BoundaryCondition::Symmetry
-        );
-        let symmetry = matches!(bc, BoundaryCondition::Symmetry);
+        let wall_like = bc.is_symmetry_like()
+            || matches!(
+                bc,
+                BoundaryCondition::Wall { .. } | BoundaryCondition::ConvectiveOutlet { .. }
+            );
+        let symmetry = bc.is_symmetry_like();
         a.u_points.insert(
             p.name.clone(),
             if outlet || symmetry {
@@ -919,21 +1501,51 @@ pub fn arrays(
                     a.pb_rule[fb] = PB_TOTAL;
                     a.pset[fb] = *total_pressure;
                 }
-                BoundaryCondition::StaticPressureOutlet { pressure } => {
+                BoundaryCondition::StaticPressureOutlet {
+                    pressure, backflow, ..
+                } => {
                     a.mom_kind[fb] = MOM_OUTFLOW;
-                    a.ub_rule[fb] = UB_EXTRAPOLATE;
-                    a.flux_kind[fb] = FLUX_PRESSURE;
-                    a.pb_rule[fb] = PB_FIXED;
+                    let (ub, flux, pb) = match backflow {
+                        Backflow::TotalPressure => (UB_OUTLET, FLUX_PRESSURE, PB_OUTLET),
+                        Backflow::ZeroGradient => (UB_EXTRAPOLATE, FLUX_PRESSURE, PB_FIXED),
+                        Backflow::Suppress => {
+                            (UB_NO_BACKFLOW, FLUX_PRESSURE_NO_BACKFLOW, PB_NO_BACKFLOW)
+                        }
+                    };
+                    a.ub_rule[fb] = ub;
+                    a.flux_kind[fb] = flux;
+                    a.pb_rule[fb] = pb;
                     a.pset[fb] = *pressure;
                 }
-                BoundaryCondition::TotalPressureOutlet { total_pressure } => {
+                BoundaryCondition::TotalPressureOutlet {
+                    total_pressure,
+                    backflow,
+                    ..
+                } => {
                     a.mom_kind[fb] = MOM_OUTFLOW;
-                    a.ub_rule[fb] = UB_EXTRAPOLATE;
-                    a.flux_kind[fb] = FLUX_PRESSURE;
-                    a.pb_rule[fb] = PB_TOTAL;
+                    let (ub, flux, pb) = match backflow {
+                        Backflow::TotalPressure => (UB_OUTLET, FLUX_PRESSURE, PB_TOTAL),
+                        Backflow::ZeroGradient => (UB_EXTRAPOLATE, FLUX_PRESSURE, PB_TOTAL),
+                        Backflow::Suppress => (
+                            UB_NO_BACKFLOW,
+                            FLUX_PRESSURE_NO_BACKFLOW,
+                            PB_TOTAL_NO_BACKFLOW,
+                        ),
+                    };
+                    a.ub_rule[fb] = ub;
+                    a.flux_kind[fb] = flux;
+                    a.pb_rule[fb] = pb;
                     a.pset[fb] = *total_pressure;
                 }
-                BoundaryCondition::Symmetry => {
+                BoundaryCondition::ConvectiveOutlet {
+                    convection_velocity,
+                } => {
+                    a.ub_rule[fb] = UB_CONVECTIVE;
+                    a.convection[fb] = convection_velocity.unwrap_or(0.0);
+                }
+                BoundaryCondition::Symmetry
+                | BoundaryCondition::SlipWall
+                | BoundaryCondition::Wedge => {
                     a.mom_kind[fb] = MOM_SYMMETRY;
                     a.ub_rule[fb] = UB_SYMMETRY;
                 }
@@ -958,4 +1570,7 @@ pub const GUIDANCE: &str = "\
 | static-pressure-inlet + total-pressure-outlet | flows that exhaust into a large volume at a known total pressure | both |
 | walls only, one wall moving (+ symmetry) | enclosed flows: the lid-driven cavity | reference cell |
 | velocity-inlet + velocity-inlet + static-pressure-outlet | mixing of two streams: the T-junction | outlet pressure |
+| velocity-inlet + convective-outlet (+ walls, slip walls), transient | wakes and vortices leaving a short domain without reflection: the cylinder wake | reference cell |
+| velocity-inlet + slip-wall + static-pressure-outlet | a body in a free stream with the far field as slip walls | outlet pressure |
+| wedge + wedge + velocity-inlet + static-pressure-outlet (+ walls) | axisymmetric flows on a wedge mesh: pipes, nozzles, sudden expansions | outlet pressure |
 ";

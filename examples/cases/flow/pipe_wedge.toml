@@ -1,0 +1,67 @@
+# Hagen–Poiseuille flow in a pipe on an axisymmetric wedge: order-of-accuracy
+# sweep (stage 5, D29).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pipe_wedge.toml
+#
+# Pipe of radius R = 0.5 and length 2, the exact parabola (mean velocity
+# 1 m/s) at the inlet, a static pressure outlet, Re = ρ U D / μ = 10. The 2D
+# mesh of the half plane 0 < r < R is revolved into a wedge of 0.5° about
+# the x axis: the cells next to the axis become prisms with an edge on the
+# axis and there is no axis patch. The wedge planes `zmin` and `zmax` take
+# the `wedge` condition. Three nested meshes (32 x 8, 64 x 16, 128 x 32
+# cells); the run fails if the observed order of the velocity error on the
+# finest pair is outside 1.8–2.2 (observed 2.07 and 2.04).
+#
+# The faces are planar, so a wedge of angle θ is a slice of a pipe whose
+# section is a regular polygon of 360°/θ sides, not a circle: the result
+# differs from the circular pipe by about θ²/8 (relative), 9e-4 at 5°, which
+# hides the discretisation error of the finest mesh. A verification sweep
+# takes a small angle; 2–5° are fine for applications.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 0.5, 0.1]
+cells = [32, 8, 1]
+perturb = 0.15
+wedge = 0.5            # degrees about the x axis; y is the radius
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.1
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"     # the exact parabola
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+[solver]
+relaxation_velocity = 0.9
+tolerance = 1e-9
+max_iterations = 5000
+
+[analytic]
+type = "pipe-poiseuille"
+radius = 0.5
+mean_velocity = 1.0
+x_outlet = 2.0
+
+[verification]
+levels = [0, 1, 2]
+expected_order = [1.8, 2.2]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

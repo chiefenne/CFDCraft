@@ -39,7 +39,7 @@ line (recipe 26).
 | `solver.amg.*` | as `linear.amg.*` of the [Poisson cases](poisson.md#poisson-case-file-keys) | multigrid settings |
 | `solver.amg_rebuild` | 10 | rebuild the hierarchy every N outer iterations |
 | `solver.log_every` | 10 | a log line every N outer iterations |
-| `analytic.type` | none | exact solution for the checks: `couette` or `poiseuille` |
+| `analytic.type` | none | exact solution for the checks: `uniform`, `couette`, `poiseuille` or `pipe-poiseuille` |
 | `analytic.lower`, `analytic.upper` | 0, 1 | channel walls (y) |
 | `analytic.wall_velocity` | 1 | Couette: speed of the upper wall |
 | `analytic.mean_velocity` | 1 | Poiseuille: mean velocity |
@@ -108,6 +108,8 @@ Transient cases (stage 5):
 | `verification.benchmark_tolerance` | none | largest accepted distance from the reference ranges, relative to their midpoints |
 | `verification.evaluation_start` | half the run | start of the evaluation window of 2D-2 (s) |
 | `analytic.type = "taylor-green"` | | the decaying Taylor–Green vortex with `velocity` U (1), `length` L (1, the period) and `pressure` p₀ (0) |
+| `analytic.type = "uniform"` | | uniform flow with `velocity` ([1, 0, 0]), `pressure` (0) and `length` (1, for the Reynolds number): exact between slip walls |
+| `analytic.type = "pipe-poiseuille"` | | Hagen–Poiseuille flow along the x axis with `radius` R (1), `mean_velocity` (1), `x_outlet` (1) and `pressure_outlet` (0) |
 
 Built-in cylinder mesh `[mesh.cylinder]` (D34; patches `inlet`, `outlet`,
 `walls`, `cylinder`, `zmin`, `zmax`): an O-grid around the cylinder that
@@ -127,18 +129,64 @@ fills the square 0 ≤ x, y ≤ height and a graded wake block to the outlet.
 | `type` | Keys | Velocity | Pressure | Mass flux |
 |---|---|---|---|---|
 | `wall` | `velocity` (default 0; only the tangential part is kept) | prescribed | extrapolated | 0 |
-| `velocity-inlet` | one of `velocity`, `normal_velocity` (into the domain), `profile = "analytic"` (the exact solution, in a transient case at each time level), `profile = "parabolic"` with `max_velocity` and `profile_axes` (developed laminar inflow, for example `["y"]`) | prescribed | extrapolated | ρ u_b·S |
+| `slip-wall` | none | no shear stress, zero normal component (as `symmetry`, on any surface) | extrapolated | 0 |
+| `velocity-inlet` | one of `velocity`, `normal_velocity` (into the domain), `profile = "analytic"` (the exact solution, in a transient case at each time level), `profile = "parabolic"` with `max_velocity` and `profile_axes` (developed laminar inflow, for example `["y"]`), `profile = "table"` with `table` and `table_coordinate` (a measured or computed profile, below) | prescribed | extrapolated | ρ u_b·S |
 | `mass-flow-inlet` | `mass_flow` (kg/s, spread by area) | normal, from the mass flow | extrapolated | prescribed |
 | `static-pressure-inlet` | `pressure` | normal to the face, from the flux | prescribed | Rhie–Chow |
 | `total-pressure-inlet` | `total_pressure` | normal to the face, from the flux | p₀ − ½ρu_n² | Rhie–Chow |
-| `static-pressure-outlet` | `pressure` | extrapolated | prescribed | Rhie–Chow |
-| `total-pressure-outlet` | `total_pressure` | extrapolated | p₀ − ½ρu_n² | Rhie–Chow |
+| `static-pressure-outlet` | `pressure`, `backflow` | extrapolated; on backflow by `backflow` | prescribed; on backflow by `backflow` | Rhie–Chow |
+| `total-pressure-outlet` | `total_pressure`, `backflow` | extrapolated; on backflow by `backflow` | p₀ − ½ρu_n² | Rhie–Chow |
+| `convective-outlet` | `convection_velocity` U_c (default: the mean outflow speed) | ∂u/∂t + U_c ∂u/∂n = 0 (transient cases) | extrapolated | ρ u_b·S, balanced with the inflow |
 | `symmetry` | none | no shear stress, zero normal component | extrapolated | 0 |
+| `wedge` | none | as `symmetry`: the two side planes of an axisymmetric wedge mesh ([`mesh.generate.wedge`](meshes.md)) | extrapolated | 0 |
 | `periodic` | `partner` | comes with stage 6 (the face pairing); an error until then | | |
 
+**Backflow at pressure outlets** (`backflow`). Where the flow enters
+through an outlet face (a vortex crossing the outlet, a recirculation
+reaching it):
+
+| `backflow` | Velocity of the entering fluid | Pressure | Suits |
+|---|---|---|---|
+| `"total-pressure"` (default) | normal to the face | the prescribed value as the total pressure, p − ½ρu_n² | outlets that vortices or a recirculation cross; converges like an outflow |
+| `"zero-gradient"` | extrapolated | the prescribed value as the static pressure | the treatment before stage 5; converges slowly where the flow enters |
+| `"suppress"` | the face is closed for the iteration: a slip wall with the extrapolated pressure | | outlets where nothing may enter; a closed face opens when the prescribed pressure drives the flow out |
+
+**Convective outlet.** The velocity leaves the domain by the convection
+equation ∂u/∂t + U_c ∂u/∂n = 0, discretised with the backward difference
+of the run between the face and its cell, so vortices pass the outlet with
+little reflection and the outlet can sit close behind a body. It needs a
+transient case. The outlet flow is balanced with the prescribed inflow in
+every iteration; without a pressure boundary the reference cell fixes the
+pressure level. U_c defaults to the mean outflow speed (the prescribed
+inflow over the outlet area); give `convection_velocity` when nothing
+prescribes an inflow.
+
+**Inlet profile from a table** (`profile = "table"`). `table` is a file
+(relative to the case file) of rows of a coordinate and either the normal
+speed into the domain (two columns) or the three velocity components (four
+columns); `#` starts a comment, columns are separated by commas,
+semicolons or blanks, a first line that is not numeric is a header, and
+the coordinate increases. Between the rows the values are linear, beyond
+the ends constant (the check warns, BC020). `table_coordinate` is `"x"`,
+`"y"`, `"z"` or `"radius"`, the distance from the axis through
+`table_origin` (default the origin) along `table_direction` (needed). The
+table's sha256 is part of the case hash (D85), and the table must lie
+inside the read root of the run (D82).
+
+**Wedge** (axisymmetric flow). `mesh.generate.wedge = θ` (degrees, up to
+90) revolves a 2D mesh of the half plane y ≥ 0 about the x axis (y is the
+radius) into a wedge one cell thick, symmetric about the x–y plane; nodes
+on the axis merge, so the cells next to it become prisms or polyhedra with
+an edge on the axis and there is no axis patch. `zmin` and `zmax` are the
+wedge planes and take `type = "wedge"`. The faces are planar, so a wedge
+of θ is a slice of a pipe whose section is a polygon of 360°/θ sides: the
+result differs from the axisymmetric one by about θ²/8 (1e-3 at 5°); the
+check warns above 10° (BC024).
+
 Inlets also take `turbulence_intensity`, `turbulence_length_scale` and
-`viscosity_ratio` for the turbulence models of stage 6; in laminar flow the
-check reports them as unused.
+`viscosity_ratio` for the turbulence models of stage 6, and so do pressure
+outlets for the entering fluid; in laminar flow the check reports them as
+unused.
 
 # Sensible combinations (D30)
 
@@ -148,7 +196,10 @@ and name the boundary and what to change (a missing or unknown patch with
 flow path whose rate is prescribed twice, a wall with a normal velocity, a
 negative mass flow); warnings and notes say what the run will do (no
 pressure boundary: the reference cell holds the level; nothing drives a
-flow; unused turbulence values; a symmetry patch that is not planar).
+flow; unused turbulence values; a symmetry patch that is not planar; a
+table that is missing or malformed; a convective outlet in a steady case
+or without a convection velocity; wedge planes that do not form one
+wedge).
 
 | Combination | Suits | Pressure level |
 |---|---|---|
@@ -159,3 +210,6 @@ flow; unused turbulence values; a symmetry patch that is not planar).
 | static-pressure-inlet + total-pressure-outlet | flows that exhaust into a large volume at a known total pressure | both |
 | walls only, one wall moving (+ symmetry) | enclosed flows: the lid-driven cavity | reference cell |
 | velocity-inlet + velocity-inlet + static-pressure-outlet | mixing of two streams: the T-junction | outlet pressure |
+| velocity-inlet + convective-outlet (transient) | wakes and vortex streets with the outlet close behind the body | reference cell |
+| velocity-inlet + static-pressure-outlet + slip walls | external flow in a finite box: the slip walls stand for the far field | outlet pressure |
+| velocity-inlet + static-pressure-outlet + wedges (+ walls) | axisymmetric flow: pipes, nozzles, jets | outlet pressure |

@@ -1,0 +1,57 @@
+# Uniform flow between slip walls: an exact solution on every mesh type
+# (stage 5, D29).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_slip.toml
+#
+# Channel 0 < y < 1 of length 2 on a perturbed mixed mesh (hexahedra,
+# prisms and polyhedra), a uniform inflow of 1 m/s, a static pressure
+# outlet and slip walls at y = 0 and y = 1. A slip wall carries no normal
+# flow and no shear, so the uniform flow is the exact solution; the run
+# fails if the velocity error is above 1e-9 (the discrete equations hold it
+# to round-off on any mesh).
+
+[mesh.generate]
+type = "mixed"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [24, 12, 1]
+perturb = 0.2
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[flow]
+convection = true
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"     # the uniform flow
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymax]
+type = "slip-wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-12
+max_iterations = 2000
+
+[analytic]
+type = "uniform"
+velocity = [1.0, 0.0, 0.0]
+length = 1.0
+
+[verification]
+require_convergence = true
+max_error = 1e-9
+
+[output]
+vtkhdf = false
+wall_csv = false

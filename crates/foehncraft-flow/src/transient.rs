@@ -166,6 +166,9 @@ struct Levels {
     cfl: Buf,
     /// Velocity gradients and limiters of level n−1.
     g_old: [Buf; N_EXPLICIT],
+    /// Boundary velocities of levels n and n−1 of the convective outlets
+    /// (per boundary face; only with convective outlets).
+    ub_old: Option<(Buf3, Buf3)>,
 }
 
 /// Number of cell fields in [`explicit_buffers`].
@@ -220,6 +223,10 @@ pub struct OldLevels {
     /// of the error estimate (D65); only with the estimate on.
     #[serde(default)]
     pub u_old2: Option<[Vec<f64>; 3]>,
+    /// Boundary velocity u_bⁿ⁻¹ per boundary face, for the backward
+    /// difference of the convective outlets (D29); only with them.
+    #[serde(default)]
+    pub ub_old: Option<[Vec<f64>; 3]>,
 }
 
 impl OldLevels {
@@ -232,6 +239,10 @@ impl OldLevels {
             + self.g_old.iter().map(Vec::len).sum::<usize>()
             + self
                 .u_old2
+                .as_ref()
+                .map_or(0, |u| u.iter().map(Vec::len).sum::<usize>())
+            + self
+                .ub_old
                 .as_ref()
                 .map_or(0, |u| u.iter().map(Vec::len).sum::<usize>()))
     }
@@ -248,7 +259,21 @@ impl Transient {
         );
         let nc = fl.disc.n_cells;
         let nf = fl.disc.n_faces;
+        let nb = nf - fl.disc.n_interior;
+        let has_conv = fl.conv.is_some();
         let dev = &mut fl.dev;
+        let ub_old = if has_conv {
+            let mut b3 = || -> Result<Buf3> {
+                Ok(Buf3 {
+                    x: dev.alloc(nb)?,
+                    y: dev.alloc(nb)?,
+                    z: dev.alloc(nb)?,
+                })
+            };
+            Some((b3()?, b3()?))
+        } else {
+            None
+        };
         let mut c3 = || -> Result<Buf3> {
             Ok(Buf3 {
                 x: dev.alloc(nc)?,
@@ -278,6 +303,7 @@ impl Transient {
                 }
                 g
             },
+            ub_old,
         };
         Ok(Self {
             scheme,
@@ -332,6 +358,14 @@ impl Transient {
             } else {
                 None
             },
+            ub_old: match l.ub_old {
+                Some((b, _)) => Some([
+                    fl.dev.download(b.x)?,
+                    fl.dev.download(b.y)?,
+                    fl.dev.download(b.z)?,
+                ]),
+                None => None,
+            },
         })
     }
 
@@ -363,6 +397,17 @@ impl Transient {
             // no uⁿ⁻²: the predictor waits a step
             None => self.clock.dt_prev2 = 0.0,
         }
+        if let Some((b, _)) = l.ub_old {
+            let Some(u) = &o.ub_old else {
+                anyhow::bail!(
+                    "the restart file holds no old boundary velocity of the convective outlets \
+                     (written by a case without them)"
+                );
+            };
+            for (&bi, v) in b.all().iter().zip(u) {
+                fl.dev.upload(bi, v)?;
+            }
+        }
         Ok(())
     }
 
@@ -377,6 +422,7 @@ impl Transient {
             return Ok(false);
         }
         let l = self.l;
+        self.hold_convective(fl)?;
         if self.clock.levels >= 1 {
             for (a, b) in l.u_old2.all().into_iter().zip(l.u_old.all()) {
                 fl.dev.copy(a, b)?;
@@ -387,6 +433,18 @@ impl Transient {
         self.clock.dt_prev2 = 0.0;
         self.finish_level(fl)?;
         Ok(true)
+    }
+
+    /// After a step was taken back: the convective outlets hold u_bⁿ (the
+    /// level the step started from), and their old levels move back.
+    fn hold_convective(&mut self, fl: &mut Flow) -> Result<()> {
+        if let Some((ub1, ub2)) = self.l.ub_old {
+            fl.hold_convective(ub1)?;
+            for (a, b) in ub2.all().into_iter().zip(ub1.all()) {
+                fl.dev.copy(a, b)?;
+            }
+        }
+        Ok(())
     }
 
     /// Takes back the step just done, after its error estimate exceeded the
@@ -417,7 +475,9 @@ impl Transient {
         for (&a, &b) in e.g_old.iter().zip(&e.old_ids) {
             fl.dev.copy(a, b)?;
         }
-        // u, p, ṁ of level n with their boundary values and gradients
+        // the convective outlets hold u_bⁿ; u, p, ṁ of level n with their
+        // boundary values and gradients
+        self.hold_convective(fl)?;
         anyhow::ensure!(fl.rewind()?, "no valid state was kept");
         fl.dev.sync()
     }
@@ -540,6 +600,15 @@ impl Transient {
             fl.dev.copy(a, b)?;
         }
         fl.dev.copy(f.mass_flux, l.m_old)?;
+        // the convective outlets: u_bⁿ⁻¹ ← u_bⁿ ← u_b, then c and β of the
+        // backward difference of this step
+        if let Some((ub1, ub2)) = l.ub_old {
+            for ((a, b), c) in ub1.all().into_iter().zip(ub2.all()).zip(f.ub.all()) {
+                fl.dev.copy(a, b)?;
+                fl.dev.copy(c, a)?;
+            }
+            fl.step_convective(ub1, ub2, [a0, a1, a2], dt)?;
+        }
         let ew = 1.0 - theta;
         if ew != 0.0 {
             // R(uⁿ) with the old flux, gradients and boundary values
@@ -647,6 +716,7 @@ impl Transient {
             let t = Instant::now();
             let a = fl.flux_args(Some(w.d), relax, Some((w.ds, l.y, alpha)));
             fl.dev.mass_flux(&a, w.m)?;
+            fl.close_backflow(w.m)?;
             res.continuity = fl.continuity(w.m)?;
             fl.dev.sync()?;
             fl.timings.pressure_assembly += t.elapsed().as_secs_f64();

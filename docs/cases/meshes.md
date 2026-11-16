@@ -43,6 +43,7 @@ Every key is optional; a case needs either `mesh.file` or a
 | `mesh.generate.grading.x` (`.y`, `.z`) | `{ ratio = 1 }` | `ratio`: last to first interval; with `symmetric = true`: middle to end intervals |
 | `mesh.generate.refine` | 0 | halve every interval this many times (nested meshes for grid-convergence tests) |
 | `mesh.generate.perturb` | 0 | random node displacement as a fraction of the local interval, 0 to 0.3; boundary nodes stay on their faces |
+| `mesh.generate.wedge` | none | revolve the 2D mesh (`dimension = 2`, `lower[1] ≥ 0`) into an axisymmetric wedge of this angle (degrees, up to 90) about the x axis; `zmin` and `zmax` become the wedge planes, `ymin` disappears on the axis |
 | `mesh.generate.seed` | 2026 | seed of the perturbation (counter-based, the same on every machine) |
 | `partition.parts` | 1 | number of parts (1: no decomposition) |
 | `partition.method` | `"metis"` | `metis` or `rcb` (recursive coordinate bisection) |

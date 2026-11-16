@@ -15,6 +15,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28 |
+| [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets | 29 |
 | [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports | 22, 26, 27 |
 
 ## All recipes by number
@@ -49,6 +50,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="run-contract"></a>26 | [Drive runs from a script or an agent](recipes/runs.md#run-contract) | [Run control and health](recipes/runs.md) |
 | <a id="health"></a>27 | [Check the balances and read a divergence report](recipes/runs.md#health) | [Run control and health](recipes/runs.md) |
 | <a id="time-control"></a>28 | [Let the error choose the time step, write output at exact times, start from potential flow](recipes/flow.md#time-control) | [Incompressible flow](recipes/flow.md) |
+| <a id="boundary-conditions"></a>29 | [Use slip walls, wedges, table profiles, backflow treatment and convective outlets](recipes/boundary-conditions.md#boundary-conditions) | [Boundary conditions](recipes/boundary-conditions.md) |
 
 ## Adding a feature
 

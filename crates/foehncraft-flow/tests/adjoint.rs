@@ -139,9 +139,9 @@ seed = 59
     let mut r = Rng(0x05ee_dd59);
     let fx = Fixture {
         mom_kind: (0..nb).map(|_| r.pick(3)).collect(),
-        flux_kind: (0..nb).map(|_| r.pick(2)).collect(),
-        ub_rule: (0..nb).map(|_| r.pick(4)).collect(),
-        pb_rule: (0..nb).map(|_| r.pick(3)).collect(),
+        flux_kind: (0..nb).map(|_| r.pick(3)).collect(),
+        ub_rule: (0..nb).map(|_| r.pick(7)).collect(),
+        pb_rule: (0..nb).map(|_| r.pick(6)).collect(),
         disc,
     };
     let d = &fx.disc;
@@ -217,6 +217,13 @@ seed = 59
     x.insert("pb".into(), rand(nb, 0.5, 1.5, true));
     x.insert("pset".into(), rand(nb, 0.5, 1.5, true));
     x.insert("bcb".into(), rand(nb, 0.5, 1.5, true));
+    // the convective outlet: the old-level part c and the factor beta
+    for c in ["x", "y", "z"] {
+        x.insert(format!("convc.{c}"), rand(nb, 0.2, 1.0, true));
+    }
+    x.insert("beta".into(), rand(nb, 0.1, 2.0, false));
+    // closed (suppressed backflow) is 0 or 1, a switch
+    x.insert("closed".into(), (0..nb).map(|i| (i % 2) as f64).collect());
     // random directions, scaled by the size of each array (geometry
     // arrays are small on a fine mesh)
     let mut dir = Data::new();
@@ -230,6 +237,7 @@ seed = 59
     }
     // a is 0 or 1 (a switch, not a value): no direction
     dir.get_mut("bca").unwrap().fill(0.0);
+    dir.get_mut("closed").unwrap().fill(0.0);
     (fx, x, dir)
 }
 
@@ -434,6 +442,7 @@ fn flux_inputs<'a, T: Real>(
         p: l.s("p"),
         grad_p: l.v3("gp"),
         pb: l.s("pb"),
+        pset: l.s("pset"),
         ub: l.v3("ub"),
         flux_kind: &fx.flux_kind,
         mom_kind: &fx.mom_kind,
@@ -467,6 +476,7 @@ fn pressure_face<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
             &fx.flux_kind,
             T::from_f64(1.2),
             l.s("dc"),
+            l.s("closed"),
         )]
     }
 }
@@ -495,6 +505,7 @@ fn delta_flux<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
             &fx.flux_kind,
             T::from_f64(1.2),
             &l.v3("delta"),
+            l.s("closed"),
         )]
     }
 }
@@ -517,6 +528,7 @@ fn boundary_velocity<T: Real>(fx: &Fixture, l: &Lifted<T>, fb: usize) -> Vec<T> 
             &boundary_inputs(fx, l),
             fx.ub_rule[fb],
             ub.at(fb),
+            (l.v3("convc").at(fb), l.s("beta")[fb]),
             &l.v3("u"),
             &l.grad("gu"),
         )
@@ -615,9 +627,9 @@ fn fixture_has_every_boundary_kind() {
     );
     for (v, n) in [
         (&fx.mom_kind, 3),
-        (&fx.flux_kind, 2),
-        (&fx.ub_rule, 4),
-        (&fx.pb_rule, 3),
+        (&fx.flux_kind, 3),
+        (&fx.ub_rule, 7),
+        (&fx.pb_rule, 6),
     ] {
         for kind in 0..n {
             assert!(v.contains(&kind), "kind {kind} missing");

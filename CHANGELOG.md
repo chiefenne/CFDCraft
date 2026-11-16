@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+**Boundary conditions of stage 5 (part 5b, D29).** New condition types
+`slip-wall`, `wedge` and `convective-outlet` (∂u/∂t + U_c ∂u/∂n = 0 in
+transient runs, the outlet flow balanced with the inflow, U_c by default
+the mean outflow speed); inlet profiles from a table (`profile = "table"`,
+`table`, `table_coordinate` x, y, z or the radius about an axis, the
+table's sha256 in the case hash); backflow treatment at static and total
+pressure outlets (`backflow = "total-pressure"`, the new default,
+`"zero-gradient"`, the treatment before, or `"suppress"`, which closes the
+faces where the flow would enter). Axisymmetric wedge meshes from any 2D
+mesh of the box generator (`mesh.generate.wedge`, the axis without a
+patch), and the exact solutions `uniform` and `pipe-poiseuille`. Seven new
+diagnostic codes BC019–BC025. The restart file of a run with a
+convective outlet gains the datasets `ub_old_x|y|z`. New cases
+`flow/channel_slip.toml`, `poiseuille_table.toml` (with
+`poiseuille_profile.csv`), `pipe_wedge.toml`, `cylinder_re100_short.toml`
+and `cylinder_re100_convective.toml`; gallery 21, recipe 29. Runs whose
+outlets see no backflow are bitwise as before; the Poiseuille cases on
+perturbed prisms, polygons and mixed cells, where a few outlet faces see
+inflow in the first iterations, change by 2e-6 relative
+(`backflow = "zero-gradient"` gives the earlier results bitwise).
+
 **Wall film requirements (D123, D124).** Requirements for the wall film of the Lagrangian sprays (L12): an Eulerian thin film on the wall faces with parcels for splash, rebound, separation and stripping; impingement regimes (Bai–Gosman, Kuhnke), capillarity and dry patches in the first version, CHT coupling of the heated film, ledger and reproducibility rules, staging F1 to F5 and validation cases; Milestone 1 keeps a surface mesh and surface halo of the wall faces, per-face wall boundary values including a wall mass flux, and gravity as a case vector. Documentation only.
 
 **Numerics of stage 5 (part 5a).** A bounded central convection scheme

@@ -1,0 +1,57 @@
+# Plane Poiseuille flow with the inlet profile read from a table (stage 5,
+# D29).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/poiseuille_table.toml
+#
+# The channel of poiseuille_hex.toml on an unperturbed 32 x 16 hex mesh;
+# the inflow normal speed comes from poiseuille_profile.csv (two columns, y
+# and u_n, linear between the rows). The rows sit at y = k/32, so every
+# inlet face centre is a row and the run matches the one with the exact
+# parabola (relative L2 velocity error 1.59e-3, the discretisation error of
+# this mesh); the run fails if the error is above 2e-3. The table's sha256
+# is part of the case hash of the run.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [32, 16, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.1
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "table"
+table = "poiseuille_profile.csv"   # relative to this case file
+table_coordinate = "y"
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+relaxation_velocity = 0.9
+tolerance = 1e-9
+max_iterations = 5000
+
+[analytic]
+type = "poiseuille"
+mean_velocity = 1.0
+x_outlet = 2.0
+
+[verification]
+require_convergence = true
+max_error = 2e-3
+
+[output]
+vtkhdf = false
+wall_csv = false
