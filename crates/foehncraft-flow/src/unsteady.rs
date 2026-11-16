@@ -130,6 +130,10 @@ pub struct TransientSummary {
     pub outer_mean: f64,
     /// Mean CG iterations per step.
     pub cg_mean: f64,
+    /// Steps repeated with a shorter Δt because their time-integration
+    /// error exceeded the tolerance (D65).
+    #[serde(default)]
+    pub rejected: usize,
     /// Restart file the run continued from.
     pub restart_from: Option<String>,
     /// Ended by `.stop`.
@@ -1516,6 +1520,7 @@ fn run_one<F: FnMut(&str)>(
             cfl_max,
             outer_mean: outer_sum as f64 / nsteps.max(1) as f64,
             cg_mean: cg_sum as f64 / nsteps.max(1) as f64,
+            rejected,
             restart_from,
             stopped,
             ns_per_cell_step: 1e9 * secs / (nc as f64 * nsteps.max(1) as f64),

@@ -1,0 +1,59 @@
+# Potential-flow start around the cylinder of Schäfer & Turek (stage 5, D52).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cylinder_potential.toml
+#
+# The channel and cylinder of cylinder_re20.toml (2.2 x 0.41 m, D = 0.1 m,
+# parabolic inflow with U_max = 0.3 m/s, zero static pressure at the
+# outlet) on 24 576 hexahedra, with `initial.potential_flow = true` and no
+# outer iterations: fields.vtkhdf holds the start field itself, the
+# irrotational flow that carries the inflow around the cylinder to the
+# outlet (one Laplace solve with the pressure multigrid and four passes of
+# the non-orthogonal correction). The face fluxes of the start are
+# continuous to the solver tolerance; the velocity slips along the walls,
+# as potential flow does. The same start in the viscous run:
+#
+#   foehn flow examples/cases/flow/cylinder_re20.toml --set initial.potential_flow=true
+#
+# converges in 1527 instead of 1570 outer iterations.
+
+[mesh.cylinder]
+refine = 1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[flow]
+convection = true
+
+[initial]
+potential_flow = true
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 0.3
+profile_axes = ["y"]
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.walls]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+max_iterations = 0
+
+[verification]
+require_convergence = false   # the start field is the result
+
+[output]
+wall_csv = false

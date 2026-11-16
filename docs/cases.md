@@ -53,7 +53,7 @@ every case except `*_gpu.toml` (R5).
 | `scalar/mms_tet_box.toml` | generated tet 3D, 3 072 to 196 608 cells | the same on tetrahedra | recipe 12 |
 | `scalar/mms_mixed_box.toml` | generated mixed 3D, 1 344 to 95 232 cells | the same on hexahedra, prisms, tetrahedra and polyhedra | recipe 12 |
 | `scalar/mms_poly_2d.toml` | generated poly 2D, 289 to 16 641 cells (4 levels) | planar solution, zero-gradient (symmetry) z patches | recipe 12 |
-| `scalar/oblique_step_2d.toml` | generated poly 2D, 2 401 cells | upwind, linear upwind and both limiters as `[[variants]]`; bounds check | gallery 9, recipe 13 |
+| `scalar/oblique_step_2d.toml` | generated poly 2D, 2 401 cells | upwind, linear upwind, both limiters and the bounded central scheme (stage 5, D25) as `[[variants]]`; bounds check | gallery 9, recipe 13 |
 | `scalar/mms_poly_gpu.toml` | generated poly 3D, 912 673 cells | CPU against two GPU runs: GPU equals CPU and GPU run to run | recipe 14, `tools/stage2_colab.ipynb` |
 | `scalar/poisson_amg_poly_box.toml` | generated poly 3D, 729 to 35 937 cells | Poisson manufactured solution with CG + AMG (stage 3) against BiCGStab + Jacobi as `[[variants]]`; order of accuracy | gallery 11, recipe 15 |
 
@@ -71,7 +71,9 @@ A boundary condition is required for every patch.
 | `problem.manufactured` | none | `{}` for the default manufactured solution, or `{ offset, amplitude, wavenumber, phase }`; sets the source, the `manufactured` boundary values and the error norms |
 | `problem.boundary.<patch>.type` | – (required) | `fixed-value`, `fixed-gradient` (outward normal gradient) or `zero-gradient` (also symmetry and outflow) |
 | `problem.boundary.<patch>.profile` | `"constant"` | `constant` (`value`), `step` (`axis`, `at`, `below`, `above`), `linear` (`value`, `gradient`), `manufactured` |
-| `solver.scheme` | `"linear-upwind"` | `upwind` or `linear-upwind` |
+| `solver.scheme` | `"linear-upwind"` | `upwind`, `linear-upwind` or `central` (bounded central, D25) |
+| `solver.central_blending` | 1 | with `central`: share c of the bounded central correction; the rest, 1 − c, is linear upwind |
+| `solver.central_bounding` | 0.1 | with `central`: β of the normalised-variable bound (central where φ̃_U ≥ β, blended towards upwind below, upwind outside (0, 1)); 0 for plain central |
 | `solver.limiter` | `"none"` | `none`, `venkatakrishnan`, `venkatakrishnan-wang` |
 | `solver.limiter_k` | 5.0 | K: ε² = (K h)³ (Venkatakrishnan) or ε = K (φ_max − φ_min) (Venkatakrishnan–Wang); 0 for strictly bounded |
 | `solver.nonorth_correction` | true | non-orthogonal diffusion correction |
@@ -191,9 +193,10 @@ long cylinder at Re 100 runs on main, nightly and with the label `full-ci`.
 A transient case also writes `history.csv` (one row per time step: time,
 Δt, Courant number, residuals, outer and CG iterations; the residuals of a
 steady case stay in `residuals.csv`), `forces.csv` (force per wall and the
-coefficients, every `output.monitor_every` steps), `probes.csv`,
-`fields_<step>.vtkhdf` on the schedule of `output.fields_every` and
-`fields_at`, `restart.h5` (D42), `coefficients.svg` (force coefficients;
+coefficients, every `output.monitor_every` steps or `monitor_interval`
+seconds), `probes.csv`, `fields_<step>.vtkhdf` on the schedule of
+`output.fields_every`, `fields_at`, `fields_interval` and `fields_times`
+(the last two in simulated time, landed on exactly), `restart.h5` (D42), `coefficients.svg` (force coefficients;
 for the periodic cylinder the evaluation window) and, for a time-order
 sweep, `time_convergence.svg`. Control files in the output directory steer
 a running case (D40): `.stop` ends it with its restart file and results,
@@ -218,7 +221,9 @@ re-reads the case file at N and applies what may change during a run.
 | `flow/taylor_green_cn.toml` | generated hex 2D, 64 × 64 | the same with Crank–Nicolson | gallery 14, recipe 21 |
 | `flow/taylor_green_space.toml` | generated hex 2D, 16² to 128² (4 levels) | Taylor–Green vortex, space order 1.8–2.2 required | gallery 14, recipe 21 |
 | `flow/taylor_green_cfl10.toml` | generated hex 2D, 64 × 64 | Taylor–Green vortex at Courant numbers 1.3 to 9 with outer iterations: time order 2 | gallery 14, recipe 21 |
+| `flow/taylor_green_error.toml` | generated hex 2D, 64 × 64 | the time step from the BDF2 error estimate with rejected steps (D65), probe rows every 0.05 s and fields every 0.1 s landed on exactly (D66) | gallery 20, recipe 28 |
 | `flow/cylinder_re20.toml` | built-in cylinder mesh, refine 1: 24 576 hexahedra | Schäfer & Turek 2D-1, steady, Re = 20: C_D, C_L, Δp within 0.5 % of the reference ranges | gallery 15, recipe 23 |
+| `flow/cylinder_potential.toml` | built-in cylinder mesh, refine 1: 24 576 hexahedra | the potential-flow start (D52) around the cylinder, written without outer iterations | gallery 20, recipe 28 |
 | `flow/cylinder_re100.toml` | built-in cylinder mesh, refine 0: 6 144 hexahedra | Schäfer & Turek 2D-2, periodic, Re = 100: C_D,max, C_L,max, St, Δp within 2.5 % (about 8 minutes; Linux, on main, nightly and with the label `full-ci`) | gallery 15, recipe 23 |
 | `flow/cavity_poly3d_gpu.toml` | generated poly 3D, 970 225 polyhedra | the steady flow loop on the GPU: 30 SIMPLEC iterations of the cavity at Re = 100 on the CPU and the GPU, bitwise equal, time per cell and iteration (GPU; not run by CI) | gallery 16, recipe 24 |
 | `flow/cylinder_re100_gpu.toml` | built-in cylinder mesh, refine 2: 98 304 hexahedra | the transient flow loop on the GPU: 200 adaptive BDF2 steps of the Re = 100 cylinder on the CPU and the GPU, bitwise equal (GPU; not run by CI) | gallery 16, recipe 24 |
@@ -243,11 +248,13 @@ line (recipe 26).
 | `flow.body_force` | `[0, 0, 0]` | body force per unit volume (N/m³) |
 | `initial.velocity` | `[0, 0, 0]` | start velocity (m/s) |
 | `initial.pressure` | 0 | start pressure (Pa) |
+| `initial.potential_flow` | false | start from potential flow instead of `initial.velocity` (D52): the irrotational velocity that carries the inflow to the pressure boundaries, one Laplace solve with the pressure multigrid and four non-orthogonal correction passes |
 | `pressure.reference_point` | lower corner of the bounding box | the cell containing it holds the pressure level when no boundary fixes it |
 | `pressure.reference_value` | 0 | pressure in that cell (Pa) |
 | `boundary.<patch>` | required for every patch | condition, table below |
 | `solver.algorithm` | `"simplec"` | `simplec` (Van Doormaal & Raithby 1984) or `simple` |
-| `solver.scheme` | `"linear-upwind"` | convection of momentum: `upwind` or `linear-upwind` |
+| `solver.scheme` | `"linear-upwind"` | convection of momentum: `upwind`, `linear-upwind` or `central` (bounded central, D25) |
+| `solver.central_blending`, `solver.central_bounding` | 1, 0.1 | with `central`: share of the central correction (rest linear upwind) and the bound β (as for the scalar cases) |
 | `solver.limiter` | `"none"` | gradient limiter: `none`, `venkatakrishnan`, `venkatakrishnan-wang` |
 | `solver.limiter_k` | 5 | constant K of the limiter |
 | `solver.nonorth_correction` | true | deferred non-orthogonal and skewness correction of the viscous term |
@@ -285,7 +292,9 @@ line (recipe 26).
 | `output.lines` | none | sampling lines `[[output.lines]]` with `name`, `from`, `to`, `points` (101) |
 | `output.fields_every` | 0 | transient: write `fields_<step>.vtkhdf` every N steps (0: only the final `fields.vtkhdf`) |
 | `output.fields_at` | none | transient: also write the fields at these steps |
+| `output.fields_interval`, `output.fields_times` | none | transient: also write the fields at the multiples of this simulated time (s) and at these times; the steps land on them exactly (D66) |
 | `output.monitor_every` | 1 | a row of `forces.csv` and `probes.csv` every N steps |
+| `output.monitor_interval` | none | transient: a row of `forces.csv` and `probes.csv` at the multiples of this simulated time (s) instead of every `monitor_every` steps, landed on exactly (equally spaced samples for spectra, D66) |
 | `output.probes` | none | point probes `[[output.probes]]` with `name` and `point`: velocity and pressure in `probes.csv` |
 | `output.coefficients` | none | force coefficients C = 2F/(ρU²A) of the sum over `patches`, with `velocity` U, `area` A, `drag_direction` (x), `lift_direction` (y) |
 
@@ -301,6 +310,8 @@ Transient cases (stage 5):
 | `time.max_cfl` | 1 | target Courant number with `adaptive` |
 | `time.max_growth` | 1.2 | largest ratio of successive steps, below 1 + √2 (zero stability of BDF2) |
 | `time.min_time_step`, `time.max_time_step` | 0, none | bounds of the adaptive Δt (s) |
+| `time.error_tolerance` | none | with `adaptive` and `bdf2` or `crank-nicolson`: relative tolerance of the local time-integration error per step (D65); the step follows from the error estimate, inside `max_cfl` and `max_growth`, and a step above the tolerance is repeated shorter (at most 8 times, not below `min_time_step`). Keep it at least ten times above the linear-solver tolerances |
+| `time.error_absolute` | 1e-6 | absolute tolerance of the error estimate (m/s), added to `error_tolerance` × the RMS velocity |
 | `solver.algorithm` | `"piso"` with `[time]` | PISO (Issa 1986) |
 | `solver.correctors` | 2 | pressure corrections per outer iteration (one diverges on meshes with high diffusion numbers, such as the cylinder) |
 | `solver.outer_iterations` | 1 | outer iterations per time step (1: plain PISO; more: PIMPLE-type, for large steps) |
@@ -310,6 +321,7 @@ Transient cases (stage 5):
 | `run.restart` | none | restart file to continue from (D42) |
 | `run.restart_every` | 0 | write `restart.h5` every N steps or iterations |
 | `run.restart_at` | none | also write `restart_<N>.h5` at these steps |
+| `run.restart_interval`, `run.restart_times` | none | transient: write `restart.h5` at the multiples of this simulated time (s), and a numbered `restart_<N>.h5` at these times; landed on exactly (D66) |
 | `run.restart_final` | true | write `restart.h5` at the end |
 | `run.reread_every` | 0 | re-read the case file every N steps or iterations (0: only on `.read_toml_N`), D40 |
 | `run.limits.max_wall_time` | none | stop after this wall time (s) with the restart file and results, exit code 3 (D83) |

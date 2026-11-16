@@ -62,7 +62,7 @@ The limits may change during a run (a re-read of the case file, D40).
 | `run.jsonl` | `foehncraft.run_record` | The run record (D69), one JSON object per line, flushed at every log line, so it can be followed while the run goes on (`tail -f`). |
 | `flow.log`, `flow.md`, `flow.json` | | The log and the report for people, with timings. |
 | `fields.vtkhdf`, `fields_N.vtkhdf` | VTKHDF 2.x | Fields, with the root attributes `foehncraft_format`, `foehncraft_format_version`, `foehncraft_version`, `case`, `units` and `step`/`time` or `iteration`. |
-| `restart.h5` | Foehncraft restart | With `foehncraft_version` and `units`; optional datasets `point_id`, `points_x`, `points_y`, `points_z` and `volume_<k>` for meshes that move (D91), left out for fixed meshes. |
+| `restart.h5` | Foehncraft restart | With `foehncraft_version` and `units`; transient files carry the attribute `dt_prev2` (the step before the last; read as 0 from older files) and, with the error estimate of the time step (D65), the datasets `u_old2_x`, `u_old2_y`, `u_old2_z`; optional datasets `point_id`, `points_x`, `points_y`, `points_z` and `volume_<k>` for meshes that move (D91), left out for fixed meshes. |
 | `*.csv` | `foehncraft-<kind>` | Residuals, history, forces, probes, patches, wall and line data, each with a comment preamble (below). |
 | `balance.csv` | `foehncraft-balance` | The conservation ledger (D88, D89, below): one row per time step (every `output.history_every`) or per balance table of a steady run and its final state. |
 | `balance.svg` | SVG | Bars of the kinetic-energy terms at the end: of the final state (steady, W) or over the run (transient, J). `tools/balance_chart.py` draws the time histories of a transient `balance.csv`. |
@@ -77,7 +77,7 @@ The limits may change during a run (a re-read of the case file, D40).
 |---|---|
 | `header` | `format`, `format_version`, `case`, `date`, `provenance`, `threads`, `overrides`, `case_file`, `settings` (the resolved case) |
 | `iteration` | `iteration`, `momentum` (3), `continuity`, `bicgstab` (3), `cg` |
-| `step` | `step`, `time`, `dt`, `cfl`, `momentum` (3), `continuity`, `outer`, `cg` |
+| `step` | `step`, `time`, `dt`, `cfl`, `momentum` (3), `continuity`, `outer`, `cg`; with the error estimate of the time step (D65) also `error`, the estimated local error over the tolerance |
 | `event` | `code`, `severity`, `message`, `at` (iteration or step) |
 | `balance` | `iteration` (steady) or `step` and `time` (transient), `mass_outflow`, `mass_relative`, `kinetic_energy`, `storage`, `boundary_power`, `body_force_power`, `viscous_dissipation`, `numerical_dissipation`, `numerical_relative`, `pressure_dissipation`, `scheme_dissipation` |
 | `balance_run` | the same fields for the whole transient run (time integrals: kg, J) |

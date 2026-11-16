@@ -32,6 +32,7 @@ the [Example gallery](gallery.md).
 25. [Check the derivatives of the kernels (adjoint readiness)](#adjoint-ready)
 26. [Drive runs from a script or an agent](#run-contract)
 27. [Check the balances and read a divergence report](#health)
+28. [Let the error choose the time step, write output at exact times, start from potential flow](#time-control)
 
 ---
 
@@ -405,10 +406,15 @@ cat output/oblique_step_2d/scalar.md       # φ range per scheme
 # fields: output/oblique_step_2d/<variant>/fields.vtkhdf (open in ParaView, field "phi" and "limiter")
 ```
 
-Keys: `solver.scheme` (`upwind`, `linear-upwind`), `solver.limiter`
-(`none`, `venkatakrishnan`, `venkatakrishnan-wang`), `solver.limiter_k`
-(0: strictly bounded; larger: smoother, small overshoots),
-`[[variants]].bounds`, `output.profile`. To try another K, add a variant:
+Keys: `solver.scheme` (`upwind`, `linear-upwind`, `central`),
+`solver.limiter` (`none`, `venkatakrishnan`, `venkatakrishnan-wang`),
+`solver.limiter_k` (0: strictly bounded; larger: smoother, small
+overshoots), `[[variants]].bounds`, `output.profile`. The bounded central
+scheme (stage 5, D25) takes `solver.central_bounding` β (0.1; the variant
+uses 0.5 for this pure convection) and `solver.central_blending` (1; the
+share of the central correction, the rest linear upwind); on these
+distorted polygons it needs the limiter as well, which scales its
+correction in each upwind cell. To try another K, add a variant:
 
 ```toml
 [[variants]]
@@ -1076,5 +1082,82 @@ target/release/foehn flow examples/cases/flow/cavity_re100_transient.toml --set 
 
 With `--json`, the `RUN014` diagnostic in `result.json` carries the fix
 of the most likely cause as `--set` arguments, so a script can retry.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="time-control"></a>
+## 28. Let the error choose the time step, write output at exact times, start from potential flow
+
+**The time step from the error** (D65). With `adaptive = true` and
+`error_tolerance`, BDF2 and Crank–Nicolson estimate the local error of
+each step from the difference between the step and the quadratic
+extrapolation of the last three levels, and take the next step that meets
+the tolerance; `max_cfl` and `max_growth` stay upper bounds. A step whose
+error is more than the tolerance is taken back exactly and repeated
+shorter; the log names each one, `history.csv` holds the steps taken, and
+`result.json` counts the repeats under `solves[].transient.rejected`.
+
+```
+target/release/foehn flow examples/cases/flow/taylor_green_error.toml --out output/tg_error
+grep -E "rejected|error" output/tg_error/flow.log | head
+target/release/foehn flow examples/cases/flow/taylor_green_error.toml --set time.error_tolerance=1e-6 --out output/tg_error6
+python3 tools/time_step_chart.py output/time_step_error.svg
+```
+
+```toml
+[time]
+scheme = "bdf2"            # or "crank-nicolson"
+time_step = 0.001          # the first step; the estimate starts with the fourth
+adaptive = true
+max_cfl = 5.0              # upper bound
+max_growth = 1.2           # upper bound of the step ratio
+error_tolerance = 1e-4     # relative to the RMS velocity, per step
+error_absolute = 1e-6      # m/s
+```
+
+The tolerance is per step: the error at the end of a run is up to the
+number of steps times larger. Keep it at least ten times above the
+tolerances of the linear solvers (`solver.momentum_tolerance`,
+`pressure_tolerance`), whose noise the estimate would otherwise chase. With
+plain PISO at Courant numbers above about 2 the error grows faster than
+the step, and the estimate cuts the step there (the steep drops in the
+gallery chart); outer iterations (`solver.outer_iterations`) let it take
+longer steps. A restart continues such a run bitwise.
+
+**Output at exact times** (D66). In simulated time instead of steps:
+
+```toml
+[output]
+fields_interval = 0.1      # fields_<step>.vtkhdf at t = 0.1, 0.2, ... s
+fields_times = [0.25]      # and at these times
+monitor_interval = 0.05    # forces.csv and probes.csv rows every 0.05 s
+[run]
+restart_interval = 1.0     # restart.h5 at t = 1, 2, ... s
+restart_times = [2.5]      # restart_<step>.h5 at these times
+```
+
+The step before a scheduled time is shortened to land on it, and when the
+time lies within two steps, the two steps share the distance, so no step
+falls below half the planned one. The files keep the step number in their
+names; the time is inside (the root attribute `time` of the VTKHDF file,
+the `time` column of the CSV rows).
+
+**Potential-flow start** (D52). `initial.potential_flow = true` replaces
+the uniform start velocity by the irrotational flow that carries the
+inflow to the pressure boundaries: one Laplace solve with the pressure
+multigrid and four passes of the non-orthogonal correction; walls and
+symmetry planes let it slip. To see the start field itself, run no outer
+iteration:
+
+```
+target/release/foehn flow examples/cases/flow/cylinder_potential.toml --out output/potential
+python3 tools/render_mesh.py output/potential/fields.vtkhdf potential.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
+target/release/foehn flow examples/cases/flow/cylinder_re20.toml --set initial.potential_flow=true --out output/cyl_pf
+```
+
+The last run converges in 1527 outer iterations instead of 1570 from rest.
+A restart file, when given, wins over the start.
 
 [↑ back to top](#recipes)

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+**Numerics of stage 5 (part 5a).** A bounded central convection scheme
+(`solver.scheme = "central"`, D25) with the bound β and a blend with linear
+upwind; the time step from the error estimate of BDF2 and Crank–Nicolson
+(`time.error_tolerance`, D65), with steps above the tolerance taken back
+exactly and repeated shorter (`solves[].transient.rejected` in
+`result.json`, an `error` value in the step rows of `run.jsonl`); output in
+simulated time that the steps land on (`output.fields_interval`,
+`fields_times`, `monitor_interval`, `run.restart_interval`,
+`restart_times`, D66); and a potential-flow start
+(`initial.potential_flow`, D52). The restart file gains the attribute
+`dt_prev2` and, with the error estimate, the datasets `u_old2_x|y|z`;
+older files still read. New cases `flow/taylor_green_error.toml`,
+`flow/cylinder_potential.toml` and the variant `bounded-central` of
+`scalar/oblique_step_2d.toml`; gallery 20, recipe 28,
+`tools/time_step_chart.py`. Runs without the new keys are bitwise as
+before.
+
 **Material property requirements (D94–D103, L23–L25).** Requirements for a
 material database and the handling of properties: database, case materials
 and a resolved, hashed property program; property forms (constant,

@@ -27,8 +27,11 @@
 > step, restart, control files, verified on the Taylor–Green vortex and the
 > cylinder benchmark of Schäfer & Turek, [stage 5](docs/verification/stage5.md)),
 > the whole flow loop runs on NVIDIA GPUs with results bitwise equal to
-> the CPU, and the kernels are ready for a discrete adjoint (dual-number
-> derivatives, transposed matrices, binomial checkpointing).
+> the CPU, the kernels are ready for a discrete adjoint (dual-number
+> derivatives, transposed matrices, binomial checkpointing), every run
+> books its mass and kinetic-energy balance, and the numerics gained a
+> bounded central scheme, a time step chosen by the time-integration
+> error, output at exact times and a potential-flow start.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
