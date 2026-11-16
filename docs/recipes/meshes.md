@@ -1,6 +1,6 @@
 # Meshes
 
-Part of the [Recipes](../recipes.md): generate, read, convert and partition meshes, update the mesher's golden values.
+Part of the [Recipes](../recipes.md): generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes.
 
 | # | Recipe |
 |---|---|
@@ -8,6 +8,7 @@ Part of the [Recipes](../recipes.md): generate, read, convert and partition mesh
 | 8 | [Read a Gmsh mesh and convert it into polyhedra](#mesh-gmsh) |
 | 9 | [Partition a mesh and test the halo exchange](#mesh-partition) |
 | 11 | [Update the golden values of the mesher](#golden) |
+| 36 | [Run a flow on raw Gmsh tetrahedra (skewed faces)](#skewed-tets) |
 
 ---
 
@@ -111,5 +112,51 @@ git diff crates/foehncraft-mesh/tests/golden/mesher.json
 ```
 
 and say in the commit message why the values changed.
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="skewed-tets"></a>
+## 36. Run a flow on raw Gmsh tetrahedra (skewed faces)
+
+Gmsh's tetrahedra without its optimisation pass have faces of a skewness
+above 0.9, mostly at curved walls; the steady solver diverges on them with
+the least-squares pressure gradient ([gallery 26](../gallery/meshes.md#skewed-tets)).
+First choice: optimise the mesh. Add `Mesh.OptimizeNetgen = 1;` to the .geo
+file (or `-optimize_netgen` on the command line) and check the count in the
+quality report:
+
+```
+gmsh -3 examples/meshes/tjunction_netgen.geo -format msh41 -o examples/meshes/tjunction_netgen.msh
+target/release/foehn mesh examples/meshes/tjunction_netgen.msh
+grep "skewness above 0.9" output/tjunction_netgen/mesh_report.md
+```
+
+When the mesh has such faces, the flow solver treats them itself
+(`solver.remediation = "auto"`, the default): it switches to the Gauss
+pressure gradient and the Venkatakrishnan limiter for the whole run and
+says so at the start of `flow.log` and in `flow.md`, `flow.json`
+(`remediation` of each solve) and the diagnostics (`MESH001`, `MESH002`):
+
+```
+target/release/foehn flow examples/cases/flow/pipe_gmsh_raw.toml
+grep -E "mesh quality|remediation" output/pipe_gmsh_raw/flow.log
+```
+
+Keys (`[solver]`): `remediation = "auto"` or `"off"` (keep the schemes as
+set; the run on `pipe_gmsh_raw` then diverges and `divergence.md` names the
+skewed faces), `skewness_limit = 0.9` (a smaller value treats milder
+faces), `pressure_gradient = "least-squares"` or `"gauss"` (set by hand,
+also on a good mesh). A limiter set in the case stays, and first-order
+`upwind` needs none. Least squares is more accurate on good meshes (the
+cylinder lift at Re = 20 is 3.5 % lower with the Gauss gradient), so treat
+the remediation as a remedy and fix the mesh for production runs.
+
+```
+target/release/foehn flow examples/cases/flow/pipe_gmsh_raw.toml --set solver.remediation=off \
+    --out output/pipe_gmsh_raw_off
+cat output/pipe_gmsh_raw_off/divergence.md
+```
 
 [↑ back to top](#meshes)

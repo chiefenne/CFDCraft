@@ -116,6 +116,9 @@ codes! {
     MAT_VALUE = "MAT005", Error, "A property value that is not positive and finite.";
     REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid: solids and porous zones come with the energy equation (L1).";
     REG_ZONE = "REG002", Error, "A region that names a cell zone the mesh does not have, or a zone in two regions.";
+    // the mesh quality (D50)
+    MESH_SKEWED = "MESH001", Warning, "Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised).";
+    MESH_REMEDIATION = "MESH002", Note, "Cell-quality remediation (D50): the run uses other schemes than set because of poor cells.";
     // the run (D40, D62, D64, D83)
     RUN_STOP_FILE = "RUN001", Note, "Stopped by the `.stop` control file.";
     RUN_SIGNAL = "RUN002", Note, "Stopped by a signal (SIGTERM, SIGINT or SIGUSR2).";
@@ -134,7 +137,7 @@ codes! {
     // the causes of a divergence (D63)
     DIV_TIME_STEP = "DIV001", Note, "Divergence cause: the Courant number near the failing cells is large; reduce the time step.";
     DIV_RELAXATION = "DIV002", Note, "Divergence cause: under-relaxation factors too large for the case.";
-    DIV_CELL_QUALITY = "DIV003", Note, "Divergence cause: poor cells (non-orthogonality, volume ratio) at the failing cells.";
+    DIV_CELL_QUALITY = "DIV003", Note, "Divergence cause: poor cells (skewness, non-orthogonality, volume ratio) at the failing cells.";
     DIV_BOUNDARY = "DIV004", Note, "Divergence cause: a boundary condition next to the failing cells.";
     DIV_INITIAL_STATE = "DIV005", Note, "Divergence cause: the run failed within its first steps or iterations, from the initial state.";
     DIV_LINEAR_SOLVER = "DIV006", Note, "Divergence cause: a linear solve that stopped at its iteration limit.";
@@ -349,7 +352,7 @@ mod tests {
                 .split_at(c.code.find(|ch: char| ch.is_ascii_digit()).unwrap());
             assert!(
                 [
-                    "CASE", "BC", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT", "REG"
+                    "CASE", "BC", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT", "REG", "MESH"
                 ]
                 .contains(&p),
                 "{}",

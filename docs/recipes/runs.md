@@ -7,7 +7,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 22 | [Restart a run, stop it and steer it while it runs](#restart) |
 | 26 | [Drive runs from a script or an agent](#run-contract) |
 | 27 | [Check the balances and read a divergence report](#health) |
-| 36 | [Read the log and upgrade a case file](#log) |
+| 37 | [Read the log and upgrade a case file](#log) |
 
 ---
 
@@ -212,9 +212,9 @@ of the most likely cause as `--set` arguments, so a script can retry.
 [↑ back to top](#run-control-and-health)
 
 <a id="log"></a>
-## 36. Read the log and upgrade a case file
+## 37. Read the log and upgrade a case file
 
-The log (gallery 26, D125) starts with the version and the build, then the blocks that show what was set; read it top down: **Input and output files** (the case file and every `--set`), **Run control**, **Mesh information** (counts and quality), **Fluid properties**, **Solution settings** (one column per equation), **Boundary conditions**. The table follows (every `solver.log_every` iterations or steps; the balance lines follow `balance.every`), then the summaries and the closing frame with the exit code.
+The log (gallery 27, D125) starts with the version and the build, then the blocks that show what was set; read it top down: **Input and output files** (the case file and every `--set`), **Run control**, **Mesh information** (counts and quality), **Fluid properties**, **Solution settings** (one column per equation), **Boundary conditions**. The table follows (every `solver.log_every` iterations or steps; the balance lines follow `balance.every`), then the summaries and the closing frame with the exit code.
 
 Frame style and the case-file version:
 

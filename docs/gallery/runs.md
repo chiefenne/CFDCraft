@@ -7,7 +7,7 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 | 17 | [Adjoint-ready kernels: derivatives and checkpointing](#adjoint-ready) | 5 | dual numbers through the kernel bodies, transposed matrices, binomial checkpointing |
 | 18 | [A run that a program can drive](#run-contract) | 5 | `--json`, exit codes, `--set`, limits, signals, `--restart latest`, diagnostic codes, estimate before the run, byte-identical files |
 | 19 | [Balances and the divergence report](#health) | 5 | mass and kinetic-energy ledger, numerical dissipation of the schemes (second law), divergence report with ranked causes |
-| 26 | [A log that can be circulated](#log) | 5 | frames, blocks of settings, tables with headers, summaries, closing frame with exit code (D125) |
+| 27 | [A log that can be circulated](#log) | 5 | frames, blocks of settings, tables with headers, summaries, closing frame with exit code (D125) |
 
 ---
 
@@ -177,7 +177,7 @@ python3 -m tools.plot.energy_budget_chart energy_budget.svg
 ---
 
 <a id="log"></a>
-## 26. A log that can be circulated
+## 27. A log that can be circulated
 
 Part of what a run says about itself (D125): the log shows what the case file set, so a log mailed on its own is enough to see the run. Every block is framed by asterisk rules (80 columns, no colour); the console and `flow.log` are identical. Excerpt of the transient cavity (Re 100, 64 x 64, BDF2), blocks between the banner and the table left out:
 

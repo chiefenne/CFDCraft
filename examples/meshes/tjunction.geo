@@ -4,6 +4,11 @@
 //
 //   gmsh -3 examples/meshes/tjunction.geo -format msh41 -o examples/meshes/tjunction.msh
 //
+// The tetrahedra are as Gmsh makes them, without optimisation: some faces
+// have a skewness above 0.9, which the flow solver treats with its
+// cell-quality remediation (D50). tjunction_netgen.geo makes the same mesh
+// optimised by Netgen, the better choice for flow runs.
+//
 // Physical groups name the boundaries: inlet_main, inlet_branch, outlet,
 // wall; the volume is the zone fluid.
 
@@ -32,14 +37,3 @@ Physical Surface("inlet_branch") = in_branch();
 Physical Surface("outlet") = outlet();
 Physical Surface("wall") = wall();
 Physical Volume("fluid") = {3};
-
-// finer near the junction
-Field[1] = Distance;
-Field[1].PointsList = {};
-Field[1].CurvesList = {};
-Field[1].SurfacesList = in_branch();
-Field[2] = Ball;
-Field[2].Radius = 0.08;
-Field[2].XCenter = 0.3; Field[2].YCenter = 0.05; Field[2].ZCenter = 0;
-Field[2].VIn = 0.005; Field[2].VOut = 0.01;
-Background Field = 2;

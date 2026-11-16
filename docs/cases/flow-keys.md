@@ -32,6 +32,9 @@ line (recipe 26).
 | `solver.nonorth_correction` | true | deferred non-orthogonal and skewness correction of the viscous term |
 | `solver.momentum.relaxation` | 0.7 | under-relaxation α_u of the momentum equations (implicit, Patankar 1980) |
 | `solver.pressure.relaxation` | 1 (SIMPLEC), 0.3 (SIMPLE) | relaxation α_p of the pressure correction |
+| `solver.pressure_gradient` | `"least-squares"` | gradient of the pressure in the momentum source, the Rhie–Chow flux and the wall pressure: `least-squares` (second order on every mesh) or `gauss` (the face sum of the face pressures; robust on skewed faces) |
+| `solver.remediation` | `"auto"` | cell-quality remediation (D50): `auto` switches to the `gauss` pressure gradient and the Venkatakrishnan limiter when a face of the mesh is skewed beyond `skewness_limit`, and reports it (`MESH001`, `MESH002`, the report); `off` keeps the schemes as set. A mesh without such faces runs unchanged ([recipe 36](../recipes/meshes.md#skewed-tets)) |
+| `solver.skewness_limit` | 0.9 | faces with a larger skewness (distance of the face centroid from the line through the two cell centroids, over the centroid distance) are poor |
 | `solver.max_iterations` | 2000 | largest number of outer iterations |
 | `solver.tolerance` | 1e-8 | converged when every scaled residual (momentum, continuity) is below it |
 | `solver.momentum.tolerance` | 1e-2 steady, 1e-8 transient | relative tolerance of each momentum solve (BiCGStab, Jacobi) |

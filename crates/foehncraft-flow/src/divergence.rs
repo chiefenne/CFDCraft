@@ -595,25 +595,60 @@ pub fn analyse(
             .iter()
             .map(|&c| q.volume_ratio[c])
             .fold(0.0f64, f64::max);
+        let skew = near.iter().map(|&c| q.skewness[c]).fold(0.0f64, f64::max);
+        let skewed = skew > s.skewness_limit;
+        // skewed faces anywhere in the mesh with the remediation off: the
+        // least-squares pressure gradient on them can drive the whole
+        // iteration away, also where the values run away first
+        let off = s.remediation == crate::simplec::Remediation::Off;
+        let poor: Vec<f64> = q
+            .skewness
+            .iter()
+            .copied()
+            .filter(|&k| k > s.skewness_limit)
+            .collect();
+        let poor_max = poor.iter().copied().fold(0.0f64, f64::max);
+        let untreated = off && !poor.is_empty();
         let score = ((theta - 50.0) / 30.0)
             .clamp(0.0, 1.0)
-            .max(((ratio - 5.0) / 15.0).clamp(0.0, 1.0));
+            .max(((ratio - 5.0) / 15.0).clamp(0.0, 1.0))
+            .max(if skewed { 0.6 } else { 0.0 })
+            .max(if untreated { 0.5 } else { 0.0 });
         if score > 0.0 {
             let mut fix = Vec::new();
             if !s.nonorth_correction && theta > 40.0 {
                 fix.push("solver.nonorth_correction=true".to_string());
             }
+            if (skewed || untreated) && off {
+                fix.push("solver.remediation=\"auto\"".to_string());
+            }
+            let mut evidence = format!(
+                "at the failing cells and their neighbours: non-orthogonality up to \
+                 {theta:.1}°, skewness up to {skew:.2}, volume ratio up to {ratio:.2}"
+            );
+            if untreated {
+                evidence += &format!(
+                    "; in the mesh {} cells with a face skewness above {} (largest {poor_max:.2}) \
+                     and solver.remediation = \"off\"",
+                    poor.len(),
+                    s.skewness_limit
+                );
+            }
             causes.push(Cause {
                 code: diag::DIV_CELL_QUALITY,
                 cause: "cell quality",
                 score,
-                evidence: format!(
-                    "at the failing cells and their neighbours: non-orthogonality up to \
-                     {theta:.1}°, volume ratio up to {ratio:.2}"
-                ),
-                advice: "Improve the mesh there (see `foehn mesh --quality`), or relax more \
-                         strongly."
-                    .into(),
+                evidence,
+                advice: if skewed || untreated {
+                    "Faces with a skewness above `solver.skewness_limit` (D50): optimise the \
+                     mesh (Gmsh: `Mesh.OptimizeNetgen = 1`), or let the cell-quality \
+                     remediation treat them (`solver.remediation = \"auto\"`)."
+                        .into()
+                } else {
+                    "Improve the mesh there (see `foehn mesh --quality`), or relax more \
+                     strongly."
+                        .into()
+                },
                 fix,
             });
         }

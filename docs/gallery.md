@@ -13,7 +13,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | Page | What it covers | Examples |
 |---|---|---|
 | [Kernel benchmarks and GPU runs](gallery/benchmarks.md) | gate G1 on CPUs and GPUs, on box, polyhedral and tetrahedral meshes, and the flow loop on a GPU | 1, 2, 7, 16 |
-| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning and the Gmsh reader | 3, 4, 5, 6 |
+| [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes | 3, 4, 5, 6, 26 |
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets | 21 |
@@ -21,7 +21,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25 |
 | [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22 |
-| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log | 17, 18, 19, 26 |
+| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log | 17, 18, 19, 27 |
 
 ## All examples by number
 
@@ -52,7 +52,8 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="expressions-materials"></a>23 | [Expressions and materials: variable viscosity, blowing and suction, water from the database](gallery/properties.md#expressions-materials) | [Expressions and materials](gallery/properties.md) |
 | <a id="python-study"></a>24 | [A parametric study from Python: Couette flow with a viscosity gradient](gallery/python.md#python-study) | [Python](gallery/python.md) |
 | <a id="gci"></a>25 | [Grid convergence index: Couette flow and the cylinder at Re = 20](gallery/verification.md#gci) | [Verification](gallery/verification.md) |
-| <a id="log"></a>26 | [A log that can be circulated](gallery/runs.md#log) | [Run control, health and adjoint readiness](gallery/runs.md) |
+| <a id="skewed-tets"></a>26 | [Flow on raw Gmsh tetrahedra: the cell-quality remediation](gallery/meshes.md#skewed-tets) | [Meshes](gallery/meshes.md) |
+| <a id="log"></a>27 | [A log that can be circulated](gallery/runs.md#log) | [Run control, health and adjoint readiness](gallery/runs.md) |
 
 ## Adding a feature
 

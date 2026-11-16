@@ -1,0 +1,54 @@
+# Developing laminar pipe flow on raw Gmsh tetrahedra: the cell-quality
+# remediation (D50).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pipe_gmsh_raw.toml
+#
+# Pipe of diameter D = 0.1 m and length 1 m, uniform inflow of 1 m/s, a
+# static pressure outlet, Re = ρ U D / μ = 100. The mesh
+# (examples/meshes/pipe_gmsh_raw.geo, 1 572 tetrahedra) is Gmsh's tetrahedral
+# mesh without the Netgen optimisation: some faces have a skewness above 0.9
+# (the face centroid lies almost as far from the line through the two cell
+# centroids as the centroids lie apart), mostly in tetrahedra with two
+# faces on the wall. On such faces the least-squares pressure gradient
+# drives the steady SIMPLEC iteration away from the solution: with
+# `remediation = "off"` the run diverges.
+#
+# With the default `remediation = "auto"` the solver finds the poor faces at
+# start-up, reports them (MESH001), switches to the Gauss pressure gradient
+# and the Venkatakrishnan limiter, says so (MESH002, flow.log, flow.md) and
+# converges. An optimised mesh avoids all of this
+# (`Mesh.OptimizeNetgen = 1` in the .geo file); then nothing changes.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pipe_gmsh_raw.toml \
+#       --set solver.remediation=off --out output/pipe_gmsh_raw_off
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/pipe_gmsh_raw.msh"
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[boundary.inlet_main]
+type = "velocity-inlet"
+normal_velocity = 1.0
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.wall]
+type = "wall"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 600
+remediation = "auto"     # the default; "off" diverges on this mesh
+
+[verification]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

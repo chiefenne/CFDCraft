@@ -128,6 +128,9 @@ pub struct QualityReport {
     pub inverted_faces: usize,
     /// Faces with non-orthogonality above 70°.
     pub non_orthogonal_above_70: usize,
+    /// Interior faces with skewness above 0.9: on these the flow solver
+    /// uses its cell-quality remediation (D50, `solver.skewness_limit`).
+    pub skewness_above_0_9: usize,
 }
 
 impl QualityReport {
@@ -270,6 +273,7 @@ impl QualityReport {
             negative_volumes: vols.iter().filter(|&&v| v <= 0.0).count(),
             inverted_faces: face.iter().filter(|x| x.4).count(),
             non_orthogonal_above_70: nonorth.iter().filter(|&&a| a > 70.0).count(),
+            skewness_above_0_9: skew.iter().filter(|&&a| a > 0.9).count(),
         };
         (report, cq)
     }
@@ -368,6 +372,17 @@ impl QualityReport {
             s,
             "- faces with non-orthogonality above 70°: {}",
             self.non_orthogonal_above_70
+        );
+        let _ = writeln!(
+            s,
+            "- faces with skewness above 0.9: {}{}",
+            self.skewness_above_0_9,
+            if self.skewness_above_0_9 > 0 {
+                " (the flow solver treats them with its cell-quality remediation, D50; \
+                 an optimised mesh avoids them, Gmsh: `Mesh.OptimizeNetgen = 1`)"
+            } else {
+                ""
+            }
         );
         s
     }

@@ -1356,6 +1356,46 @@ pub struct Solve {
     pub benchmark: Option<crate::monitor::BenchmarkResult>,
     /// Conservation ledger (D88, D89).
     pub balance: Option<BalanceSummary>,
+    /// Cell-quality check and remediation (D50), on a mesh with poor faces.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remediation: Option<crate::simplec::RemediationReport>,
+}
+
+/// The cell-quality check and remediation of `fl` (D50) for the log and
+/// the warnings: nothing on a mesh without poor faces; else a MESH001
+/// warning with the counts and how to avoid them, and with changed schemes a
+/// MESH002 note. Returns the report for [`Solve::remediation`].
+pub(crate) fn report_remediation<F: FnMut(&str)>(
+    fl: &Flow,
+    lg: &mut Log<F>,
+    warnings: &mut Vec<diag::Diagnostic>,
+) -> Option<crate::simplec::RemediationReport> {
+    let r = &fl.remediation;
+    if r.skewed_faces == 0 {
+        return None;
+    }
+    let m = format!(
+        "mesh quality: {} faces with skewness above {} (largest {:.3}) in {} cells; \
+         an optimised mesh avoids them (Gmsh: Mesh.OptimizeNetgen = 1)",
+        r.skewed_faces, r.skewness_limit, r.max_skewness, r.poor_cells
+    );
+    lg.line(&m);
+    if !warnings.iter().any(|w| w.code == diag::MESH_SKEWED) {
+        warnings.push(diag::Diagnostic::new(diag::MESH_SKEWED, m));
+    }
+    if !r.changes.is_empty() {
+        let m = format!(
+            "cell-quality remediation (D50, solver.remediation = \"auto\"): {}",
+            r.changes.join(", ")
+        );
+        lg.line(&m);
+        if !warnings.iter().any(|w| w.code == diag::MESH_REMEDIATION) {
+            let mut d = diag::Diagnostic::new(diag::MESH_REMEDIATION, m);
+            d.key = Some("solver.remediation".into());
+            warnings.push(d);
+        }
+    }
+    Some(r.clone())
 }
 
 /// Report of a flow case.
@@ -1788,6 +1828,7 @@ pub fn run_steered(
                 ptx: case.run.ptx.clone(),
             },
         )?;
+        let remediation = report_remediation(&fl, &mut lg, &mut rep.warnings);
         if let Some(src) = momentum_source(&case, &geo, nc, 0.0)? {
             fl.set_momentum_source(src)?;
         }
@@ -2264,6 +2305,7 @@ pub fn run_steered(
             transient: None,
             benchmark,
             balance: Some(summary),
+            remediation,
         });
         if stopped {
             rep.stopped = true;
@@ -3120,6 +3162,31 @@ impl FlowReport {
                     r.u_max_dev, r.v_max_dev
                 )),
             );
+        }
+        for v in &self.solves {
+            if let Some(r) = &v.remediation {
+                let _ = writeln!(
+                    s,
+                    "\n**Cell quality (D50)** on {}: {} faces with skewness above {} (largest {:.3}) in {} cells; an optimised mesh avoids them (Gmsh: `Mesh.OptimizeNetgen = 1`). {}",
+                    v.mesh,
+                    r.skewed_faces,
+                    r.skewness_limit,
+                    r.max_skewness,
+                    r.poor_cells,
+                    if r.changes.is_empty() {
+                        "The schemes were kept as set.".to_string()
+                    } else {
+                        format!(
+                            "Remediation (`solver.remediation = \"auto\"`, `\"off\"` keeps the schemes): {}.",
+                            r.changes
+                                .iter()
+                                .map(|c| format!("`{c}`"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    }
+                );
+            }
         }
         if !self.orders.is_empty() {
             let _ = writeln!(s, "\nObserved orders: {:.3?}", self.orders);

@@ -2,7 +2,30 @@
 
 ## Unreleased
 
-**Log output (D125–D127).** The log of `foehn flow` is rewritten so that a log passed on alone shows the run: a banner with version and build, framed blocks (input and output files, run control, mesh information with quality, fluid properties, solution settings as a matrix per equation, boundary conditions), tables with repeating header rows for iterations and time steps, summaries (convergence, verification, results per boundary, ledger, run time, warnings) and a closing frame with the exit code. Frames use asterisk rules; `[log] style = "box"` draws them with box characters. Console and `flow.log` are identical. Gallery 26, recipe 36.
+- **Cell-quality remediation (D50).** Steady runs on tetrahedra with skewed
+  faces (Gmsh meshes without `Mesh.OptimizeNetgen = 1`) diverged with the
+  least-squares pressure gradient. The solver now measures the face
+  skewness at start-up; when faces exceed `solver.skewness_limit` (0.9),
+  `solver.remediation = "auto"` (the default) switches to the Gauss
+  pressure gradient (new key `solver.pressure_gradient`) and the
+  Venkatakrishnan limiter, and reports it (`MESH001`, `MESH002`,
+  `flow.log`, `flow.md`, `flow.json`). Meshes without such faces run
+  bitwise as before (all catalogue cases). The raw Gmsh T-junction that
+  diverged in iteration 87 converges; gallery 26, recipe 36, case
+  `flow/pipe_gmsh_raw.toml` with its mesh in the repository.
+- **Divergence report.** A pressure multigrid that breaks down in the
+  middle of a run (the pressure-correction matrix no longer positive
+  definite) is reported as a divergence (`RUN014`, `divergence.md`)
+  instead of "the pressure level is not fixed"; `DIV003` names skewed
+  faces anywhere in the mesh when the remediation is off.
+- The mesh quality report counts the faces with a skewness above 0.9.
+- `examples/meshes/tjunction_netgen.geo`: the T-junction with the Netgen
+  optimisation; `tjunction.geo` loses a refinement field that Gmsh 4.15
+  rejects (it never applied, the mesh is unchanged).
+- `tools/plot/residuals_chart.py`: residual histories of several runs in
+  one chart.
+
+**Log output (D125–D127).** The log of `foehn flow` is rewritten so that a log passed on alone shows the run: a banner with version and build, framed blocks (input and output files, run control, mesh information with quality, fluid properties, solution settings as a matrix per equation, boundary conditions), tables with repeating header rows for iterations and time steps, summaries (convergence, verification, results per boundary, ledger, run time, warnings) and a closing frame with the exit code. Frames use asterisk rules; `[log] style = "box"` draws them with box characters. Console and `flow.log` are identical. Gallery 27, recipe 37.
 
 **Case-file format 0.6 (D126).** New key `case_format` (absent = 0.5); old keys are mapped on reading and listed in the log; `foehn case upgrade [--write|--check]` rewrites files and keeps their comments.
 
