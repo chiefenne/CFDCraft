@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+**Material property requirements (D94–D103, L23–L25).** Requirements for a
+material database and the handling of properties: database, case materials
+and a resolved, hashed property program; property forms (constant,
+polynomial, NASA-7 and NASA-9, Sutherland, tables with linear or monotone
+cubic interpolation, polynomial c_p expressions, mixing rules, kinetic
+theory, equations of state); checks; GPU evaluation; SI only; no property
+changes at run time; a built-in starter set with IAPWS water and steam;
+importers, table generators and a generic interface for external property
+sources. Implementation starts in stage 5 PR 6 (μ and ρ) and continues with L1.
+
 **Renamed from CFDCraft (and the short-lived Ennecraft) to Foehncraft**, after
 the foehn wind of Innsbruck (see the README), so that the name cannot be
 confused with other projects. Crates are now `foehncraft-*`, the command is `foehn`, the
