@@ -202,6 +202,9 @@ pub struct Transient {
     pub clock: Clock,
     /// Error estimate of the time integration (D65), off with `None`.
     pub error_control: Option<ErrorControl>,
+    /// Residuals of every outer iteration of the last step (for the log;
+    /// no result depends on them).
+    pub outer_log: Vec<Residuals>,
     l: Levels,
     e: Option<ErrorWork>,
 }
@@ -312,6 +315,7 @@ impl Transient {
                 ..Default::default()
             },
             error_control: None,
+            outer_log: Vec::new(),
             l,
             e: None,
         })
@@ -661,6 +665,7 @@ impl Transient {
         let mut first = Residuals::default();
         let mut last = Residuals::default();
         let mut outer = 0;
+        self.outer_log.clear();
         let rebuild_step = self.clock.step.is_multiple_of(s.amg_rebuild);
         for k in 1..=s.outer_iterations {
             outer = k;
@@ -773,6 +778,7 @@ impl Transient {
                 first.pressure_iterations += res.pressure_iterations;
             }
             last = res;
+            self.outer_log.push(res);
             if k > 1 && res.max() < s.outer_tolerance {
                 break;
             }
