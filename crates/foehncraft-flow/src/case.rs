@@ -12,10 +12,17 @@
 //! cells = [64, 64, 1]
 //! [fluid]
 //! density = 1.0                  # ρ (kg/m³)
-//! viscosity = 0.01               # μ (Pa s)
+//! viscosity = 0.01               # μ (Pa s), or an expression of x, y, z (D53)
+//! # material = "water"           # a material instead (D94-D102, crate::materials)
+//! # temperature = 293.15         # K, where the material is evaluated
 //! [flow]
 //! convection = true              # false: Stokes flow
-//! body_force = [0.0, 0.0, 0.0]   # N/m³
+//! body_force = [0.0, 0.0, 0.0]   # N/m³, numbers or expressions of x, y, z, t
+//! [constants]                    # named numbers of the expressions (D53)
+//! u_max = 1.5
+//! [tables.ramp]                  # a table, called as ramp(t) (crate::expr)
+//! x = [0.0, 1.0]
+//! y = [0.0, 1.0]
 //! [initial]
 //! velocity = [0.0, 0.0, 0.0]
 //! pressure = 0.0
@@ -61,6 +68,7 @@ use crate::control::{self, Control};
 use crate::diag;
 use crate::divergence;
 use crate::engine::Steer;
+use crate::expr::{Env, Scalar, Value, Vars};
 use crate::plot::{self, Series};
 use crate::restart::{self, Restart};
 use crate::simplec::{self, Flow, Physics, Residuals, Settings, Solution, Timings};
@@ -77,40 +85,72 @@ use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-/// `[fluid]`
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+/// `[fluid]`: the fluid's properties, as numbers (the shorthand of one
+/// constant material, D100) or from a material (D94–D102).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct FluidSection {
-    /// Density ρ (kg/m³).
-    pub density: f64,
-    /// Dynamic viscosity μ (Pa s).
-    pub viscosity: f64,
+    /// Density ρ (kg/m³); default 1, or the material's. One number: a
+    /// density that varies comes with the energy equation (L1).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub density: Option<Scalar>,
+    /// Dynamic viscosity μ (Pa s): a number or an expression of x, y, z
+    /// (D53); default 0.001, or the material's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viscosity: Option<Scalar>,
+    /// A material of `[materials]` or of the database (`foehn materials`);
+    /// `density` and `viscosity` given here replace its values.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub material: Option<String>,
+    /// The temperature (K) at which the material's properties are
+    /// evaluated (isothermal flow); default 293.15 K.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+    /// The operating pressure (Pa) of the ideal-gas density; default
+    /// 101 325 Pa.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operating_pressure: Option<f64>,
 }
 
-impl Default for FluidSection {
-    fn default() -> Self {
+impl FluidSection {
+    /// The shorthand of one constant fluid.
+    pub fn constant(density: f64, viscosity: f64) -> Self {
         Self {
-            density: 1.0,
-            viscosity: 1e-3,
+            density: Some(Scalar::Number(density)),
+            viscosity: Some(Scalar::Number(viscosity)),
+            ..Self::default()
+        }
+    }
+
+    /// The conditions at which the properties are evaluated.
+    pub fn conditions(&self) -> crate::materials::Conditions {
+        crate::materials::Conditions {
+            temperature: self
+                .temperature
+                .unwrap_or(crate::materials::DEFAULT_TEMPERATURE),
+            pressure: self
+                .operating_pressure
+                .unwrap_or(crate::materials::DEFAULT_PRESSURE),
         }
     }
 }
 
 /// `[flow]`
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct FlowSection {
     /// Convection on (false: Stokes flow).
     pub convection: bool,
-    /// Body force per unit volume (N/m³).
-    pub body_force: [f64; 3],
+    /// Body force per unit volume (N/m³): three numbers, or expressions of
+    /// x, y, z and, in a transient case, t (D53).
+    pub body_force: crate::expr::Vector,
 }
 
 impl Default for FlowSection {
     fn default() -> Self {
         Self {
             convection: true,
-            body_force: [0.0; 3],
+            body_force: crate::expr::vector([0.0; 3]),
         }
     }
 }
@@ -534,6 +574,21 @@ pub struct FlowCase {
     pub mesh: MeshSection,
     /// Fluid properties.
     pub fluid: FluidSection,
+    /// Materials of the case (D94): new ones, or changes of database
+    /// materials with `base`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub materials: BTreeMap<String, crate::materials::MaterialSection>,
+    /// Regions of cell zones with a kind and a material (D112); zones in no
+    /// region are fluid with the `[fluid]` material.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub regions: BTreeMap<String, crate::materials::RegionSection>,
+    /// Named constants of the expressions (D53): numbers, or expressions
+    /// of other constants.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub constants: BTreeMap<String, Scalar>,
+    /// Tables of the expressions (D53), piecewise linear in one argument.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub tables: BTreeMap<String, crate::expr::TableSection>,
     /// Flow model.
     pub flow: FlowSection,
     /// Start fields.
@@ -724,6 +779,11 @@ impl FlowCase {
         for b in self.boundary.values_mut() {
             b.load_table(Path::new(""))?;
         }
+        for (name, t) in &mut self.tables {
+            t.load(name)?;
+        }
+        // the expressions can be checked once the tables are read
+        self.validate_expressions()?;
         Ok(())
     }
 
@@ -769,22 +829,209 @@ impl FlowCase {
         for b in c.boundary.values_mut() {
             b.resolve_paths(dir);
         }
+        crate::expr::resolve_paths(&mut c.tables, dir);
         c.validate()?;
         Ok(c)
     }
 
-    /// Ranges and consistency of the settings.
-    pub fn validate(&self) -> Result<()> {
+    /// The constants and tables of the expressions.
+    pub fn env(&self) -> Result<Env> {
+        Env::new(&self.constants, &self.tables)
+    }
+
+    /// The resolved property program (D94 (3)): the `[fluid]` material and
+    /// the regions, evaluated at the case conditions.
+    pub fn properties(&self) -> Result<crate::materials::PropertySet> {
+        use crate::materials::{RegionKind, resolve_material};
+        let env = self.env()?;
+        let cond = self.fluid.conditions();
+        let mut warnings = Vec::new();
+        let fluid = resolve_material(
+            self.fluid.material.as_deref(),
+            &self.materials,
+            self.fluid.density.as_ref(),
+            self.fluid.viscosity.as_ref(),
+            &env,
+            cond,
+            &mut warnings,
+        )?;
+        let mut regions = Vec::new();
+        let mut seen: BTreeMap<&str, &str> = BTreeMap::new();
+        for (name, r) in &self.regions {
+            crate::need!(
+                r.kind == RegionKind::Fluid,
+                REG_NOT_FLUID,
+                "[regions.{name}] kind = \"{}\": only fluid regions are solved until the energy \
+                 equation (L1) brings solids and porous zones (D112)",
+                match r.kind {
+                    RegionKind::Solid => "solid",
+                    RegionKind::Porous => "porous",
+                    RegionKind::Fluid => "fluid",
+                }
+            );
+            crate::need!(
+                !r.zones.is_empty(),
+                REG_ZONE,
+                "[regions.{name}] zones must name at least one cell zone"
+            );
+            for z in &r.zones {
+                if let Some(other) = seen.insert(z.as_str(), name.as_str()) {
+                    crate::need!(
+                        false,
+                        REG_ZONE,
+                        "[regions.{name}] zone `{z}` is also in region `{other}`"
+                    );
+                }
+            }
+            let m = match &r.material {
+                Some(mat) => resolve_material(
+                    Some(mat),
+                    &self.materials,
+                    None,
+                    None,
+                    &env,
+                    cond,
+                    &mut warnings,
+                )?,
+                None => fluid.clone(),
+            };
+            let (a, b) = (m.density.value.constant(), fluid.density.value.constant());
+            crate::need!(
+                a.map(f64::to_bits) == b.map(f64::to_bits),
+                MAT_FORM,
+                "[regions.{name}] material `{}` has the density {:?} kg/m³, the fluid {:?}: \
+                 the density is one number for the whole fluid until the energy equation (L1)",
+                r.material.as_deref().unwrap_or(""),
+                a.unwrap_or(f64::NAN),
+                b.unwrap_or(f64::NAN)
+            );
+            regions.push((name.clone(), r.zones.clone(), m));
+        }
+        Ok(crate::materials::PropertySet {
+            conditions: cond,
+            fluid,
+            regions,
+            warnings,
+        })
+    }
+
+    /// The density ρ (kg/m³).
+    pub fn rho(&self) -> f64 {
+        self.properties().map_or(f64::NAN, |p| p.density())
+    }
+
+    /// The reference viscosity μ (Pa s): the `[fluid]` value (Reynolds
+    /// numbers, exact solutions).
+    pub fn mu(&self) -> f64 {
+        self.properties()
+            .map_or(f64::NAN, |p| p.reference_viscosity())
+    }
+
+    /// The body force as compiled values.
+    pub fn body_force_values(&self) -> Result<[Value; 3]> {
+        let allowed = if self.time.is_some() {
+            Vars::ALL
+        } else {
+            Vars::SPACE
+        };
+        crate::expr::vector_value(
+            &self.flow.body_force,
+            &self.env()?,
+            allowed,
+            "flow.body_force",
+        )
+    }
+
+    /// The compiled boundary values (D53).
+    pub fn compiled_boundaries(&self) -> Result<bc::Compiled> {
+        bc::compile_all(&self.boundary, &self.env()?, self.time.is_some())
+    }
+
+    /// The uniform body force, when all three components are numbers.
+    pub fn uniform_body_force(&self) -> Option<[f64; 3]> {
+        crate::expr::numbers(&self.flow.body_force)
+    }
+
+    /// Checks every expression of the case: syntax, names, the variables
+    /// each key allows (D53), and the property program (D94).
+    pub fn validate_expressions(&self) -> Result<()> {
+        let env = self.env()?;
+        self.body_force_values()?;
+        let transient = self.time.is_some();
+        for (name, b) in &self.boundary {
+            b.compile(name, &env, transient)?;
+        }
+        let p = self.properties()?;
+        let rho = p.density();
         crate::need!(
-            self.fluid.density > 0.0,
+            rho > 0.0 && rho.is_finite(),
             CASE_RANGE,
             "[fluid] density must be > 0"
         );
-        crate::need!(
-            self.fluid.viscosity > 0.0,
-            CASE_RANGE,
-            "[fluid] viscosity must be > 0"
-        );
+        if let Some(mu) = p.fluid.viscosity.value.constant() {
+            crate::need!(
+                mu > 0.0 && mu.is_finite(),
+                CASE_RANGE,
+                "[fluid] viscosity must be > 0"
+            );
+        }
+        Ok(())
+    }
+
+    /// The resolved case (`case.resolved.toml`): every default filled in,
+    /// the fluid's density and viscosity as resolved, and the resolved
+    /// property program as comments (D94).
+    pub fn resolved_toml(&self) -> Result<String> {
+        let mut c = self.clone();
+        let p = self.properties()?;
+        if c.fluid.density.is_none() {
+            c.fluid.density = Some(Scalar::Number(p.density()));
+        }
+        if c.fluid.viscosity.is_none()
+            && let Some(mu) = p.fluid.viscosity.value.constant()
+        {
+            c.fluid.viscosity = Some(Scalar::Number(mu));
+        }
+        let mut text = toml::to_string_pretty(&c)?;
+        text.push('\n');
+        text.push_str(&p.text());
+        Ok(text)
+    }
+
+    /// Ranges and consistency of the settings (the expressions and the
+    /// file tables are checked by [`load_tables`](Self::load_tables)).
+    pub fn validate(&self) -> Result<()> {
+        if let Some(d) = &self.fluid.density
+            && let Some(v) = d.number()
+        {
+            crate::need!(v > 0.0, CASE_RANGE, "[fluid] density must be > 0");
+        }
+        if let Some(d) = &self.fluid.viscosity
+            && let Some(v) = d.number()
+        {
+            crate::need!(v > 0.0, CASE_RANGE, "[fluid] viscosity must be > 0");
+        }
+        if let Some(t) = self.fluid.temperature {
+            crate::need!(
+                t > 0.0 && t.is_finite(),
+                CASE_RANGE,
+                "[fluid] temperature must be > 0 (K)"
+            );
+        }
+        if let Some(p) = self.fluid.operating_pressure {
+            crate::need!(
+                p > 0.0 && p.is_finite(),
+                CASE_RANGE,
+                "[fluid] operating_pressure must be > 0 (Pa)"
+            );
+        }
+        if self
+            .tables
+            .values()
+            .all(|t| t.file.is_none() || t.data.is_some())
+        {
+            self.validate_expressions()?;
+        }
         let transient = self.time.is_some();
         self.solver.validate(transient)?;
         self.run.limits.validate()?;
@@ -888,8 +1135,7 @@ impl FlowCase {
             )?;
         }
         if let Some(b) = v.benchmark {
-            let re =
-                self.fluid.density * b.mean_velocity() * Benchmark::DIAMETER / self.fluid.viscosity;
+            let re = self.rho() * b.mean_velocity() * Benchmark::DIAMETER / self.mu();
             crate::need!(
                 (re - b.reynolds()).abs() < 1e-6 * b.reynolds(),
                 CASE_INCONSISTENT,
@@ -928,7 +1174,7 @@ impl FlowCase {
             );
         }
         if let Some(reference) = v.reference {
-            let re = self.fluid.density * v.lid_velocity.unwrap_or(1.0) / self.fluid.viscosity;
+            let re = self.rho() * v.lid_velocity.unwrap_or(1.0) / self.mu();
             let want = reference.reynolds();
             crate::need!(
                 (re - want).abs() < 1e-6 * want,
@@ -951,8 +1197,7 @@ impl FlowCase {
     }
 
     pub(crate) fn analytic(&self) -> Option<Analytic> {
-        self.analytic
-            .map(|a| a.with_fluid(self.fluid.density, self.fluid.viscosity))
+        self.analytic.map(|a| a.with_fluid(self.rho(), self.mu()))
     }
 
     /// What the boundary-condition check needs to know about the case.
@@ -973,8 +1218,8 @@ impl FlowCase {
     /// the scales of the exact solution or the mean velocity and the
     /// cylinder diameter of the benchmark.
     pub fn reynolds(&self) -> Option<f64> {
-        let rho = self.fluid.density;
-        let mu = self.fluid.viscosity;
+        let rho = self.rho();
+        let mu = self.mu();
         if let Some(b) = self.verification.benchmark {
             return Some(rho * b.mean_velocity() * crate::analytic::Benchmark::DIAMETER / mu);
         }
@@ -1203,6 +1448,96 @@ fn steady_restart(fl: &mut Flow, mesh: &Mesh, name: &str) -> Result<Restart> {
     })
 }
 
+/// The physics of a case without a mesh: the density, the reference
+/// viscosity and the uniform body force (zero when it is given by
+/// expressions, which become a momentum source).
+pub fn physics(case: &FlowCase) -> Result<Physics> {
+    let p = case.properties()?;
+    Ok(Physics::constant(
+        p.density(),
+        p.reference_viscosity(),
+        case.uniform_body_force().unwrap_or([0.0; 3]),
+        case.flow.convection,
+    ))
+}
+
+/// `phys` on a mesh: the viscosity per face of the property program
+/// (D94), when it is not one number.
+pub fn physics_on(case: &FlowCase, phys: &Physics, mesh: &Mesh, geo: &Geometry) -> Result<Physics> {
+    for (name, r) in &case.regions {
+        for z in &r.zones {
+            if !mesh.zones.contains(z) {
+                let hint = match bc::did_you_mean(z, mesh.zones.iter().map(String::as_str)) {
+                    Some(c) => format!(" (did you mean `{c}`?)"),
+                    None => String::new(),
+                };
+                return Err(diag::err(
+                    diag::Diagnostic::new(
+                        diag::REG_ZONE,
+                        format!(
+                            "[regions.{name}] zone `{z}` is not a cell zone of the mesh{hint}; \
+                             the mesh has {}",
+                            mesh.zones
+                                .iter()
+                                .map(|z| format!("`{z}`"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    )
+                    .key(format!("regions.{name}.zones")),
+                ));
+            }
+        }
+    }
+    let mut p = phys.clone();
+    p.mu_face = case.properties()?.face_viscosity(mesh, geo);
+    Ok(p)
+}
+
+/// The momentum source per unit volume (N/m³) of a body force given by
+/// expressions (D53), at the cell centroids at time `t`; `None` for a
+/// uniform body force.
+pub fn momentum_source(
+    case: &FlowCase,
+    geo: &Geometry,
+    n_cells: usize,
+    t: f64,
+) -> Result<Option<[Vec<f64>; 3]>> {
+    if case.uniform_body_force().is_some() {
+        return Ok(None);
+    }
+    let v = case.body_force_values()?;
+    let out: [Vec<f64>; 3] = std::array::from_fn(|i| {
+        (0..n_cells)
+            .map(|c| v[i].at(geo.cell_centroid[c], t))
+            .collect()
+    });
+    if let Some((i, c)) = out
+        .iter()
+        .enumerate()
+        .find_map(|(i, s)| s.iter().position(|x| !x.is_finite()).map(|c| (i, c)))
+    {
+        return Err(diag::err(
+            diag::Diagnostic::new(
+                diag::EXPR_VALUE,
+                format!(
+                    "flow.body_force[{i}] is not finite at the centroid {:?} of cell {c} (t = {t} s)",
+                    geo.cell_centroid[c]
+                ),
+            )
+            .key(format!("flow.body_force[{i}]")),
+        ));
+    }
+    Ok(Some(out))
+}
+
+/// True when the body force or a boundary value depends on t.
+pub fn time_dependent(case: &FlowCase, values: &bc::Compiled) -> Result<(bool, bool)> {
+    let source = case.body_force_values()?.iter().any(|v| v.uses().time());
+    let boundary = values.values().any(|v| v.uses().time());
+    Ok((source, boundary))
+}
+
 /// As [`run`], with the requests, limits and run record of `steer`
 /// (crate::engine).
 pub fn run_steered(
@@ -1230,11 +1565,12 @@ pub fn run_steered(
         case.verification.levels.iter().map(|&l| Some(l)).collect()
     };
     let analytic = case.analytic();
-    let phys = Physics {
-        rho: case.fluid.density,
-        mu: case.fluid.viscosity,
-        body_force: case.flow.body_force,
-        convection: case.flow.convection,
+    let phys = physics(&case)?;
+    let values = case.compiled_boundaries()?;
+    let at = bc::At {
+        analytic: analytic.as_ref(),
+        values: &values,
+        t: 0.0,
     };
     let reynolds = case.reynolds();
     let mut rep = FlowReport {
@@ -1250,10 +1586,7 @@ pub fn run_steered(
         failures: Vec::new(),
         seconds: 0.0,
     };
-    std::fs::write(
-        out.join("case.resolved.toml"),
-        toml::to_string_pretty(&case)?,
-    )?;
+    std::fs::write(out.join("case.resolved.toml"), case.resolved_toml()?)?;
     let last = levels.len() - 1;
     let single = levels.len() == 1;
     if !single && case.run.restart.is_some() {
@@ -1270,7 +1603,7 @@ pub fn run_steered(
             &geo,
             &case.boundary,
             phys.rho,
-            analytic.as_ref(),
+            at,
             case.check_context(),
         );
         if li == 0 {
@@ -1296,8 +1629,9 @@ pub fn run_steered(
             header(&mut lg, &case, &mesh, &desc, li == last);
         }
         lg.line(&format!("mesh  {desc}"));
-        let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, analytic.as_ref())?;
+        let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, at)?;
         let disc = simplec::discretisation(&mesh, &geo, &arrays)?;
+        let phys = physics_on(&case, &phys, &mesh, &geo)?;
         let loc = Locator::new(&mesh, &geo);
         let reference_cell = if arrays.has_pressure() {
             None
@@ -1327,6 +1661,9 @@ pub fn run_steered(
                 ptx: case.run.ptx.clone(),
             },
         )?;
+        if let Some(src) = momentum_source(&case, &geo, nc, 0.0)? {
+            fl.set_momentum_source(src)?;
+        }
         if let Some(path) = case.run.restart.clone() {
             let r = restart::read(&path)?;
             let (r, same) =
@@ -1410,7 +1747,7 @@ pub fn run_steered(
                             let sol = Solution {
                                 state: fl.state()?,
                                 disc: &fl.disc,
-                                phys: fl.phys,
+                                phys: fl.phys.clone(),
                             };
                             write_fields(
                                 &case,
@@ -1492,7 +1829,7 @@ pub fn run_steered(
                 let sol = Solution {
                     state: fl.state()?,
                     disc: &fl.disc,
-                    phys: fl.phys,
+                    phys: fl.phys.clone(),
                 };
                 let r = balance::rates(
                     &sol,
@@ -1522,7 +1859,7 @@ pub fn run_steered(
                 let sol = Solution {
                     state: fl.state()?,
                     disc: &fl.disc,
-                    phys: fl.phys,
+                    phys: fl.phys.clone(),
                 };
                 write_fields(
                     &case,
@@ -1599,7 +1936,7 @@ pub fn run_steered(
         let fl_host = Solution {
             state: fl.state()?,
             disc: &fl.disc,
-            phys: fl.phys,
+            phys: fl.phys.clone(),
         };
         let sol = &fl_host;
         let errors = analytic.map(|a| error_norms(sol, &mesh, &geo, &a, dimension(&case)));
@@ -1626,7 +1963,7 @@ pub fn run_steered(
         let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);
         let big = patches
             .iter()
-            .map(|p| p.mass_flow.abs().max(case.fluid.density * umax * p.area))
+            .map(|p| p.mass_flow.abs().max(case.rho() * umax * p.area))
             .fold(0.0f64, f64::max);
         let mass_imbalance = if big > 0.0 { total / big } else { 0.0 };
         let coefficients = crate::monitor::coefficients(&case, &patches);
@@ -1917,8 +2254,8 @@ pub(crate) fn header<F: FnMut(&str)>(
     ));
     lg.line(&format!(
         "fluid  ρ = {} kg/m³, μ = {} Pa s; convection {}",
-        case.fluid.density,
-        case.fluid.viscosity,
+        case.rho(),
+        case.mu(),
         if case.flow.convection {
             "on"
         } else {
@@ -2103,7 +2440,7 @@ pub(crate) fn wall_face_values(
     let up = fl.u.get(c);
     let k = fl.disc.k.get(f);
     let dg = fl.disc.dgeo[f];
-    let mu = fl.phys.mu;
+    let mu = fl.phys.mu_at(f);
     let mut fv = [0.0; 3];
     for i in 0..3 {
         fv[i] = -mu * (dg * (ub[i] - up[i]) + dot(k, fl.grad_u[i].get(c)));
@@ -2464,12 +2801,18 @@ pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Re
     let level = case.verification.levels.first().copied();
     let (mesh, geo, desc) = mesh_for(case, level)?;
     log(&format!("{}: {desc}", path.display()));
+    // the property program on this mesh: regions name existing zones (D112)
+    physics_on(case, &physics(case)?, &mesh, &geo)?;
     let findings = bc::check(
         &mesh,
         &geo,
         &case.boundary,
-        case.fluid.density,
-        case.analytic().as_ref(),
+        case.rho(),
+        bc::At {
+            analytic: case.analytic().as_ref(),
+            values: &case.compiled_boundaries()?,
+            t: case.time.map_or(0.0, |t| t.start_time),
+        },
         case.check_context(),
     );
     for f in &findings {

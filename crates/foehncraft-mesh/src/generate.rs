@@ -364,7 +364,8 @@ impl BoxSpec {
                             }
                             let h = (coords[d][m] - coords[d][m - 1])
                                 .min(coords[d][m + 1] - coords[d][m]);
-                            let u = rng::uniform([
+                            let u = rng::uniform_keyed([
+                                foehncraft_core::rng::stream::MESH,
                                 self.seed,
                                 (i as u64) | ((j as u64) << 21) | (key_k << 42),
                                 d as u64,

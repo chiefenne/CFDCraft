@@ -36,6 +36,7 @@
 
 use crate::analytic::Analytic;
 use crate::diag;
+use crate::expr::{Env, Scalar, Value, Vars, Vector};
 use anyhow::Result;
 use foehncraft_kernels::flow::{
     FLUX_FIXED, FLUX_PRESSURE, FLUX_PRESSURE_NO_BACKFLOW, MOM_FIXED, MOM_OUTFLOW, MOM_SYMMETRY,
@@ -288,18 +289,25 @@ impl InletTurbulence {
 pub enum BoundaryCondition {
     /// No-slip wall, at rest or moving tangentially.
     Wall {
-        /// Wall velocity (m/s).
-        #[serde(default)]
-        velocity: [f64; 3],
+        /// Wall velocity (m/s): numbers, or expressions of x, y, z and, in
+        /// a transient case, t (D53); only the tangential part is used.
+        #[serde(default = "zero_vector")]
+        velocity: Vector,
+        /// Mass flux through the wall into the domain (kg/(m² s), D124 W3):
+        /// suction (< 0) or blowing (> 0), a number or an expression; a
+        /// coupled module (the wall film of D123) sets it per face.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mass_flux: Option<Scalar>,
     },
     /// Prescribed velocity.
     VelocityInlet {
-        /// Velocity vector (m/s).
+        /// Velocity vector (m/s): numbers or expressions (D53).
         #[serde(default)]
-        velocity: Option<[f64; 3]>,
-        /// Speed normal to the face, into the domain (m/s).
+        velocity: Option<Vector>,
+        /// Speed normal to the face, into the domain (m/s): a number or an
+        /// expression (D53).
         #[serde(default)]
-        normal_velocity: Option<f64>,
+        normal_velocity: Option<Scalar>,
         /// Profile instead of a constant.
         #[serde(default)]
         profile: Option<InletProfile>,
@@ -339,8 +347,9 @@ pub enum BoundaryCondition {
     /// Prescribed mass flow (kg/s) into the domain, normal to the faces,
     /// spread by face area.
     MassFlowInlet {
-        /// Mass flow into the domain (kg/s).
-        mass_flow: f64,
+        /// Mass flow into the domain (kg/s): a number, or an expression of
+        /// t (D53).
+        mass_flow: Scalar,
         /// Turbulence values (stage 6).
         #[serde(default)]
         turbulence_intensity: Option<f64>,
@@ -353,8 +362,8 @@ pub enum BoundaryCondition {
     },
     /// Prescribed static pressure, inflow normal to the face.
     StaticPressureInlet {
-        /// Static pressure (Pa).
-        pressure: f64,
+        /// Static pressure (Pa): a number or an expression (D53).
+        pressure: Scalar,
         /// Turbulence values (stage 6).
         #[serde(default)]
         turbulence_intensity: Option<f64>,
@@ -367,8 +376,9 @@ pub enum BoundaryCondition {
     },
     /// Prescribed total pressure, inflow normal to the face.
     TotalPressureInlet {
-        /// Total pressure p₀ = p + ½ρ|u|² (Pa).
-        total_pressure: f64,
+        /// Total pressure p₀ = p + ½ρ|u|² (Pa): a number or an expression
+        /// (D53).
+        total_pressure: Scalar,
         /// Turbulence values (stage 6).
         #[serde(default)]
         turbulence_intensity: Option<f64>,
@@ -381,9 +391,10 @@ pub enum BoundaryCondition {
     },
     /// Prescribed static pressure, velocity extrapolated.
     StaticPressureOutlet {
-        /// Static pressure (Pa).
+        /// Static pressure (Pa): a number or an expression (D53), for
+        /// example the hydrostatic pressure of a free outlet.
         #[serde(default)]
-        pressure: f64,
+        pressure: Scalar,
         /// Treatment of the faces where the flow enters.
         #[serde(default)]
         backflow: Backflow,
@@ -399,8 +410,8 @@ pub enum BoundaryCondition {
     },
     /// Prescribed total pressure, velocity extrapolated.
     TotalPressureOutlet {
-        /// Total pressure (Pa).
-        total_pressure: f64,
+        /// Total pressure (Pa): a number or an expression (D53).
+        total_pressure: Scalar,
         /// Treatment of the faces where the flow enters.
         #[serde(default)]
         backflow: Backflow,
@@ -577,6 +588,205 @@ impl BoundaryCondition {
     }
 }
 
+fn zero_vector() -> Vector {
+    crate::expr::vector([0.0; 3])
+}
+
+/// The compiled values of one condition (D53): every number or expression
+/// of the condition that sets a face value.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Values {
+    /// Wall or inlet velocity.
+    pub velocity: Option<[Value; 3]>,
+    /// Inlet normal speed.
+    pub normal_velocity: Option<Value>,
+    /// Wall mass flux (W3).
+    pub mass_flux: Option<Value>,
+    /// Inlet mass flow.
+    pub mass_flow: Option<Value>,
+    /// Static or total pressure.
+    pub pressure: Option<Value>,
+}
+
+impl Values {
+    /// The variables the values read.
+    pub fn uses(&self) -> Vars {
+        let mut u = Vars::NONE;
+        for v in self.velocity.iter().flatten() {
+            u = u.with(v.uses());
+        }
+        for v in [
+            &self.normal_velocity,
+            &self.mass_flux,
+            &self.mass_flow,
+            &self.pressure,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            u = u.with(v.uses());
+        }
+        u
+    }
+}
+
+/// The compiled values of every condition, by patch.
+pub type Compiled = BTreeMap<String, Values>;
+
+/// Where and when the conditions are evaluated: the exact solution, the
+/// compiled expressions and the simulated time.
+#[derive(Debug, Clone, Copy)]
+pub struct At<'a> {
+    /// The `[analytic]` solution (at the time `t`).
+    pub analytic: Option<&'a Analytic>,
+    /// The compiled values (an empty map: every value is a number).
+    pub values: &'a Compiled,
+    /// Simulated time (s).
+    pub t: f64,
+}
+
+static NO_VALUES: std::sync::LazyLock<Compiled> = std::sync::LazyLock::new(Compiled::new);
+
+impl<'a> At<'a> {
+    /// Numbers only, at t = 0, with the exact solution `analytic`.
+    pub fn numbers(analytic: Option<&'a Analytic>) -> Self {
+        Self {
+            analytic,
+            values: &NO_VALUES,
+            t: 0.0,
+        }
+    }
+
+    fn of(&self, patch: &str) -> Option<&'a Values> {
+        self.values.get(patch)
+    }
+}
+
+/// A scalar of a condition at point `x`: its compiled value, or the number.
+fn sval(s: &Scalar, v: Option<&Value>, x: [f64; 3], t: f64) -> f64 {
+    match v {
+        Some(v) => v.at(x, t),
+        None => s.number().unwrap_or(f64::NAN),
+    }
+}
+
+/// A vector of a condition at point `x`.
+fn vval(s: &Vector, v: Option<&[Value; 3]>, x: [f64; 3], t: f64) -> [f64; 3] {
+    std::array::from_fn(|i| sval(&s[i], v.map(|v| &v[i]), x, t))
+}
+
+impl BoundaryCondition {
+    /// Compiles the numbers and expressions of the condition of `patch`
+    /// (D53): a transient case allows `t`; a mass flow is one number for
+    /// the patch (only `t`).
+    pub fn compile(&self, patch: &str, env: &Env, transient: bool) -> Result<Values> {
+        let field = if transient { Vars::ALL } else { Vars::SPACE };
+        let patch_total = if transient { Vars::T } else { Vars::NONE };
+        let key = |k: &str| format!("boundary.{patch}.{k}");
+        let one = |s: &Scalar, k: &str, a: Vars| crate::expr::value(s, env, a, &key(k));
+        let mut v = Values::default();
+        match self {
+            BoundaryCondition::Wall {
+                velocity,
+                mass_flux,
+            } => {
+                v.velocity = Some(crate::expr::vector_value(
+                    velocity,
+                    env,
+                    field,
+                    &key("velocity"),
+                )?);
+                if let Some(m) = mass_flux {
+                    v.mass_flux = Some(one(m, "mass_flux", field)?);
+                }
+            }
+            BoundaryCondition::VelocityInlet {
+                velocity,
+                normal_velocity,
+                ..
+            } => {
+                if let Some(u) = velocity {
+                    v.velocity = Some(crate::expr::vector_value(u, env, field, &key("velocity"))?);
+                }
+                if let Some(u) = normal_velocity {
+                    v.normal_velocity = Some(one(u, "normal_velocity", field)?);
+                }
+            }
+            BoundaryCondition::MassFlowInlet { mass_flow, .. } => {
+                v.mass_flow = Some(one(mass_flow, "mass_flow", patch_total)?);
+            }
+            BoundaryCondition::StaticPressureInlet { pressure, .. }
+            | BoundaryCondition::StaticPressureOutlet { pressure, .. } => {
+                v.pressure = Some(one(pressure, "pressure", field)?);
+            }
+            BoundaryCondition::TotalPressureInlet { total_pressure, .. }
+            | BoundaryCondition::TotalPressureOutlet { total_pressure, .. } => {
+                v.pressure = Some(one(total_pressure, "total_pressure", field)?);
+            }
+            _ => {}
+        }
+        Ok(v)
+    }
+
+    /// The mass flux into the domain through a wall face at `x`.
+    pub fn wall_mass_flux(&self, vals: Option<&Values>, x: [f64; 3], t: f64) -> f64 {
+        match self {
+            BoundaryCondition::Wall {
+                mass_flux: Some(m), ..
+            } => sval(m, vals.and_then(|v| v.mass_flux.as_ref()), x, t),
+            _ => 0.0,
+        }
+    }
+
+    /// The prescribed pressure or total pressure at `x`.
+    pub fn pressure_at(&self, vals: Option<&Values>, x: [f64; 3], t: f64) -> f64 {
+        let p = vals.and_then(|v| v.pressure.as_ref());
+        match self {
+            BoundaryCondition::StaticPressureInlet { pressure, .. }
+            | BoundaryCondition::StaticPressureOutlet { pressure, .. } => sval(pressure, p, x, t),
+            BoundaryCondition::TotalPressureInlet { total_pressure, .. }
+            | BoundaryCondition::TotalPressureOutlet { total_pressure, .. } => {
+                sval(total_pressure, p, x, t)
+            }
+            _ => 0.0,
+        }
+    }
+
+    /// The mass flow of a mass-flow inlet at time `t`.
+    pub fn mass_flow_at(&self, vals: Option<&Values>, t: f64) -> f64 {
+        match self {
+            BoundaryCondition::MassFlowInlet { mass_flow, .. } => sval(
+                mass_flow,
+                vals.and_then(|v| v.mass_flow.as_ref()),
+                [0.0; 3],
+                t,
+            ),
+            _ => 0.0,
+        }
+    }
+
+    /// The wall velocity at `x`.
+    pub fn wall_velocity(&self, vals: Option<&Values>, x: [f64; 3], t: f64) -> [f64; 3] {
+        match self {
+            BoundaryCondition::Wall { velocity, .. } => {
+                vval(velocity, vals.and_then(|v| v.velocity.as_ref()), x, t)
+            }
+            _ => [0.0; 3],
+        }
+    }
+}
+
+/// Compiles every condition (D53).
+pub fn compile_all(
+    bcs: &BTreeMap<String, BoundaryCondition>,
+    env: &Env,
+    transient: bool,
+) -> Result<Compiled> {
+    bcs.iter()
+        .map(|(n, b)| Ok((n.clone(), b.compile(n, env, transient)?)))
+        .collect()
+}
+
 /// Severity of a finding of [`check`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -676,7 +886,7 @@ fn prescribed_outflow(
     geo: &Geometry,
     bcs: &BTreeMap<String, BoundaryCondition>,
     rho: f64,
-    analytic: Option<&Analytic>,
+    at: At,
 ) -> (BTreeMap<String, f64>, f64) {
     let mut out = BTreeMap::new();
     let mut gross = 0.0;
@@ -690,17 +900,30 @@ fn prescribed_outflow(
                 .map(|f| {
                     let q = rho
                         * dot(
-                            inlet_velocity(bc, geo, f, analytic, &ext).unwrap_or([0.0; 3]),
+                            inlet_velocity(bc, at.of(&p.name), geo, f, at, &ext)
+                                .unwrap_or([0.0; 3]),
                             geo.face_area[f],
                         );
                     gross += q.abs();
                     q
                 })
                 .sum(),
-            BoundaryCondition::MassFlowInlet { mass_flow, .. } => {
+            BoundaryCondition::MassFlowInlet { .. } => {
+                let mass_flow = bc.mass_flow_at(at.of(&p.name), at.t);
                 gross += mass_flow.abs();
                 if area > 0.0 { -mass_flow } else { 0.0 }
             }
+            BoundaryCondition::Wall {
+                mass_flux: Some(_), ..
+            } => p
+                .range()
+                .map(|f| {
+                    let q = -bc.wall_mass_flux(at.of(&p.name), geo.face_centroid[f], at.t)
+                        * norm(geo.face_area[f]);
+                    gross += q.abs();
+                    q
+                })
+                .sum(),
             _ => continue,
         };
         out.insert(p.name.clone(), q);
@@ -712,11 +935,13 @@ fn prescribed_outflow(
 /// the extent `ext` (None for other conditions).
 pub fn inlet_velocity(
     bc: &BoundaryCondition,
+    vals: Option<&Values>,
     geo: &Geometry,
     f: usize,
-    analytic: Option<&Analytic>,
+    at: At,
     ext: &Extent,
 ) -> Option<[f64; 3]> {
+    let analytic = at.analytic;
     let BoundaryCondition::VelocityInlet {
         velocity,
         normal_velocity,
@@ -762,12 +987,18 @@ pub fn inlet_velocity(
         let s = geo.face_area[f];
         return Some(scale(s, -un / norm(s)));
     }
+    let x = geo.face_centroid[f];
     if let Some(v) = velocity {
-        return Some(*v);
+        return Some(vval(v, vals.and_then(|v| v.velocity.as_ref()), x, at.t));
     }
     let s = geo.face_area[f];
     let n = scale(s, 1.0 / norm(s));
-    normal_velocity.map(|un| scale(n, -un))
+    normal_velocity.as_ref().map(|un| {
+        scale(
+            n,
+            -sval(un, vals.and_then(|v| v.normal_velocity.as_ref()), x, at.t),
+        )
+    })
 }
 
 /// The table coordinate of point `x`.
@@ -832,9 +1063,10 @@ pub fn check(
     geo: &Geometry,
     bcs: &BTreeMap<String, BoundaryCondition>,
     rho: f64,
-    analytic: Option<&Analytic>,
+    at: At,
     ctx: CheckContext,
 ) -> Vec<Finding> {
+    let analytic = at.analytic;
     let laminar = ctx.laminar;
     let mut out = Vec::new();
     let mut push = |level, code, patch: Option<&str>, message: String| {
@@ -1008,7 +1240,10 @@ pub fn check(
                     );
                 }
             }
-            BoundaryCondition::MassFlowInlet { mass_flow, .. } if *mass_flow < 0.0 => push(
+            BoundaryCondition::MassFlowInlet {
+                mass_flow: Scalar::Number(mass_flow),
+                ..
+            } if *mass_flow < 0.0 => push(
                 Level::Warning,
                 diag::BC_NEGATIVE_MASS_FLOW,
                 Some(name),
@@ -1037,15 +1272,22 @@ pub fn check(
     for p in &mesh.patches {
         let Some(bc) = bcs.get(&p.name) else { continue };
         match bc {
-            BoundaryCondition::Wall { velocity } if norm(*velocity) > 0.0 => {
+            BoundaryCondition::Wall { .. }
+                if p.range().any(|f| {
+                    norm(bc.wall_velocity(at.of(&p.name), geo.face_centroid[f], at.t)) > 0.0
+                }) =>
+            {
+                let mut largest = 0.0f64;
                 let worst = p
                     .range()
                     .map(|f| {
                         let s = geo.face_area[f];
-                        dot(*velocity, s).abs() / norm(s)
+                        let v = bc.wall_velocity(at.of(&p.name), geo.face_centroid[f], at.t);
+                        largest = largest.max(norm(v));
+                        dot(v, s).abs() / norm(s)
                     })
                     .fold(0.0f64, f64::max);
-                if worst > 1e-9 * norm(*velocity) {
+                if worst > 1e-9 * largest {
                     push(
                         Level::Warning,
                         diag::BC_WALL_NORMAL_VELOCITY,
@@ -1096,7 +1338,7 @@ pub fn check(
                 let out_faces = p
                     .range()
                     .filter(|&f| {
-                        inlet_velocity(bc, geo, f, analytic, &ext)
+                        inlet_velocity(bc, at.of(&p.name), geo, f, at, &ext)
                             .is_some_and(|u| dot(u, geo.face_area[f]) > 0.0)
                     })
                     .count();
@@ -1236,7 +1478,7 @@ pub fn check(
     // the scale of the balance is the flow through the faces, so that a
     // boundary that the flow enters and leaves (an exact solution) does not
     // make round-off look like an imbalance
-    let (q, scale_q) = prescribed_outflow(mesh, geo, bcs, rho, analytic);
+    let (q, scale_q) = prescribed_outflow(mesh, geo, bcs, rho, at);
     let net: f64 = q.values().sum();
     let inflow: Vec<&str> = q
         .iter()
@@ -1288,7 +1530,53 @@ pub fn check(
             ),
         );
     } else if pressure.is_empty() {
-        if scale_q > 0.0 && net.abs() > 1e-9 * scale_q {
+        let wall_net: f64 = q
+            .iter()
+            .filter(|(n, _)| {
+                matches!(
+                    bcs.get(n.as_str()),
+                    Some(BoundaryCondition::Wall {
+                        mass_flux: Some(_),
+                        ..
+                    })
+                )
+            })
+            .map(|(_, v)| *v)
+            .sum();
+        let walls: Vec<&str> = q
+            .keys()
+            .filter(|n| {
+                matches!(
+                    bcs.get(n.as_str()),
+                    Some(BoundaryCondition::Wall {
+                        mass_flux: Some(_),
+                        ..
+                    })
+                )
+            })
+            .map(String::as_str)
+            .collect();
+        if scale_q > 0.0 && net.abs() > 1e-9 * scale_q && wall_net.abs() > 1e-9 * scale_q {
+            push(
+                Level::Error,
+                diag::BC_WALL_MASS_CLOSED,
+                Some(walls[0]),
+                format!(
+                    "the wall mass flux of {} {} a net {:.6e} kg/s {} a closed volume, \
+                     and the density is constant: give the domain a pressure boundary \
+                     (static-pressure-outlet), or balance the wall mass flux with the \
+                     other prescribed boundaries",
+                    walls
+                        .iter()
+                        .map(|n| format!("`{n}`"))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    if net < 0.0 { "adds" } else { "removes" },
+                    net.abs(),
+                    if net < 0.0 { "to" } else { "from" }
+                ),
+            );
+        } else if scale_q > 0.0 && net.abs() > 1e-9 * scale_q {
             push(
                 Level::Error,
                 diag::BC_UNBALANCED,
@@ -1343,9 +1631,10 @@ pub fn check(
             .filter(|(_, b)| b.is_pressure() && !b.is_pressure_outlet())
             .map(|(n, _)| *n)
             .collect();
-        let moving = present.iter().any(
-            |(_, b)| matches!(b, BoundaryCondition::Wall { velocity } if velocity.iter().any(|v| *v != 0.0)),
-        );
+        let moving = present.iter().any(|(_, b)| {
+            matches!(b, BoundaryCondition::Wall { velocity, .. }
+                if velocity.iter().any(|v| v.number() != Some(0.0)))
+        });
         if inlets.is_empty() && outlets.len() == 1 && !moving {
             push(
                 Level::Warning,
@@ -1419,7 +1708,7 @@ pub fn arrays(
     geo: &Geometry,
     bcs: &BTreeMap<String, BoundaryCondition>,
     rho: f64,
-    analytic: Option<&Analytic>,
+    at: At,
 ) -> Result<BoundaryArrays> {
     let ni = mesh.n_interior_faces();
     let nb = mesh.n_boundary_faces();
@@ -1479,31 +1768,41 @@ pub fn arrays(
                     ub[fb] = vi;
                 }
             };
+            let vals = at.of(&p.name);
+            let xf = geo.face_centroid[f];
             match bc {
-                BoundaryCondition::Wall { velocity } => {
-                    set_ub(sub(*velocity, scale(n, dot(*velocity, n))));
+                BoundaryCondition::Wall { mass_flux, .. } => {
+                    let velocity = bc.wall_velocity(vals, xf, at.t);
+                    let tangential = sub(velocity, scale(n, dot(velocity, n)));
+                    if mass_flux.is_some() {
+                        // the normal velocity that carries the mass flux into
+                        // the domain (D124 W3)
+                        let un = bc.wall_mass_flux(vals, xf, at.t) / rho;
+                        set_ub(sub(tangential, scale(n, un)));
+                    } else {
+                        set_ub(tangential);
+                    }
                 }
                 BoundaryCondition::VelocityInlet { .. } => {
-                    set_ub(inlet_velocity(bc, geo, f, analytic, &ext).unwrap_or([0.0; 3]));
+                    set_ub(inlet_velocity(bc, vals, geo, f, at, &ext).unwrap_or([0.0; 3]));
                 }
-                BoundaryCondition::MassFlowInlet { mass_flow, .. } => {
+                BoundaryCondition::MassFlowInlet { .. } => {
+                    let mass_flow = bc.mass_flow_at(vals, at.t);
                     set_ub(scale(n, -mass_flow / (rho * area)));
                 }
-                BoundaryCondition::StaticPressureInlet { pressure, .. } => {
+                BoundaryCondition::StaticPressureInlet { .. } => {
                     a.ub_rule[fb] = UB_FROM_FLUX;
                     a.flux_kind[fb] = FLUX_PRESSURE;
                     a.pb_rule[fb] = PB_FIXED;
-                    a.pset[fb] = *pressure;
+                    a.pset[fb] = bc.pressure_at(vals, xf, at.t);
                 }
-                BoundaryCondition::TotalPressureInlet { total_pressure, .. } => {
+                BoundaryCondition::TotalPressureInlet { .. } => {
                     a.ub_rule[fb] = UB_FROM_FLUX;
                     a.flux_kind[fb] = FLUX_PRESSURE;
                     a.pb_rule[fb] = PB_TOTAL;
-                    a.pset[fb] = *total_pressure;
+                    a.pset[fb] = bc.pressure_at(vals, xf, at.t);
                 }
-                BoundaryCondition::StaticPressureOutlet {
-                    pressure, backflow, ..
-                } => {
+                BoundaryCondition::StaticPressureOutlet { backflow, .. } => {
                     a.mom_kind[fb] = MOM_OUTFLOW;
                     let (ub, flux, pb) = match backflow {
                         Backflow::TotalPressure => (UB_OUTLET, FLUX_PRESSURE, PB_OUTLET),
@@ -1515,13 +1814,9 @@ pub fn arrays(
                     a.ub_rule[fb] = ub;
                     a.flux_kind[fb] = flux;
                     a.pb_rule[fb] = pb;
-                    a.pset[fb] = *pressure;
+                    a.pset[fb] = bc.pressure_at(vals, xf, at.t);
                 }
-                BoundaryCondition::TotalPressureOutlet {
-                    total_pressure,
-                    backflow,
-                    ..
-                } => {
+                BoundaryCondition::TotalPressureOutlet { backflow, .. } => {
                     a.mom_kind[fb] = MOM_OUTFLOW;
                     let (ub, flux, pb) = match backflow {
                         Backflow::TotalPressure => (UB_OUTLET, FLUX_PRESSURE, PB_TOTAL),
@@ -1535,7 +1830,7 @@ pub fn arrays(
                     a.ub_rule[fb] = ub;
                     a.flux_kind[fb] = flux;
                     a.pb_rule[fb] = pb;
-                    a.pset[fb] = *total_pressure;
+                    a.pset[fb] = bc.pressure_at(vals, xf, at.t);
                 }
                 BoundaryCondition::ConvectiveOutlet {
                     convection_velocity,

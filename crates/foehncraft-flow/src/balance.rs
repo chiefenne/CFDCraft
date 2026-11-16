@@ -216,7 +216,7 @@ pub fn rates(
 ) -> Rates {
     let nc = mesh.n_cells;
     let ni = mesh.n_interior_faces();
-    let (rho, mu) = (sol.phys.rho, sol.phys.mu);
+    let rho = sol.phys.rho;
     let f = sol.phys.body_force;
     let mut ke = vec![0.0; nc];
     let mut body = vec![0.0; nc];
@@ -228,7 +228,10 @@ pub fn rates(
         let uu = dot(u, u);
         umax = umax.max(uu.sqrt());
         ke[c] = 0.5 * rho * uu * v;
-        body[c] = dot(f, u) * v;
+        body[c] = match &sol.phys.source {
+            Some(src) => dot([src[0][c], src[1][c], src[2][c]], u) * v,
+            None => dot(f, u) * v,
+        };
         // the pressure source of the momentum rows, −∇p_P V_P
         // (foehncraft_kernels::flow::momentum_row)
         press[c] = -dot(sol.grad_p.get(c), u) * v;
@@ -254,6 +257,7 @@ pub fn rates(
             xf[2] - 0.5 * (xn[2] + xf[2] - rp[2]),
         ];
         let k = d.k.get(fc);
+        let mu = sol.phys.mu_at(fc);
         let dd = mu * d.dgeo[fc];
         let mut e = 0.0;
         for i in 0..3 {
@@ -299,6 +303,7 @@ pub fn rates(
             let kind = mom_kind[fb];
             let c = d.owner[fc] as usize;
             let up = sol.u.get(c);
+            let mu = sol.phys.mu_at(fc);
             let dd = mu * d.dgeo[fc];
             if kind == MOM_FIXED {
                 // the diffusive flux of the momentum rows

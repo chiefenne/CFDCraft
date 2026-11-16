@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+**Expressions, materials and regions (stage 5 part 6a, D53, D102, D112,
+D121, D124 W3/W4).** Boundary values (velocity, normal velocity, pressure,
+total pressure, mass flow), the body force and the viscosity may be
+strings of a small expression language in x, y, z and t, with
+`[constants]` and piecewise linear `[tables]` (inline or from a file); the
+strings are checked when the case is read (EXPR001–EXPR005, with the
+place and a "did you mean") and compiled to a stack-machine program that
+the solver evaluates with new in-house elementary functions
+(`foehncraft_core::math`, D93 (6)), the same on every platform. Fluid
+properties from a built-in material database (air, water, engine oil,
+ethylene glycol, glycerol, each with its source) with `[fluid] material`,
+`temperature` and `operating_pressure`; `[materials.<name>]` with `base`
+and the forms constant, polynomial, Sutherland, power law, table (linear
+or monotone cubic) and expression; the new command `foehn materials`
+lists and evaluates them (also `--json`). `[regions.<name>]` assigns cell
+zones to materials; non-fluid regions and unknown zones are refused
+(REG001, REG002); different viscosities per region give a viscosity per
+face. Walls take a `mass_flux` (blowing and suction), checked for closed
+volumes (BC026), and expose per-face exchange coefficients
+(`derived::wall_exchange`). The resolved property program is written into
+`case.resolved.toml`; `properties_hash` and `materials_database` join the
+provenance. The random-number key gains a stream word (`rng::keyed`;
+meshes unchanged). `foehn flow --check` also checks the regions against
+the mesh. New exact solutions `couette-viscosity` and
+`couette-transpiration`; new cases `flow/couette_viscosity.toml`,
+`couette_transpiration.toml`, `poiseuille_water.toml`,
+`poiseuille_expression.toml`, `taylor_green_expression.toml` and
+`channel_ramp.toml`; gallery 23, recipes 31 and 32 on the new
+"Expressions and materials" pages; `tools/property_chart.py`. Cases
+without the new keys run bitwise as before.
+
 **Derived fields of stage 5 (part 5c, D72).** `[output] derived` adds
 fields computed from the solution to every `fields*.vtkhdf`: `vorticity`
 (components and magnitude), `q-criterion`, `lambda2`, `enstrophy`,

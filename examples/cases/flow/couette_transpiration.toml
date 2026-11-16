@@ -1,0 +1,61 @@
+# Plane Couette flow with transpiration: fluid is blown in through the
+# lower wall and sucked out through the upper, moving wall with the same
+# mass flux (D124 W3, the prescribed wall mass flux; stage 5 part 6a).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/couette_transpiration.toml
+#
+# Uniform cross flow V = 0.2 m/s, wall Reynolds number Re_w = V h/ν = 4:
+# u = U (1 − exp(Re_w y/h))/(1 − exp(Re_w)), v = V, p constant, an exact
+# solution of the Navier–Stokes equations. The profile is pushed towards
+# the suction wall. Sweep over three nested meshes; the run fails if the
+# observed order is outside 1.8–2.2.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [16, 8, 1]
+perturb = 0.1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.05
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+mass_flux = 0.2          # kg/(m² s) into the domain: blowing
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]
+mass_flux = -0.2         # out of the domain: suction
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 4000
+
+[analytic]
+type = "couette-transpiration"
+wall_velocity = 1.0
+transpiration_velocity = 0.2
+
+[verification]
+levels = [0, 1, 2]
+expected_order = [1.8, 2.2]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

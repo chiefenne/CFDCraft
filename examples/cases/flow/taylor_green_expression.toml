@@ -1,0 +1,58 @@
+# Taylor–Green vortex with the exact velocity on the sides written as
+# expressions of x, y and t (D53, stage 5 part 6a).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/taylor_green_expression.toml
+#
+# The case of taylor_green_bdf2.toml with one time step (Δt = 0.005 s):
+# instead of `profile = "analytic"` the four sides take
+# u = −U cos kx sin ky F, v = U sin kx cos ky F, F = exp(−2νk²t), from the
+# expression strings below, evaluated at every face centroid at the time
+# of every step. The run must give the error of the analytic-profile run:
+# the relative L2 velocity error at t = 0.4 s below 2e-3.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.015625]
+cells = [64, 64, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.01         # Re = ρ U L / μ = 100
+
+[constants]
+U = 1.0
+wn = "2 * pi"
+nu = 0.01
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = ["-U * cos(wn*x) * sin(wn*y) * exp(-2*nu*wn^2*t)", "U * sin(wn*x) * cos(wn*y) * exp(-2*nu*wn^2*t)", 0.0]
+[boundary.xmax]
+type = "velocity-inlet"
+velocity = ["-U * cos(wn*x) * sin(wn*y) * exp(-2*nu*wn^2*t)", "U * sin(wn*x) * cos(wn*y) * exp(-2*nu*wn^2*t)", 0.0]
+[boundary.ymin]
+type = "velocity-inlet"
+velocity = ["-U * cos(wn*x) * sin(wn*y) * exp(-2*nu*wn^2*t)", "U * sin(wn*x) * cos(wn*y) * exp(-2*nu*wn^2*t)", 0.0]
+[boundary.ymax]
+type = "velocity-inlet"
+velocity = ["-U * cos(wn*x) * sin(wn*y) * exp(-2*nu*wn^2*t)", "U * sin(wn*x) * cos(wn*y) * exp(-2*nu*wn^2*t)", 0.0]
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[analytic]
+type = "taylor-green"
+
+[time]
+scheme = "bdf2"
+time_step = 0.005
+end_time = 0.4
+
+[verification]
+max_error = 2e-3
+
+[output]
+wall_csv = false
+vtkhdf = false

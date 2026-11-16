@@ -19,6 +19,7 @@ code by `foehn schema --markdown`).
 | `--read-root DIR`, `--write-root DIR` | Confines the files of a run (D82): every file read (case, mesh, restart) must lie below a read root and the output directory below a write root. A path outside is `CASE007`. Without roots nothing is confined. |
 | `--check` | Validates the case, checks the boundary conditions and estimates the run (D81) without running it. Exit code 0 when the case can run, 1 when it has an error. |
 | `foehn schema` | The JSON Schema of the case file (draft 2020-12, with `x-unit` and `x-runtime`). `--markdown` prints the key reference instead. |
+| `foehn materials [NAME]` | The built-in material database (D94): every material with its density and viscosity at `--temperature` (K, default 293.15) and `--pressure` (Pa, default 101 325), or one material with its forms, data range and sources. With `--json` one object (`foehncraft.materials`). |
 | `foehn post derive CASE` | Writes the fields with derived fields (D72) from a restart file of the case (`--restart`, default `latest`), the file the run writes with `[output] derived` at that iteration or step (byte for byte). `--fields a,b` picks the fields (default `output.derived`, or all), `--file` the output (default `derived.vtkhdf`, `derived_<N>.vtkhdf` for `restart_<N>.h5`, next to the restart file). `--set`, `--out`, `--read-root` and `--write-root` as for `flow`. |
 
 ## Exit codes (D64)
@@ -184,9 +185,13 @@ the laminar flow has none.
 The `provenance` object in `result.json`, in the header of `run.jsonl` and
 in `foehn info --json`: `version`, `commit` (`-dirty` with uncommitted
 changes), `features`, `backends`, `backend`, `platform`, `cpu`, `gpu`,
-`ranks`, `gpus`, `reproducible_mode` and `case_hash` (the SHA-256 of the
+`ranks`, `gpus`, `reproducible_mode`, `case_hash` (the SHA-256 of the
 resolved case without `run.threads`, `run.backend`, `run.ptx` and
-`output.directory`, which do not change the results). Two results with the
+`output.directory`, which do not change the results, with the contents of
+the profile and expression tables and the resolved property program),
+`properties_hash` (the SHA-256 of the resolved property program of D94
+alone) and `materials_database` (the SHA-256 of the built-in material
+database). Two results with the
 same `case_hash` and `commit` are comparable bit for bit.
 
 ## JSON objects of the command line
@@ -257,6 +262,19 @@ A code keeps its meaning; a retired code stays in the table.
 | `BC023` | error | Wedge patches that do not form one wedge about an axis. |
 | `BC024` | warning | A wedge wider than 10° (the axisymmetric error grows with the angle). |
 | `BC025` | error | A potential-flow start with a convective outlet and no pressure boundary. |
+| `BC026` | error | Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure). |
+| `EXPR001` | error | An expression that cannot be parsed. |
+| `EXPR002` | error | An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint). |
+| `EXPR003` | error | An expression that uses a variable its key does not take (`t` in a steady case or in a property, x, y, z in a value for a whole patch). |
+| `EXPR004` | error | A `[tables]` entry that is missing, unreadable or not a valid table. |
+| `EXPR005` | error | An expression or constant whose value is not finite where it is evaluated. |
+| `MAT001` | error | A material that neither the case nor the database defines (with the nearest name as a hint). |
+| `MAT002` | error | A property form that this version does not evaluate, or a property that the flow cannot take yet (a density that varies). |
+| `MAT003` | warning | A property evaluated outside the validity range of its data (clamped to the range). |
+| `MAT004` | error | Materials whose `base` refer to each other in a cycle. |
+| `MAT005` | error | A property value that is not positive and finite. |
+| `REG001` | error | A region that is not a fluid: solids and porous zones come with the energy equation (L1). |
+| `REG002` | error | A region that names a cell zone the mesh does not have, or a zone in two regions. |
 | `RUN001` | note | Stopped by the `.stop` control file. |
 | `RUN002` | note | Stopped by a signal (SIGTERM, SIGINT or SIGUSR2). |
 | `RUN003` | warning | Stopped at the wall-time limit (`[run.limits] max_wall_time`). |

@@ -69,7 +69,7 @@ pub fn coefficients(case: &FlowCase, patches: &[PatchSummary]) -> Option<[f64; 2
             *fi += pi;
         }
     }
-    let q = 0.5 * case.fluid.density * c.velocity * c.velocity * c.area;
+    let q = 0.5 * case.rho() * c.velocity * c.velocity * c.area;
     Some([dot(f, c.drag_direction) / q, dot(f, c.lift_direction) / q])
 }
 

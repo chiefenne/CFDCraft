@@ -20,6 +20,12 @@
 //! - [`control`]: control files and re-reading the case file (D40);
 //! - [`derived`]: derived fields such as vorticity, Q, λ₂ and the wall
 //!   shear stress, at write time and after the run (D72);
+//! - [`expr`]: expressions of space and time for boundary values, the body
+//!   force and the viscosity, checked and compiled when the case is read
+//!   (D53);
+//! - [`materials`]: the material database, case materials and regions, and
+//!   the resolved property program of density and viscosity (D94–D102,
+//!   D112);
 //! - [`monitor`]: probes, force coefficients, histories, benchmarks (D43);
 //! - [`plot`]: small SVG charts of the reports.
 
@@ -36,6 +42,8 @@ pub mod device;
 pub mod diag;
 pub mod divergence;
 pub mod engine;
+pub mod expr;
+pub mod materials;
 pub mod monitor;
 pub mod plot;
 pub mod restart;

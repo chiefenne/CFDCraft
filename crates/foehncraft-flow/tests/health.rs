@@ -216,7 +216,7 @@ fn steady_divergence_gives_the_report() {
          max_iterations = 200",
     );
     let mut c = c;
-    c.fluid.viscosity = 0.001;
+    c.fluid.viscosity = Some(0.001.into());
     let e = run(&c, "cavity", &d, |_| {}).unwrap_err();
     let dg = diag::of_error(&e);
     assert_eq!(dg.code, diag::RUN_DIVERGED, "{e:#}");

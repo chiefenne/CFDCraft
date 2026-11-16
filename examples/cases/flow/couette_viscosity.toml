@@ -1,0 +1,63 @@
+# Plane Couette flow with a viscosity that grows linearly across the gap,
+# given as an expression of y (D53, D94; stage 5 part 6a).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/couette_viscosity.toml
+#
+# μ = μ₀ (1 + a y) between a wall at rest (y = 0) and a wall moving at
+# 1 m/s (y = 1): the shear stress is constant, so u = U ln(1 + a y)/ln(1 + a).
+# The viscosity is evaluated at every face centroid, so the momentum
+# fluxes see it face by face. Sweep over three nested meshes of perturbed
+# hexahedra; the run fails if the observed order of the velocity error on
+# the finest pair is outside 1.8–2.2.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [16, 8, 1]
+perturb = 0.1
+
+[mesh]
+renumber = "rcm"
+
+[constants]
+mu0 = 0.1
+a = 4.0
+
+[fluid]
+density = 1.0
+viscosity = "mu0 * (1 + a * y)"   # Pa s, five times larger at the moving wall
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 4000
+
+[analytic]
+type = "couette-viscosity"
+wall_velocity = 1.0
+gradient = 4.0
+
+[verification]
+levels = [0, 1, 2]
+expected_order = [1.8, 2.2]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

@@ -1,0 +1,99 @@
+# The built-in material database of Foehncraft (D94, D97, D102).
+#
+# Every property names its source. Data only from open references
+# (NASA Glenn, IAPWS, papers and the open literature they compile); never
+# from the databases of the industry standards. SI units throughout (D101):
+# K, kg/m³, Pa s, kg/mol, Pa.
+#
+# Stage 5 (D102) evaluates density and viscosity at the isothermal case
+# temperature (`[fluid] temperature`, default 293.15 K); the thermal data
+# (c_p, k, NASA-7/9, the IAPWS-95 formulation) follow with the energy
+# equation (L1).
+
+format = "foehncraft.materials"
+format_version = "1"
+
+[materials.air]
+description = "Dry air at low pressure (ideal gas)"
+kind = "gas"
+temperature_range = [200.0, 1000.0]
+molar_mass = 0.0289647
+molar_mass_source = "Picard et al., Metrologia 45 (2008) 149, CIPM-2007 dry air composition"
+[materials.air.density]
+form = "ideal-gas"
+source = "ideal gas, rho = p M / (R T), R = 8.314462618 J/(mol K) (CODATA 2018)"
+[materials.air.viscosity]
+form = "sutherland"
+mu_ref = 1.716e-5
+t_ref = 273.15
+s = 110.4
+range = [200.0, 1000.0]
+source = "Sutherland law, coefficients from F. M. White, Viscous Fluid Flow, 3rd ed. (2006), Table 1-2"
+
+[materials.water]
+description = "Liquid water at 0.101325 MPa"
+kind = "liquid"
+temperature_range = [273.15, 373.15]
+[materials.water.density]
+form = "table"
+interpolation = "monotone-cubic"
+temperature = [273.15, 283.15, 293.15, 303.15, 313.15, 323.15, 333.15, 343.15, 353.15, 363.15, 373.15]
+values = [999.84, 999.70, 998.21, 995.65, 992.22, 988.03, 983.20, 977.76, 971.79, 965.31, 958.35]
+source = "IAPWS-95 (Wagner & Pruss, J. Phys. Chem. Ref. Data 31 (2002) 387), values at 0.101325 MPa; 373.15 K saturated liquid"
+[materials.water.viscosity]
+form = "table"
+interpolation = "monotone-cubic"
+temperature = [273.15, 283.15, 293.15, 303.15, 313.15, 323.15, 333.15, 343.15, 353.15, 363.15, 373.15]
+values = [1.7914e-3, 1.3060e-3, 1.0016e-3, 0.7972e-3, 0.6527e-3, 0.5465e-3, 0.4660e-3, 0.4035e-3, 0.3540e-3, 0.3142e-3, 0.2816e-3]
+source = "IAPWS 2008 viscosity formulation (Huber et al., J. Phys. Chem. Ref. Data 38 (2009) 101), values at 0.101325 MPa"
+
+[materials.engine-oil]
+description = "Unused engine oil (a typical mineral oil)"
+kind = "liquid"
+temperature_range = [273.15, 400.0]
+[materials.engine-oil.density]
+form = "table"
+interpolation = "linear"
+temperature = [273.15, 280.0, 290.0, 300.0, 310.0, 320.0, 330.0, 340.0, 350.0, 360.0, 370.0, 380.0, 390.0, 400.0]
+values = [899.1, 895.3, 890.0, 884.1, 877.9, 871.8, 865.8, 859.9, 853.9, 847.8, 841.8, 836.0, 830.6, 825.1]
+source = "Incropera, DeWitt, Bergman & Lavine, Fundamentals of Heat and Mass Transfer, 6th ed. (2007), Table A.5, after Eckert & Drake"
+[materials.engine-oil.viscosity]
+form = "table"
+interpolation = "monotone-cubic"
+temperature = [273.15, 280.0, 290.0, 300.0, 310.0, 320.0, 330.0, 340.0, 350.0, 360.0, 370.0, 380.0, 390.0, 400.0]
+values = [3.85, 2.17, 0.999, 0.486, 0.253, 0.141, 0.0836, 0.0531, 0.0356, 0.0252, 0.0186, 0.0141, 0.0110, 0.00874]
+source = "Incropera, DeWitt, Bergman & Lavine, Fundamentals of Heat and Mass Transfer, 6th ed. (2007), Table A.5, after Eckert & Drake"
+
+[materials.ethylene-glycol]
+description = "Ethylene glycol, pure (C2H4(OH)2)"
+kind = "liquid"
+temperature_range = [273.15, 373.0]
+[materials.ethylene-glycol.density]
+form = "table"
+interpolation = "linear"
+temperature = [273.15, 280.0, 290.0, 300.0, 310.0, 320.0, 330.0, 340.0, 350.0, 360.0, 370.0, 373.0]
+values = [1130.8, 1125.8, 1118.8, 1114.4, 1103.7, 1096.2, 1089.5, 1083.8, 1079.0, 1074.0, 1066.7, 1058.5]
+source = "Incropera, DeWitt, Bergman & Lavine, Fundamentals of Heat and Mass Transfer, 6th ed. (2007), Table A.5, after Eckert & Drake"
+[materials.ethylene-glycol.viscosity]
+form = "table"
+interpolation = "monotone-cubic"
+temperature = [273.15, 280.0, 290.0, 300.0, 310.0, 320.0, 330.0, 340.0, 350.0, 360.0, 370.0, 373.0]
+values = [6.51e-2, 4.20e-2, 2.47e-2, 1.57e-2, 1.07e-2, 0.757e-2, 0.561e-2, 0.431e-2, 0.342e-2, 0.278e-2, 0.228e-2, 0.215e-2]
+source = "Incropera, DeWitt, Bergman & Lavine, Fundamentals of Heat and Mass Transfer, 6th ed. (2007), Table A.5, after Eckert & Drake"
+
+[materials.glycerol]
+description = "Glycerol (glycerin), pure (C3H5(OH)3)"
+kind = "liquid"
+temperature_range = [273.15, 320.0]
+[materials.glycerol.density]
+form = "table"
+interpolation = "linear"
+temperature = [273.15, 280.0, 290.0, 300.0, 310.0, 320.0]
+values = [1276.0, 1271.9, 1265.8, 1259.9, 1253.9, 1247.2]
+source = "Incropera, DeWitt, Bergman & Lavine, Fundamentals of Heat and Mass Transfer, 6th ed. (2007), Table A.5, after Eckert & Drake"
+[materials.glycerol.viscosity]
+form = "table"
+interpolation = "monotone-cubic"
+temperature = [273.15, 280.0, 290.0, 300.0, 310.0, 320.0]
+values = [10.6, 5.34, 1.85, 0.799, 0.352, 0.210]
+source = "Incropera, DeWitt, Bergman & Lavine, Fundamentals of Heat and Mass Transfer, 6th ed. (2007), Table A.5, after Eckert & Drake"

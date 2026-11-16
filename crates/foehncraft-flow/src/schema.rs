@@ -483,7 +483,8 @@ mod tests {
         let rows = keys();
         let d = find(&rows, "fluid.density");
         assert_eq!(d.unit, "kg/m³");
-        assert_eq!(d.default, "1.0");
+        // no default of its own: 1, or the material's (D100)
+        assert_eq!(d.default, "");
         assert!(!d.runtime);
         let t = find(&rows, "solver.tolerance");
         assert!(t.runtime);

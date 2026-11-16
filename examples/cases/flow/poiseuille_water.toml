@@ -1,0 +1,66 @@
+# Plane Poiseuille flow of water at 40 °C from the material database
+# (D94-D102; stage 5 part 6a).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/poiseuille_water.toml
+#   cargo run --release -p foehncraft-cli -- materials water --temperature 313.15
+#
+# A 1 mm high, 4 mm long channel; the density and the viscosity come from
+# the built-in water tables (IAPWS-95 and the IAPWS 2008 viscosity, at
+# 0.101325 MPa) at T = 313.15 K: ρ = 992.22 kg/m³, μ = 6.527e-4 Pa s. The
+# cell zone of the mesh is assigned to the region `channel` with the
+# material (D112); the resolved values stand in case.resolved.toml and the
+# property program is hashed into result.json (D94 (3)). Mean velocity
+# 0.05 m/s, Re = 76. The run fails if the velocity error is above 1e-3.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.004, 0.001, 0.0001]
+cells = [64, 32, 1]
+perturb = 0.1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+material = "water"
+temperature = 313.15      # K
+
+[regions.channel]
+kind = "fluid"
+zones = ["fluid"]
+material = "water"
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+relaxation_velocity = 0.9
+tolerance = 1e-9
+max_iterations = 5000
+
+[analytic]
+type = "poiseuille"
+upper = 0.001
+mean_velocity = 0.05
+x_outlet = 0.004
+
+[verification]
+max_error = 1e-3
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

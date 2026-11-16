@@ -319,16 +319,44 @@ impl Settings {
 }
 
 /// Physical inputs.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Physics {
     /// Density ρ (kg/m³).
     pub rho: f64,
-    /// Dynamic viscosity μ (Pa s).
+    /// Dynamic viscosity μ (Pa s); the reference value when it varies.
     pub mu: f64,
-    /// Body force per unit volume (N/m³).
+    /// Uniform body force per unit volume (N/m³); a body force given by
+    /// expressions (D53) is a momentum source of the [`Flow`] instead
+    /// ([`Flow::set_momentum_source`]) and this is zero.
     pub body_force: [f64; 3],
     /// Convection on (false: Stokes flow).
     pub convection: bool,
+    /// Viscosity per face (D94; `None`: `mu` on every face, the constant
+    /// path of the kernels bit for bit).
+    pub mu_face: Option<std::sync::Arc<Vec<f64>>>,
+    /// The momentum source per unit volume (N/m³) per cell of a body force
+    /// given by expressions (D53), as last set ([`Flow::set_momentum_source`]).
+    pub source: Option<std::sync::Arc<[Vec<f64>; 3]>>,
+}
+
+impl Physics {
+    /// Constant properties (the face viscosity `mu` everywhere).
+    pub fn constant(rho: f64, mu: f64, body_force: [f64; 3], convection: bool) -> Self {
+        Self {
+            rho,
+            mu,
+            body_force,
+            convection,
+            mu_face: None,
+            source: None,
+        }
+    }
+
+    /// The viscosity of face `f`.
+    #[inline]
+    pub fn mu_at(&self, f: usize) -> f64 {
+        self.mu_face.as_ref().map_or(self.mu, |m| m[f])
+    }
 }
 
 /// Residuals of one outer iteration.
@@ -508,6 +536,10 @@ pub struct Flow {
     no_backflow: bool,
     /// The convective outlets (D29), if any.
     pub(crate) conv: Option<Convective>,
+    /// The momentum source S·V per cell (N) of a body force given by
+    /// expressions (D53), added to the right-hand side of the momentum
+    /// rows; `None` for a uniform body force (inside the rows).
+    pub(crate) source: Option<Buf3>,
 }
 
 /// The convective outlets of a transient run (D29): the device buffers of
@@ -672,6 +704,7 @@ impl Flow {
                 bc: &bc,
                 rho: phys.rho,
                 mu: phys.mu,
+                mu_face: phys.mu_face.as_deref().map(|v| v.as_slice()),
                 eps2: &eps2,
                 threads: target.threads,
             },
@@ -851,7 +884,36 @@ impl Flow {
             central_u: None,
             no_backflow,
             conv,
+            source: None,
         })
+    }
+
+    /// Sets the momentum source of a body force given by expressions
+    /// (D53): `s` per unit volume (N/m³) per cell; uploaded as S·V.
+    pub fn set_momentum_source(&mut self, s: [Vec<f64>; 3]) -> Result<()> {
+        let nc = self.disc.n_cells;
+        let b = match self.source {
+            Some(b) => b,
+            None => {
+                let b = Buf3 {
+                    x: self.dev.alloc(nc)?,
+                    y: self.dev.alloc(nc)?,
+                    z: self.dev.alloc(nc)?,
+                };
+                self.source = Some(b);
+                b
+            }
+        };
+        for (i, bi) in b.all().into_iter().enumerate() {
+            let sv: Vec<f64> = s[i]
+                .iter()
+                .zip(&self.disc.cell_volume)
+                .map(|(a, v)| a * v)
+                .collect();
+            self.dev.upload(bi, &sv)?;
+        }
+        self.phys.source = Some(std::sync::Arc::new(s));
+        Ok(())
     }
 
     /// Keeps a device copy of the current u, p and ṁ as the last valid
@@ -1099,6 +1161,13 @@ impl Flow {
         Ok(())
     }
 
+    /// New prescribed boundary pressures (time-dependent conditions, D53);
+    /// faces that do not fix the pressure ignore them.
+    pub fn set_boundary_pressure(&mut self, pset: &[f64]) -> Result<()> {
+        self.bc.pset.copy_from_slice(pset);
+        self.dev.set_pressure_values(pset)
+    }
+
     /// Backflow suppression after the predicted fluxes `m` (D29).
     pub(crate) fn close_backflow(&mut self, m: Buf) -> Result<()> {
         if self.no_backflow {
@@ -1242,6 +1311,11 @@ impl Flow {
             dc: w.dc,
             diag: w.diag,
         })?;
+        if let Some(src) = self.source {
+            for (r, q) in w.rhs.all().into_iter().zip(src.all()) {
+                self.dev.lincomb(r, 1.0, r, 1.0, q)?;
+            }
+        }
         if self.settings.algorithm(self.transient) != Algorithm::Simplec {
             self.dev.copy(w.d, w.dc)?;
         }

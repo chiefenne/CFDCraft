@@ -101,6 +101,21 @@ codes! {
     BC_WEDGE = "BC023", Error, "Wedge patches that do not form one wedge about an axis.";
     BC_WEDGE_ANGLE = "BC024", Warning, "A wedge wider than 10° (the axisymmetric error grows with the angle).";
     BC_POTENTIAL_CONVECTIVE = "BC025", Error, "A potential-flow start with a convective outlet and no pressure boundary.";
+    BC_WALL_MASS_CLOSED = "BC026", Error, "Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure).";
+    // expressions (D53)
+    EXPR_SYNTAX = "EXPR001", Error, "An expression that cannot be parsed.";
+    EXPR_NAME = "EXPR002", Error, "An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint).";
+    EXPR_VARIABLE = "EXPR003", Error, "An expression that uses a variable its key does not take (`t` in a steady case or in a property, x, y, z in a value for a whole patch).";
+    EXPR_TABLE = "EXPR004", Error, "A `[tables]` entry that is missing, unreadable or not a valid table.";
+    EXPR_VALUE = "EXPR005", Error, "An expression or constant whose value is not finite where it is evaluated.";
+    // materials and regions (D94-D102, D112)
+    MAT_UNKNOWN = "MAT001", Error, "A material that neither the case nor the database defines (with the nearest name as a hint).";
+    MAT_FORM = "MAT002", Error, "A property form that this version does not evaluate, or a property that the flow cannot take yet (a density that varies).";
+    MAT_RANGE = "MAT003", Warning, "A property evaluated outside the validity range of its data (clamped to the range).";
+    MAT_BASE = "MAT004", Error, "Materials whose `base` refer to each other in a cycle.";
+    MAT_VALUE = "MAT005", Error, "A property value that is not positive and finite.";
+    REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid: solids and porous zones come with the energy equation (L1).";
+    REG_ZONE = "REG002", Error, "A region that names a cell zone the mesh does not have, or a zone in two regions.";
     // the run (D40, D62, D64, D83)
     RUN_STOP_FILE = "RUN001", Note, "Stopped by the `.stop` control file.";
     RUN_SIGNAL = "RUN002", Note, "Stopped by a signal (SIGTERM, SIGINT or SIGUSR2).";
@@ -333,7 +348,10 @@ mod tests {
                 .code
                 .split_at(c.code.find(|ch: char| ch.is_ascii_digit()).unwrap());
             assert!(
-                ["CASE", "BC", "RUN", "GEN", "DIV", "BAL"].contains(&p),
+                [
+                    "CASE", "BC", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT", "REG"
+                ]
+                .contains(&p),
                 "{}",
                 c.code
             );

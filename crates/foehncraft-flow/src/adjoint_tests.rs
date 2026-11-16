@@ -17,7 +17,7 @@ use std::path::Path;
 fn cavity(threads: Option<usize>) -> Flow {
     let (case, mesh, geo) = cavity_case("");
     let phys = physics(&case);
-    let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, None).unwrap();
+    let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, bc::At::numbers(None)).unwrap();
     let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
     let mut fl = Flow::new(
         disc,
@@ -41,12 +41,7 @@ fn cavity(threads: Option<usize>) -> Flow {
 }
 
 fn physics(case: &FlowCase) -> Physics {
-    Physics {
-        rho: case.fluid.density,
-        mu: case.fluid.viscosity,
-        body_force: [0.0; 3],
-        convection: true,
-    }
+    Physics::constant(case.rho(), case.mu(), [0.0; 3], true)
 }
 
 fn cavity_case(extra: &str) -> (FlowCase, foehncraft_mesh::Mesh, foehncraft_mesh::Geometry) {
@@ -220,7 +215,8 @@ fn checkpointed_reverse_sweep_meets_the_forward_levels_bitwise() {
     let time = case.time.unwrap();
     let make = || {
         let phys = physics(&case);
-        let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, None).unwrap();
+        let arrays =
+            bc::arrays(&mesh, &geo, &case.boundary, phys.rho, bc::At::numbers(None)).unwrap();
         let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
         let mut fl = Flow::on(
             disc,
@@ -293,7 +289,8 @@ fn rejected_step_repeats_bitwise() {
             cavity_case("[time]\nscheme = \"bdf2\"\ntime_step = 0.05\nsteps = 9\n");
         let make = || {
             let phys = physics(&case);
-            let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, None).unwrap();
+            let arrays =
+                bc::arrays(&mesh, &geo, &case.boundary, phys.rho, bc::At::numbers(None)).unwrap();
             let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
             let mut fl = Flow::on(
                 disc,
@@ -402,7 +399,8 @@ type = "symmetry"
         let case = FlowCase::from_toml(&text, Path::new(".")).unwrap();
         let (mesh, geo, _) = mesh_for(&case, None).unwrap();
         let phys = physics(&case);
-        let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, None).unwrap();
+        let arrays =
+            bc::arrays(&mesh, &geo, &case.boundary, phys.rho, bc::At::numbers(None)).unwrap();
         let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
         let mut fl = Flow::new(
             disc,

@@ -10,6 +10,7 @@ On this page:
 - [The flow loop on a GPU](#the-flow-loop-on-a-gpu)
 - [Boundary conditions](#boundary-conditions)
 - [Derived fields](#derived-fields)
+- [Expressions and materials](#expressions-and-materials)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -126,3 +127,20 @@ restart file (D72, stage 5 part 5c); the keys are on the
 |---|---|---|---|
 | `flow/couette_derived.toml` | generated poly 2D, perturbed by 15 %, 153 cells | every derived field of plane Couette flow, exact (vorticity −1/s, Q = λ₂ = 0, wall shear stress 0.1 Pa); `foehn post derive` writes the same file from `restart.h5` | [gallery 22](../gallery/post-processing.md#derived-fields), [recipe 30](../recipes/post-processing.md#derived-fields) |
 | `flow/cylinder_re100_short.toml` | built-in cylinder mesh, 4 928 hexahedra | vorticity and Q criterion of the vortex street at t = 8 s, from the restart file with `foehn post derive` | [gallery 22](../gallery/post-processing.md#derived-fields), [recipe 30](../recipes/post-processing.md#derived-fields) |
+
+## Expressions and materials
+
+Values as expressions of x, y, z and t, constants and tables (D53), the
+material database and regions (D102, D112), walls with a mass flux
+(D124 W3), stage 5 part 6a; the keys are on the
+[key page](flow-keys.md#expressions-materials-and-regions-d53-d102-d112).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/couette_viscosity.toml` | generated hex 2D, perturbed by 10 %, 128 to 2 048 cells (3 levels) | Couette flow with the viscosity μ0 (1 + 4 y) from an expression: u = U ln(1 + a y)/ln(1 + a), observed order 1.8–2.2 required | [gallery 23](../gallery/properties.md#expressions-materials), [recipe 31](../recipes/properties.md#expressions) |
+| `flow/couette_transpiration.toml` | generated hex 2D, perturbed by 10 %, 128 to 2 048 cells (3 levels) | Couette flow with blowing and suction through the walls (`mass_flux`), Re = 4, observed order 1.8–2.2 required | [gallery 23](../gallery/properties.md#expressions-materials), [recipe 31](../recipes/properties.md#expressions) |
+| `flow/poiseuille_water.toml` | generated hex 2D, perturbed by 10 %, 2 048 cells | water at 313.15 K from the material database, in a region of the zone `fluid`; Poiseuille flow in a 1 mm channel, error ≤ 1e-3 required | [gallery 23](../gallery/properties.md#expressions-materials), [recipe 32](../recipes/properties.md#materials) |
+| `flow/poiseuille_expression.toml` | as `poiseuille_hex.toml`, 3 levels | the inlet parabola and half of the driving pressure gradient as expressions: the errors of `poiseuille_hex.toml` | [gallery 23](../gallery/properties.md#expressions-materials), [recipe 31](../recipes/properties.md#expressions) |
+| `flow/taylor_green_expression.toml` | generated hex 2D, 4 096 cells | the decaying vortex prescribed on the sides as expressions of x, y and t, error ≤ 2e-3 at t = 0.4 s required | [gallery 23](../gallery/properties.md#expressions-materials), [recipe 31](../recipes/properties.md#expressions) |
+| `flow/channel_ramp.toml` | generated hex 2D, 512 cells | start-up of a channel with the inflow ramped by a table in t, BDF2 with an adaptive step; steady Poiseuille flow at t = 4 s (error ≤ 2e-3) | [gallery 23](../gallery/properties.md#expressions-materials), [recipe 31](../recipes/properties.md#expressions) |
+

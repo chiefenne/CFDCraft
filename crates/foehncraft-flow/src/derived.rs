@@ -158,7 +158,7 @@ fn reference(case: &FlowCase) -> Option<(f64, f64)> {
     let u = r
         .velocity
         .or(case.output.coefficients.as_ref().map(|c| c.velocity))?;
-    let rho = r.density.unwrap_or(case.fluid.density);
+    let rho = r.density.unwrap_or(case.rho());
     Some((0.5 * rho * u * u, r.pressure))
 }
 
@@ -526,6 +526,21 @@ pub fn evaluate(
     })
 }
 
+/// The [`WallExchange`] of the solution in `restart`, a restart file of
+/// `case` (D124 W4; for checks and for the wall models of later stages).
+pub fn wall_exchange_from_restart(
+    case: &FlowCase,
+    restart: &std::path::Path,
+) -> Result<(Mesh, Geometry, WallExchange)> {
+    with_restart(case, restart, |l| {
+        Ok((
+            l.mesh.clone(),
+            l.geo.clone(),
+            wall_exchange(case, l.mesh, l.geo, l.sol),
+        ))
+    })
+}
+
 /// A solution read back from a restart file.
 struct Loaded<'a> {
     mesh: &'a Mesh,
@@ -581,17 +596,25 @@ fn with_restart<R>(
         Some(c) => case.analytic_at(c.time),
         None => case.analytic(),
     };
-    let phys = crate::simplec::Physics {
-        rho: case.fluid.density,
-        mu: case.fluid.viscosity,
-        body_force: case.flow.body_force,
-        convection: case.flow.convection,
-    };
+    let phys = crate::case::physics(case)?;
+    let phys = crate::case::physics_on(case, &phys, &mesh, &geo)?;
     let analytic0 = match &case.time {
         Some(t) => case.analytic_at(t.start_time),
         None => analytic,
     };
-    let arrays = crate::bc::arrays(&mesh, &geo, &case.boundary, phys.rho, analytic0.as_ref())?;
+    let values = case.compiled_boundaries()?;
+    let t_now = clock.map_or(case.time.map_or(0.0, |t| t.start_time), |c| c.time);
+    let arrays = crate::bc::arrays(
+        &mesh,
+        &geo,
+        &case.boundary,
+        phys.rho,
+        crate::bc::At {
+            analytic: analytic0.as_ref(),
+            values: &values,
+            t: t_now,
+        },
+    )?;
     let (disc, _) = crate::simplec::discretisation(&mesh, &geo, &arrays)?;
     let sol = Solution {
         state: r.state,
@@ -608,6 +631,51 @@ fn with_restart<R>(
     })
 }
 
+/// What the wall treatment gives a module coupled to the walls (D124 W4,
+/// the wall film of D123 and later CHT): per wall face the gas-side shear
+/// stress and the transfer coefficients of the wall treatment.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct WallExchange {
+    /// The wall faces (mesh face indices), patch by patch.
+    pub faces: Vec<usize>,
+    /// Shear stress of the fluid on the wall, tangential (Pa).
+    pub shear: Vec<[f64; 3]>,
+    /// The momentum transfer coefficient μ_f/Δn of the wall treatment
+    /// (Pa s/m): τ = coefficient · (u_P − u_wall) tangential for a
+    /// laminar wall; the turbulence models of stage 6 replace it by their
+    /// wall functions.
+    pub momentum: Vec<f64>,
+    /// The heat transfer coefficient (W/(m² K)); with the energy equation
+    /// (L1).
+    pub heat: Option<Vec<f64>>,
+    /// The mass transfer coefficient (kg/(m² s)); with species (L2).
+    pub mass: Option<Vec<f64>>,
+}
+
+/// The [`WallExchange`] of a solution (D124 W4).
+pub fn wall_exchange(case: &FlowCase, mesh: &Mesh, geo: &Geometry, fl: &Solution) -> WallExchange {
+    let ni = mesh.n_interior_faces();
+    let mut w = WallExchange::default();
+    for p in &mesh.patches {
+        if !matches!(
+            case.boundary.get(&p.name),
+            Some(BoundaryCondition::Wall { .. })
+        ) {
+            continue;
+        }
+        for f in p.range() {
+            let (_, _, tau) = crate::case::wall_face_values(fl, geo, f, ni);
+            let s = geo.face_area[f];
+            let c = fl.disc.owner[f] as usize;
+            let dn = dot(sub(geo.face_centroid[f], geo.cell_centroid[c]), s).abs() / norm(s);
+            w.faces.push(f);
+            w.shear.push(tau);
+            w.momentum.push(fl.phys.mu_at(f) / dn);
+        }
+    }
+    w
+}
+
 /// Wall shear stress and y⁺ per boundary face (zero off the walls).
 fn wall_values(
     case: &FlowCase,
@@ -617,7 +685,6 @@ fn wall_values(
 ) -> Vec<([f64; 3], f64)> {
     let ni = mesh.n_interior_faces();
     let mut v = vec![([0.0; 3], 0.0); mesh.n_boundary_faces()];
-    let nu = fl.phys.mu / fl.phys.rho;
     for p in &mesh.patches {
         if !matches!(
             case.boundary.get(&p.name),
@@ -631,6 +698,7 @@ fn wall_values(
             let c = fl.disc.owner[f] as usize;
             let y = dot(sub(geo.face_centroid[f], geo.cell_centroid[c]), s).abs() / norm(s);
             let u_tau = (norm(tau) / fl.phys.rho).sqrt();
+            let nu = fl.phys.mu_at(f) / fl.phys.rho;
             v[f - ni] = (tau, y * u_tau / nu);
         }
     }

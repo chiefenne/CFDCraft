@@ -20,10 +20,68 @@ pub const fn splitmix64(mut z: u64) -> u64 {
     z ^ (z >> 31)
 }
 
-/// 64 random bits for a key of three words (identity, step, event).
+/// 64 random bits for a key of three words (identity, step, event) of
+/// the stream [`stream::MESH`]; the same as
+/// `keyed([stream::MESH, identity, step, event])`.
 #[inline(always)]
 pub const fn bits(key: [u64; 3]) -> u64 {
     splitmix64(key[2] ^ splitmix64(key[1] ^ splitmix64(key[0])))
+}
+
+/// The streams of the generator (D121): the first word of a key names the
+/// module and purpose, so two models that draw for the same identity, step
+/// and event (breakup and dispersion of one parcel) never get the same
+/// number. Every stream of the code is listed here, once; a number is never
+/// reused for another purpose.
+pub mod stream {
+    /// The mesh: perturbation of the test meshes, random renumbering,
+    /// start cells of the point location tests. Stream 0 keeps the numbers
+    /// of the three-word keys of [`bits`](super::bits).
+    pub const MESH: u64 = 0;
+    /// Spray injection: parcel sizes, directions and positions (L12).
+    pub const SPRAY_INJECTION: u64 = 1;
+    /// Spray breakup (L12).
+    pub const SPRAY_BREAKUP: u64 = 2;
+    /// Turbulent dispersion of parcels (L12).
+    pub const SPRAY_DISPERSION: u64 = 3;
+    /// Wall impingement and splash of parcels (D123).
+    pub const SPRAY_WALL: u64 = 4;
+    /// Parcel collision (L12).
+    pub const SPRAY_COLLISION: u64 = 5;
+    /// Start vectors of the multigrid eigenvalue estimate (D93 (5)).
+    pub const AMG_START: u64 = 6;
+    /// Monte Carlo radiation: photon bundles (L15).
+    pub const RADIATION: u64 = 7;
+    /// Every stream with its name, for the documentation and the test that
+    /// keeps the numbers distinct.
+    pub const ALL: &[(u64, &str)] = &[
+        (MESH, "mesh"),
+        (SPRAY_INJECTION, "spray-injection"),
+        (SPRAY_BREAKUP, "spray-breakup"),
+        (SPRAY_DISPERSION, "spray-dispersion"),
+        (SPRAY_WALL, "spray-wall"),
+        (SPRAY_COLLISION, "spray-collision"),
+        (AMG_START, "amg-start"),
+        (RADIATION, "radiation"),
+    ];
+}
+
+/// 64 random bits for a key of four words `[stream, identity, step, event]`
+/// (D121). Stream [`stream::MESH`] gives the numbers of [`bits`].
+#[inline(always)]
+pub const fn keyed(key: [u64; 4]) -> u64 {
+    let s = if key[0] == stream::MESH {
+        0
+    } else {
+        splitmix64(key[0] ^ 0x5354_5245_414D_0000)
+    };
+    splitmix64(key[3] ^ splitmix64(key[2] ^ splitmix64(key[1] ^ s)))
+}
+
+/// Uniform number in [0, 1) with 53 random bits, for a key of four words.
+#[inline(always)]
+pub fn uniform_keyed(key: [u64; 4]) -> f64 {
+    (keyed(key) >> 11) as f64 * (1.0 / (1u64 << 53) as f64)
 }
 
 /// Uniform number in [0, 1) with 53 random bits, for a key of three words.
@@ -41,6 +99,33 @@ mod tests {
         assert_eq!(uniform([7, 3, 1]).to_bits(), uniform([7, 3, 1]).to_bits());
         assert_ne!(bits([7, 3, 1]), bits([7, 3, 2]));
         assert_ne!(bits([7, 3, 1]), bits([3, 7, 1]));
+    }
+
+    #[test]
+    fn streams() {
+        // stream 0 is the three-word generator, bit for bit
+        for i in 0..1000u64 {
+            assert_eq!(keyed([stream::MESH, i, 3, 7]), bits([i, 3, 7]));
+        }
+        // the same identity, step and event differ between streams
+        for &(a, _) in stream::ALL {
+            for &(b, _) in stream::ALL {
+                if a != b {
+                    assert_ne!(keyed([a, 11, 2, 0]), keyed([b, 11, 2, 0]));
+                }
+            }
+        }
+        let mut ids: [u64; 8] = [0; 8];
+        for (i, &(s, _)) in stream::ALL.iter().enumerate() {
+            ids[i] = s;
+        }
+        ids.sort_unstable();
+        assert!(
+            ids.windows(2).all(|w| w[0] != w[1]),
+            "stream numbers must be distinct"
+        );
+        let u = uniform_keyed([stream::SPRAY_BREAKUP, 5, 1, 0]);
+        assert!((0.0..1.0).contains(&u));
     }
 
     #[test]

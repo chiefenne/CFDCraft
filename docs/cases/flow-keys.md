@@ -11,10 +11,13 @@ line (recipe 26).
 
 | Key | Default | Meaning |
 |---|---|---|
-| `fluid.density` | 1 | ρ (kg/m³) |
-| `fluid.viscosity` | 1e-3 | dynamic viscosity μ (Pa s) |
+| `fluid.density` | 1 | ρ (kg/m³), or from `fluid.material` |
+| `fluid.viscosity` | 1e-3 | dynamic viscosity μ (Pa s), or from `fluid.material`; an expression of x, y, z gives a viscosity that varies in space |
+| `fluid.material` | none | a material of `[materials]` or of the database (`foehn materials`), below |
+| `fluid.temperature` | 293.15 | the temperature at which the material properties are evaluated (K; isothermal until the energy equation) |
+| `fluid.operating_pressure` | 101325 | the pressure at which they are evaluated (Pa) |
 | `flow.convection` | true | false: Stokes flow |
-| `flow.body_force` | `[0, 0, 0]` | body force per unit volume (N/m³) |
+| `flow.body_force` | `[0, 0, 0]` | body force per unit volume (N/m³); each component a number or an expression of x, y, z, t |
 | `initial.velocity` | `[0, 0, 0]` | start velocity (m/s) |
 | `initial.pressure` | 0 | start pressure (Pa) |
 | `initial.potential_flow` | false | start from potential flow instead of `initial.velocity` (D52): the irrotational velocity that carries the inflow to the pressure boundaries, one Laplace solve with the pressure multigrid and four non-orthogonal correction passes |
@@ -154,7 +157,7 @@ the list. `output.derived` and `output.reference` may change during a run.
 
 | `type` | Keys | Velocity | Pressure | Mass flux |
 |---|---|---|---|---|
-| `wall` | `velocity` (default 0; only the tangential part is kept) | prescribed | extrapolated | 0 |
+| `wall` | `velocity` (default 0; only the tangential part is kept), `mass_flux` (kg/(m² s) into the domain through the wall, D124 W3: blowing > 0, suction < 0; a number or an expression) | prescribed (with the transpiration velocity m''/ρ along −n) | extrapolated | 0, or −m''·\|S\| |
 | `slip-wall` | none | no shear stress, zero normal component (as `symmetry`, on any surface) | extrapolated | 0 |
 | `velocity-inlet` | one of `velocity`, `normal_velocity` (into the domain), `profile = "analytic"` (the exact solution, in a transient case at each time level), `profile = "parabolic"` with `max_velocity` and `profile_axes` (developed laminar inflow, for example `["y"]`), `profile = "table"` with `table` and `table_coordinate` (a measured or computed profile, below) | prescribed | extrapolated | ρ u_b·S |
 | `mass-flow-inlet` | `mass_flow` (kg/s, spread by area) | normal, from the mass flow | extrapolated | prescribed |
@@ -239,3 +242,69 @@ wedge).
 | velocity-inlet + convective-outlet (transient) | wakes and vortex streets with the outlet close behind the body | reference cell |
 | velocity-inlet + static-pressure-outlet + slip walls | external flow in a finite box: the slip walls stand for the far field | outlet pressure |
 | velocity-inlet + static-pressure-outlet + wedges (+ walls) | axisymmetric flow: pipes, nozzles, jets | outlet pressure |
+
+# Expressions, materials and regions (D53, D102, D112)
+
+Stage 5 part 6a ([gallery 23](../gallery/properties.md#expressions-materials),
+[recipe 31](../recipes/properties.md#expressions),
+[recipe 32](../recipes/properties.md#materials)).
+
+**Expressions.** Wherever the table below says so, a value may be a string
+of the expression language instead of a number. The variables are `x`,
+`y`, `z` (m, the face or cell centroid) and `t` (s, simulated time); the
+constants `pi`, `e` and those of `[constants]`; the operators
+`+ - * / % ^` (also `**`), `< <= > >= == !=`, `and or not` (true is 1);
+the functions `sin cos tan asin acos atan sinh cosh tanh exp log log10
+sqrt abs floor ceil round sign` (one argument; `log` is the natural
+logarithm), `atan2 pow min max hypot step` (two; `step(a, b)` is 1 where
+a ≥ b), `clamp(a, lo, hi)`, `if(condition, a, b)` and every
+`[tables.<name>]` as a function of one argument. Each string is checked
+and compiled when the case is read; the solver evaluates the compiled
+program, on the CPU and the GPU alike, with the in-house elementary
+functions of D93 (6), so a result does not depend on the platform's
+mathematics library. A number stays a number: a case without expressions
+runs bit for bit as before.
+
+| Key | Takes | Meaning |
+|---|---|---|
+| `constants.<name>` | number or expression of other constants | a named constant; the order does not matter, cycles are errors |
+| `tables.<name>.x`, `.y` | numbers | a piecewise linear table, clamped at the ends, called as `name(arg)` |
+| `tables.<name>.file` | path | the same from a two-column file (CSV or blanks, `#` comments, header allowed) |
+| `boundary.<patch>.velocity`, `normal_velocity`, `mass_flux` | x, y, z, t | inlet and wall values per face |
+| `boundary.<patch>.pressure`, `total_pressure` | x, y, z, t | pressure boundaries per face |
+| `boundary.<patch>.mass_flow` | t | one value for the patch |
+| `flow.body_force` | x, y, z, t | per cell; an expression is added to the momentum source, a uniform number keeps the kernel path |
+| `fluid.viscosity`, `materials.<name>.viscosity` | x, y, z | per face (properties do not change during a run, D100) |
+
+`t` is allowed only in a transient case; time-dependent values are
+evaluated at the new time level of every step.
+
+**Materials.** `fluid.material` names a material of the case's
+`[materials]` or of the built-in database; a `[materials.<name>]` table
+with `base = "<database name>"` overrides single properties of a database
+entry. Each property is a number, an expression or a table:
+
+| Key | Meaning |
+|---|---|
+| `materials.<name>.base` | the material it starts from |
+| `materials.<name>.kind` | `gas`, `liquid` or `solid` |
+| `materials.<name>.temperature_range` | `[T_min, T_max]` (K): outside it the properties are clamped, with warning MAT003 |
+| `materials.<name>.molar_mass` | kg/mol (the ideal-gas density) |
+| `materials.<name>.density`, `.viscosity` | a number, an expression, or a table with `form` = `constant` (`value`), `polynomial` (`coefficients` a₀, a₁, … in T), `sutherland` (`mu_ref`, `t_ref`, `s`), `power-law` (`value_ref`, `t_ref`, `exponent`), `table` (`temperature` and `values`, or `file`; `interpolation` = `linear` or `monotone-cubic`), `ideal-gas` (density p M / (R T)), each with `source` and optionally `range`; the complete list is in [keys.md](../keys.md) |
+
+The density must be constant in the domain (a density that varies comes
+with the energy equation, MAT002). The run writes the resolved property
+program into `case.resolved.toml`, and its hash into the provenance of
+every output file (`properties_hash`, `materials_database`).
+
+**Regions.** `[regions.<name>]` assigns cell zones to a material:
+
+| Key | Meaning |
+|---|---|
+| `regions.<name>.kind` | `fluid`; `solid` and `porous` are refused until the energy equation (REG001) |
+| `regions.<name>.zones` | cell zones of the mesh (each zone in one region; unknown zones are REG002) |
+| `regions.<name>.material` | its material (default: that of `[fluid]`) |
+
+Regions with different viscosities give a viscosity per face, the harmonic
+mean across a zone boundary.
+
