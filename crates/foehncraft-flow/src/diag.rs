@@ -1,0 +1,364 @@
+//! Machine-readable diagnostics (D78): one registry of stable codes for
+//! the validation of the case file (D39), the boundary-condition check
+//! (D30), the run (stops, limits, re-reads, checks) and, with the health
+//! checks, divergence (D63) and the conservation ledger (D88).
+//!
+//! A [`Diagnostic`] has a code from [`CODES`], a severity, the key path or
+//! the boundary it concerns, the message (the same text the log shows) and,
+//! where one exists, a fix as `key=value` changes that `--set` (D62) can
+//! apply. A code is never reused for another meaning; a retired code stays
+//! in the registry, marked as such. `docs/interfaces.md` lists the codes
+//! (a test keeps the two in step).
+//!
+//! Errors of the case reader and the validation carry their diagnostic
+//! inside the `anyhow::Error` ([`err`]), so a front end finds it with
+//! [`of_error`] and the human message stays as it was.
+
+use serde::Serialize;
+use std::fmt;
+
+/// Severity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Severity {
+    /// Information.
+    Note,
+    /// The run goes on; the result may not be what was meant.
+    Warning,
+    /// The case cannot be run, or the run failed.
+    Error,
+}
+
+impl Severity {
+    /// Lower-case name.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Note => "note",
+            Self::Warning => "warning",
+            Self::Error => "error",
+        }
+    }
+}
+
+/// One entry of the registry.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct CodeInfo {
+    /// The code.
+    pub code: &'static str,
+    /// Usual severity.
+    pub severity: Severity,
+    /// What it means.
+    pub title: &'static str,
+}
+
+macro_rules! codes {
+    ($($name:ident = $code:literal, $sev:ident, $title:literal;)*) => {
+        $(
+            #[doc = $title]
+            pub const $name: &str = $code;
+        )*
+        /// Every code, in order.
+        pub const CODES: &[CodeInfo] = &[
+            $(CodeInfo { code: $code, severity: Severity::$sev, title: $title },)*
+        ];
+    };
+}
+
+codes! {
+    // the case file (D39)
+    CASE_SYNTAX = "CASE001", Error, "The case file is not valid TOML.";
+    CASE_UNKNOWN_KEY = "CASE002", Error, "A key that the case file does not have (with the nearest key as a hint).";
+    CASE_BAD_VALUE = "CASE003", Error, "A value of the wrong type or an unknown choice.";
+    CASE_RANGE = "CASE004", Error, "A value outside its range.";
+    CASE_INCONSISTENT = "CASE005", Error, "Settings that do not fit together.";
+    CASE_FILE = "CASE006", Error, "A file that cannot be read: the case, the mesh or the restart file.";
+    CASE_OUTSIDE_ROOT = "CASE007", Error, "A path outside the read roots or the write roots (D82).";
+    CASE_SET = "CASE008", Error, "A `--set key=value` that cannot be applied.";
+    CASE_MISSING_KEY = "CASE009", Error, "A key that the case needs is missing.";
+    // the boundary conditions (D30)
+    BC_NO_CONDITION = "BC001", Error, "A mesh patch without a boundary condition.";
+    BC_NO_PATCH = "BC002", Error, "A boundary condition for a patch the mesh does not have.";
+    BC_NOT_AVAILABLE = "BC003", Error, "A condition that a later stage brings.";
+    BC_INLET_INPUT = "BC004", Error, "A velocity inlet with none or more than one of `velocity`, `normal_velocity` and `profile`.";
+    BC_PROFILE_ANALYTIC = "BC005", Error, "`profile = \"analytic\"` without an `[analytic]` table.";
+    BC_PROFILE_PARABOLIC = "BC006", Error, "`profile = \"parabolic\"` without `max_velocity` or `profile_axes`.";
+    BC_PROFILE_UNUSED = "BC007", Warning, "`max_velocity` or `profile_axes` without a parabolic profile.";
+    BC_NEGATIVE_MASS_FLOW = "BC008", Warning, "A mass-flow inlet with a negative mass flow.";
+    BC_TURBULENCE_UNUSED = "BC009", Warning, "Turbulence values in a laminar case.";
+    BC_WALL_NORMAL_VELOCITY = "BC010", Warning, "A wall velocity with a component normal to the wall.";
+    BC_EXACT_OUTFLOW = "BC011", Note, "The exact solution leaves the domain through a velocity inlet.";
+    BC_INLET_OUTFLOW = "BC012", Warning, "A velocity inlet whose velocity points out of the domain.";
+    BC_SYMMETRY_NOT_PLANAR = "BC013", Warning, "A symmetry patch that is not planar.";
+    BC_UNBALANCED = "BC014", Error, "A net mass flow through the prescribed boundaries and no pressure boundary to balance it.";
+    BC_REFERENCE_CELL = "BC015", Note, "No pressure boundary: the pressure level is fixed in the reference cell.";
+    BC_OVER_SPECIFIED = "BC016", Error, "A flow path whose flow rate is over-specified.";
+    BC_FLUID_AT_REST = "BC017", Warning, "Nothing drives a flow: the result is the fluid at rest.";
+    BC_PRESSURE_DRIVEN = "BC018", Note, "No prescribed inflow: the flow rate follows from the pressure boundaries.";
+    // the run (D40, D62, D64, D83)
+    RUN_STOP_FILE = "RUN001", Note, "Stopped by the `.stop` control file.";
+    RUN_SIGNAL = "RUN002", Note, "Stopped by a signal (SIGTERM, SIGINT or SIGUSR2).";
+    RUN_LIMIT_WALL_TIME = "RUN003", Warning, "Stopped at the wall-time limit (`[run.limits] max_wall_time`).";
+    RUN_LIMIT_STEPS = "RUN004", Warning, "Stopped at the step or iteration limit (`[run.limits] max_steps`, `max_iterations`).";
+    RUN_LIMIT_OUTPUT = "RUN005", Warning, "Stopped at the output-volume limit (`[run.limits] max_output`).";
+    RUN_NOT_CONVERGED = "RUN006", Error, "A steady solve that did not converge to the tolerance.";
+    RUN_CHECK_FAILED = "RUN007", Error, "A verification check of the case failed (order, error, reference or benchmark band, mass balance).";
+    RUN_NOT_APPLIED = "RUN008", Warning, "A change of the re-read case file that cannot be applied during a run.";
+    RUN_REREAD_INVALID = "RUN009", Warning, "A re-read case file that does not validate; the run goes on with the settings it had.";
+    RUN_RESTART_MAPPED = "RUN010", Warning, "A restart file in another cell or face order: the continuation is not bit-identical.";
+    RUN_NO_RESTART = "RUN011", Error, "`--restart latest` found no restart file in the output directory.";
+    RUN_NO_BENCHMARK = "RUN012", Note, "No benchmark of this hardware: the estimate has no wall time.";
+    RUN_IO = "RUN013", Error, "An output file could not be written.";
+    // anything else
+    GENERAL = "GEN001", Error, "An error without a more specific code.";
+}
+
+/// The registry entry of a code.
+pub fn info(code: &str) -> Option<&'static CodeInfo> {
+    CODES.iter().find(|c| c.code == code)
+}
+
+/// A fix: case keys and the values that resolve the finding, as
+/// `--set key=value` arguments.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Fix {
+    /// `key=value` (TOML values), in order.
+    pub set: Vec<String>,
+}
+
+/// One finding.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Diagnostic {
+    /// Code of [`CODES`].
+    pub code: &'static str,
+    /// Severity.
+    pub severity: Severity,
+    /// Key path in the case file (`fluid.density`), if one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    /// Boundary (patch) it concerns, if one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boundary: Option<String>,
+    /// Line and column in the case file (1-based), if known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<[usize; 2]>,
+    /// What is wrong and what to change.
+    pub message: String,
+    /// A fix that `--set` can apply.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fix: Option<Fix>,
+}
+
+impl Diagnostic {
+    /// A diagnostic with the usual severity of `code`.
+    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            severity: info(code).map_or(Severity::Error, |i| i.severity),
+            key: None,
+            boundary: None,
+            location: None,
+            message: message.into(),
+            fix: None,
+        }
+    }
+
+    /// With the key path.
+    pub fn key(mut self, k: impl Into<String>) -> Self {
+        self.key = Some(k.into());
+        self
+    }
+
+    /// With the boundary.
+    pub fn boundary(mut self, b: impl Into<String>) -> Self {
+        self.boundary = Some(b.into());
+        self
+    }
+
+    /// With another severity.
+    pub fn severity(mut self, s: Severity) -> Self {
+        self.severity = s;
+        self
+    }
+
+    /// With a fix.
+    pub fn fix<S: Into<String>>(mut self, set: impl IntoIterator<Item = S>) -> Self {
+        self.fix = Some(Fix {
+            set: set.into_iter().map(Into::into).collect(),
+        });
+        self
+    }
+}
+
+impl fmt::Display for Diagnostic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Diagnostic {}
+
+/// An error that carries `d`.
+pub fn err(d: Diagnostic) -> anyhow::Error {
+    anyhow::Error::new(d)
+}
+
+/// Fails with `code` and `message` (and the key path) unless `cond`.
+pub fn ensure(
+    cond: bool,
+    code: &'static str,
+    key: &str,
+    message: impl FnOnce() -> String,
+) -> anyhow::Result<()> {
+    if cond {
+        Ok(())
+    } else {
+        let mut d = Diagnostic::new(code, message());
+        if !key.is_empty() {
+            d = d.key(key);
+        }
+        Err(err(d))
+    }
+}
+
+/// The key path that a validation message names: `[time] max_cfl must …`
+/// gives `time.max_cfl`, `[time] needs …` gives `time`.
+pub fn key_of(message: &str) -> Option<String> {
+    let rest = message.strip_prefix('[')?;
+    let (section, rest) = rest.split_once(']')?;
+    let word: String = rest
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
+        .collect();
+    let after = rest.trim_start()[word.len()..].chars().next();
+    let is_key = !word.is_empty()
+        && ![
+            "needs",
+            "need",
+            "is",
+            "has",
+            "takes",
+            "benchmark",
+            "reference",
+        ]
+        .contains(&word.as_str())
+        && matches!(after, None | Some(' ' | ',' | ':'));
+    Some(if is_key {
+        format!("{section}.{word}")
+    } else {
+        section.to_string()
+    })
+}
+
+/// Fails with `code`, the message and the key path it names (see
+/// [`key_of`]) unless `cond`.
+pub fn check(
+    cond: bool,
+    code: &'static str,
+    message: impl FnOnce() -> String,
+) -> anyhow::Result<()> {
+    check_fix(cond, code, &[], message)
+}
+
+/// As [`check`], with a fix (`key=value` for `--set`).
+pub fn check_fix(
+    cond: bool,
+    code: &'static str,
+    fix: &[&str],
+    message: impl FnOnce() -> String,
+) -> anyhow::Result<()> {
+    if cond {
+        return Ok(());
+    }
+    let m = message();
+    let mut d = Diagnostic::new(code, m.clone());
+    d.key = key_of(&m);
+    if !fix.is_empty() {
+        d = d.fix(fix.iter().copied());
+    }
+    Err(err(d))
+}
+
+/// `need!(cond, CODE, "format", args…)`: [`check`] with a formatted
+/// message and `?`.
+#[macro_export]
+macro_rules! need {
+    ($cond:expr, $code:ident, $($fmt:tt)+) => {
+        $crate::diag::check($cond, $crate::diag::$code, || format!($($fmt)+))?
+    };
+}
+
+/// The diagnostic of an error: the first one in its chain, with the full
+/// message of the chain (context included); `GEN001` when there is none.
+pub fn of_error(e: &anyhow::Error) -> Diagnostic {
+    let msg = format!("{e:#}");
+    let mut d = e
+        .chain()
+        .find_map(|c| c.downcast_ref::<Diagnostic>())
+        .cloned()
+        .unwrap_or_else(|| Diagnostic::new(GENERAL, ""));
+    d.message = msg;
+    d
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codes_are_unique_and_well_formed() {
+        let mut seen = std::collections::BTreeSet::new();
+        for c in CODES {
+            assert!(seen.insert(c.code), "{} twice", c.code);
+            let (p, n) = c
+                .code
+                .split_at(c.code.find(|ch: char| ch.is_ascii_digit()).unwrap());
+            assert!(
+                ["CASE", "BC", "RUN", "GEN", "DIV", "BAL"].contains(&p),
+                "{}",
+                c.code
+            );
+            assert_eq!(n.len(), 3, "{}", c.code);
+        }
+    }
+
+    #[test]
+    fn interfaces_doc_lists_every_code() {
+        let doc = include_str!("../../../docs/interfaces.md");
+        for c in CODES {
+            let row = format!("| `{}` | {} | {} |", c.code, c.severity.name(), c.title);
+            assert!(
+                doc.contains(&row),
+                "docs/interfaces.md lacks the row\n{row}"
+            );
+        }
+    }
+
+    #[test]
+    fn keys_from_messages() {
+        assert_eq!(
+            key_of("[time] max_cfl must be > 0").as_deref(),
+            Some("time.max_cfl")
+        );
+        assert_eq!(
+            key_of("[time] needs `end_time` or `steps`").as_deref(),
+            Some("time")
+        );
+        assert_eq!(
+            key_of("[output.coefficients] velocity and area must be > 0").as_deref(),
+            Some("output.coefficients.velocity")
+        );
+        assert_eq!(key_of("density must be > 0"), None);
+    }
+
+    #[test]
+    fn diagnostics_travel_inside_errors() {
+        let e = err(Diagnostic::new(CASE_RANGE, "density must be > 0").key("fluid.density"));
+        let e = e.context("in case file a.toml");
+        let d = of_error(&e);
+        assert_eq!(d.code, "CASE004");
+        assert_eq!(d.key.as_deref(), Some("fluid.density"));
+        assert_eq!(d.message, "in case file a.toml: density must be > 0");
+        assert_eq!(of_error(&anyhow::anyhow!("x")).code, "GEN001");
+    }
+}

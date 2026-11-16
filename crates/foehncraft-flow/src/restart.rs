@@ -124,10 +124,15 @@ mod io {
     pub fn write(path: &Path, r: &Restart) -> Result<()> {
         let tmp = path.with_extension("h5.tmp");
         {
-            let g =
-                h5::File::create(&tmp).with_context(|| format!("creating {}", tmp.display()))?;
+            // no object timestamps: the same state gives the same bytes (D84)
+            let g = h5::File::with_options()
+                .with_fcpl(|p| p.obj_track_times(false))
+                .create(&tmp)
+                .with_context(|| format!("creating {}", tmp.display()))?;
             sattr(&g, "format", "foehncraft-restart")?;
             attr(&g, "version", &1i64)?;
+            sattr(&g, "foehncraft_version", foehncraft_core::VERSION)?;
+            sattr(&g, "units", UNITS)?;
             sattr(&g, "case", &r.case)?;
             attr(&g, "iteration", &(r.iteration as u64))?;
             attr(&g, "amg_setups", &(r.amg_setups as u64))?;
@@ -176,6 +181,24 @@ mod io {
             TimeScheme::Bdf2 => "bdf2",
             TimeScheme::CrankNicolson => "crank-nicolson",
         }
+    }
+
+    /// Kind and progress of a restart file, from its attributes.
+    pub fn progress(path: &Path) -> Result<(bool, u64)> {
+        let g = h5::File::open(path).with_context(|| format!("opening {}", path.display()))?;
+        let fmt = rsattr(&g, "format")?;
+        ensure!(
+            fmt == "foehncraft-restart",
+            "{} is not a Foehncraft restart file (format `{fmt}`)",
+            path.display()
+        );
+        let transient = rattr::<u8>(&g, "transient")? == 1;
+        let n: u64 = if transient {
+            rattr(&g, "step")?
+        } else {
+            rattr(&g, "iteration")?
+        };
+        Ok((transient, n))
     }
 
     /// Reads a restart file.
@@ -251,6 +274,24 @@ mod io {
             amg_matrix,
             transient: tr,
         })
+    }
+}
+
+/// Units of the fields in a restart file (attribute `units`, D75).
+pub const UNITS: &str = "u m/s; p Pa; mass_flux kg/s; ub m/s; pb Pa; grad_u 1/s; grad_p Pa/m; \
+     time s; dt_prev s; dt_next s";
+
+/// Whether a restart file is transient, and its step (transient) or outer
+/// iteration (steady), read from the file (D75), never from its name.
+pub fn progress(path: &Path) -> Result<(bool, u64)> {
+    #[cfg(feature = "hdf5")]
+    {
+        io::progress(path)
+    }
+    #[cfg(not(feature = "hdf5"))]
+    {
+        let _ = path;
+        anyhow::bail!("restart files need the `hdf5` feature")
     }
 }
 

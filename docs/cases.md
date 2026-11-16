@@ -177,7 +177,10 @@ iteration; `residuals_level<N>.csv` per level of a sweep), `patches.csv`
 wall face: position, pressure, wall shear stress), `line_<name>.csv` for
 each sampling line, `fields.vtkhdf` (velocity, speed, pressure and, with an
 exact solution, the velocity error), `case.resolved.toml` (the case with
-every default filled in), `flow.md` and `flow.json` (the report), and the
+every default filled in), `flow.md` and `flow.json` (the report),
+`result.json` (the result summary for programs, without timings) and
+`run.jsonl` (the run record, one JSON object per row; both in
+[interfaces.md](interfaces.md)), and the
 charts `residuals.svg`, `convergence.svg` (sweeps) and `centreline_u.svg`,
 `centreline_v.svg` (cavity against the reference data). The run fails when
 a check of the case fails (observed order, error, reference deviation,
@@ -208,6 +211,7 @@ re-reads the case file at N and applies what may change during a run.
 | `flow/cavity_re100_tet3d.toml` | generated tet 3D, 24 576 tetrahedra in a slab with symmetry planes | the cavity on fully three-dimensional tetrahedra, deviation ≤ 3 % | recipe 19 |
 | `flow/cavity_re100_poly3d.toml` | generated poly 3D, 5 445 polyhedra | the same on polyhedra | recipe 19 |
 | `flow/cavity_re1000_poly3d.toml` | generated poly 3D, 28 227 polyhedra | Re = 1000 on polyhedra, deviation ≤ 3 % | gallery 12, recipe 19 |
+| `flow/cavity_re100_budget.toml` | generated hex 2D, 64 × 64 | the cavity at Re = 100 with `[run.limits]` (wall time, iterations, output volume), run the way a script or an agent runs it; a tighter limit stops it with exit code 3 and `--restart latest` continues bitwise | gallery 18, recipe 26 |
 | `flow/cavity_re100_transient.toml` | generated hex 2D, 64 × 64 | the cavity at Re = 100 time-stepped (PISO, BDF2, Courant number 6) to its steady state: the SIMPLEC solution, deviation from Ghia ≤ 2 % | recipe 21 |
 | `flow/taylor_green_bdf2.toml` | generated hex 2D, 64 × 64 | Taylor–Green vortex, plain PISO with BDF2 over five time steps: time order 1.8–2.3 required | gallery 14, recipe 21 |
 | `flow/taylor_green_cn.toml` | generated hex 2D, 64 × 64 | the same with Crank–Nicolson | gallery 14, recipe 21 |
@@ -225,7 +229,10 @@ checks are tests on generated meshes (gallery 17, recipe 25).
 
 `[mesh]`, `[mesh.generate]` as in the [mesh cases](#mesh-case-file-keys).
 Unknown keys and values are errors with a "did you mean" hint (D39). SI
-units.
+units. The complete list, generated from the code with types, defaults,
+units and whether a key may change during a run, is
+[keys.md](keys.md); `--set key=value` overrides any key from the command
+line (recipe 26).
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -304,6 +311,9 @@ Transient cases (stage 5):
 | `run.restart_at` | none | also write `restart_<N>.h5` at these steps |
 | `run.restart_final` | true | write `restart.h5` at the end |
 | `run.reread_every` | 0 | re-read the case file every N steps or iterations (0: only on `.read_toml_N`), D40 |
+| `run.limits.max_wall_time` | none | stop after this wall time (s) with the restart file and results, exit code 3 (D83) |
+| `run.limits.max_steps`, `max_iterations` | none | stop after this many time steps (transient) or outer iterations (steady) |
+| `run.limits.max_output` | none | stop when the output directory holds this many bytes |
 | `verification.time_steps` | none | a time-order sweep on one mesh: three or more steps, largest first |
 | `verification.expected_time_order` | none | accepted range of the observed time order on the smallest steps |
 | `verification.benchmark` | none | `schafer-turek-2d1` (steady, Re 20) or `schafer-turek-2d2` (periodic, Re 100) |

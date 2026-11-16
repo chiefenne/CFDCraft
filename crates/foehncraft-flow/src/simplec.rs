@@ -39,7 +39,7 @@ use crate::device::{
     self, BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, Lsq, Mask, MomentumFaceArgs,
     MomentumRowArgs, Setup, TimeTerms,
 };
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use foehncraft_fv::amg::AmgSettings;
 use foehncraft_fv::disc::{Discretisation, Soa3};
 use foehncraft_fv::problem::{Boundary, BoundaryKind, Problem};
@@ -52,7 +52,9 @@ use std::time::Instant;
 pub use crate::device::cpu::SERIAL_BELOW;
 
 /// Pressure–velocity algorithm.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Algorithm {
     /// SIMPLEC (Van Doormaal & Raithby 1984), steady.
@@ -67,7 +69,7 @@ pub enum Algorithm {
 }
 
 /// `[solver]` settings of a flow case.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Settings {
     /// Pressure–velocity algorithm (default SIMPLEC, PISO with `[time]`).
@@ -197,18 +199,21 @@ impl Settings {
     pub fn validate(&self, transient: bool) -> Result<()> {
         let alg = self.algorithm(transient);
         let au = self.alpha_u(transient);
-        ensure!(
+        crate::need!(
             au > 0.0 && au <= 1.0,
+            CASE_RANGE,
             "[solver] relaxation_velocity must lie in (0, 1]"
         );
         let ap = self.alpha_p(transient);
-        ensure!(
+        crate::need!(
             ap > 0.0 && ap <= 1.0,
+            CASE_RANGE,
             "[solver] relaxation_pressure must lie in (0, 1]"
         );
         if transient {
-            ensure!(
+            crate::need!(
                 alg == Algorithm::Piso,
+                CASE_INCONSISTENT,
                 "[solver] algorithm = \"{}\" is a steady algorithm; a case with a [time] table \
                  runs PISO (remove `algorithm` or set it to \"piso\")",
                 match alg {
@@ -216,42 +221,81 @@ impl Settings {
                     _ => "simplec",
                 }
             );
-            ensure!(self.correctors >= 1, "[solver] correctors must be >= 1");
-            ensure!(
+            crate::need!(
+                self.correctors >= 1,
+                CASE_RANGE,
+                "[solver] correctors must be >= 1"
+            );
+            crate::need!(
                 self.outer_iterations >= 1,
+                CASE_RANGE,
                 "[solver] outer_iterations must be >= 1"
             );
-            ensure!(
+            crate::need!(
                 self.outer_tolerance > 0.0,
+                CASE_RANGE,
                 "[solver] outer_tolerance must be > 0"
             );
-            ensure!(
+            crate::need!(
                 !(self.outer_iterations == 1 && au < 1.0),
+                CASE_INCONSISTENT,
                 "[solver] relaxation_velocity < 1 needs outer_iterations > 1 in a transient case \
                  (with one outer iteration the relaxation would lag the solution)"
             );
         } else {
-            ensure!(
+            crate::need!(
                 alg != Algorithm::Piso,
+                CASE_INCONSISTENT,
                 "[solver] algorithm = \"piso\" is transient and needs a [time] table"
             );
-            ensure!(
+            crate::diag::check_fix(
                 !(alg == Algorithm::Simplec && au >= 1.0),
-                "[solver] SIMPLEC needs relaxation_velocity < 1 for a steady case \
-                 (D^C = V/(a_P/α − Σ|a_N|) is singular at α = 1); try 0.7"
-            );
+                crate::diag::CASE_INCONSISTENT,
+                &["solver.relaxation_velocity=0.7"],
+                || {
+                    String::from(
+                        "[solver] SIMPLEC needs relaxation_velocity < 1 for a steady case \
+                 (D^C = V/(a_P/α − Σ|a_N|) is singular at α = 1); try 0.7",
+                    )
+                },
+            )?;
         }
-        ensure!(self.tolerance > 0.0, "[solver] tolerance must be > 0");
-        ensure!(self.limiter_k >= 0.0, "[solver] limiter_k must be >= 0");
+        crate::need!(
+            self.tolerance > 0.0,
+            CASE_RANGE,
+            "[solver] tolerance must be > 0"
+        );
+        crate::need!(
+            self.limiter_k >= 0.0,
+            CASE_RANGE,
+            "[solver] limiter_k must be >= 0"
+        );
         for (name, t) in [
             ("momentum_tolerance", self.momentum_tol(transient)),
             ("pressure_tolerance", self.pressure_tol(transient)),
         ] {
-            ensure!(t > 0.0 && t < 1.0, "[solver] {name} must lie in (0, 1)");
+            crate::need!(
+                t > 0.0 && t < 1.0,
+                CASE_RANGE,
+                "[solver] {name} must lie in (0, 1)"
+            );
         }
-        ensure!(self.amg_rebuild >= 1, "[solver] amg_rebuild must be >= 1");
-        ensure!(self.log_every >= 1, "[solver] log_every must be >= 1");
-        self.amg.validate()
+        crate::need!(
+            self.amg_rebuild >= 1,
+            CASE_RANGE,
+            "[solver] amg_rebuild must be >= 1"
+        );
+        crate::need!(
+            self.log_every >= 1,
+            CASE_RANGE,
+            "[solver] log_every must be >= 1"
+        );
+        self.amg.validate().map_err(|e| {
+            let m = e.to_string();
+            let mut d = crate::diag::Diagnostic::new(crate::diag::CASE_RANGE, m.clone());
+            d.key = crate::diag::key_of(&m).map(|k| format!("solver.{k}"));
+            crate::diag::err(d)
+        })
     }
 }
 

@@ -86,8 +86,8 @@ target/release/foehn flow examples/cases/flow/taylor_green_bdf2.toml
 | Kind | What it is for | Where |
 |---|---|---|
 | Tutorial | a first mesh, end to end, in about ten minutes | [docs/tutorial.md](docs/tutorial.md) |
-| How-to | steps for one task: build, run, check, partition, rerun G1, order of accuracy, pressure solver and hypre, GPU runs, flow cases and boundary conditions, transient runs, restart and control files | [docs/recipes.md](docs/recipes.md) |
-| Reference | every case file, its keys and defaults | [docs/cases.md](docs/cases.md) |
+| How-to | steps for one task: build, run, check, partition, rerun G1, order of accuracy, pressure solver and hypre, GPU runs, flow cases and boundary conditions, transient runs, restart and control files, scripts and agents | [docs/recipes.md](docs/recipes.md) |
+| Reference | every case file, its keys and defaults; the machine interfaces (JSON formats, exit codes, signals, diagnostic codes) | [docs/cases.md](docs/cases.md), [docs/keys.md](docs/keys.md), [docs/interfaces.md](docs/interfaces.md) |
 | Examples | what each feature computes, with pictures and the commands | [docs/gallery.md](docs/gallery.md) |
 | Explanation | requirements, decisions, benchmark and verification results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md), [stage 2](docs/verification/stage2.md), [stage 3](docs/verification/stage3.md), [stage 4](docs/verification/stage4.md), [stage 5](docs/verification/stage5.md) |
 

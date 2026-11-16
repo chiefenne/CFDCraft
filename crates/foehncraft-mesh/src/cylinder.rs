@@ -32,7 +32,7 @@ use serde::{Deserialize, Serialize};
 pub const CYLINDER_PATCHES: [&str; 6] = ["inlet", "outlet", "walls", "cylinder", "zmin", "zmax"];
 
 /// Specification of a channel with a cylinder (`[mesh.cylinder]`).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct CylinderSpec {
     /// Channel length (m).

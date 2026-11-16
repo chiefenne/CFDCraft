@@ -17,7 +17,8 @@ use crate::case::{
     ErrorNorms, FlowCase, FlowReport, Log, Solve, dimension, error_norms, locate, mesh_for,
     patch_summaries, write_fields, write_outputs,
 };
-use crate::control::{self, Control};
+use crate::control::Control;
+use crate::engine::Steer;
 use crate::monitor::{self, History, Probes};
 use crate::plot::{self, Series};
 use crate::restart::{self, Restart};
@@ -135,8 +136,15 @@ struct RunOut {
     stopped: bool,
 }
 
-/// Runs a transient case; `log` receives progress lines.
-pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Result<FlowReport> {
+/// Runs a transient case; `log` receives progress lines, `steer` carries
+/// the requests, limits and run record (crate::engine).
+pub fn run(
+    case: &FlowCase,
+    name: &str,
+    out: &Path,
+    steer: &mut Steer,
+    log: impl FnMut(&str),
+) -> Result<FlowReport> {
     let t0 = Instant::now();
     std::fs::create_dir_all(out)?;
     let control = Control::new(out)?;
@@ -180,6 +188,8 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
         orders: Vec::new(),
         time_orders: Vec::new(),
         stopped: false,
+        stop: None,
+        warnings: Vec::new(),
         failures: Vec::new(),
         seconds: 0.0,
     };
@@ -232,6 +242,8 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
             out,
             &mut lg,
             &control,
+            steer,
+            &mut rep.warnings,
             &mesh,
             &geo,
             &label,
@@ -242,6 +254,7 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
         rep.stopped |= r.stopped;
         outs.push(r);
         if rep.stopped {
+            rep.stop = steer.stop.clone();
             break;
         }
     }
@@ -561,6 +574,8 @@ fn run_one<F: FnMut(&str)>(
     out: &Path,
     lg: &mut Log<F>,
     control: &Control,
+    steer: &mut Steer,
+    warnings: &mut Vec<crate::diag::Diagnostic>,
     mesh: &foehncraft_mesh::Mesh,
     geo: &foehncraft_mesh::Geometry,
     desc: &str,
@@ -635,10 +650,13 @@ fn run_one<F: FnMut(&str)>(
             fl.restore_amg(m, r.amg_setups)?;
         }
         if !same {
-            lg.line(
-                "note: the restart file has another cell or face order; the fields were mapped \
-                 by identity and the multigrid rebuilt (the continuation is not bit-identical)",
-            );
+            let m = "note: the restart file has another cell or face order; the fields were mapped \
+                 by identity and the multigrid rebuilt (the continuation is not bit-identical)";
+            lg.line(m);
+            warnings.push(crate::diag::Diagnostic::new(
+                crate::diag::RUN_RESTART_MAPPED,
+                m,
+            ));
         }
         if !time0.adaptive {
             dt = dt0;
@@ -699,6 +717,13 @@ fn run_one<F: FnMut(&str)>(
     let mut history = History::new(
         hist_dir,
         &suffix_name("history", desc, last),
+        &crate::case::csv_preamble(
+            "history",
+            name,
+            None,
+            "step -, time s, dt s, cfl - (largest Courant number), momentum_x momentum_y \
+             momentum_z continuity - (scaled residuals), outer cg - (iterations)",
+        ),
         "step,time,dt,cfl,momentum_x,momentum_y,momentum_z,continuity,outer,cg",
         cont,
     )?;
@@ -722,7 +747,18 @@ fn run_one<F: FnMut(&str)>(
     }
     let monitors = last && (!walls.is_empty() || !probes.names.is_empty());
     let mut forces = if monitors {
-        Some(History::new(out, "forces.csv", &fh, cont)?)
+        Some(History::new(
+            out,
+            "forces.csv",
+            &crate::case::csv_preamble(
+                "forces",
+                name,
+                None,
+                "step -, time s, <wall>_fx <wall>_fy <wall>_fz N (force of the fluid on the wall), cd cl -",
+            ),
+            &fh,
+            cont,
+        )?)
     } else {
         None
     };
@@ -731,7 +767,18 @@ fn run_one<F: FnMut(&str)>(
         let _ = write!(ph, ",{n}_u,{n}_v,{n}_w,{n}_p");
     }
     let mut probe_csv = if monitors && !probes.names.is_empty() {
-        Some(History::new(out, "probes.csv", &ph, cont)?)
+        Some(History::new(
+            out,
+            "probes.csv",
+            &crate::case::csv_preamble(
+                "probes",
+                name,
+                None,
+                "step -, time s, <probe>_u <probe>_v <probe>_w m/s, <probe>_p Pa",
+            ),
+            &ph,
+            cont,
+        )?)
     } else {
         None
     };
@@ -783,8 +830,22 @@ fn run_one<F: FnMut(&str)>(
                 rp.outer,
                 r.pressure_iterations
             ));
+            if steer.record.on() {
+                steer.record.row(&serde_json::json!({
+                    "type": "step",
+                    "step": n,
+                    "time": rp.time,
+                    "dt": h,
+                    "cfl": rp.cfl,
+                    "momentum": r.momentum,
+                    "continuity": r.continuity,
+                    "outer": rp.outer,
+                    "cg": r.pressure_iterations,
+                }));
+            }
         }
         if n == first_step + 1 || n.is_multiple_of(case.solver.log_every) {
+            steer.record.flush();
             lg.line(&format!(
                 "step {n:6}  t {:.6e}  Δt {h:.3e}  Courant {:.3}  momentum {:.2e} {:.2e} {:.2e}  \
                  continuity {:.2e}  outer {}  cg {}",
@@ -815,9 +876,11 @@ fn run_one<F: FnMut(&str)>(
                 || o.fields_at.contains(&n)
                 || req.result);
         let r = &case.run;
+        let asked = steer.restart_requested();
         let restart_now = last
             && ((r.restart_every > 0 && n.is_multiple_of(r.restart_every))
-                || r.restart_at.contains(&n));
+                || r.restart_at.contains(&n)
+                || asked);
         if at_monitor || fields_now {
             let sol = Solution {
                 state: fl.state()?,
@@ -868,6 +931,7 @@ fn run_one<F: FnMut(&str)>(
                     geo,
                     &sol,
                     case.analytic_at(rp.time).as_ref(),
+                    Some((n, Some(rp.time))),
                 )?;
                 lg.line(&format!(
                     "      fields of step {n} written (fields_{n:06}.vtkhdf)"
@@ -897,50 +961,21 @@ fn run_one<F: FnMut(&str)>(
             if case.run.restart_at.contains(&n) {
                 restart::write(&out.join(format!("restart_{n:06}.h5")), &rs)?;
             }
-        }
-        if req.reread {
-            if let Some(src) = case.source.clone() {
-                match control::reread(&src, &case) {
-                    Ok(rr) => {
-                        if rr.applied.is_empty() && rr.not_applied.is_empty() {
-                            lg.line(&format!(
-                                "      step {n}: case file re-read, nothing changed"
-                            ));
-                        }
-                        for l in &rr.applied {
-                            lg.line(&format!("      step {n}: changed {l}"));
-                        }
-                        for l in &rr.not_applied {
-                            lg.line(&format!(
-                                "      step {n}: not applied (cannot change during a run): {l}"
-                            ));
-                        }
-                        if !rr.applied.is_empty() {
-                            fl.set_settings(rr.case.solver.clone())?;
-                            let t_old = case.time;
-                            case = rr.case;
-                            if let (Some(a), Some(b)) = (t_old, case.time)
-                                && a.time_step != b.time_step
-                                && !b.adaptive
-                            {
-                                dt = b.time_step;
-                            }
-                        }
-                        std::fs::write(
-                            out.join(format!("case.read_toml_{n}.toml")),
-                            toml::to_string_pretty(&case)?,
-                        )?;
-                    }
-                    Err(e) => lg.line(&format!(
-                        "      step {n}: the case file was not applied, it does not validate: {e:#}"
-                    )),
-                }
-            } else {
-                lg.line(&format!("      step {n}: no case file to re-read"));
+            if asked {
+                lg.line(&format!("      step {n}: restart.h5 written (SIGUSR1)"));
             }
         }
-        if req.stop {
-            lg.line(&format!("      step {n}: stopped by .stop"));
+        if req.reread
+            && let Some(old) =
+                crate::case::reread_case(&mut case, &mut fl, lg, steer, warnings, n, out)?
+            && let (Some(a), Some(b)) = (old.time, case.time)
+            && a.time_step != b.time_step
+            && !b.adaptive
+        {
+            dt = b.time_step;
+        }
+        if let Some(s) = steer.poll(&case.run.limits, nsteps, true, req.stop) {
+            lg.line(&format!("      step {n}: {}", s.message));
             stopped = true;
             break;
         }
@@ -1035,7 +1070,7 @@ fn run_one<F: FnMut(&str)>(
     if let Some(b) = &benchmark {
         log_benchmark(b, |l| lg.line(l));
     }
-    if last {
+    if last || stopped {
         write_outputs(
             &case,
             out,
@@ -1045,6 +1080,7 @@ fn run_one<F: FnMut(&str)>(
             analytic_end.as_ref(),
             &patches,
             &loc,
+            Some((tr.clock.step, Some(tr.clock.time))),
         )?;
         if !bt.is_empty() {
             let window = |c: &[f64]| -> Vec<(f64, f64)> {
@@ -1086,6 +1122,8 @@ fn run_one<F: FnMut(&str)>(
     }
     let solve = Solve {
         mesh: desc.into(),
+        mesh_hash: crate::engine::mesh_hash(mesh),
+        device: fl.device(),
         cells: nc,
         iterations: nsteps,
         converged: !stopped,

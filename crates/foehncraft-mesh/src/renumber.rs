@@ -21,7 +21,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 /// Cell order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "kebab-case")]
 pub enum Ordering {
     /// As generated or read.

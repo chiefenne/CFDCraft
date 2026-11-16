@@ -169,6 +169,7 @@ jobs:
           cargo test -p foehncraft-mesh --no-default-features --locked
           cargo test -p foehncraft-fv --no-default-features --locked
           cargo test -p foehncraft-flow --no-default-features --locked
+          tools/check_c_free.sh
       - uses: actions/upload-artifact@v4
         with:
           name: g1-ci-small-${{ matrix.os }}

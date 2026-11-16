@@ -53,7 +53,11 @@
 
 use crate::analytic::{Analytic, Benchmark, Reference};
 use crate::bc::{self, BoundaryCondition, Level};
+use crate::control::{self, Control};
+use crate::diag;
+use crate::engine::Steer;
 use crate::plot::{self, Series};
+use crate::restart::{self, Restart};
 use crate::simplec::{self, Flow, Physics, Residuals, Settings, Solution, Timings};
 use crate::transient::TimeScheme;
 use anyhow::{Context, Result, bail};
@@ -69,7 +73,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// `[fluid]`
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct FluidSection {
     /// Density ρ (kg/m³).
@@ -88,7 +92,7 @@ impl Default for FluidSection {
 }
 
 /// `[flow]`
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct FlowSection {
     /// Convection on (false: Stokes flow).
@@ -107,7 +111,7 @@ impl Default for FlowSection {
 }
 
 /// `[initial]`
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct InitialSection {
     /// Start velocity (m/s).
@@ -117,7 +121,7 @@ pub struct InitialSection {
 }
 
 /// `[pressure]`
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct PressureSection {
     /// Point whose cell holds the reference pressure (default: the cell
@@ -128,7 +132,7 @@ pub struct PressureSection {
 }
 
 /// `[run]`
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct RunSection {
     /// CPU threads (default: all cores; meshes below 20 000 cells run on
@@ -150,6 +154,56 @@ pub struct RunSection {
     /// Re-read the case file every N iterations or time steps (0: only on a
     /// `.read_toml_N` control file), D40.
     pub reread_every: usize,
+    /// Limits of the run (D83).
+    pub limits: Limits,
+}
+
+/// `[run.limits]` (D83): when one is reached the run writes a restart file
+/// and the final output and ends with exit code 3 (stopped, D64).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct Limits {
+    /// Largest wall time of the run (s), setup included.
+    pub max_wall_time: Option<f64>,
+    /// Largest number of time steps of the run (transient; a continued run
+    /// counts from its restart).
+    pub max_steps: Option<usize>,
+    /// Largest number of outer iterations of the run (steady).
+    pub max_iterations: Option<usize>,
+    /// Largest volume of the output directory (bytes).
+    pub max_output: Option<f64>,
+}
+
+impl Limits {
+    /// Checks the ranges.
+    pub fn validate(&self) -> Result<()> {
+        if let Some(t) = self.max_wall_time {
+            crate::need!(
+                t > 0.0,
+                CASE_RANGE,
+                "[run.limits] max_wall_time must be > 0"
+            );
+        }
+        if let Some(n) = self.max_steps {
+            crate::need!(n >= 1, CASE_RANGE, "[run.limits] max_steps must be >= 1");
+        }
+        if let Some(n) = self.max_iterations {
+            crate::need!(
+                n >= 1,
+                CASE_RANGE,
+                "[run.limits] max_iterations must be >= 1"
+            );
+        }
+        if let Some(b) = self.max_output {
+            crate::need!(b > 0.0, CASE_RANGE, "[run.limits] max_output must be > 0");
+        }
+        Ok(())
+    }
+
+    /// True when no limit is set.
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
 }
 
 impl Default for RunSection {
@@ -163,12 +217,13 @@ impl Default for RunSection {
             restart_at: Vec::new(),
             restart_final: true,
             reread_every: 0,
+            limits: Limits::default(),
         }
     }
 }
 
 /// `[time]`: a transient case (D28).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct TimeSection {
     /// Time integration.
@@ -213,33 +268,44 @@ impl Default for TimeSection {
 impl TimeSection {
     /// Checks the ranges.
     pub fn validate(&self) -> Result<()> {
-        anyhow::ensure!(
+        crate::need!(
             self.time_step > 0.0,
+            CASE_RANGE,
             "[time] time_step must be > 0 (the first step with `adaptive`)"
         );
-        anyhow::ensure!(
+        crate::need!(
             self.end_time.is_some() || self.steps.is_some(),
+            CASE_MISSING_KEY,
             "[time] needs `end_time` or `steps`"
         );
         if let Some(e) = self.end_time {
-            anyhow::ensure!(
+            crate::need!(
                 e > self.start_time,
+                CASE_RANGE,
                 "[time] end_time must be later than start_time"
             );
         }
-        anyhow::ensure!(self.max_cfl > 0.0, "[time] max_cfl must be > 0");
-        anyhow::ensure!(
+        crate::need!(self.max_cfl > 0.0, CASE_RANGE, "[time] max_cfl must be > 0");
+        crate::diag::check_fix(
             self.max_growth > 1.0 && self.max_growth < 1.0 + std::f64::consts::SQRT_2,
-            "[time] max_growth must lie in (1, 2.414): BDF2 with variable steps is zero-stable \
-             only for step ratios below 1 + √2"
-        );
-        anyhow::ensure!(
+            crate::diag::CASE_RANGE,
+            &["time.max_growth=1.2"],
+            || {
+                String::from(
+                    "[time] max_growth must lie in (1, 2.414): BDF2 with variable steps is zero-stable \
+             only for step ratios below 1 + √2",
+                )
+            },
+        )?;
+        crate::need!(
             self.min_time_step >= 0.0,
+            CASE_RANGE,
             "[time] min_time_step must be >= 0"
         );
         if let Some(m) = self.max_time_step {
-            anyhow::ensure!(
+            crate::need!(
                 m >= self.min_time_step && m > 0.0,
+                CASE_RANGE,
                 "[time] max_time_step must be > 0 and >= min_time_step"
             );
         }
@@ -248,7 +314,7 @@ impl TimeSection {
 }
 
 /// A point probe, `[[output.probes]]`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Probe {
     /// Name (columns `<name>_u` … in `probes.csv`).
@@ -259,7 +325,7 @@ pub struct Probe {
 
 /// Force coefficients, `[output.coefficients]`: C = 2 F / (ρ U² A) of the
 /// sum of the forces on `patches`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Coefficients {
     /// Patches whose forces are summed.
@@ -285,7 +351,7 @@ fn y_axis() -> [f64; 3] {
 }
 
 /// `[verification]`
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct VerificationSection {
     /// Refinement levels of `[mesh.generate]`; two or more give an
@@ -323,7 +389,7 @@ pub struct VerificationSection {
 }
 
 /// A line along which velocity and pressure are sampled.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Line {
     /// Name (file `line_<name>.csv`).
@@ -342,7 +408,7 @@ fn default_points() -> usize {
 }
 
 /// `[output]`
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct OutputSection {
     /// Output directory (default `output/<case name>`).
@@ -386,7 +452,7 @@ impl Default for OutputSection {
 }
 
 /// A flow case.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct FlowCase {
     /// The mesh.
@@ -416,6 +482,9 @@ pub struct FlowCase {
     /// The case file (for re-reading it during a run).
     #[serde(skip)]
     pub source: Option<PathBuf>,
+    /// The `--set key=value` overrides applied to the case file.
+    #[serde(skip)]
+    pub overrides: Vec<String>,
 }
 
 /// Adds "did you mean" to the unknown-field and unknown-variant messages of
@@ -437,13 +506,126 @@ pub fn explain_toml_error(msg: &str) -> String {
     out
 }
 
+/// `run.restart = "latest"` (`--restart latest`): the newest restart file
+/// of the output directory, by the step or iteration it holds (D64).
+pub const LATEST: &str = "latest";
+
+/// The diagnostic of a TOML error: the code from its kind, the location
+/// and the key path from the span in `text` (D78).
+pub fn toml_diagnostic(text: &str, e: &toml::de::Error) -> diag::Diagnostic {
+    let msg = e.message();
+    let code = if msg.contains("unknown field") {
+        diag::CASE_UNKNOWN_KEY
+    } else if msg.contains("missing field") {
+        diag::CASE_MISSING_KEY
+    } else if msg.contains("unknown variant")
+        || msg.contains("invalid type")
+        || msg.contains("invalid value")
+        || msg.contains("invalid length")
+    {
+        diag::CASE_BAD_VALUE
+    } else {
+        diag::CASE_SYNTAX
+    };
+    let mut d = diag::Diagnostic::new(code, explain_toml_error(&e.to_string()));
+    if let Some(span) = e.span()
+        && span.start <= text.len()
+    {
+        let before = &text[..span.start];
+        let line = before.matches('\n').count() + 1;
+        let col = before.rsplit('\n').next().map_or(0, |l| l.chars().count()) + 1;
+        d.location = Some([line, col]);
+        // the table header above the span and the key at it
+        let table = before
+            .lines()
+            .rev()
+            .map(str::trim)
+            .find(|l| l.starts_with('[') && !l.starts_with("[["))
+            .map(|l| l.trim_matches(|c| c == '[' || c == ']').trim().to_string());
+        let at = text[span.clone()].trim();
+        let key: String = at
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-' || *c == '.')
+            .collect();
+        let line_text = before.rsplit('\n').next().unwrap_or("").trim();
+        let is_key = !key.is_empty() && (line_text.is_empty() || !line_text.contains('='));
+        d.key = match (table, is_key) {
+            (Some(t), true) => Some(format!("{t}.{key}")),
+            (None, true) => Some(key),
+            (Some(t), false) => {
+                let k = line_text.split('=').next().unwrap_or("").trim();
+                Some(if k.is_empty() { t } else { format!("{t}.{k}") })
+            }
+            (None, false) => {
+                let k = line_text.split('=').next().unwrap_or("").trim();
+                (!k.is_empty()).then(|| k.to_string())
+            }
+        };
+    }
+    d
+}
+
+/// Applies one `key=value` override (`--set`, D62) to a case table: the key
+/// is a dotted path (`fluid.viscosity`, `boundary.inlet.velocity`), the
+/// value a TOML value (`1e-3`, `[1.0, 0.0, 0.0]`, `true`, `"rcm"`); a value
+/// that is not TOML is taken as a string (`run.backend=cuda`).
+pub fn apply_set(v: &mut toml::Table, set: &str) -> Result<()> {
+    let bad = |m: String| diag::err(diag::Diagnostic::new(diag::CASE_SET, m));
+    let Some((key, value)) = set.split_once('=') else {
+        return Err(bad(format!("--set {set}: expected key=value")));
+    };
+    let key = key.trim();
+    let value = value.trim();
+    if key.is_empty() || key.split('.').any(str::is_empty) {
+        return Err(bad(format!(
+            "--set {set}: the key `{key}` is not a dotted path"
+        )));
+    }
+    let parsed = toml::from_str::<toml::Table>(&format!("v = {value}"))
+        .ok()
+        .and_then(|mut t| t.remove("v"))
+        .unwrap_or_else(|| toml::Value::String(value.to_string()));
+    let mut parts: Vec<&str> = key.split('.').collect();
+    let last = parts.pop().unwrap_or_default();
+    let mut cur = v;
+    let mut path = String::new();
+    for p in parts {
+        if !path.is_empty() {
+            path.push('.');
+        }
+        path.push_str(p);
+        let next = cur
+            .entry(p.to_string())
+            .or_insert_with(|| toml::Value::Table(Default::default()));
+        let toml::Value::Table(t) = next else {
+            return Err(bad(format!(
+                "--set {set}: `{path}` is a value, not a table"
+            )));
+        };
+        cur = t;
+    }
+    cur.insert(last.to_string(), parsed);
+    Ok(())
+}
+
 impl FlowCase {
     /// Reads and validates a case file; relative paths are taken from its
     /// directory.
     pub fn from_file(path: &Path) -> Result<Self> {
-        let text =
-            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let mut c = Self::from_toml(&text, path.parent().unwrap_or(Path::new(".")))
+        Self::from_file_with(path, &[])
+    }
+
+    /// As [`from_file`](Self::from_file), with `key=value` overrides
+    /// applied before the case is validated (`--set`, D62). A re-read of
+    /// the case file during the run applies them again.
+    pub fn from_file_with(path: &Path, sets: &[String]) -> Result<Self> {
+        let text = std::fs::read_to_string(path).map_err(|e| {
+            diag::err(diag::Diagnostic::new(
+                diag::CASE_FILE,
+                format!("reading {}: {e}", path.display()),
+            ))
+        })?;
+        let mut c = Self::from_toml_with(&text, path.parent().unwrap_or(Path::new(".")), sets)
             .with_context(|| format!("in case file {}", path.display()))?;
         c.source = Some(path.to_path_buf());
         Ok(c)
@@ -451,12 +633,33 @@ impl FlowCase {
 
     /// Parses and validates a case from TOML text.
     pub fn from_toml(text: &str, dir: &Path) -> Result<Self> {
-        let mut c: Self = toml::from_str(text)
-            .map_err(|e| anyhow::anyhow!(explain_toml_error(&e.to_string())))?;
+        Self::from_toml_with(text, dir, &[])
+    }
+
+    /// Parses a case from TOML text, applies the `key=value` overrides and
+    /// validates it.
+    pub fn from_toml_with(text: &str, dir: &Path, sets: &[String]) -> Result<Self> {
+        let mut c: Self = if sets.is_empty() {
+            toml::from_str(text).map_err(|e| diag::err(toml_diagnostic(text, &e)))?
+        } else {
+            let mut v: toml::Table =
+                toml::from_str(text).map_err(|e| diag::err(toml_diagnostic(text, &e)))?;
+            for s in sets {
+                apply_set(&mut v, s)?;
+            }
+            Self::deserialize(toml::Value::Table(v)).map_err(|e| {
+                let mut d = toml_diagnostic("", &e);
+                d.message = format!("after --set: {}", d.message);
+                diag::err(d)
+            })?
+        };
+        c.overrides = sets.to_vec();
         if let Some(f) = &c.mesh.file {
             c.mesh.file = Some(dir.join(f));
         }
-        if let Some(r) = &c.run.restart {
+        if let Some(r) = &c.run.restart
+            && r.as_os_str() != LATEST
+        {
             c.run.restart = Some(dir.join(r));
         }
         c.validate()?;
@@ -465,19 +668,30 @@ impl FlowCase {
 
     /// Ranges and consistency of the settings.
     pub fn validate(&self) -> Result<()> {
-        anyhow::ensure!(self.fluid.density > 0.0, "[fluid] density must be > 0");
-        anyhow::ensure!(self.fluid.viscosity > 0.0, "[fluid] viscosity must be > 0");
+        crate::need!(
+            self.fluid.density > 0.0,
+            CASE_RANGE,
+            "[fluid] density must be > 0"
+        );
+        crate::need!(
+            self.fluid.viscosity > 0.0,
+            CASE_RANGE,
+            "[fluid] viscosity must be > 0"
+        );
         let transient = self.time.is_some();
         self.solver.validate(transient)?;
+        self.run.limits.validate()?;
         if let Some(t) = &self.time {
             t.validate()?;
         }
-        anyhow::ensure!(
+        crate::need!(
             self.output.history_every >= 1,
+            CASE_RANGE,
             "[output] history_every must be >= 1"
         );
-        anyhow::ensure!(
+        crate::need!(
             self.output.monitor_every >= 1,
+            CASE_RANGE,
             "[output] monitor_every must be >= 1"
         );
         if let Some(a) = &self.analytic
@@ -489,36 +703,50 @@ impl FlowCase {
             );
         }
         if let Some(c) = &self.output.coefficients {
-            anyhow::ensure!(
+            crate::need!(
                 c.velocity > 0.0 && c.area > 0.0,
+                CASE_RANGE,
                 "[output.coefficients] velocity and area must be > 0"
             );
-            anyhow::ensure!(
+            crate::need!(
                 !c.patches.is_empty(),
+                CASE_INCONSISTENT,
                 "[output.coefficients] patches must name at least one patch"
             );
         }
         let v = &self.verification;
         if !v.time_steps.is_empty() {
-            anyhow::ensure!(transient, "[verification] time_steps need a [time] table");
-            anyhow::ensure!(
+            crate::need!(
+                transient,
+                CASE_INCONSISTENT,
+                "[verification] time_steps need a [time] table"
+            );
+            crate::need!(
                 v.time_steps.len() >= 3,
+                CASE_INCONSISTENT,
                 "[verification] time_steps need at least three steps for an observed order"
             );
-            anyhow::ensure!(
+            crate::need!(
                 v.levels.len() < 2,
+                CASE_INCONSISTENT,
                 "[verification] a sweep is either over levels or over time_steps"
             );
-            anyhow::ensure!(
+            crate::diag::check_fix(
                 self.time.is_some_and(|t| !t.adaptive),
-                "[verification] time_steps need a fixed time step ([time] adaptive = false)"
-            );
+                crate::diag::CASE_INCONSISTENT,
+                &["time.adaptive=false"],
+                || {
+                    "[verification] time_steps need a fixed time step ([time] adaptive = false)"
+                        .into()
+                },
+            )?;
         }
         if let Some(b) = v.benchmark {
             let re =
                 self.fluid.density * b.mean_velocity() * Benchmark::DIAMETER / self.fluid.viscosity;
-            anyhow::ensure!(
+            crate::need!(
                 (re - b.reynolds()).abs() < 1e-6 * b.reynolds(),
+                CASE_INCONSISTENT,
                 "[verification] benchmark {} needs Re = ρ Ū D / μ = {} (Ū = {} m/s, D = 0.1 m), \
                  the case has {re}",
                 b.label(),
@@ -526,34 +754,39 @@ impl FlowCase {
                 b.mean_velocity()
             );
             if b == Benchmark::SchaferTurek2d2 {
-                anyhow::ensure!(
+                crate::need!(
                     transient,
+                    CASE_INCONSISTENT,
                     "[verification] benchmark schafer-turek-2d2 is periodic and needs a [time] table"
                 );
             }
         }
         let v = &self.verification;
         if v.levels.len() >= 2 {
-            anyhow::ensure!(
+            crate::need!(
                 self.mesh.generate.is_some() || self.mesh.cylinder.is_some(),
+                CASE_INCONSISTENT,
                 "[verification] levels need a [mesh.generate] or [mesh.cylinder] table"
             );
-            anyhow::ensure!(
+            crate::need!(
                 self.analytic.is_some() || v.benchmark.is_some(),
+                CASE_INCONSISTENT,
                 "[verification] levels need an [analytic] solution or a benchmark"
             );
         }
         if v.max_error.is_some() {
-            anyhow::ensure!(
+            crate::need!(
                 self.analytic.is_some(),
+                CASE_INCONSISTENT,
                 "[verification] max_error needs an [analytic] solution"
             );
         }
         if let Some(reference) = v.reference {
             let re = self.fluid.density * v.lid_velocity.unwrap_or(1.0) / self.fluid.viscosity;
             let want = reference.reynolds();
-            anyhow::ensure!(
+            crate::need!(
                 (re - want).abs() < 1e-6 * want,
+                CASE_INCONSISTENT,
                 "[verification] reference {:?} is for Re = {want}, the case has Re = ρ U / μ = {re} \
                  (unit cavity, lid_velocity = {})",
                 reference,
@@ -561,8 +794,9 @@ impl FlowCase {
             );
         }
         for l in &self.output.lines {
-            anyhow::ensure!(
+            crate::need!(
                 l.points >= 2,
+                CASE_RANGE,
                 "[[output.lines]] {}: points must be >= 2",
                 l.name
             );
@@ -659,6 +893,10 @@ pub struct PatchSummary {
 pub struct Solve {
     /// Mesh description.
     pub mesh: String,
+    /// SHA-256 of the mesh (D85).
+    pub mesh_hash: String,
+    /// Where it ran.
+    pub device: String,
     /// Cells.
     pub cells: usize,
     /// Outer iterations.
@@ -707,8 +945,12 @@ pub struct FlowReport {
     pub orders: Vec<f64>,
     /// Observed time orders of a time-step sweep.
     pub time_orders: Vec<f64>,
-    /// The run was stopped by a `.stop` control file.
+    /// The run was stopped early: `.stop`, a signal or a limit.
     pub stopped: bool,
+    /// Why it stopped early.
+    pub stop: Option<crate::engine::Stop>,
+    /// Warnings of the run with their codes (re-reads, restarts).
+    pub warnings: Vec<diag::Diagnostic>,
     /// Problems found by the checks.
     pub failures: Vec<String>,
     /// Seconds.
@@ -785,11 +1027,40 @@ pub(crate) fn locate(loc: &Locator, geo: &Geometry, x: [f64; 3]) -> usize {
 
 /// Runs a case; `log` receives progress lines; files go to `out`.
 pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Result<FlowReport> {
+    let mut steer = Steer::quiet(out);
+    run_steered(case, name, out, &mut steer, log)
+}
+
+/// The steady restart file of the current state.
+fn steady_restart(fl: &mut Flow, mesh: &Mesh, name: &str) -> Result<Restart> {
+    Ok(Restart {
+        case: name.into(),
+        cell_id: mesh.cell_id[..mesh.n_cells].to_vec(),
+        face_id: mesh.face_id.clone(),
+        state: fl.state()?,
+        iteration: fl.iteration(),
+        amg_setups: fl.amg_setups,
+        amg_matrix: fl.amg_matrix.clone(),
+        transient: None,
+    })
+}
+
+/// As [`run`], with the requests, limits and run record of `steer`
+/// (crate::engine).
+pub fn run_steered(
+    case: &FlowCase,
+    name: &str,
+    out: &Path,
+    steer: &mut Steer,
+    log: impl FnMut(&str),
+) -> Result<FlowReport> {
     if case.time.is_some() {
-        return crate::unsteady::run(case, name, out, log);
+        return crate::unsteady::run(case, name, out, steer, log);
     }
     let t0 = Instant::now();
     std::fs::create_dir_all(out)?;
+    let control = Control::new(out)?;
+    let mut case = case.clone();
     let mut log = log;
     let mut lg = Log {
         out: &mut log,
@@ -816,17 +1087,25 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
         orders: Vec::new(),
         time_orders: Vec::new(),
         stopped: false,
+        stop: None,
+        warnings: Vec::new(),
         failures: Vec::new(),
         seconds: 0.0,
     };
     std::fs::write(
         out.join("case.resolved.toml"),
-        toml::to_string_pretty(case)?,
+        toml::to_string_pretty(&case)?,
     )?;
     let last = levels.len() - 1;
+    let single = levels.len() == 1;
+    if !single && case.run.restart.is_some() {
+        bail!("[run] restart continues a single run, not a sweep over levels");
+    }
     let mut histories: Vec<(String, Vec<(f64, f64)>)> = Vec::new();
+    let mut stopped = false;
     for (li, level) in levels.iter().enumerate() {
-        let (mesh, geo, desc) = mesh_for(case, *level)?;
+        let (mesh, geo, desc) = mesh_for(&case, *level)?;
+        let mesh_hash = crate::engine::mesh_hash(&mesh);
         // boundary-condition check (D30)
         let findings = bc::check(
             &mesh,
@@ -856,7 +1135,7 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
         }
         let nc = mesh.n_cells;
         if li == 0 || li == last {
-            header(&mut lg, case, &mesh, &desc, li == last);
+            header(&mut lg, &case, &mesh, &desc, li == last);
         }
         lg.line(&format!("mesh  {desc}"));
         let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, analytic.as_ref())?;
@@ -890,15 +1169,56 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
                 ptx: case.run.ptx.clone(),
             },
         )?;
-        let mut csv = String::from(
+        if let Some(path) = case.run.restart.clone() {
+            let r = restart::read(&path)?;
+            let (r, same) =
+                r.to_local(&mesh.cell_id[..nc], &mesh.face_id, mesh.n_interior_faces())?;
+            if r.transient.is_some() {
+                bail!(
+                    "{} is the restart file of a transient run; this case is steady (no [time] table)",
+                    path.display()
+                );
+            }
+            fl.load(&r.state)?;
+            fl.iteration = r.iteration;
+            if let Some(m) = &r.amg_matrix {
+                fl.restore_amg(m, r.amg_setups)?;
+            }
+            if !same {
+                let m = "note: the restart file has another cell or face order; the fields were \
+                         mapped by identity and the multigrid rebuilt (the continuation is not \
+                         bit-identical)";
+                lg.line(m);
+                rep.warnings
+                    .push(diag::Diagnostic::new(diag::RUN_RESTART_MAPPED, m));
+            }
+            lg.line(&format!(
+                "restart from {} at iteration {}",
+                path.display(),
+                r.iteration
+            ));
+        }
+        let first = fl.iteration();
+        let mut csv = csv_preamble(
+            "residuals",
+            name,
+            None,
+            "iteration -, momentum_x -, momentum_y -, momentum_z -, continuity - (scaled residuals), \
+             bicgstab_x -, bicgstab_y -, bicgstab_z -, cg - (iterations)",
+        );
+        csv.push_str(
             "iteration,momentum_x,momentum_y,momentum_z,continuity,bicgstab_x,bicgstab_y,bicgstab_z,cg\n",
         );
         let mut hist = Vec::new();
         let mut converged = false;
         let mut res = Residuals::default();
         let ts = Instant::now();
-        for it in 1..=case.solver.max_iterations {
+        loop {
+            if fl.iteration() >= case.solver.max_iterations {
+                break;
+            }
             res = fl.iterate()?;
+            let it = fl.iteration();
             let done = res.max() < case.solver.tolerance;
             if it % case.output.history_every == 0 || done {
                 let _ = writeln!(
@@ -915,8 +1235,19 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
                     res.pressure_iterations
                 );
                 hist.push((it as f64, res.max()));
+                if steer.record.on() {
+                    steer.record.row(&serde_json::json!({
+                        "type": "iteration",
+                        "iteration": it,
+                        "momentum": res.momentum,
+                        "continuity": res.continuity,
+                        "bicgstab": res.momentum_iterations,
+                        "cg": res.pressure_iterations,
+                    }));
+                }
             }
-            if it == 1 || it % case.solver.log_every == 0 || done {
+            if it == first + 1 || it % case.solver.log_every == 0 || done {
+                steer.record.flush();
                 lg.line(&format!(
                     "iter {it:6}  momentum {:.3e} {:.3e} {:.3e}  continuity {:.3e}  bicgstab {:?}  cg {}",
                     res.momentum[0],
@@ -931,17 +1262,72 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
                 converged = true;
                 break;
             }
+            // control files (D40), signals and limits (D64, D83)
+            let req = control.check(it, case.run.reread_every);
+            if req.result && li == last {
+                fl.update_boundaries()?;
+                fl.gradients()?;
+                let sol = Solution {
+                    state: fl.state()?,
+                    disc: &fl.disc,
+                    phys: fl.phys,
+                };
+                write_fields(
+                    &case,
+                    &out.join(format!("fields_{it:06}.vtkhdf")),
+                    &mesh,
+                    &geo,
+                    &sol,
+                    analytic.as_ref(),
+                    Some((it, None)),
+                )?;
+                lg.line(&format!(
+                    "      fields of iteration {it} written (fields_{it:06}.vtkhdf)"
+                ));
+            }
+            let r = &case.run;
+            let restart_now = single
+                && ((r.restart_every > 0 && it.is_multiple_of(r.restart_every))
+                    || r.restart_at.contains(&it)
+                    || steer.restart_requested());
+            if restart_now && restart::AVAILABLE {
+                let rs = steady_restart(&mut fl, &mesh, name)?;
+                restart::write(&out.join("restart.h5"), &rs)?;
+                if case.run.restart_at.contains(&it) {
+                    restart::write(&out.join(format!("restart_{it:06}.h5")), &rs)?;
+                }
+                lg.line(&format!("      iteration {it}: restart.h5 written"));
+            }
+            if req.reread {
+                reread_case(
+                    &mut case,
+                    &mut fl,
+                    &mut lg,
+                    steer,
+                    &mut rep.warnings,
+                    it,
+                    out,
+                )?;
+            }
+            if let Some(s) = steer.poll(&case.run.limits, it - first, false, req.stop) {
+                lg.line(&format!("      iteration {it}: {}", s.message));
+                stopped = true;
+                break;
+            }
         }
+        steer.record.flush();
         let secs = ts.elapsed().as_secs_f64();
         let iters = fl.iteration();
         lg.line(&format!(
             "      {} in {iters} outer iterations, {secs:.2} s, {:.0} ns/cell/iteration",
             if converged {
                 "converged"
+            } else if stopped {
+                "stopped"
             } else {
                 "NOT converged"
             },
-            1e9 * fl.timings.total() / (nc as f64 * iters.max(1) as f64)
+            1e9 * fl.timings.total() / (nc as f64 * (iters - first).max(1) as f64)
         ));
         let suffix = level.map_or(String::new(), |l| format!("_level{l}"));
         std::fs::write(out.join(format!("residuals{suffix}.csv")), &csv)?;
@@ -949,7 +1335,7 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
             level.map_or("residual".into(), |l| format!("level {l}")),
             hist,
         ));
-        if !converged && case.verification.require_convergence.unwrap_or(true) {
+        if !converged && !stopped && case.verification.require_convergence.unwrap_or(true) {
             rep.failures.push(format!(
                 "{desc}: not converged in {iters} outer iterations (largest residual {:.2e})",
                 res.max()
@@ -964,7 +1350,7 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
             phys: fl.phys,
         };
         let sol = &fl_host;
-        let errors = analytic.map(|a| error_norms(sol, &mesh, &geo, &a, dimension(case)));
+        let errors = analytic.map(|a| error_norms(sol, &mesh, &geo, &a, dimension(&case)));
         if let Some(e) = &errors {
             lg.line(&format!(
                 "      velocity error L2 {:.3e}, Linf {:.3e} (relative), pressure Linf {:.3e}",
@@ -974,14 +1360,14 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
         let reference = case
             .verification
             .reference
-            .map(|r| compare_reference(sol, &mesh, &geo, &loc, r, case));
+            .map(|r| compare_reference(sol, &mesh, &geo, &loc, r, &case));
         if let Some(r) = &reference {
             lg.line(&format!(
                 "      {}: largest deviation u {:.4}, v {:.4} (lid speeds)",
                 r.reference, r.u_max_dev, r.v_max_dev
             ));
         }
-        let patches = patch_summaries(sol, &mesh, &geo, case);
+        let patches = patch_summaries(sol, &mesh, &geo, &case);
         let total: f64 = patches.iter().map(|p| p.mass_flow).sum();
         // scale: the largest patch mass flow, or in a closed domain the
         // flow ρ |u|max A through the largest patch
@@ -991,20 +1377,20 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
             .map(|p| p.mass_flow.abs().max(case.fluid.density * umax * p.area))
             .fold(0.0f64, f64::max);
         let mass_imbalance = if big > 0.0 { total / big } else { 0.0 };
-        let coefficients = crate::monitor::coefficients(case, &patches);
+        let coefficients = crate::monitor::coefficients(&case, &patches);
         if let Some([cd, cl]) = coefficients {
             lg.line(&format!(
                 "      force coefficients C_D {cd:.5}, C_L {cl:.5}"
             ));
         }
         let benchmark =
-            crate::unsteady::steady_benchmark_of(case, sol, &mesh, &geo, &loc, &patches);
+            crate::unsteady::steady_benchmark_of(&case, sol, &mesh, &geo, &loc, &patches);
         if let Some(b) = &benchmark {
             crate::unsteady::log_benchmark(b, |l| lg.line(l));
         }
-        if li == last {
+        if li == last || stopped {
             write_outputs(
-                case,
+                &case,
                 out,
                 &mesh,
                 &geo,
@@ -1012,18 +1398,27 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
                 analytic.as_ref(),
                 &patches,
                 &loc,
+                Some((iters, None)),
             )?;
             if let Some(r) = &reference {
                 write_reference_svg(out, name, r)?;
             }
         }
+        drop(fl_host);
+        if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
+            let rs = steady_restart(&mut fl, &mesh, name)?;
+            restart::write(&out.join("restart.h5"), &rs)?;
+        }
         rep.solves.push(Solve {
             mesh: desc,
+            mesh_hash,
+            device: fl.device(),
             cells: nc,
             iterations: iters,
             converged,
             residuals: res,
-            ns_per_cell_iteration: 1e9 * fl.timings.total() / (nc as f64 * iters.max(1) as f64),
+            ns_per_cell_iteration: 1e9 * fl.timings.total()
+                / (nc as f64 * (iters - first).max(1) as f64),
             timings: fl.timings.clone(),
             amg_setups: fl.amg_setups,
             errors,
@@ -1034,6 +1429,11 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
             transient: None,
             benchmark,
         });
+        if stopped {
+            rep.stopped = true;
+            rep.stop = steer.stop.clone();
+            break;
+        }
     }
     // checks
     let v = &case.verification;
@@ -1148,6 +1548,66 @@ pub fn run(case: &FlowCase, name: &str, out: &Path, log: impl FnMut(&str)) -> Re
     std::fs::write(out.join("flow.json"), serde_json::to_string_pretty(&rep)?)?;
     std::fs::write(out.join("flow.md"), rep.to_markdown())?;
     Ok(rep)
+}
+
+/// Re-reads the case file at iteration or step `n` (D40) and applies what
+/// may change during a run; returns the case as it was when something was
+/// applied.
+pub(crate) fn reread_case<F: FnMut(&str)>(
+    case: &mut FlowCase,
+    fl: &mut Flow,
+    lg: &mut Log<F>,
+    steer: &mut Steer,
+    warnings: &mut Vec<diag::Diagnostic>,
+    n: usize,
+    out: &Path,
+) -> Result<Option<FlowCase>> {
+    let what = if case.time.is_some() {
+        "step"
+    } else {
+        "iteration"
+    };
+    let Some(src) = case.source.clone() else {
+        lg.line(&format!("      {what} {n}: no case file to re-read"));
+        return Ok(None);
+    };
+    match control::reread(&src, case) {
+        Ok(rr) => {
+            if rr.applied.is_empty() && rr.not_applied.is_empty() {
+                lg.line(&format!(
+                    "      {what} {n}: case file re-read, nothing changed"
+                ));
+            }
+            for l in &rr.applied {
+                lg.line(&format!("      {what} {n}: changed {l}"));
+            }
+            for l in &rr.not_applied {
+                let m = format!("{what} {n}: not applied (cannot change during a run): {l}");
+                lg.line(&format!("      {m}"));
+                steer.event(diag::RUN_NOT_APPLIED, n, &m);
+                warnings.push(diag::Diagnostic::new(diag::RUN_NOT_APPLIED, m));
+            }
+            let old = if rr.applied.is_empty() {
+                None
+            } else {
+                fl.set_settings(rr.case.solver.clone())?;
+                Some(std::mem::replace(case, rr.case))
+            };
+            std::fs::write(
+                out.join(format!("case.read_toml_{n}.toml")),
+                toml::to_string_pretty(&*case)?,
+            )?;
+            Ok(old)
+        }
+        Err(e) => {
+            let m =
+                format!("{what} {n}: the case file was not applied, it does not validate: {e:#}");
+            lg.line(&format!("      {m}"));
+            steer.event(diag::RUN_REREAD_INVALID, n, &m);
+            warnings.push(diag::Diagnostic::new(diag::RUN_REREAD_INVALID, m));
+            Ok(None)
+        }
+    }
 }
 
 pub(crate) fn header<F: FnMut(&str)>(
@@ -1424,8 +1884,17 @@ pub(crate) fn write_outputs(
     analytic: Option<&Analytic>,
     patches: &[PatchSummary],
     loc: &Locator,
+    at: Option<(usize, Option<f64>)>,
 ) -> Result<()> {
-    let mut csv = String::from("patch,type,area,mass_flow,mean_pressure,force_x,force_y,force_z\n");
+    let name = case_name(case);
+    let mut csv = csv_preamble(
+        "patches",
+        &name,
+        at,
+        "patch -, type -, area m², mass_flow kg/s (out of the domain), mean_pressure Pa, \
+         force_x force_y force_z N",
+    );
+    csv.push_str("patch,type,area,mass_flow,mean_pressure,force_x,force_y,force_z\n");
     for p in patches {
         let _ = writeln!(
             csv,
@@ -1447,7 +1916,13 @@ pub(crate) fn write_outputs(
             if !matches!(case.boundary[&p.name], BoundaryCondition::Wall { .. }) {
                 continue;
             }
-            let mut csv = String::from("x,y,z,pressure,tau_x,tau_y,tau_z\n");
+            let mut csv = csv_preamble(
+                "wall",
+                &name,
+                at,
+                "x y z m (face centroid), pressure Pa, tau_x tau_y tau_z Pa (wall shear stress)",
+            );
+            csv.push_str("x,y,z,pressure,tau_x,tau_y,tau_z\n");
             let mut rows: Vec<(u64, String)> = p
                 .range()
                 .map(|f| {
@@ -1472,7 +1947,13 @@ pub(crate) fn write_outputs(
         }
     }
     for l in &case.output.lines {
-        let mut csv = String::from("s,x,y,z,u,v,w,p\n");
+        let mut csv = csv_preamble(
+            "line",
+            &name,
+            at,
+            "s m (distance from `from`), x y z m, u v w m/s, p Pa",
+        );
+        csv.push_str("s,x,y,z,u,v,w,p\n");
         let d = sub(l.to, l.from);
         let len = norm(d);
         for i in 0..l.points {
@@ -1495,9 +1976,50 @@ pub(crate) fn write_outputs(
         }
         std::fs::write(out.join(format!("line_{}.csv", l.name)), csv)?;
     }
-    write_fields(case, &out.join("fields.vtkhdf"), mesh, geo, fl, analytic)
+    write_fields(
+        case,
+        &out.join("fields.vtkhdf"),
+        mesh,
+        geo,
+        fl,
+        analytic,
+        at,
+    )
 }
 
+/// The case name (the stem of the case file).
+pub(crate) fn case_name(case: &FlowCase) -> String {
+    case.source
+        .as_ref()
+        .and_then(|p| p.file_stem())
+        .map_or("flow".into(), |s| s.to_string_lossy().into_owned())
+}
+
+/// The comment lines at the top of a CSV file (D75): format and version,
+/// the Foehncraft version, the case, the iteration or step and time of
+/// the state it holds, and the units of the columns (`-`: dimensionless).
+pub(crate) fn csv_preamble(
+    kind: &str,
+    case: &str,
+    at: Option<(usize, Option<f64>)>,
+    units: &str,
+) -> String {
+    let when = match at {
+        Some((n, Some(t))) => format!("; step {n}; time {t:e} s"),
+        Some((n, None)) => format!("; iteration {n}"),
+        None => String::new(),
+    };
+    format!(
+        "# format foehncraft-{kind} 1; Foehncraft {}; case {case}{when}\n# units: {units}\n",
+        foehncraft_core::VERSION
+    )
+}
+
+/// Units of the fields of `fields*.vtkhdf` (attribute `units`, D75).
+pub const FIELD_UNITS: &str = "coordinates m; velocity_x m/s; velocity_y m/s; velocity_z m/s; \
+     speed m/s; pressure Pa; velocity_error m/s";
+
+/// Writes the fields; `at` is the iteration or step and the time (D75).
 #[cfg(feature = "hdf5")]
 pub(crate) fn write_fields(
     case: &FlowCase,
@@ -1506,8 +2028,9 @@ pub(crate) fn write_fields(
     geo: &Geometry,
     fl: &Solution,
     analytic: Option<&Analytic>,
+    at: Option<(usize, Option<f64>)>,
 ) -> Result<()> {
-    use foehncraft_mesh::vtkhdf::{CellField, write};
+    use foehncraft_mesh::vtkhdf::{Attr, CellField, write_with};
     if !case.output.vtkhdf {
         return Ok(());
     }
@@ -1544,7 +2067,23 @@ pub(crate) fn write_fields(
             values: &err,
         });
     }
-    write(file, mesh, &fields)
+    let name = case_name(case);
+    let mut attrs = vec![
+        ("foehncraft_format", Attr::Str("foehncraft-fields")),
+        ("foehncraft_format_version", Attr::U64(1)),
+        ("foehncraft_version", Attr::Str(foehncraft_core::VERSION)),
+        ("case", Attr::Str(&name)),
+        ("units", Attr::Str(FIELD_UNITS)),
+    ];
+    match at {
+        Some((n, Some(t))) => {
+            attrs.push(("step", Attr::U64(n as u64)));
+            attrs.push(("time", Attr::F64(t)));
+        }
+        Some((n, None)) => attrs.push(("iteration", Attr::U64(n as u64))),
+        None => {}
+    }
+    write_with(file, mesh, &fields, &attrs)
 }
 
 #[cfg(not(feature = "hdf5"))]
@@ -1555,6 +2094,7 @@ pub(crate) fn write_fields(
     _: &Geometry,
     _: &Solution,
     _: Option<&Analytic>,
+    _: Option<(usize, Option<f64>)>,
 ) -> Result<()> {
     Ok(())
 }

@@ -2,17 +2,24 @@
 """Bitwise comparison of two runs of the same case (D31), for example the
 CPU and the GPU flow loop, or two thread counts.
 
-    python3 tools/compare_runs.py DIR_A DIR_B
+    python3 tools/compare_runs.py [--across-versions] DIR_A DIR_B
 
 DIR_A and DIR_B are output directories of `foehn` (or parents of several,
 compared file by file under the same relative paths). Every number must be
 bitwise equal:
 - HDF5 files (fields.vtkhdf, restart.h5): every dataset, compared as bits;
-- CSV files: byte for byte;
+- CSV files: byte for byte, except the comment lines (`#`, D75), which
+  name the version;
 - JSON reports: every value, except timings and the device description;
 - case.resolved.toml: every line except `backend`, `ptx` and `threads`
   of `[run]`.
-Logs, Markdown reports and SVG plots carry timings and are skipped.
+Logs, Markdown reports, SVG plots and the run record (run.jsonl) carry
+timings and are skipped.
+
+--across-versions compares the runs of two versions of Foehncraft (a
+branch against main): the files of DIR_A only, and in JSON reports only
+the keys both have, so that new files and new keys are not differences.
+
 Exit code 0 when all files agree, 1 otherwise. Needs h5py and numpy.
 """
 import json
@@ -22,8 +29,9 @@ import sys
 import h5py
 import numpy as np
 
-SKIP_SUFFIX = (".log", ".md", ".svg", ".txt")
-SKIP_KEYS = ("seconds", "ns_per_", "timings", "device", "backend", "threads")
+SKIP_SUFFIX = (".log", ".md", ".svg", ".txt", ".jsonl")
+SKIP_KEYS = ("seconds", "ns_per_", "timings", "device", "backend", "threads", "gpu")
+COMMON = False
 RUN_KEYS = ("backend", "ptx", "threads")
 
 
@@ -33,6 +41,22 @@ def strip(o):
     if isinstance(o, list):
         return [strip(v) for v in o]
     return o
+
+
+def common(a, b):
+    """a and b reduced to the keys both have (--across-versions)."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        ks = [k for k in a if k in b]
+        pairs = [common(a[k], b[k]) for k in ks]
+        return dict(zip(ks, (p[0] for p in pairs))), dict(zip(ks, (p[1] for p in pairs)))
+    if isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+        pairs = [common(x, y) for x, y in zip(a, b)]
+        return [p[0] for p in pairs], [p[1] for p in pairs]
+    return a, b
+
+
+def data_lines(p):
+    return [l for l in p.read_bytes().split(b"\n") if not l.startswith(b"#")]
 
 
 def toml_lines(p):
@@ -88,7 +112,10 @@ def compare(da, db):
             continue
         n += 1
         if pa.suffix == ".json":
-            if strip(json.loads(pa.read_text())) != strip(json.loads(pb.read_text())):
+            x, y = strip(json.loads(pa.read_text())), strip(json.loads(pb.read_text()))
+            if COMMON:
+                x, y = common(x, y)
+            if x != y:
                 bad.append(f"{rel}: values differ")
         elif pa.suffix in (".vtkhdf", ".h5", ".hdf5"):
             with h5py.File(pa, "r") as A, h5py.File(pb, "r") as B:
@@ -96,16 +123,23 @@ def compare(da, db):
         elif pa.name == "case.resolved.toml":
             if toml_lines(pa) != toml_lines(pb):
                 bad.append(f"{rel}: resolved case differs")
+        elif pa.suffix == ".csv":
+            if data_lines(pa) != data_lines(pb):
+                bad.append(f"{rel}: bytes differ")
         elif pa.read_bytes() != pb.read_bytes():
             bad.append(f"{rel}: bytes differ")
     return n, bad
 
 
 def main():
-    if len(sys.argv) != 3:
+    global COMMON
+    args = sys.argv[1:]
+    if args and args[0] == "--across-versions":
+        COMMON, args = True, args[1:]
+    if len(args) != 2:
         print(__doc__, file=sys.stderr)
         return 2
-    da, db = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+    da, db = pathlib.Path(args[0]), pathlib.Path(args[1])
     n, bad = compare(da, db)
     for b in bad:
         print("  " + b)

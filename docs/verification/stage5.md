@@ -13,9 +13,10 @@ the first part of stage 5 (the transient core and its benchmarks); the GPU
 flow loop and the further items of the stage follow in their own pull
 requests and are added here. Part 2 is the GPU flow loop
 ([below](#gpu-flow-loop-part-2)), part 3 the adjoint-ready kernels
-([below](#adjoint-ready-kernels-part-3)). The commands are in
-[recipes 21–25](../recipes.md#transient-flow), the pictures in
-[gallery 14–17](../gallery.md#taylor-green), the case files in the
+([below](#adjoint-ready-kernels-part-3)), part 4a the run contract for
+scripts and agents ([below](#run-contract-part-4a)). The commands are in
+[recipes 21–26](../recipes.md#transient-flow), the pictures in
+[gallery 14–18](../gallery.md#taylor-green), the case files in the
 [case catalogue](../cases.md#flow-cases-examplescasesflow).
 
 ## Acceptance checks and results
@@ -372,12 +373,59 @@ still computed in `f64` only; making it generic, which completes the chain
 from the node coordinates to the residual, comes with mesh morphing (L4).
 The adjoint solver itself is L17.
 
+## Run contract (part 4a)
+
+Requirements D62, D64, D69 (the run record), D75 and D77–D87 make a run
+something a program can drive: a parametric study (D62), a batch job, or
+an agent through the later MCP server (L18). This part adds them on the
+solver side; the conservation ledger and the divergence report (D63, D88,
+D89) follow as part 4b. No result changes: the 20 flow cases of the
+catalogue give bitwise the fields, CSV files and report values of the
+build of `main` (`tools/compare_runs.py --across-versions`; the resolved
+case gains the empty `[run.limits]` table).
+
+| Check | Result | Where |
+|---|---|---|
+| Stop at a limit, continue with `--restart latest` (steady) | fields and restart file bitwise equal to the run without the stop | test `steady_restart_latest_is_bitwise` |
+| SIGTERM during a transient run, then `--restart latest` | exit code 3, `RUN002` in `result.json`; fields and restart file bitwise equal | test `sigterm_stops_cleanly_and_restart_latest_continues_bitwise` |
+| Two identical runs (D84) | `result.json`, fields and CSV files byte for byte equal | test `json_result_and_byte_identical_files` |
+| Exit codes 0–3 and JSON error objects (D64, D78, D79) | out-of-range value `CASE004` with its key, typo `CASE002` with key, location and hint, non-convergence exit 2 (`RUN006`), limit exit 3 (`RUN004`) | test `exit_codes` |
+| Schema and key reference (D77) | every run-time key of D40 in the schema; `docs/keys.md` equal to `foehn schema --markdown` | tests in `schema.rs` |
+| Codes documented (D78) | every code of the registry is a row of `docs/interfaces.md` | test in `diag.rs` |
+| Estimate (D81) | 11 cases, 128 to 28 227 cells: peak memory within 6 %, file sizes within 9 % | `tools/estimate_chart.py`, gallery 18 |
+| C-free core (D87) | `foehncraft-flow` without default features: no `-sys` crate, no C build | `tools/check_c_free.sh` in CI |
+
+**How a stop stays bitwise.** A stop (signal, `.stop` or limit) is tested
+after an iteration or step is complete, the same place where the run
+would write a scheduled restart file; the restart file holds the whole
+state (fields, old levels, the clock, the adaptive step, the multigrid
+matrix), and `--restart latest` reads the step or iteration from the file
+(D75), not from its name. A steady run continues its iteration count, so
+convergence is tested at the same iterations as without the stop.
+
+**Why `result.json` has no timings.** It is the file a study compares and
+a hash identifies, so it holds only what the numerics decide; timings go
+to `run.jsonl` and the reports. Its `files` list gives the SHA-256 of every
+other output, which makes a comparison of two runs a comparison of two
+small files.
+
+**Memory model.** The peak resident memory of a run is 14 MB plus 1960
+bytes per interior face and 710 per boundary face. An interior face
+carries the two off-diagonal entries of each matrix in SELL storage, its
+fluxes and its share of the multigrid hierarchy; a boundary face its
+geometry and boundary values. The split matters for the one-cell-thick 2D
+meshes, whose front and back faces are half of all faces: a single
+per-face constant left 3D polyhedra 24 % low. The device memory of the GPU
+loop is taken as three quarters of the face part (to be measured on a GPU).
+
 ## Limits of this part of stage 5
 
 - The further stage-5 items (the bounded central scheme, the new boundary
   conditions, potential-flow initialisation, expressions, the Python
-  package, `--set` and the result summary) follow in their own pull
-  requests.
+  package) follow in their own pull requests; the conservation ledger and
+  the divergence report with part 4b.
+- Signals need unix; on Windows the `.stop` file and the limits stop a
+  run.
 - Restart files need the `hdf5` feature (on by default); a build without
   it runs transient cases but writes no restart file.
 - One partition only, as in stage 4, and one GPU.

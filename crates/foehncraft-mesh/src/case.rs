@@ -44,7 +44,7 @@ pub struct MeshCase {
 }
 
 /// `[mesh]`
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct MeshSection {
     /// Gmsh file (relative to the case file).

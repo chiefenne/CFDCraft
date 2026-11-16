@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 
 /// An exact solution, `[analytic]`. The walls are the planes y = `lower`
 /// and y = `upper`; the flow is in x.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Analytic {
     /// Plane Couette flow: u = U (y − y₀)/(y₁ − y₀), p constant.
@@ -249,7 +249,7 @@ pub const GHIA_V_RE1000: [f64; 17] = [
 ];
 
 /// Reference data of a case, `[verification] reference`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Reference {
     /// Ghia et al. 1982, Re = 100.
@@ -314,7 +314,7 @@ impl Range {
 }
 
 /// Benchmark data of a case, `[verification] benchmark`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum Benchmark {
     /// Schäfer & Turek (1996) 2D-1: channel 2.2 × 0.41 m, cylinder D = 0.1

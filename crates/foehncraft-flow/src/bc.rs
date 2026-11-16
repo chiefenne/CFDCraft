@@ -23,6 +23,7 @@
 //! laminar flow.
 
 use crate::analytic::Analytic;
+use crate::diag;
 use anyhow::Result;
 use foehncraft_kernels::flow::{
     FLUX_FIXED, FLUX_PRESSURE, MOM_FIXED, MOM_OUTFLOW, MOM_SYMMETRY, PB_EXTRAPOLATE, PB_FIXED,
@@ -35,7 +36,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 /// Inlet profile.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum InletProfile {
     /// The velocity of the `[analytic]` solution at the face centroid (at
@@ -49,7 +50,7 @@ pub enum InletProfile {
 }
 
 /// A coordinate axis.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Axis {
     /// x.
@@ -80,7 +81,7 @@ pub fn patch_extent(mesh: &Mesh, p: &foehncraft_mesh::Patch) -> Extent {
 }
 
 /// Turbulence values at an inlet (used from stage 6 on).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct InletTurbulence {
     /// Turbulence intensity (fraction, e.g. 0.05).
@@ -108,7 +109,7 @@ impl InletTurbulence {
 }
 
 /// One boundary condition, `[boundary.<patch>]`.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum BoundaryCondition {
     /// No-slip wall, at rest or moving tangentially.
@@ -295,10 +296,28 @@ pub enum Level {
 pub struct Finding {
     /// Severity.
     pub level: Level,
+    /// Diagnostic code (D78).
+    pub code: &'static str,
     /// The boundary it concerns, if one.
     pub patch: Option<String>,
     /// What is wrong and what to change.
     pub message: String,
+}
+
+impl Finding {
+    /// As a diagnostic (D78).
+    pub fn diagnostic(&self) -> diag::Diagnostic {
+        let mut d =
+            diag::Diagnostic::new(self.code, self.message.clone()).severity(match self.level {
+                Level::Note => diag::Severity::Note,
+                Level::Warning => diag::Severity::Warning,
+                Level::Error => diag::Severity::Error,
+            });
+        if let Some(p) = &self.patch {
+            d = d.boundary(p.clone()).key(format!("boundary.{p}"));
+        }
+        d
+    }
 }
 
 impl fmt::Display for Finding {
@@ -309,8 +328,8 @@ impl fmt::Display for Finding {
             Level::Error => "error",
         };
         match &self.patch {
-            Some(p) => write!(f, "{l}: boundary `{p}`: {}", self.message),
-            None => write!(f, "{l}: {}", self.message),
+            Some(p) => write!(f, "{l} {}: boundary `{p}`: {}", self.code, self.message),
+            None => write!(f, "{l} {}: {}", self.code, self.message),
         }
     }
 }
@@ -450,9 +469,10 @@ pub fn check(
     laminar: bool,
 ) -> Vec<Finding> {
     let mut out = Vec::new();
-    let mut push = |level, patch: Option<&str>, message: String| {
+    let mut push = |level, code, patch: Option<&str>, message: String| {
         out.push(Finding {
             level,
+            code,
             patch: patch.map(str::to_string),
             message,
         })
@@ -463,6 +483,7 @@ pub fn check(
         if !bcs.contains_key(&p.name) {
             push(
                 Level::Error,
+                diag::BC_NO_CONDITION,
                 Some(&p.name),
                 format!(
                     "no boundary condition: add a table [boundary.{}] with a `type` \
@@ -477,6 +498,7 @@ pub fn check(
         if mesh.patch(name).is_none() {
             push(
                 Level::Error,
+                diag::BC_NO_PATCH,
                 Some(name),
                 format!(
                     "the mesh has no such patch{}; its patches are {}",
@@ -496,6 +518,7 @@ pub fn check(
         match bc {
             BoundaryCondition::Periodic { .. } => push(
                 Level::Error,
+                diag::BC_NOT_AVAILABLE,
                 Some(name),
                 "periodic boundaries come with stage 6 (they need the periodic face \
                  pairing of the mesh); use a velocity-inlet with `profile = \"analytic\"` and a \
@@ -516,6 +539,7 @@ pub fn check(
                 if given != 1 {
                     push(
                         Level::Error,
+                        diag::BC_INLET_INPUT,
                         Some(name),
                         format!(
                             "a velocity-inlet takes exactly one of `velocity`, `normal_velocity` \
@@ -526,6 +550,7 @@ pub fn check(
                 if *profile == Some(InletProfile::Analytic) && analytic.is_none() {
                     push(
                         Level::Error,
+                        diag::BC_PROFILE_ANALYTIC,
                         Some(name),
                         "`profile = \"analytic\"` needs an [analytic] table".into(),
                     );
@@ -535,6 +560,7 @@ pub fn check(
                 {
                     push(
                         Level::Error,
+                        diag::BC_PROFILE_PARABOLIC,
                         Some(name),
                         "`profile = \"parabolic\"` needs `max_velocity` (m/s) and \
                          `profile_axes` (for example [\"y\"])"
@@ -546,6 +572,7 @@ pub fn check(
                 {
                     push(
                         Level::Warning,
+                        diag::BC_PROFILE_UNUSED,
                         Some(name),
                         "`max_velocity` and `profile_axes` are only used with \
                          `profile = \"parabolic\"`"
@@ -555,6 +582,7 @@ pub fn check(
             }
             BoundaryCondition::MassFlowInlet { mass_flow, .. } if *mass_flow < 0.0 => push(
                 Level::Warning,
+                diag::BC_NEGATIVE_MASS_FLOW,
                 Some(name),
                 format!(
                     "mass_flow = {mass_flow} kg/s is negative, so the flow leaves the domain \
@@ -567,6 +595,7 @@ pub fn check(
         if laminar && !t.is_empty() {
             push(
                 Level::Warning,
+                diag::BC_TURBULENCE_UNUSED,
                 Some(name),
                 format!(
                     "{} unused: the flow is laminar (turbulence models come with stage 6)",
@@ -591,6 +620,7 @@ pub fn check(
                 if worst > 1e-9 * norm(*velocity) {
                     push(
                         Level::Warning,
+                        diag::BC_WALL_NORMAL_VELOCITY,
                         Some(&p.name),
                         format!(
                             "the wall velocity has a component of up to {worst:.3e} m/s normal to \
@@ -611,6 +641,7 @@ pub fn check(
                 if out_faces > 0 && *profile == Some(InletProfile::Analytic) {
                     push(
                         Level::Note,
+                        diag::BC_EXACT_OUTFLOW,
                         Some(&p.name),
                         format!(
                             "the exact solution leaves the domain on {out_faces} of {} faces \
@@ -621,6 +652,7 @@ pub fn check(
                 } else if out_faces > 0 {
                     push(
                         Level::Warning,
+                        diag::BC_INLET_OUTFLOW,
                         Some(&p.name),
                         format!(
                             "the velocity points out of the domain on {out_faces} of {} faces; \
@@ -646,6 +678,7 @@ pub fn check(
                 if worst > 1e-6 {
                     push(
                         Level::Warning,
+                        diag::BC_SYMMETRY_NOT_PLANAR,
                         Some(&p.name),
                         format!(
                             "the symmetry patch is not planar (normals differ by up to {:.2}°); \
@@ -683,6 +716,7 @@ pub fn check(
         if scale_q > 0.0 && net.abs() > 1e-9 * scale_q {
             push(
                 Level::Error,
+                diag::BC_UNBALANCED,
                 None,
                 format!(
                     "the prescribed boundaries let a net {:.6e} kg/s {} the domain and there is no \
@@ -695,6 +729,7 @@ pub fn check(
         } else {
             push(
                 Level::Note,
+                diag::BC_REFERENCE_CELL,
                 None,
                 "no pressure boundary: the pressure level is fixed in the reference cell \
                  ([pressure] reference_point, reference_value)"
@@ -704,6 +739,7 @@ pub fn check(
     } else if outlets.is_empty() && !inflow.is_empty() {
         push(
             Level::Error,
+            diag::BC_OVER_SPECIFIED,
             None,
             format!(
                 "the flow entering through {} can only leave through the pressure inlet(s) {}: \
@@ -738,6 +774,7 @@ pub fn check(
         if inlets.is_empty() && outlets.len() == 1 && !moving {
             push(
                 Level::Warning,
+                diag::BC_FLUID_AT_REST,
                 Some(outlets[0]),
                 "the only open boundary is this outlet and no boundary drives a flow; unless a \
                  body force acts, the result is the fluid at rest (add an inlet or a moving wall)"
@@ -746,6 +783,7 @@ pub fn check(
         } else {
             push(
                 Level::Note,
+                diag::BC_PRESSURE_DRIVEN,
                 None,
                 "no prescribed inflow: the flow rate follows from the pressure boundaries".into(),
             );

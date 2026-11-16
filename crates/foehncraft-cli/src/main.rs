@@ -5,11 +5,23 @@
 //! transport, verification sweeps, CPU and GPU; stage 2), `poisson` (the
 //! pressure solver study: CG with algebraic multigrid against hypre; stage
 //! 3), `flow` (steady incompressible laminar flow with SIMPLEC; stage 4)
-//! and `bench g1` (the GPU kernel gate of stage 0).
+//! and `bench g1` (the GPU kernel gate of stage 0), `schema` (the JSON
+//! Schema of the flow case file, D77).
+//!
+//! Output streams (D79): human text on standard output, or with `--json`
+//! on standard error and one JSON object on standard output (the result
+//! summary of a flow run, the check report of `--check`, a command summary
+//! for the others, an error object with a diagnostic code on failure).
+//! `--quiet` silences the human text. No command asks questions. Exit
+//! codes (D64): 0 finished with every check passed, 1 error, 2 finished
+//! with failed checks, 3 stopped on request (signal, `.stop`, a limit).
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use foehncraft_bench::G1Case;
+use foehncraft_flow::diag;
+use foehncraft_flow::engine::{self, BuildInfo, Interrupts, Roots, RunOptions};
+use serde_json::json;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -19,8 +31,52 @@ use std::path::PathBuf;
     about = "Foehncraft – general purpose CFD solver"
 )]
 struct Cli {
+    /// Machine output: one JSON object on standard output, human text on
+    /// standard error (D79).
+    #[arg(long, global = true)]
+    json: bool,
+    /// No human text.
+    #[arg(long, global = true)]
+    quiet: bool,
     #[command(subcommand)]
     command: Command,
+}
+
+/// Where human text goes.
+#[derive(Clone, Copy)]
+struct Out {
+    json: bool,
+    quiet: bool,
+}
+
+impl Out {
+    fn line(self, l: &str) {
+        if self.quiet {
+        } else if self.json {
+            eprintln!("{l}");
+        } else {
+            stdout(l);
+        }
+    }
+}
+
+/// One line on standard output. A closed pipe (`foehn info | head -1`)
+/// ends the output instead of a panic.
+fn stdout(l: &str) {
+    use std::io::Write;
+    let _ = writeln!(std::io::stdout().lock(), "{l}");
+}
+
+/// A finished command: exit code and the JSON summary of `--json`.
+struct Done {
+    code: i32,
+    json: serde_json::Value,
+}
+
+impl Done {
+    fn ok(json: serde_json::Value) -> Self {
+        Self { code: 0, json }
+    }
 }
 
 #[derive(Subcommand)]
@@ -51,6 +107,21 @@ enum Command {
         #[command(subcommand)]
         bench: Bench,
     },
+    /// Print the JSON Schema of the flow case file (D77): type, range,
+    /// default, unit and description of every key, and whether it may
+    /// change during a run.
+    Schema(SchemaArgs),
+}
+
+#[derive(clap::Args)]
+struct SchemaArgs {
+    /// The key reference as Markdown (docs/keys.md) instead of JSON.
+    #[arg(long)]
+    markdown: bool,
+    /// Only the JSON Schema document, without the format envelope (for
+    /// editors that validate TOML against a schema).
+    #[arg(long)]
+    schema_only: bool,
 }
 
 #[derive(Subcommand)]
@@ -144,9 +215,20 @@ struct PoissonArgs {
 struct FlowArgs {
     /// Flow case file (TOML).
     case: PathBuf,
-    /// Check the case file and the boundary conditions, then stop.
+    /// Check the case file and the boundary conditions, estimate the cost
+    /// of the run (D81), then stop.
     #[arg(long)]
     check: bool,
+    /// Override a case key, `--set fluid.viscosity=1e-3` (repeatable, D62;
+    /// the value is TOML, a bare word is a string).
+    #[arg(long = "set", value_name = "KEY=VALUE")]
+    set: Vec<String>,
+    /// Allow reading only below this directory (repeatable, D82).
+    #[arg(long, value_name = "DIR")]
+    read_root: Vec<PathBuf>,
+    /// Allow writing only below this directory (repeatable, D82).
+    #[arg(long, value_name = "DIR")]
+    write_root: Vec<PathBuf>,
     /// CPU threads (overrides `run.threads`).
     #[arg(long)]
     threads: Option<usize>,
@@ -161,7 +243,8 @@ struct FlowArgs {
     /// Do not write the VTKHDF file.
     #[arg(long)]
     no_vtkhdf: bool,
-    /// Continue from this restart file (overrides `run.restart`).
+    /// Continue from this restart file, or `latest` for the newest one of
+    /// the output directory (overrides `run.restart`).
     #[arg(long)]
     restart: Option<PathBuf>,
     /// End time of a transient case in s (replaces `time.end_time` and
@@ -206,45 +289,88 @@ struct G1Args {
     out: Option<PathBuf>,
 }
 
-fn main() -> Result<()> {
+fn main() {
     // GPU backends (feature `cuda`; nothing without it)
     foehncraft_cuda::register();
-    match Cli::parse().command {
-        Command::Info => info(),
-        Command::Mesh(a) => mesh(a),
-        Command::Scalar(a) => scalar(a),
-        Command::Poisson(a) => poisson(a),
-        Command::Flow(a) => flow(a),
+    let cli = Cli::parse();
+    let out = Out {
+        json: cli.json,
+        quiet: cli.quiet,
+    };
+    let name = match &cli.command {
+        Command::Info => "info",
+        Command::Mesh(_) => "mesh",
+        Command::Scalar(_) => "scalar",
+        Command::Poisson(_) => "poisson",
+        Command::Flow(_) => "flow",
+        Command::Bench { .. } => "bench",
+        Command::Schema(_) => "schema",
+    };
+    let res = match cli.command {
+        Command::Info => info(out),
+        Command::Mesh(a) => mesh(a, out),
+        Command::Scalar(a) => scalar(a, out),
+        Command::Poisson(a) => poisson(a, out),
+        Command::Flow(a) => flow(a, out),
+        Command::Schema(a) => schema(a, out),
         Command::Bench {
             bench: Bench::Backends,
         } => {
-            for b in foehncraft_bench::backend::available() {
-                println!("{b}");
+            let b = foehncraft_bench::backend::available();
+            for x in &b {
+                out.line(x);
             }
-            Ok(())
+            Ok(Done::ok(json!({ "backends": b })))
         }
         Command::Bench {
             bench: Bench::G1(a),
-        } => g1(a),
-    }
+        } => g1(a, out),
+    };
+    let code = match res {
+        Ok(d) => {
+            if out.json && !d.json.is_null() {
+                let v = if d.json.get("format").is_some() {
+                    d.json
+                } else {
+                    let mut v = json!({
+                        "format": "foehncraft.command",
+                        "format_version": engine::FORMAT_VERSION,
+                        "command": name,
+                        "exit_code": d.code,
+                    });
+                    if let (Some(m), serde_json::Value::Object(x)) = (v.as_object_mut(), d.json) {
+                        m.extend(x);
+                    }
+                    v
+                };
+                stdout(&serde_json::to_string_pretty(&v).unwrap_or_default());
+            }
+            d.code
+        }
+        Err(e) => {
+            let d = diag::of_error(&e);
+            if !out.quiet || !out.json {
+                eprintln!("Error: {e:#}");
+            }
+            if out.json {
+                let v = json!({
+                    "format": "foehncraft.error",
+                    "format_version": engine::FORMAT_VERSION,
+                    "command": name,
+                    "exit_code": 1,
+                    "diagnostics": [d],
+                });
+                stdout(&serde_json::to_string_pretty(&v).unwrap_or_default());
+            }
+            1
+        }
+    };
+    std::process::exit(code);
 }
 
-fn info() -> Result<()> {
-    println!("Foehncraft {}", foehncraft_core::VERSION);
-    println!("platform     {}", foehncraft_bench::sysinfo::platform());
-    println!("cpu          {}", foehncraft_bench::sysinfo::cpu_model());
-    println!("threads      {}", rayon::current_num_threads());
-    println!("precision    f64 (reference path, D7)");
-    {
-        use foehncraft_parallel::Communicator as _;
-        let c = foehncraft_parallel::SerialComm;
-        println!(
-            "ranks        {} ({} communicator; MPI runs start with mpirun)",
-            c.size(),
-            c.name()
-        );
-    }
-    let features: Vec<&str> = [
+/// The features of this build.
+fn features() -> Vec<String> {
+    [
         ("cuda", cfg!(feature = "cuda")),
         ("mpi", cfg!(feature = "mpi")),
         ("checked-indexing", cfg!(feature = "checked-indexing")),
@@ -253,24 +379,117 @@ fn info() -> Result<()> {
         ("hypre", cfg!(feature = "hypre")),
     ]
     .into_iter()
-    .filter_map(|(n, on)| on.then_some(n))
-    .collect();
-    println!(
-        "features     {}",
-        if features.is_empty() {
-            "none".to_string()
-        } else {
-            features.join(", ")
-        }
-    );
-    println!(
-        "backends     {}",
-        foehncraft_bench::backend::available().join(", ")
-    );
-    Ok(())
+    .filter(|&(_, on)| on)
+    .map(|(n, _)| n.to_string())
+    .collect()
 }
 
-fn mesh(a: MeshArgs) -> Result<()> {
+/// Build and host for the provenance (D85).
+fn build_info() -> BuildInfo {
+    BuildInfo {
+        commit: env!("FOEHNCRAFT_GIT_COMMIT").into(),
+        features: features(),
+        platform: foehncraft_bench::sysinfo::platform(),
+        cpu: foehncraft_bench::sysinfo::cpu_model(),
+        gpu: None,
+    }
+}
+
+/// Connects the signals of D64 to the requests of the run: SIGUSR1 writes a
+/// restart file and goes on; SIGTERM, SIGINT and SIGUSR2 stop with a
+/// restart file and the final output; a second SIGINT ends at once (exit
+/// code 3).
+fn signals() -> Interrupts {
+    let i = Interrupts::new();
+    #[cfg(unix)]
+    {
+        use engine::StopSignal;
+        use signal_hook::consts::{SIGINT, SIGTERM, SIGUSR1, SIGUSR2};
+        use signal_hook::flag;
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
+        let seen = Arc::new(AtomicBool::new(false));
+        let mut ok = flag::register_conditional_shutdown(SIGINT, 3, seen.clone()).is_ok();
+        ok &= flag::register(SIGINT, seen).is_ok();
+        for (sig, s) in [
+            (SIGINT, StopSignal::Int),
+            (SIGTERM, StopSignal::Term),
+            (SIGUSR2, StopSignal::Usr2),
+        ] {
+            ok &= flag::register_usize(sig, i.stop_flag(), s.value()).is_ok();
+        }
+        ok &= flag::register(SIGUSR1, i.restart_flag()).is_ok();
+        if !ok {
+            eprintln!("warning: the signal handlers could not all be installed");
+        }
+    }
+    i
+}
+
+fn schema(a: SchemaArgs, out: Out) -> Result<Done> {
+    use foehncraft_flow::schema;
+    if a.markdown {
+        stdout(schema::markdown().trim_end_matches('\n'));
+        return Ok(Done {
+            code: 0,
+            json: serde_json::Value::Null,
+        });
+    }
+    let s = schema::json_schema();
+    if a.schema_only || !out.json {
+        stdout(&serde_json::to_string_pretty(&s)?);
+        return Ok(Done {
+            code: 0,
+            json: serde_json::Value::Null,
+        });
+    }
+    Ok(Done::ok(schema::envelope(s)))
+}
+
+fn info(out: Out) -> Result<Done> {
+    let b = build_info();
+    out.line(&format!("Foehncraft {}", foehncraft_core::VERSION));
+    out.line(&format!("commit       {}", b.commit));
+    out.line(&format!("platform     {}", b.platform));
+    out.line(&format!("cpu          {}", b.cpu));
+    out.line(&format!("threads      {}", rayon::current_num_threads()));
+    out.line("precision    f64 (reference path, D7)");
+    let ranks = {
+        use foehncraft_parallel::Communicator as _;
+        let c = foehncraft_parallel::SerialComm;
+        out.line(&format!(
+            "ranks        {} ({} communicator; MPI runs start with mpirun)",
+            c.size(),
+            c.name()
+        ));
+        c.size()
+    };
+    out.line(&format!(
+        "features     {}",
+        if b.features.is_empty() {
+            "none".to_string()
+        } else {
+            b.features.join(", ")
+        }
+    ));
+    let backends = foehncraft_bench::backend::available();
+    out.line(&format!("backends     {}", backends.join(", ")));
+    Ok(Done::ok(json!({
+        "format": "foehncraft.info",
+        "format_version": engine::FORMAT_VERSION,
+        "version": foehncraft_core::VERSION,
+        "commit": b.commit,
+        "platform": b.platform,
+        "cpu": b.cpu,
+        "threads": rayon::current_num_threads(),
+        "ranks": ranks,
+        "features": b.features,
+        "backends": backends,
+        "flow_backends": foehncraft_flow::device::available(),
+    })))
+}
+
+fn mesh(a: MeshArgs, out: Out) -> Result<Done> {
     use foehncraft_mesh::case::MeshCase;
     let is_msh = a.input.extension().is_some_and(|e| e == "msh");
     let mut case = if is_msh {
@@ -310,16 +529,22 @@ fn mesh(a: MeshArgs) -> Result<()> {
     if a.out.is_some() {
         case.output.directory = a.out;
     }
-    let (report, files) = foehncraft_mesh::case::run(&case, &name, &mut |l| println!("{l}"))?;
-    for f in files {
-        println!("wrote {}", f.display());
+    let (report, files) = foehncraft_mesh::case::run(&case, &name, &mut |l| out.line(l))?;
+    for f in &files {
+        out.line(&format!("wrote {}", f.display()));
     }
-    anyhow::ensure!(report.quality.ok(), "the mesh is invalid (see the report)");
-    Ok(())
+    let ok = report.quality.ok();
+    if !ok {
+        eprintln!("the mesh is invalid (see the report)");
+    }
+    Ok(Done {
+        code: if ok { 0 } else { 2 },
+        json: json!({ "valid": ok, "files": files }),
+    })
 }
 
-fn scalar(a: ScalarArgs) -> Result<()> {
-    use foehncraft_fv::case::{ScalarCase, check, output_dir, run};
+fn scalar(a: ScalarArgs, out: Out) -> Result<Done> {
+    use foehncraft_fv::case::{ScalarCase, output_dir, run};
     let mut case = ScalarCase::from_file(&a.case)?;
     if let Some(b) = a.backends {
         case.run.backends = b;
@@ -334,29 +559,46 @@ fn scalar(a: ScalarArgs) -> Result<()> {
         case.verification.levels = l;
     }
     let (name, dir) = output_dir(&case, &a.case, a.out);
-    let rep = run(&case, &name, &dir, |l| println!("{l}"))?;
+    let rep = run(&case, &name, &dir, |l| out.line(l))?;
     if !rep.orders.is_empty() {
-        println!(
+        out.line(&format!(
             "observed order: {}",
             rep.orders
                 .iter()
                 .map(|o| format!("{o:.3}"))
                 .collect::<Vec<_>>()
                 .join(", ")
-        );
+        ));
     }
-    println!("wrote {}", dir.join("scalar.md").display());
-    check(&rep)
+    out.line(&format!("wrote {}", dir.join("scalar.md").display()));
+    Ok(failures(
+        &rep.failures,
+        json!({
+            "orders": rep.orders,
+            "failures": rep.failures,
+            "report": dir.join("scalar.md"),
+        }),
+    ))
 }
 
-fn flow(a: FlowArgs) -> Result<()> {
-    use foehncraft_flow::case::{FlowCase, check, check_case, output_dir, run};
-    let mut case = FlowCase::from_file(&a.case)?;
+/// Exit code 2 with the failed checks on standard error, else 0.
+fn failures(f: &[String], json: serde_json::Value) -> Done {
+    if !f.is_empty() {
+        eprintln!("{} check(s) failed:\n  {}", f.len(), f.join("\n  "));
+    }
+    Done {
+        code: if f.is_empty() { 0 } else { 2 },
+        json,
+    }
+}
+
+/// The CLI options that override case keys.
+fn flow_overrides(case: &mut foehncraft_flow::case::FlowCase, a: &FlowArgs) -> Result<()> {
     if a.threads.is_some() {
         case.run.threads = a.threads;
     }
-    if let Some(l) = a.levels {
-        case.verification.levels = l;
+    if let Some(l) = &a.levels {
+        case.verification.levels = l.clone();
     }
     if let Some(n) = a.max_iterations {
         case.solver.max_iterations = n;
@@ -364,34 +606,188 @@ fn flow(a: FlowArgs) -> Result<()> {
     if a.no_vtkhdf {
         case.output.vtkhdf = false;
     }
-    if let Some(b) = a.backend {
-        case.run.backend = b;
+    if let Some(b) = &a.backend {
+        case.run.backend = b.clone();
     }
-    if let Some(p) = a.ptx {
-        case.run.ptx = p;
+    if let Some(p) = &a.ptx {
+        case.run.ptx = p.clone();
     }
-    if a.restart.is_some() {
-        case.run.restart = a.restart;
+    if let Some(r) = &a.restart {
+        case.run.restart = Some(r.clone());
     }
     if let Some(e) = a.end_time {
         let Some(t) = case.time.as_mut() else {
-            anyhow::bail!("--end-time needs a transient case (a [time] table)");
+            return Err(diag::err(diag::Diagnostic::new(
+                diag::CASE_INCONSISTENT,
+                "--end-time needs a transient case (a [time] table)",
+            )));
         };
         t.end_time = Some(e);
         t.steps = None;
         t.validate()?;
     }
-    if a.check {
-        return check_case(&case, &a.case, |l| println!("{l}"));
-    }
-    let (name, dir) = output_dir(&case, &a.case, a.out);
-    let rep = run(&case, &name, &dir, |l| println!("{l}"))?;
-    println!("wrote {}", dir.join("flow.md").display());
-    check(&rep)
+    case.validate()
 }
 
-fn poisson(a: PoissonArgs) -> Result<()> {
-    use foehncraft_fv::poisson::{PoissonCase, StudySolver, check, output_dir, run};
+fn flow(a: FlowArgs, out: Out) -> Result<Done> {
+    use foehncraft_flow::case::output_dir;
+    let roots = Roots {
+        read: a.read_root.clone(),
+        write: a.write_root.clone(),
+    };
+    let build = build_info();
+    let loaded = engine::load(&a.case, &a.set, &roots).and_then(|mut c| {
+        flow_overrides(&mut c, &a)?;
+        Ok(c)
+    });
+    if a.check {
+        let mut rep = engine::CheckReport {
+            format: "foehncraft.check",
+            format_version: engine::FORMAT_VERSION,
+            case_file: a.case.display().to_string(),
+            ok: false,
+            diagnostics: Vec::new(),
+            estimate: None,
+        };
+        match &loaded {
+            Ok(case) => {
+                engine::check_case(case, &a.case, a.out.as_deref(), &roots, &build, &mut rep)
+            }
+            Err(e) => rep.diagnostics.push(diag::of_error(e)),
+        }
+        out.line(&format!("{}:", a.case.display()));
+        for d in &rep.diagnostics {
+            out.line(&format!(
+                "{} {}: {}{}",
+                d.severity.name(),
+                d.code,
+                d.boundary
+                    .as_ref()
+                    .map_or(String::new(), |b| format!("boundary `{b}`: ")),
+                d.message
+            ));
+            if let Some(f) = &d.fix {
+                out.line(&format!("  fix: --set {}", f.set.join(" --set ")));
+            }
+        }
+        if let Some(e) = &rep.estimate {
+            out.line(&estimate_text(e));
+        }
+        out.line(if rep.ok {
+            "the case can be run"
+        } else {
+            "the case cannot be run"
+        });
+        return Ok(Done {
+            code: if rep.ok { 0 } else { 1 },
+            json: serde_json::to_value(&rep)?,
+        });
+    }
+    let case = loaded?;
+    let (name, dir) = output_dir(&case, &a.case, a.out.clone());
+    let opts = RunOptions {
+        interrupts: signals(),
+        build,
+        roots,
+    };
+    let o = engine::run(&case, &name, &dir, &opts, |l| out.line(l))?;
+    let s = &o.summary;
+    for d in s
+        .diagnostics
+        .iter()
+        .filter(|d| o.report.is_none() && d.severity == diag::Severity::Error)
+    {
+        eprintln!("Error {}: {}", d.code, d.message);
+    }
+    if let Some(r) = &o.report
+        && !r.failures.is_empty()
+    {
+        eprintln!(
+            "{} check(s) failed:\n  {}",
+            r.failures.len(),
+            r.failures.join("\n  ")
+        );
+    }
+    out.line(&format!("wrote {}", dir.join("flow.md").display()));
+    out.line(&format!(
+        "{}: {} (exit code {}), summary in {}",
+        name,
+        match s.status {
+            engine::Status::Finished => "finished, every check passed".to_string(),
+            engine::Status::FailedChecks => "finished with failed checks".to_string(),
+            engine::Status::Stopped => format!(
+                "stopped ({})",
+                s.stop.as_ref().map_or("", |x| x.message.as_str())
+            ),
+            engine::Status::Error => "error".to_string(),
+        },
+        s.exit_code,
+        dir.join("result.json").display()
+    ));
+    Ok(Done {
+        code: s.exit_code,
+        json: serde_json::to_value(s)?,
+    })
+}
+
+/// The estimate of `--check` as text.
+fn estimate_text(e: &engine::Estimate) -> String {
+    let mb = |b: f64| {
+        if b >= 1e9 {
+            format!("{:.1} GB", b / 1e9)
+        } else {
+            format!("{:.1} MB", b / 1e6)
+        }
+    };
+    let mut s = format!(
+        "estimate: {} cells{}, {} rank(s), {} GPU(s); {} {}; host memory about {}{}; output about {}",
+        e.cells,
+        if e.level_cells.len() > 1 {
+            format!(" (levels {:?})", e.level_cells)
+        } else {
+            String::new()
+        },
+        e.ranks,
+        e.gpus,
+        if e.steps_approximate { "up to" } else { "" },
+        e.steps
+            .iter()
+            .map(|n| n.to_string())
+            .collect::<Vec<_>>()
+            .join(" + ")
+            + " iterations or steps",
+        mb(e.host_memory),
+        if e.device_memory > 0.0 {
+            format!(", device memory about {}", mb(e.device_memory))
+        } else {
+            String::new()
+        },
+        mb(e.output_bytes),
+    );
+    for o in &e.outputs {
+        s.push_str(&format!(
+            "\n  {}{}: {}",
+            o.name,
+            if o.count > 1 {
+                format!(" ×{}", o.count)
+            } else {
+                String::new()
+            },
+            mb(o.bytes)
+        ));
+    }
+    match e.wall_time {
+        Some(t) => s.push_str(&format!(
+            "\n  wall time about {t:.0} s ({})",
+            e.wall_time_basis
+        )),
+        None => s.push_str(&format!("\n  wall time: {}", e.wall_time_basis)),
+    }
+    s
+}
+
+fn poisson(a: PoissonArgs, out: Out) -> Result<Done> {
+    use foehncraft_fv::poisson::{PoissonCase, StudySolver, output_dir, run};
     let mut case = PoissonCase::from_file(&a.case)?;
     if let Some(b) = a.backends {
         case.study.backends = b;
@@ -416,15 +812,22 @@ fn poisson(a: PoissonArgs) -> Result<()> {
     }
     case.validate()?;
     let (name, dir) = output_dir(&case, &a.case, a.out);
-    let rep = run(&case, &name, &dir, |l| println!("{l}"))?;
+    let rep = run(&case, &name, &dir, |l| out.line(l))?;
     for (n, r) in &rep.iteration_ratios {
-        println!("iterations finest / coarsest level, {n}: {r:.2}");
+        out.line(&format!("iterations finest / coarsest level, {n}: {r:.2}"));
     }
-    println!("wrote {}", dir.join("poisson.md").display());
-    check(&rep)
+    out.line(&format!("wrote {}", dir.join("poisson.md").display()));
+    Ok(failures(
+        &rep.failures,
+        json!({
+            "iteration_ratios": rep.iteration_ratios,
+            "failures": rep.failures,
+            "report": dir.join("poisson.md"),
+        }),
+    ))
 }
 
-fn g1(a: G1Args) -> Result<()> {
+fn g1(a: G1Args, out: Out) -> Result<Done> {
     let mut case = match &a.case {
         Some(p) => G1Case::from_file(p)?,
         None => G1Case::default(),
@@ -455,26 +858,35 @@ fn g1(a: G1Args) -> Result<()> {
     if let Some(o) = a.out {
         case.output.directory = o;
     }
-    let report = foehncraft_bench::run_g1(&case, &mut |line| println!("{line}"))?;
+    let report = foehncraft_bench::run_g1(&case, &mut |line| out.line(line))?;
     for v in &report.verdicts {
-        println!(
+        out.line(&format!(
             "G1 {} against {}: {}",
             v.candidate,
             v.reference,
             if v.pass { "PASS" } else { "FAIL" }
-        );
+        ));
     }
     let files = report.write(&case.output.directory, &case.output.name)?;
-    for f in files {
-        println!("wrote {}", f.display());
+    for f in &files {
+        out.line(&format!("wrote {}", f.display()));
     }
     let all_correct = report
         .results
         .iter()
         .all(|b| b.kernels.iter().all(|k| k.within_tolerance));
-    anyhow::ensure!(
-        all_correct,
-        "a backend did not reproduce the reference results"
-    );
-    Ok(())
+    let f: Vec<String> = if all_correct {
+        Vec::new()
+    } else {
+        vec!["a backend did not reproduce the reference results".into()]
+    };
+    Ok(failures(
+        &f,
+        json!({
+            "verdicts": report.verdicts.iter().map(|v| json!({
+                "candidate": v.candidate, "reference": v.reference, "pass": v.pass,
+            })).collect::<Vec<_>>(),
+            "files": files,
+        }),
+    ))
 }

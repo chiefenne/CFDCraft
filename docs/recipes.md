@@ -30,6 +30,7 @@ the [Example gallery](gallery.md).
 23. [Run the cylinder benchmark of Schäfer & Turek](#cylinder)
 24. [Run a flow case on an NVIDIA GPU and compare it with the CPU](#flow-gpu) (also: free Colab T4)
 25. [Check the derivatives of the kernels (adjoint readiness)](#adjoint-ready)
+26. [Drive runs from a script or an agent](#run-contract)
 
 ---
 
@@ -914,5 +915,90 @@ in the storage of A (for the solvers and the multigrid),
 is called for i = n − 1, …, 0 with level i current. `schedule(n, s)` lists
 the actions, `python3 tools/checkpoint_chart.py out.svg` draws the cost
 against the snapshots.
+
+[↑ back to top](#recipes)
+
+---
+
+<a id="run-contract"></a>
+## 26. Drive runs from a script or an agent
+
+`foehn` keeps a contract for programs that run it (D62, D64, D78; the
+details are in [interfaces.md](interfaces.md)): one JSON object on
+standard output with `--json`, an exit code that says how the run ended,
+codes for every finding, and a result file without timings. From the
+repository root, after `cargo build --release`:
+
+```
+target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml > result.json; echo "exit $?"
+python3 -c "import json; r = json.load(open('result.json')); print(r['status'], r['solves'][0]['iterations'])"
+```
+
+| Exit code | Status | Next step of a script |
+|---|---|---|
+| 0 | `finished` | use the result |
+| 1 | `error` | read `diagnostics`: code, key, message and a fix where one exists |
+| 2 | `failed-checks` | the run ended, a check failed (`RUN006` not converged, `RUN007` a check of the case) |
+| 3 | `stopped` | a signal, `.stop` or a limit: continue with `--restart latest` |
+
+**Change keys without editing the file**: `--set KEY=VALUE`, repeatable,
+the value in TOML (a bare word is a string). The overrides are in the
+result and survive a re-read of the case file.
+
+```
+target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml --set fluid.viscosity=0.005 --set solver.relaxation_velocity=0.8 --out output/re200
+```
+
+**Check before running** (D81): the findings with codes and an estimate
+of memory, output and, where this hardware has a benchmark, wall time:
+
+```
+target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml --check
+```
+
+A finding with a fix gives the `--set` arguments that resolve it:
+
+```
+target/release/foehn --json flow examples/cases/flow/taylor_green_cfl10.toml --check --set time.max_growth=3
+```
+
+**Budgets** (D83): `[run.limits]` (`max_wall_time` in s,
+`max_iterations`, `max_steps`, `max_output` in bytes) stops a run with its
+restart file and results and exit code 3. Continue it with
+`--restart latest`, bitwise as if it had not stopped:
+
+```
+target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml --set run.limits.max_iterations=300 --out output/budget; echo "exit $?"
+target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml --restart latest --out output/budget; echo "exit $?"
+```
+
+**Signals** (unix): SIGUSR1 writes `restart.h5` and the run goes on;
+SIGTERM, SIGINT and SIGUSR2 stop it cleanly (exit 3); a second Ctrl-C
+ends at once. A batch job that is sent SIGTERM before its end is
+continued by the next job with `--restart latest`:
+
+```
+target/release/foehn --quiet flow examples/cases/flow/cavity_re100_transient.toml --out output/job & pid=$!
+sleep 5; kill -USR1 $pid      # a restart file now
+sleep 5; kill -TERM $pid; wait $pid; echo "exit $?"
+target/release/foehn --quiet flow examples/cases/flow/cavity_re100_transient.toml --restart latest --out output/job
+```
+
+**Follow a run**: `run.jsonl` gets one JSON object per iteration or step,
+flushed at every log line (`tail -f output/job/run.jsonl`).
+
+**Confine the files** (D82): `--read-root DIR` and `--write-root DIR`
+refuse every path outside (`CASE007`), for agents that must not touch the
+rest of the machine:
+
+```
+target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml --read-root examples --write-root output
+```
+
+**Compare results**: two identical runs give byte-identical outputs
+(D84); `result.json` lists their SHA-256 hashes, and
+`provenance.case_hash` with `provenance.commit` says whether two results
+are comparable. The keys and their units: `foehn schema` (JSON Schema)
+and [keys.md](keys.md).
 
 [↑ back to top](#recipes)

@@ -5,6 +5,7 @@
 //!
 //! - [`Real`]: the floating-point type is a generic parameter of the code
 //!   (requirement D7). The reference path is `f64`.
+//! - [`date`]: calendar dates from Unix time (D84).
 //! - [`dual`]: forward-mode dual numbers, a [`Real`] whose kernels return
 //!   exact derivatives next to their results (requirement D59).
 //! - [`index`]: local (per rank) and global index types.
@@ -13,6 +14,7 @@
 //!   independent of thread or rank order (requirement D47).
 #![no_std]
 
+pub mod date;
 pub mod dual;
 pub mod index;
 pub mod real;

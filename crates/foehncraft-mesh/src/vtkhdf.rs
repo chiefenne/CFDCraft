@@ -43,8 +43,32 @@ pub struct CellField<'a> {
     pub values: &'a [f64],
 }
 
+/// A file attribute of [`write_with`].
+#[derive(Debug, Clone, Copy)]
+pub enum Attr<'a> {
+    /// Text.
+    Str(&'a str),
+    /// Real number.
+    F64(f64),
+    /// Count.
+    U64(u64),
+}
+
 /// Writes the mesh and cell fields to `path`.
 pub fn write(path: impl AsRef<Path>, mesh: &Mesh, fields: &[CellField]) -> Result<()> {
+    write_with(path, mesh, fields, &[])
+}
+
+/// As [`write()`], with attributes of the file's root group that describe it
+/// (D75: format, version, case, step, time, units). VTK reads only the
+/// `/VTKHDF` group, so they do not disturb ParaView. The file holds no
+/// object timestamps, so the same content gives the same bytes (D84).
+pub fn write_with(
+    path: impl AsRef<Path>,
+    mesh: &Mesh,
+    fields: &[CellField],
+    attrs: &[(&str, Attr)],
+) -> Result<()> {
     let path = path.as_ref();
     for f in fields {
         anyhow::ensure!(
@@ -55,7 +79,23 @@ pub fn write(path: impl AsRef<Path>, mesh: &Mesh, fields: &[CellField]) -> Resul
             mesh.n_cells
         );
     }
-    let file = h5::File::create(path).with_context(|| format!("creating {}", path.display()))?;
+    let file = h5::File::with_options()
+        .with_fcpl(|p| p.obj_track_times(false))
+        .create(path)
+        .with_context(|| format!("creating {}", path.display()))?;
+    for (name, a) in attrs {
+        match a {
+            Attr::Str(v) => {
+                let v: h5::types::VarLenUnicode =
+                    v.parse().map_err(|e| anyhow::anyhow!("{e:?}"))?;
+                file.new_attr::<h5::types::VarLenUnicode>()
+                    .create(*name)?
+                    .write_scalar(&v)?;
+            }
+            Attr::F64(v) => file.new_attr::<f64>().create(*name)?.write_scalar(v)?,
+            Attr::U64(v) => file.new_attr::<u64>().create(*name)?.write_scalar(v)?,
+        }
+    }
     let root = group(&file, "VTKHDF")?;
     type_attr(&root, "PartitionedDataSetCollection")?;
     version_attr(&root)?;
@@ -77,6 +117,43 @@ pub fn write(path: impl AsRef<Path>, mesh: &Mesh, fields: &[CellField]) -> Resul
     Ok(())
 }
 
+/// The size of the file that [`write()`] writes for `mesh` with `n_fields`
+/// cell fields, from the arrays it stores (an estimate within a few per
+/// cent: HDF5 adds headers of some kilobytes).
+pub fn estimate_bytes(mesh: &Mesh, n_fields: usize) -> f64 {
+    let nc = mesh.n_cells;
+    let mut ids = 0usize;
+    for c in 0..nc {
+        match mesh.cell_shape(c) {
+            CellShape::Tetrahedron => ids += 4,
+            CellShape::Hexahedron => ids += 8,
+            CellShape::Prism => ids += 6,
+            CellShape::Pyramid => ids += 5,
+            CellShape::Polyhedron => {
+                ids += mesh.cell_nodes(c).len();
+                for (f, _) in mesh.cell_face_iter(c) {
+                    // face connectivity, face offset, polyhedron-to-face id
+                    ids += (mesh.face_ptr[f + 1] - mesh.face_ptr[f]) as usize + 2;
+                }
+            }
+        }
+    }
+    // boundary blocks: points of each patch and the face connectivity
+    let mut boundary = 0usize;
+    for p in &mesh.patches {
+        let mut points = std::collections::HashSet::new();
+        let mut nodes = 0usize;
+        for f in p.range() {
+            let fnodes = &mesh.face_nodes[mesh.face_ptr[f] as usize..mesh.face_ptr[f + 1] as usize];
+            nodes += fnodes.len();
+            points.extend(fnodes.iter().copied());
+        }
+        boundary += points.len() * 24 + nodes * 8 + p.len * (8 + 1 + 8 + 8);
+    }
+    (mesh.n_points() * 24 + nc * (8 * (n_fields + 1) + 8 + 1 + 8 + 8) + ids * 8 + boundary) as f64
+        + 8192.0 * (3 + mesh.patches.len()) as f64
+}
+
 /// Block names must not clash with the reserved group names.
 fn block_name(patch: &str) -> String {
     match patch {
@@ -91,7 +168,10 @@ fn group(parent: &h5::Group, name: &str) -> Result<h5::Group> {
     use h5::plist::group_create::LinkCreationOrder;
     Ok(parent
         .create_group_builder()
-        .with_gcpl(|p| p.link_creation_order(LinkCreationOrder::Indexed))
+        .with_gcpl(|p| {
+            p.link_creation_order(LinkCreationOrder::Indexed)
+                .obj_track_times(false)
+        })
         .create(name)?)
 }
 
