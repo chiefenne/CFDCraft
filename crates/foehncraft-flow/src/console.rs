@@ -139,7 +139,12 @@ impl Frame {
             return vec![self.title.clone()];
         }
         let inner = WIDTH - 4;
-        let w = self.art.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+        let w = self
+            .art
+            .iter()
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(0);
         let pad = " ".repeat(inner.saturating_sub(w) / 2);
         let mut out: Vec<String> = self.art.iter().map(|l| format!("{pad}{l}")).collect();
         out.push(String::new());
