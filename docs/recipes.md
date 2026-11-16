@@ -194,7 +194,9 @@ The workflow is `.github/workflows/ci.yml`. It has two tiers:
 - **Full tier**: every push to main, every night at 02:07 Vienna time (01:07
   UTC), a pull request with the label `full-ci`, or by hand (Actions, CI,
   *Run workflow*): the `release` profile, debug tests, the cylinder at
-  Re 100, and at night also the tests marked slow (`--ignored`).
+  Re 100, and in nightly and manual runs also the tests marked slow
+  (`--ignored`). Main also builds the dependencies in the `ci` profile
+  once, so that pull requests start from a warm cache.
 
 The check "CI OK" sums up all jobs.
 
