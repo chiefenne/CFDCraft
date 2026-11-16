@@ -24,12 +24,14 @@
 #[cfg(test)]
 mod adjoint_tests;
 pub mod analytic;
+pub mod balance;
 pub mod bc;
 pub mod case;
 pub mod checkpoint;
 pub mod control;
 pub mod device;
 pub mod diag;
+pub mod divergence;
 pub mod engine;
 pub mod monitor;
 pub mod plot;

@@ -52,9 +52,11 @@
 //! and `flow.md` (the report), SVG charts.
 
 use crate::analytic::{Analytic, Benchmark, Reference};
+use crate::balance::{self, BalanceSummary};
 use crate::bc::{self, BoundaryCondition, Level};
 use crate::control::{self, Control};
 use crate::diag;
+use crate::divergence;
 use crate::engine::Steer;
 use crate::plot::{self, Series};
 use crate::restart::{self, Restart};
@@ -479,6 +481,8 @@ pub struct FlowCase {
     pub output: OutputSection,
     /// Time stepping; present in a transient case.
     pub time: Option<TimeSection>,
+    /// Conservation ledger: report schedule and tolerances (D88, D89).
+    pub balance: crate::balance::BalanceSection,
     /// The case file (for re-reading it during a run).
     #[serde(skip)]
     pub source: Option<PathBuf>,
@@ -681,6 +685,7 @@ impl FlowCase {
         let transient = self.time.is_some();
         self.solver.validate(transient)?;
         self.run.limits.validate()?;
+        self.balance.validate()?;
         if let Some(t) = &self.time {
             t.validate()?;
         }
@@ -927,6 +932,8 @@ pub struct Solve {
     pub transient: Option<crate::unsteady::TransientSummary>,
     /// Benchmark comparison.
     pub benchmark: Option<crate::monitor::BenchmarkResult>,
+    /// Conservation ledger (D88, D89).
+    pub balance: Option<BalanceSummary>,
 }
 
 /// Report of a flow case.
@@ -1042,6 +1049,7 @@ fn steady_restart(fl: &mut Flow, mesh: &Mesh, name: &str) -> Result<Restart> {
         amg_setups: fl.amg_setups,
         amg_matrix: fl.amg_matrix.clone(),
         transient: None,
+        geometry: None,
     })
 }
 
@@ -1209,6 +1217,11 @@ pub fn run_steered(
         csv.push_str(
             "iteration,momentum_x,momentum_y,momentum_z,continuity,bicgstab_x,bicgstab_y,bicgstab_z,cg\n",
         );
+        let (bunits, bhead) = balance::csv_head(false);
+        let mut bcsv = csv_preamble("balance", name, None, &bunits);
+        bcsv.push_str(&bhead);
+        bcsv.push('\n');
+        let nonorth = case.solver.nonorth_correction;
         let mut hist = Vec::new();
         let mut converged = false;
         let mut res = Residuals::default();
@@ -1217,7 +1230,63 @@ pub fn run_steered(
             if fl.iteration() >= case.solver.max_iterations {
                 break;
             }
-            res = fl.iterate()?;
+            let previous = res;
+            fl.keep_valid()?;
+            res = match fl.iterate() {
+                Ok(r) => r,
+                Err(e) if divergence::is_divergence(&e, &mut fl) => {
+                    // D63: the last valid state, the snapshot and the report
+                    lg.line(&format!("      {e:#}"));
+                    let at = fl.iteration();
+                    let ctx = divergence::Context {
+                        name,
+                        case: &case,
+                        at,
+                        done: at.saturating_sub(first + 1),
+                        time: None,
+                        dt: None,
+                        residuals: fl.diverged.unwrap_or_default(),
+                        last_residuals: (at > first + 1).then_some(previous),
+                        first_courant: None,
+                    };
+                    let prepared = (|| -> Result<(simplec::State, Vec<&'static str>)> {
+                        let failed = fl.state()?;
+                        anyhow::ensure!(fl.rewind()?, "no valid state was kept");
+                        let mut files = Vec::new();
+                        if cfg!(feature = "hdf5") && case.output.vtkhdf {
+                            let sol = Solution {
+                                state: fl.state()?,
+                                disc: &fl.disc,
+                                phys: fl.phys,
+                            };
+                            write_fields(
+                                &case,
+                                &out.join("fields_last_valid.vtkhdf"),
+                                &mesh,
+                                &geo,
+                                &sol,
+                                analytic.as_ref(),
+                                Some((fl.iteration(), None)),
+                            )?;
+                            files.push("fields_last_valid.vtkhdf");
+                        }
+                        if single && restart::AVAILABLE {
+                            let rs = steady_restart(&mut fl, &mesh, name)?;
+                            restart::write(&out.join("restart.h5"), &rs)?;
+                            files.push("restart.h5");
+                        }
+                        Ok((failed, files))
+                    })();
+                    let e =
+                        divergence::finish(&mut fl, &ctx, &mesh, &geo, out, prepared, &mut |l| {
+                            lg.line(l)
+                        });
+                    steer.record.flush();
+                    std::fs::write(out.join("flow.log"), &lg.text)?;
+                    return Err(e);
+                }
+                Err(e) => return Err(e),
+            };
             let it = fl.iteration();
             let done = res.max() < case.solver.tolerance;
             if it % case.output.history_every == 0 || done {
@@ -1261,6 +1330,36 @@ pub fn run_steered(
             if done {
                 converged = true;
                 break;
+            }
+            // the ledger of the current state (D88, D89); the next
+            // iteration recomputes the boundary values and gradients
+            if case.balance.every > 0 && it.is_multiple_of(case.balance.every) {
+                fl.update_boundaries()?;
+                fl.gradients()?;
+                let sol = Solution {
+                    state: fl.state()?,
+                    disc: &fl.disc,
+                    phys: fl.phys,
+                };
+                let r = balance::rates(
+                    &sol,
+                    &mesh,
+                    &geo,
+                    &case,
+                    &fl.bc.mom_kind,
+                    &geo.cell_volume,
+                    nonorth,
+                );
+                let b = balance::steady(&r, it);
+                bcsv.push_str(&balance::csv_row(&b));
+                bcsv.push('\n');
+                if steer.record.on() {
+                    steer.record.row(&balance::record_row(&b));
+                }
+                lg.line(
+                    balance::table(&format!("      balance of iteration {it}"), &b, false)
+                        .trim_end(),
+                );
             }
             // control files (D40), signals and limits (D64, D83)
             let req = control.check(it, case.run.reread_every);
@@ -1388,7 +1487,41 @@ pub fn run_steered(
         if let Some(b) = &benchmark {
             crate::unsteady::log_benchmark(b, |l| lg.line(l));
         }
+        // the ledger of the final state (D88, D89, D90 part 4)
+        let bal = balance::steady(
+            &balance::rates(
+                sol,
+                &mesh,
+                &geo,
+                &case,
+                &fl.bc.mom_kind,
+                &geo.cell_volume,
+                nonorth,
+            ),
+            iters,
+        );
+        lg.line(balance::table("      balance of the final state", &bal, false).trim_end());
+        bcsv.push_str(&balance::csv_row(&bal));
+        bcsv.push('\n');
+        if steer.record.on() {
+            steer.record.row(&balance::record_row(&bal));
+        }
+        std::fs::write(out.join(format!("balance{suffix}.csv")), &bcsv)?;
+        let summary = BalanceSummary {
+            largest_mass_relative: bal.mass.relative.abs(),
+            last: bal,
+            ..Default::default()
+        };
+        for d in balance::check(&summary, &case.balance) {
+            lg.line(&format!("      warning {}: {}", d.code, d.message));
+            steer.event(d.code, iters, &d.message);
+            rep.warnings.push(d);
+        }
         if li == last || stopped {
+            std::fs::write(
+                out.join("balance.svg"),
+                balance::chart(name, &summary.last, false),
+            )?;
             write_outputs(
                 &case,
                 out,
@@ -1428,6 +1561,7 @@ pub fn run_steered(
             coefficients,
             transient: None,
             benchmark,
+            balance: Some(summary),
         });
         if stopped {
             rep.stopped = true;
@@ -1664,7 +1798,7 @@ pub(crate) fn header<F: FnMut(&str)>(
         for l in &case.output.lines {
             lg.line(&format!("  line_{}.csv: {} points", l.name, l.points));
         }
-        lg.line("  patches.csv, flow.json, flow.md, residuals.svg, case.resolved.toml");
+        lg.line("  balance.csv, balance.svg, patches.csv, flow.json, flow.md, residuals.svg, case.resolved.toml");
     }
 }
 
@@ -2315,6 +2449,11 @@ impl FlowReport {
                     }
                     s.push('\n');
                 }
+            }
+        }
+        for v in &self.solves {
+            if let Some(b) = &v.balance {
+                s.push_str(&balance::markdown(b, v.cells));
             }
         }
         if self.stopped {

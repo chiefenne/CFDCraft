@@ -16,7 +16,10 @@
 //! - per face (with `face_id`): `mass_flux`, and transient `m_old`, `x_cur`,
 //!   `x_old`; per boundary face `ub_<i>`, `pb`;
 //! - `amg_matrix`: the pressure matrix of the last multigrid setup (the
-//!   hierarchy is rebuilt from it, so the preconditioner is the same).
+//!   hierarchy is rebuilt from it, so the preconditioner is the same);
+//! - optional, for meshes that move (D91, L22): `point_id`,
+//!   `points_x|y|z` and the cell volumes of the time levels `volume_<k>`
+//!   (attribute `volume_levels`); a fixed mesh leaves them out.
 //!
 //! A file whose identities are in another order (another renumbering) is
 //! mapped by identity; the multigrid matrix is then dropped and the
@@ -49,6 +52,24 @@ pub struct Restart {
     pub amg_matrix: Option<Vec<f64>>,
     /// Transient state: old levels, clock, next time step, scheme.
     pub transient: Option<(OldLevels, Clock, f64, TimeScheme)>,
+    /// The geometry of the state, for meshes that move or deform (D91,
+    /// L22): `None` for a fixed mesh, whose mesh file defines it.
+    pub geometry: Option<RestartGeometry>,
+}
+
+/// Point coordinates and cell volumes of the time levels (D91): optional
+/// datasets `point_id`, `points_x|y|z`, `volume_<k>` (k = 0 the current
+/// level, 1, 2 … the older ones). Fixed meshes leave them out; a deforming
+/// mesh (L22) writes them, since its mesh file no longer holds the state.
+/// Units: points m, volumes m³.
+#[derive(Debug, Clone, Default)]
+pub struct RestartGeometry {
+    /// Global point identities in local order.
+    pub point_id: Vec<u64>,
+    /// Point coordinates (m).
+    pub points: Soa3,
+    /// Cell volumes per time level, the current first (m³).
+    pub volumes: Vec<Vec<f64>>,
 }
 
 #[cfg(feature = "hdf5")]
@@ -170,6 +191,14 @@ mod io {
                     ds(&g, &format!("g_old_{i}"), v)?;
                 }
             }
+            if let Some(geo) = &r.geometry {
+                ds_u64(&g, "point_id", &geo.point_id)?;
+                put3(&g, "points_", &geo.points)?;
+                attr(&g, "volume_levels", &(geo.volumes.len() as u64))?;
+                for (k, v) in geo.volumes.iter().enumerate() {
+                    ds(&g, &format!("volume_{k}"), v)?;
+                }
+            }
         }
         std::fs::rename(&tmp, path).with_context(|| format!("writing {}", path.display()))?;
         Ok(())
@@ -264,7 +293,20 @@ mod io {
         } else {
             None
         };
+        let geometry = if g.link_exists("point_id") {
+            let n: u64 = rattr(&g, "volume_levels")?;
+            Some(RestartGeometry {
+                point_id: g.dataset("point_id")?.read_raw::<u64>()?,
+                points: get3(&g, "points_")?,
+                volumes: (0..n)
+                    .map(|k| rd(&g, &format!("volume_{k}")))
+                    .collect::<Result<_>>()?,
+            })
+        } else {
+            None
+        };
         Ok(Restart {
+            geometry,
             case: rsattr(&g, "case")?,
             cell_id: g.dataset("cell_id")?.read_raw::<u64>()?,
             face_id: g.dataset("face_id")?.read_raw::<u64>()?,
@@ -407,6 +449,9 @@ impl Restart {
                     x_old: remap(&o.x_old, &mf),
                     g_old: o.g_old.iter().map(|v| remap(v, &mc)).collect(),
                 };
+            }
+            if let Some(geo) = &mut self.geometry {
+                geo.volumes = geo.volumes.iter().map(|v| remap(v, &mc)).collect();
             }
             self.amg_matrix = None;
             self.cell_id = cell_id.to_vec();

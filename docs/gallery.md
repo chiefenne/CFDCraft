@@ -28,6 +28,7 @@ All commands run from the repository root. Case files are in
 | 16 | [The flow loop on a GPU](#gpu-flow) | 5 | single-source flow kernels, CPU = GPU bitwise, time per cell on a Tesla T4 |
 | 17 | [Adjoint-ready kernels: derivatives and checkpointing](#adjoint-ready) | 5 | dual numbers through the kernel bodies, transposed matrices, binomial checkpointing |
 | 18 | [A run that a program can drive](#run-contract) | 5 | `--json`, exit codes, `--set`, limits, signals, `--restart latest`, diagnostic codes, estimate before the run, byte-identical files |
+| 19 | [Balances and the divergence report](#health) | 5 | mass and kinetic-energy ledger, numerical dissipation of the schemes (second law), divergence report with ranked causes |
 
 ---
 
@@ -724,6 +725,63 @@ exit 0
 ```
 cargo test --release -p foehncraft-cli --test run_contract
 python3 tools/estimate_chart.py estimate.svg
+```
+
+[↑ back to top](#example-gallery)
+
+<a id="health"></a>
+## 19. Balances and the divergence report
+
+![Numerical dissipation of kinetic energy over the mesh size, lid-driven cavity and Taylor–Green vortex](figures/gallery/energy_budget.svg)
+
+Every run books mass and kinetic energy: what flows and works through
+each patch, what the body force adds, what viscosity dissipates, and what
+is left, the dissipation of the numerical schemes. The second law asks
+that this rest is not negative. In the steady lid-driven cavity the lid
+works on the fluid and everything ends up as dissipation; the schemes take
+about 1.5 % of it, falling slowly with the mesh because the two corners
+where the lid meets the walls are singular. On the smooth Taylor–Green
+vortex the numerical dissipation falls with order 2.5.
+
+```
+$ foehn flow cavity_re100_energy.toml
+      balance of the final state
+        kinetic energy
+          ymax viscous work in                         +2.919438e-3 W
+          viscous dissipation                          +2.877098e-3 W
+          storage                                       +0.000000e0 W
+          numerical dissipation (+1.45e-2)             +4.234029e-5 W
+```
+
+When a run diverges it keeps its last valid state and says why:
+
+```
+$ foehn flow cavity_re1000.toml --set 'solver.algorithm="simple"' --set solver.relaxation_velocity=0.99 --set solver.relaxation_pressure=1.0
+      DIVERGED in outer iteration 16: 1 failing cells, velocity first; report in divergence.md
+        DIV002 under-relaxation (0.80): relaxation factors velocity 0.99, pressure 1 (SIMPLE); try --set solver.relaxation_velocity=0.69 --set solver.relaxation_pressure=0.31
+        DIV006 linear solve (0.60): momentum BiCGStab at its limit of 50 iterations; try --set solver.momentum_max_iter=100
+Error RUN014: the solution diverged in outer iteration 16 ...
+```
+
+| Check | Result |
+|---|---|
+| Cavity Re 100, 16² to 128² | numerical dissipation 2.05 %, 1.59 %, 1.45 %, 1.33 % of the lid power, positive; mass ledger zero |
+| Taylor–Green, 16² to 64², fixed Courant number | numerical dissipation 4.1e-4, 7.4e-5, 1.2e-5 J over 0.4 s; mass imbalance at round-off |
+| Steady divergence (SIMPLE, no relaxation) | `RUN014`, the first cause is the relaxation; its fix runs |
+| Transient divergence (time step 100 times too large) | the first cause is the time step, with a smaller one as the fix |
+| The catalogue against part 4a | fields, CSV files and report values bitwise equal |
+
+| | |
+|---|---|
+| Code | `foehncraft_flow::balance` (ledger, tables, CSV, chart), `divergence` (analysis, snapshot, report), `simplec::Flow::keep_valid`, `rewind` |
+| Tests | `crates/foehncraft-flow/tests/health.rs`, unit tests in `balance.rs`, `divergence.rs` |
+| Formats | [interfaces.md](interfaces.md#conservation-ledger-d88-d89-d90-part-4) |
+| Case | `examples/cases/flow/cavity_re100_energy.toml` |
+| Recipe | [27](recipes.md#health) |
+
+```
+cargo test --release -p foehncraft-flow --test health
+python3 tools/energy_budget_chart.py energy_budget.svg
 ```
 
 [↑ back to top](#example-gallery)

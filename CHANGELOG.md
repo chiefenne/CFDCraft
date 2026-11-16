@@ -37,6 +37,30 @@ checked C-free in CI. Formats and codes: `docs/interfaces.md`; recipe 26,
 gallery 18, case `cavity_re100_budget.toml`. No result changes: the
 catalogue gives bitwise the fields of main.
 
+**Health checks: conservation ledger and divergence report (stage 5,
+part 4b).** Every flow run books mass and kinetic energy (D88): storage,
+the terms of each patch (viscous work, convected energy, pressure work,
+mass flow), the body force, the viscous dissipation of the discrete
+operator, and the remainder, the numerical dissipation of the schemes,
+which the second law wants positive (D90 part 4). Steady runs give the
+table every `[balance] every` iterations and at the end; transient runs a
+compact line with every progress line and a time-integrated ledger of the
+run (trapezoidal rule). `balance.csv`, `balance.svg`, `balance` rows in
+`run.jsonl`, `solves[].balance` in `result.json`, tolerances with the
+codes `BAL001`–`BAL003` and an optional stop. Measured: on the lid-driven
+cavity the numerical dissipation is positive, about 1.5 % of the lid
+power and falling with the mesh; on the Taylor–Green vortex it falls with
+order 2.5. A run that diverges (D63) now writes its last valid state and
+restart file, a VTKHDF snapshot of the failing cells and their
+neighbours, and a report (`divergence.md`, `divergence.json`) with the
+likely causes ranked by their evidence and a `--set` fix for each, and
+ends with `RUN014` (exit code 1). A linear-solver breakdown counts as a
+divergence, and a NaN in the continuity residual no longer slips past the
+check. The restart file can hold point coordinates and cell volumes
+(D91). Recipe 27, gallery 19, case `cavity_re100_energy.toml`,
+`tools/balance_chart.py`, `tools/energy_budget_chart.py`. No result
+changes: the catalogue gives bitwise the fields of part 4a.
+
 ## Summary
 
 | Version | Stage | Highlights |

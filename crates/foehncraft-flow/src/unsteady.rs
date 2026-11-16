@@ -12,6 +12,7 @@
 //! `restart.h5`.
 
 use crate::analytic::Benchmark;
+use crate::balance::{self, BalanceAction, BalanceSummary, Ledger};
 use crate::bc::{self, BoundaryCondition, InletProfile, Level, inlet_velocity, patch_extent};
 use crate::case::{
     ErrorNorms, FlowCase, FlowReport, Log, Solve, dimension, error_norms, locate, mesh_for,
@@ -535,7 +536,7 @@ fn header<F: FnMut(&str)>(
                 (nc * 8 * 22 + mesh.n_faces() * 8 * 4) / 1_000_000 + 1
             ));
         }
-        lg.line("  patches.csv, flow.json, flow.md, case.resolved.toml");
+        lg.line("  balance.csv, balance.svg, patches.csv, flow.json, flow.md, case.resolved.toml");
         lg.line(&format!(
             "  control files in this directory: .stop, .result_N, .read_toml_N{}",
             if r.reread_every > 0 {
@@ -564,6 +565,7 @@ fn restart_of(
         amg_setups: fl.amg_setups,
         amg_matrix: fl.amg_matrix.clone(),
         transient: Some((tr.old_levels(fl)?, tr.clock, dt_next, tr.scheme)),
+        geometry: None,
     })
 }
 
@@ -784,6 +786,37 @@ fn run_one<F: FnMut(&str)>(
     };
     // benchmark histories
     let (mut bt, mut bcd, mut bcl, mut bdp) = (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    // the conservation ledger (D88, D89, D90 part 4), booked every step
+    // from the state at the start or the restart
+    let nonorth = case.solver.nonorth_correction;
+    let (bunits, bhead) = balance::csv_head(true);
+    let mut balance_csv = History::new(
+        out,
+        &suffix_name("balance", desc, last),
+        &crate::case::csv_preamble("balance", name, None, &bunits),
+        &bhead,
+        cont,
+    )?;
+    let mut ledger = {
+        let sol = Solution {
+            state: fl.state()?,
+            disc: &fl.disc,
+            phys: fl.phys,
+        };
+        let r = balance::rates(
+            &sol,
+            mesh,
+            geo,
+            &case,
+            &fl.bc.mom_kind,
+            &geo.cell_volume,
+            nonorth,
+        );
+        Ledger::start(r, tr.clock.time, first_step, case.balance.tolerance_energy)
+    };
+    let mut last_balance = None;
+    let mut first_cfl = None;
+    let mut balance_warned = false;
 
     let ts = Instant::now();
     let mut stopped = false;
@@ -807,8 +840,67 @@ fn run_one<F: FnMut(&str)>(
             }
         }
         af.update(&case, mesh, geo, &mut fl, tr.clock.time + h)?;
-        let rp = tr.step(&mut fl, h)?;
+        fl.keep_valid()?;
+        let rp = match tr.step(&mut fl, h) {
+            Ok(r) => r,
+            Err(e) if crate::divergence::is_divergence(&e, &mut fl) => {
+                // D63: the last valid state, the snapshot and the report
+                lg.line(&format!("      {e:#}"));
+                let ctx = crate::divergence::Context {
+                    name,
+                    case: &case,
+                    at: tr.clock.step + 1,
+                    done: nsteps,
+                    time: Some(tr.clock.time),
+                    dt: Some(h),
+                    residuals: fl.diverged.unwrap_or_default(),
+                    last_residuals: (nsteps > 0).then_some(last_rep.residuals),
+                    first_courant: first_cfl,
+                };
+                let prepared = (|| -> Result<(crate::simplec::State, Vec<&'static str>)> {
+                    let failed = fl.state()?;
+                    anyhow::ensure!(tr.rewind(&mut fl)?, "no valid state was kept");
+                    let mut files = Vec::new();
+                    if last && cfg!(feature = "hdf5") && case.output.vtkhdf {
+                        let sol = Solution {
+                            state: fl.state()?,
+                            disc: &fl.disc,
+                            phys: fl.phys,
+                        };
+                        write_fields(
+                            &case,
+                            &out.join("fields_last_valid.vtkhdf"),
+                            mesh,
+                            geo,
+                            &sol,
+                            case.analytic_at(tr.clock.time).as_ref(),
+                            Some((tr.clock.step, Some(tr.clock.time))),
+                        )?;
+                        files.push("fields_last_valid.vtkhdf");
+                    }
+                    if last && restart::AVAILABLE {
+                        let rs = restart_of(&mut fl, &tr, mesh, name, h)?;
+                        restart::write(&out.join("restart.h5"), &rs)?;
+                        files.push("restart.h5");
+                    }
+                    Ok((failed, files))
+                })();
+                let e =
+                    crate::divergence::finish(&mut fl, &ctx, mesh, geo, out, prepared, &mut |l| {
+                        lg.line(l)
+                    });
+                history.flush()?;
+                balance_csv.flush()?;
+                steer.record.flush();
+                std::fs::write(out.join("flow.log"), &lg.text)?;
+                return Err(e);
+            }
+            Err(e) => return Err(e),
+        };
         last_rep = rp;
+        if nsteps == 0 {
+            first_cfl = Some(rp.cfl);
+        }
         nsteps += 1;
         outer_sum += rp.outer;
         cg_sum += rp.residuals.pressure_iterations;
@@ -844,7 +936,48 @@ fn run_one<F: FnMut(&str)>(
                 }));
             }
         }
-        if n == first_step + 1 || n.is_multiple_of(case.solver.log_every) {
+        let bal = {
+            let sol = Solution {
+                state: fl.state()?,
+                disc: &fl.disc,
+                phys: fl.phys,
+            };
+            let r = balance::rates(
+                &sol,
+                mesh,
+                geo,
+                &case,
+                &fl.bc.mom_kind,
+                &geo.cell_volume,
+                nonorth,
+            );
+            // the tolerance may change during the run (D40)
+            ledger.tolerance = case.balance.tolerance_energy;
+            ledger.step(r, n, rp.time)
+        };
+        if n.is_multiple_of(case.output.history_every) {
+            balance_csv.row(&balance::csv_row(&bal));
+            if steer.record.on() {
+                steer.record.row(&balance::record_row(&bal));
+            }
+        }
+        if bal.mass.relative.abs() > case.balance.tolerance_step && !balance_warned {
+            balance_warned = true;
+            let m = format!(
+                "step {n}: the relative mass imbalance {:.2e} is above [balance] tolerance_step {:.1e}",
+                bal.mass.relative, case.balance.tolerance_step
+            );
+            lg.line(&format!(
+                "      warning {}: {m}",
+                crate::diag::BAL_MASS_STEP
+            ));
+            steer.event(crate::diag::BAL_MASS_STEP, n, &m);
+            if case.balance.action == BalanceAction::Stop {
+                steer.stop_for(crate::diag::BAL_MASS_STEP, format!("stopped: {m}"));
+            }
+        }
+        let log_now = n == first_step + 1 || n.is_multiple_of(case.solver.log_every);
+        if log_now {
             steer.record.flush();
             lg.line(&format!(
                 "step {n:6}  t {:.6e}  Δt {h:.3e}  Courant {:.3}  momentum {:.2e} {:.2e} {:.2e}  \
@@ -858,9 +991,21 @@ fn run_one<F: FnMut(&str)>(
                 rp.outer,
                 r.pressure_iterations
             ));
+            lg.line(&balance::compact(&bal));
+            if case.balance.every > 0 && n.is_multiple_of(case.balance.every) {
+                lg.line(
+                    balance::table(
+                        &format!("      balance of the run up to step {n}"),
+                        &ledger.run(),
+                        true,
+                    )
+                    .trim_end(),
+                );
+            }
             // the histories reach the disk with every log line, so a run
             // that is killed keeps them up to there
             history.flush()?;
+            balance_csv.flush()?;
             if let Some(f) = forces.as_mut() {
                 f.flush()?;
             }
@@ -868,6 +1013,7 @@ fn run_one<F: FnMut(&str)>(
                 f.flush()?;
             }
         }
+        last_balance = Some(bal);
         let req = control.check(n, case.run.reread_every);
         let at_monitor = monitors && n.is_multiple_of(case.output.monitor_every);
         let o = &case.output;
@@ -981,6 +1127,7 @@ fn run_one<F: FnMut(&str)>(
         }
     }
     history.flush()?;
+    balance_csv.flush()?;
     if let Some(f) = forces.as_mut() {
         f.flush()?;
     }
@@ -1070,7 +1217,48 @@ fn run_one<F: FnMut(&str)>(
     if let Some(b) = &benchmark {
         log_benchmark(b, |l| lg.line(l));
     }
+    let run_balance = ledger.run();
+    lg.line(
+        balance::table(
+            &format!(
+                "      balance of the run, t = {:.6e} … {:.6e} s ({} steps, {} with negative numerical dissipation)",
+                run_balance.time.unwrap_or(0.0) - run_balance.duration.unwrap_or(0.0),
+                run_balance.time.unwrap_or(0.0),
+                ledger.steps,
+                ledger.negative_steps
+            ),
+            &run_balance,
+            true,
+        )
+        .trim_end(),
+    );
+    if steer.record.on() {
+        let mut row = balance::record_row(&run_balance);
+        if let Some(m) = row.as_object_mut() {
+            m.insert("type".into(), "balance_run".into());
+        }
+        steer.record.row(&row);
+    }
+    let balance_summary = BalanceSummary {
+        last: last_balance.unwrap_or_else(|| run_balance.clone()),
+        largest_mass_relative: ledger.largest_mass_relative,
+        steps: Some(ledger.steps),
+        negative_steps: Some(ledger.negative_steps),
+        run: Some(run_balance),
+    };
+    for d in balance::check(&balance_summary, &case.balance) {
+        if d.code == crate::diag::BAL_MASS_STEP && balance_warned {
+            warnings.push(d);
+            continue;
+        }
+        lg.line(&format!("      warning {}: {}", d.code, d.message));
+        steer.event(d.code, steps_total, &d.message);
+        warnings.push(d);
+    }
     if last || stopped {
+        if let Some(rb) = &balance_summary.run {
+            std::fs::write(out.join("balance.svg"), balance::chart(name, rb, true))?;
+        }
         write_outputs(
             &case,
             out,
@@ -1121,6 +1309,7 @@ fn run_one<F: FnMut(&str)>(
         }
     }
     let solve = Solve {
+        balance: Some(balance_summary),
         mesh: desc.into(),
         mesh_hash: crate::engine::mesh_hash(mesh),
         device: fl.device(),

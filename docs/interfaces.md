@@ -25,9 +25,9 @@ code by `foehn schema --markdown`).
 | Code | Status | Meaning |
 |---|---|---|
 | 0 | `finished` | The run ended as planned and every check of the case passed. |
-| 1 | `error` | The case could not be read or run, or the solver failed (diverged, a file could not be written). |
+| 1 | `error` | The case could not be read or run, or the solver failed: diverged (`RUN014`, with the divergence report below), a file could not be written. |
 | 2 | `failed-checks` | The run ended, but a check failed: not converged (`RUN006`), an order, error, reference or benchmark band, a mass balance (`RUN007`). |
-| 3 | `stopped` | Stopped on request before its end: the `.stop` file, a signal or a limit of `[run.limits]`. The restart file and the output of the last iteration or step are written; `--restart latest` continues bitwise as if the run had not stopped. |
+| 3 | `stopped` | Stopped on request before its end: the `.stop` file, a signal, a limit of `[run.limits]`, or an exceeded balance tolerance with `[balance] action = "stop"` (`BAL001`). The restart file and the output of the last iteration or step are written; `--restart latest` continues bitwise as if the run had not stopped. |
 
 ## Signals (D64, unix)
 
@@ -62,9 +62,14 @@ The limits may change during a run (a re-read of the case file, D40).
 | `run.jsonl` | `foehncraft.run_record` | The run record (D69), one JSON object per line, flushed at every log line, so it can be followed while the run goes on (`tail -f`). |
 | `flow.log`, `flow.md`, `flow.json` | | The log and the report for people, with timings. |
 | `fields.vtkhdf`, `fields_N.vtkhdf` | VTKHDF 2.x | Fields, with the root attributes `foehncraft_format`, `foehncraft_format_version`, `foehncraft_version`, `case`, `units` and `step`/`time` or `iteration`. |
-| `restart.h5` | Foehncraft restart | With `foehncraft_version` and `units`. |
+| `restart.h5` | Foehncraft restart | With `foehncraft_version` and `units`; optional datasets `point_id`, `points_x`, `points_y`, `points_z` and `volume_<k>` for meshes that move (D91), left out for fixed meshes. |
 | `*.csv` | `foehncraft-<kind>` | Residuals, history, forces, probes, patches, wall and line data, each with a comment preamble (below). |
+| `balance.csv` | `foehncraft-balance` | The conservation ledger (D88, D89, below): one row per time step (every `output.history_every`) or per balance table of a steady run and its final state. |
+| `balance.svg` | SVG | Bars of the kinetic-energy terms at the end: of the final state (steady, W) or over the run (transient, J). `tools/balance_chart.py` draws the time histories of a transient `balance.csv`. |
 | `case.read_toml_N.toml` | TOML | The settings in force after a re-read (D40). |
+| `divergence.md`, `divergence.json` | `foehncraft.divergence` | After a divergence (D63, below): the report for people and for programs. |
+| `divergence.vtkhdf` | VTKHDF 2.x | The failing cells and three layers of neighbours as a mesh of their own, with the failed fields, the last valid fields, `divergence_layer` (0 failing, 1–3 neighbours) and the global `cell_id`. |
+| `fields_last_valid.vtkhdf` | VTKHDF 2.x | After a divergence: the fields of the last valid iteration or step (`restart.h5` holds the same state). |
 
 ### Rows of `run.jsonl`
 
@@ -74,6 +79,8 @@ The limits may change during a run (a re-read of the case file, D40).
 | `iteration` | `iteration`, `momentum` (3), `continuity`, `bicgstab` (3), `cg` |
 | `step` | `step`, `time`, `dt`, `cfl`, `momentum` (3), `continuity`, `outer`, `cg` |
 | `event` | `code`, `severity`, `message`, `at` (iteration or step) |
+| `balance` | `iteration` (steady) or `step` and `time` (transient), `mass_outflow`, `mass_relative`, `kinetic_energy`, `storage`, `boundary_power`, `body_force_power`, `viscous_dissipation`, `numerical_dissipation`, `numerical_relative`, `pressure_dissipation`, `scheme_dissipation` |
+| `balance_run` | the same fields for the whole transient run (time integrals: kg, J) |
 | `timings` | `seconds`, `cells`, `steps`, `ns_per_cell_step`, `solves` (per solve: `mesh`, `device`, `timings`, `ns_per_cell_iteration`, `ns_per_cell_step`) |
 | `result` | `result` (the object of `result.json`) |
 | `end` | `status`, `exit_code` |
@@ -101,6 +108,75 @@ other output file with its SHA-256 hash. HDF5 files are written
 without object timestamps. Dates (in reports and in `run.jsonl`) come from
 `SOURCE_DATE_EPOCH` when it is set.
 
+## Conservation ledger (D88, D89, D90 part 4)
+
+Every run books mass and kinetic energy. Per quantity: the storage (time
+derivative of the integral over the domain), the boundary terms per patch,
+the volume sources, and the imbalance, relative to the largest term:
+
+| Term | Mass (kg/s) | Kinetic energy (W) |
+|---|---|---|
+| storage | 0 (constant density) | (Kⁿ⁺¹ − Kⁿ)/Δt, K = ∫ ½ρ\|u\|² dV |
+| boundary, per patch | mass flow out | viscous work in, Σ (μ∇u·S)·u_b; convected out, Σ ṁ ½\|u_b\|²; pressure work out, Σ p_b u_b·S |
+| sources | | body force, ∫ f·u dV |
+| sinks | | viscous dissipation of the discrete viscous operator (converges to ∫ μ∇u:∇u dV) |
+| imbalance | net outflow | numerical dissipation = boundary + sources − viscous dissipation − storage |
+| of it | | pressure part: boundary pressure work − Σ u_P·∇p_P V_P (the momentum rows hold the pressure as the volume source −∇p_P V_P), the discrete −∫ p ∇·u dV of the cell velocities; scheme part: the rest, of the convection and time schemes |
+
+The second law asks that the numerical dissipation is not negative (D90
+part 4). The pressure part is the dissipation of the momentum
+interpolation of the face fluxes; on distorted cells it holds a
+consistency error of either sign that falls with the mesh. Transient runs
+use the trapezoidal rule for the kinetic-energy rates over a step, the
+mass flows at the end of the step (the discrete continuity equation holds
+at the new level), and add a ledger of the whole run (time integrals, kg
+and J, from the start or the restart). All sums are pairwise sums in a fixed
+order (D31). `[balance]` sets the cadence and the tolerances:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `every` | 0 | The full table in the log every N iterations or steps (0: at the end). Transient runs also log one compact line with every progress line. |
+| `tolerance_step` | 1e-8 | Relative mass imbalance of a step, or of the final steady state: `BAL001`. |
+| `tolerance_run` | 1e-4 | Relative mass imbalance over the run: `BAL002`. |
+| `tolerance_energy` | 1e-2 | Numerical dissipation below −tolerance relative to the largest term, of the final steady state or over the run: `BAL003`; a transient step below it counts as negative. |
+| `action` | `warn` | `stop` ends a transient run at the step with exit code 3. |
+
+`balance.csv` columns: `step,time` (transient) or `iteration` (steady),
+then `mass_outflow,mass_relative,kinetic_energy,storage,boundary_power,
+body_force_power,viscous_dissipation,numerical_dissipation,numerical_relative,
+pressure_dissipation,scheme_dissipation`.
+`result.json` carries per solve `balance`: `last` (the final state or the
+last step, with the terms per patch), `run` (transient), `steps`,
+`negative_steps` (steps whose numerical dissipation is below
+−`tolerance_energy`:
+a health number, not an error) and `largest_mass_relative`.
+
+## Divergence report (D63)
+
+When a residual of an outer iteration or corrector is not finite, or a
+linear solver breaks down, the run puts the state of the last valid
+iteration or step back (kept as a device copy of u, p and ṁ before every
+iteration or step) and writes `fields_last_valid.vtkhdf`, `restart.h5` of
+that state (a transient restart continues, not bit-identically: the old
+gradients of the deferred corrections are those of the last valid level),
+`divergence.vtkhdf`, `divergence.md` and `divergence.json`, then ends with
+exit code 1 and `RUN014`, whose fix is the one of the most likely cause.
+`divergence.json` (format `foehncraft.divergence`, version 1.0):
+
+| Key | Contents |
+|---|---|
+| `kind`, `at`, `done`, `time`, `time_step` | steady or transient, the failed iteration or step, the iterations or steps before it, the time and step of the last valid state |
+| `first_variable` | `velocity` (the momentum predictor failed) or `pressure` |
+| `residuals` | of the failed iteration or corrector (zero when a linear solver broke down before they were complete) |
+| `failing_cells`, `failing_criterion`, `cells` | the count, what made them fail, and the first 20 by global ID with rank, centroid, failed velocity and pressure, last valid speed |
+| `nearest` | the cell nearest to failing in the last valid state: largest Courant number (transient) or speed (steady), and its distance to the failure |
+| `causes` | most likely first: `code` (`DIV001` time step, `DIV002` relaxation, `DIV003` cell quality, `DIV004` boundary condition, `DIV005` initial state, `DIV006` linear solve), `score` 0–1, `evidence`, `advice` and `fix` (`--set` arguments) |
+| `files` | the files written |
+
+The bounded quantities of later models (turbulence, species, volume
+fractions) get range warnings at the progress lines with those models;
+the laminar flow has none.
+
 ## Provenance (D85)
 
 The `provenance` object in `result.json`, in the header of `run.jsonl` and
@@ -120,6 +196,7 @@ same `case_hash` and `commit` are comparable bit for bit.
 | `foehncraft.error` | any command with `--json` that fails before a run: `command`, `exit_code`, `diagnostics` |
 | `foehncraft.info` | `foehn info --json` |
 | `foehncraft.command` | the other commands with `--json` (`mesh`, `scalar`, `poisson`, ...): `command` and the report |
+| `foehncraft.divergence` | `divergence.json` after a divergence (above) |
 
 ## Diagnostics (D78)
 
@@ -184,6 +261,16 @@ A code keeps its meaning; a retired code stays in the table.
 | `RUN011` | error | `--restart latest` found no restart file in the output directory. |
 | `RUN012` | note | No benchmark of this hardware: the estimate has no wall time. |
 | `RUN013` | error | An output file could not be written. |
+| `RUN014` | error | The solution diverged (a value that is not finite); see `divergence.md` (D63). |
+| `DIV001` | note | Divergence cause: the Courant number near the failing cells is large; reduce the time step. |
+| `DIV002` | note | Divergence cause: under-relaxation factors too large for the case. |
+| `DIV003` | note | Divergence cause: poor cells (non-orthogonality, volume ratio) at the failing cells. |
+| `DIV004` | note | Divergence cause: a boundary condition next to the failing cells. |
+| `DIV005` | note | Divergence cause: the run failed within its first steps or iterations, from the initial state. |
+| `DIV006` | note | Divergence cause: a linear solve that stopped at its iteration limit. |
+| `BAL001` | warning | A relative mass imbalance of a step or iteration above `[balance] tolerance_step` (D89). |
+| `BAL002` | warning | A relative mass imbalance over the run above `[balance] tolerance_run` (D89). |
+| `BAL003` | warning | A numerical dissipation of kinetic energy below `[balance] tolerance_energy`: the discretisation adds energy (D90). |
 | `GEN001` | error | An error without a more specific code. |
 
 ## Engine API (D86)

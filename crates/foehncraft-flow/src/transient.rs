@@ -297,6 +297,27 @@ impl Transient {
         Ok(())
     }
 
+    /// After a step that failed: the state of level n back (u, p and ṁ
+    /// from [`Flow::rewind`]), the old velocity and flux of level n−1 back
+    /// into the old levels, and Xⁿ, the boundary values and gradients
+    /// recomputed. The clock still stands at level n. A restart file of
+    /// this state continues the run, though not bit-identically: the old
+    /// gradients of the deferred corrections are those of level n (D63).
+    pub fn rewind(&mut self, fl: &mut Flow) -> Result<bool> {
+        if !fl.rewind()? {
+            return Ok(false);
+        }
+        let l = self.l;
+        if self.clock.levels >= 1 {
+            for (a, b) in l.u_old2.all().into_iter().zip(l.u_old.all()) {
+                fl.dev.copy(a, b)?;
+            }
+            fl.dev.copy(l.m_old2, l.m_old)?;
+        }
+        self.finish_level(fl)?;
+        Ok(true)
+    }
+
     /// Largest Courant number of the current fluxes for a step `dt`.
     pub fn courant(&mut self, fl: &mut Flow, dt: f64) -> Result<f64> {
         fl.dev.courant(fl.f.mass_flux, dt, self.l.cfl)?;
@@ -463,15 +484,20 @@ impl Transient {
                 fl.dev.sync()?;
                 fl.timings.pressure_assembly += t.elapsed().as_secs_f64();
             }
-            ensure!(
-                res.max().is_finite(),
-                "the solution diverged in time step {} (t = {:.6e} s, Δt = {dt:.3e} s; residuals \
-                 {:?}, continuity {:.3e}); lower [time] time_step or max_cfl",
-                self.clock.step + 1,
-                self.clock.time + dt,
-                res.momentum,
-                res.continuity
-            );
+            if !res.finite() {
+                fl.diverged = Some(res);
+                return Err(crate::diag::err(crate::diag::Diagnostic::new(
+                    crate::diag::RUN_DIVERGED,
+                    format!(
+                        "the solution diverged in time step {} (t = {:.6e} s, Δt = {dt:.3e} s; \
+                         residuals {:?}, continuity {:.3e})",
+                        self.clock.step + 1,
+                        self.clock.time + dt,
+                        res.momentum,
+                        res.continuity
+                    ),
+                )));
+            }
             if k == 1 {
                 first = res;
             } else {

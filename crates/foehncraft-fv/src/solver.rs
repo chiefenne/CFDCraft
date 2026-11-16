@@ -349,7 +349,8 @@ pub fn cg(
         let pq = be.dot(V::P, V::Q)?;
         anyhow::ensure!(
             pq > 0.0 && rho > 0.0,
-            "CG breakdown in iteration {it} ((p, A p) = {pq:.3e}, (r, z) = {rho:.3e}):              the matrix or the preconditioner is not positive definite"
+            "CG breakdown in iteration {it} ((p, A p) = {pq:.3e}, (r, z) = {rho:.3e}): \
+             the matrix or the preconditioner is not positive definite"
         );
         let alpha = rho / pq;
         be.axpy(alpha, V::P, V::Phi)?;

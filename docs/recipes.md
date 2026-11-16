@@ -31,6 +31,7 @@ the [Example gallery](gallery.md).
 24. [Run a flow case on an NVIDIA GPU and compare it with the CPU](#flow-gpu) (also: free Colab T4)
 25. [Check the derivatives of the kernels (adjoint readiness)](#adjoint-ready)
 26. [Drive runs from a script or an agent](#run-contract)
+27. [Check the balances and read a divergence report](#health)
 
 ---
 
@@ -1000,5 +1001,76 @@ target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml --
 `provenance.case_hash` with `provenance.commit` says whether two results
 are comparable. The keys and their units: `foehn schema` (JSON Schema)
 and [keys.md](keys.md).
+
+[↑ back to top](#recipes)
+
+<a id="health"></a>
+## 27. Check the balances and read a divergence report
+
+Every flow run books mass and kinetic energy in a ledger (D88, D89;
+details in [interfaces.md](interfaces.md#conservation-ledger-d88-d89-d90-part-4)).
+From the repository root, after `cargo build --release`:
+
+```
+target/release/foehn flow examples/cases/flow/cavity_re100_energy.toml --out output/energy
+```
+
+The log shows the full table every 100 iterations (`[balance] every`) and
+at the end; for the steady cavity the lid power goes into the viscous
+dissipation and, about 1.5 %, into the numerical dissipation of the
+schemes, which the second law wants positive (D90 part 4). The same
+table is in `flow.md`, the history in `balance.csv`, the bars in
+`balance.svg`, the values under `solves[].balance` in `result.json`.
+
+A transient run logs one compact balance line with every progress line
+and a ledger of the whole run at the end; draw the time histories with
+
+```
+target/release/foehn flow examples/cases/flow/taylor_green_bdf2.toml --set "verification.time_steps=[]" --out output/tg
+python3 tools/balance_chart.py output/tg
+```
+
+**Tolerances**: `[balance] tolerance_step` (1e-8, the relative mass
+imbalance of a step or of the final steady state), `tolerance_run` (1e-4,
+the mass over the run) and `tolerance_energy` (1e-2, the negative
+numerical dissipation relative to the largest term) give the warnings
+`BAL001`–`BAL003`; `action = "stop"` ends a transient run at the
+step with exit code 3 instead (here with a tolerance no run meets: the
+Taylor–Green vortex has inflow and outflow through every side, and its
+mass imbalance is at round-off, about 1e-17):
+
+```
+target/release/foehn flow examples/cases/flow/taylor_green_bdf2.toml --set "verification.time_steps=[]" --set balance.tolerance_step=1e-30 --set 'balance.action="stop"' --out output/stop; echo "exit $?"
+```
+
+**The energy budget over the mesh** (the gallery chart):
+
+```
+python3 tools/energy_budget_chart.py output/energy_budget.svg
+```
+
+**A divergence** (D63) ends the run with exit code 1 and `RUN014`, after
+it wrote the last valid state (`fields_last_valid.vtkhdf`, `restart.h5`),
+the failing cells with three layers of neighbours (`divergence.vtkhdf`,
+threshold on `divergence_layer` in ParaView) and the report
+`divergence.md` / `divergence.json` with the likely causes ranked and what
+to change. Provoke one: SIMPLE with no relaxation
+
+```
+target/release/foehn flow examples/cases/flow/cavity_re1000.toml --set 'solver.algorithm="simple"' --set solver.relaxation_velocity=0.99 --set solver.relaxation_pressure=1.0 --out output/diverge; echo "exit $?"
+cat output/diverge/divergence.md
+```
+
+The first cause is `DIV002` (relaxation) with the fix
+`--set solver.relaxation_velocity=0.69 --set solver.relaxation_pressure=0.31`,
+which runs. A time step far too large for a transient case points to
+`DIV001` with a smaller time step:
+
+```
+target/release/foehn flow examples/cases/flow/cavity_re100_transient.toml --set time.adaptive=false --set time.time_step=5.0 --set solver.correctors=1 --set 'time.scheme="crank-nicolson"' --out output/diverge_t; echo "exit $?"
+```
+
+With `--json`, the `RUN014` diagnostic in `result.json` carries the fix
+of the most likely cause as `--set` arguments, so a script can retry.
 
 [↑ back to top](#recipes)

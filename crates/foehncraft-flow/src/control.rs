@@ -15,7 +15,8 @@
 //!
 //! What a re-read applies ([`RUNTIME_KEYS`]): the output settings, the
 //! restart and re-read schedule, the stop criteria, the relaxation factors,
-//! the linear-solver tolerances and the time-step settings. Every other
+//! the linear-solver tolerances, the time-step settings and the balance
+//! report and tolerances. Every other
 //! difference is reported as not applied (the state of the run belongs to
 //! the case it started with; stop the run and restart from the restart file
 //! to change those). A case file that no longer validates leaves everything
@@ -64,6 +65,11 @@ pub const RUNTIME_KEYS: &[&str] = &[
     "time.max_growth",
     "time.min_time_step",
     "time.max_time_step",
+    "balance.every",
+    "balance.tolerance_step",
+    "balance.tolerance_run",
+    "balance.tolerance_energy",
+    "balance.action",
 ];
 
 /// What the control files ask for at one iteration or step.

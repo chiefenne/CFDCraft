@@ -153,10 +153,10 @@ impl Interrupts {
 /// Why a run stopped before its end (exit code 3, D64).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Stop {
-    /// Diagnostic code (`RUN001` … `RUN005`).
+    /// Diagnostic code (`RUN001` … `RUN005`, or `BAL001` … `BAL003`).
     pub code: &'static str,
     /// `control-file`, `signal`, `wall-time`, `steps`, `iterations`,
-    /// `output`.
+    /// `output`, `balance`.
     pub kind: &'static str,
     /// The signal, for `signal`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -174,6 +174,9 @@ pub struct Steer {
     pub(crate) record: Record,
     /// The stop decided by [`poll`](Self::poll).
     pub(crate) stop: Option<Stop>,
+    /// A stop that the run itself asked for (`[balance] action = "stop"`),
+    /// returned by the next [`poll`](Self::poll).
+    pending: Option<Stop>,
 }
 
 impl Steer {
@@ -190,6 +193,7 @@ impl Steer {
                 Record::none()
             },
             stop: None,
+            pending: None,
         })
     }
 
@@ -201,6 +205,21 @@ impl Steer {
             out: out.to_path_buf(),
             record: Record::none(),
             stop: None,
+            pending: None,
+        }
+    }
+
+    /// Stops the run at the next [`poll`](Self::poll) as at a limit
+    /// (restart file, final output, exit code 3) with `code` (kind
+    /// `balance`).
+    pub(crate) fn stop_for(&mut self, code: &'static str, message: String) {
+        if self.pending.is_none() {
+            self.pending = Some(Stop {
+                code,
+                kind: "balance",
+                signal: None,
+                message,
+            });
         }
     }
 
@@ -219,7 +238,9 @@ impl Steer {
             signal: None,
             message,
         };
-        let s = if stop_file {
+        let s = if let Some(p) = self.pending.take() {
+            Some(p)
+        } else if stop_file {
             Some(stop(
                 diag::RUN_STOP_FILE,
                 "control-file",
@@ -814,8 +835,11 @@ pub(crate) fn outputs(case: &FlowCase, mesh: &Mesh, steps: usize) -> Vec<OutputE
     let rows = steps / o.history_every + 1;
     if transient {
         add("history.csv", 1, rows as f64 * 120.0);
+        add("balance.csv", 1, rows as f64 * 240.0);
     } else {
         add("residuals.csv", 1, rows as f64 * 90.0);
+        let brows = steps.checked_div(case.balance.every).unwrap_or(0) + 1;
+        add("balance.csv", 1, 400.0 + brows as f64 * 230.0);
     }
     let fields = fields_bytes(case, mesh);
     if o.vtkhdf {

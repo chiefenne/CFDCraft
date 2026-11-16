@@ -108,6 +108,18 @@ codes! {
     RUN_NO_RESTART = "RUN011", Error, "`--restart latest` found no restart file in the output directory.";
     RUN_NO_BENCHMARK = "RUN012", Note, "No benchmark of this hardware: the estimate has no wall time.";
     RUN_IO = "RUN013", Error, "An output file could not be written.";
+    RUN_DIVERGED = "RUN014", Error, "The solution diverged (a value that is not finite); see `divergence.md` (D63).";
+    // the causes of a divergence (D63)
+    DIV_TIME_STEP = "DIV001", Note, "Divergence cause: the Courant number near the failing cells is large; reduce the time step.";
+    DIV_RELAXATION = "DIV002", Note, "Divergence cause: under-relaxation factors too large for the case.";
+    DIV_CELL_QUALITY = "DIV003", Note, "Divergence cause: poor cells (non-orthogonality, volume ratio) at the failing cells.";
+    DIV_BOUNDARY = "DIV004", Note, "Divergence cause: a boundary condition next to the failing cells.";
+    DIV_INITIAL_STATE = "DIV005", Note, "Divergence cause: the run failed within its first steps or iterations, from the initial state.";
+    DIV_LINEAR_SOLVER = "DIV006", Note, "Divergence cause: a linear solve that stopped at its iteration limit.";
+    // the conservation ledger (D88, D89, D90)
+    BAL_MASS_STEP = "BAL001", Warning, "A relative mass imbalance of a step or iteration above `[balance] tolerance_step` (D89).";
+    BAL_MASS_RUN = "BAL002", Warning, "A relative mass imbalance over the run above `[balance] tolerance_run` (D89).";
+    BAL_NEGATIVE_DISSIPATION = "BAL003", Warning, "A numerical dissipation of kinetic energy below `[balance] tolerance_energy`: the discretisation adds energy (D90).";
     // anything else
     GENERAL = "GEN001", Error, "An error without a more specific code.";
 }

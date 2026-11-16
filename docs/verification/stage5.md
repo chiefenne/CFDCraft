@@ -418,12 +418,89 @@ meshes, whose front and back faces are half of all faces: a single
 per-face constant left 3D polyhedra 24 % low. The device memory of the GPU
 loop is taken as three quarters of the face part (to be measured on a GPU).
 
+## Health checks: conservation ledger and divergence report (part 4b)
+
+Requirements D63, D88, D89, D90 part 4 and D91. Every run books mass and
+kinetic energy; a run that diverges explains itself. No result changes:
+the flow cases of the catalogue give bitwise the fields, CSV files and
+report values of part 4a (`tools/compare_runs.py --across-versions`; the
+resolved case gains the `[balance]` table, the reports the `balance`
+values).
+
+| Check | Result | Where |
+|---|---|---|
+| Cavity Re 100, steady, 16² to 64² (D90 part 4) | lid power = viscous + numerical dissipation to round-off; numerical dissipation positive, its share falling with the mesh; mass ledger zero | test `cavity_energy_budget_on_three_meshes` |
+| Taylor–Green, BDF2, 0.2 s at Courant number 0.32 | relative mass imbalance below 1e-12 per step; ΔK = boundary − viscous − numerical over the run; numerical dissipation falls by more than 3 per halving of h and Δt | test `taylor_green_ledger_falls_with_the_mesh` |
+| Balance tables during a steady run | the solution bitwise unchanged | test `balance_every_leaves_the_solution_unchanged` |
+| SIMPLE without relaxation (steady divergence) | exit 1, `RUN014`; last valid state, restart, snapshot, report; first cause `DIV002` with a fix that runs | test `steady_divergence_gives_the_report` |
+| Crank–Nicolson at a Courant number above 100 (transient divergence) | first cause `DIV001` with a smaller time step; the restart file of the last valid state reads back | test `transient_divergence_points_to_the_time_step` |
+| Restart geometry (D91) | optional points and volumes round-trip | test `restart_geometry_round_trip` |
+| Energy budget over the mesh | the table and chart below | `tools/energy_budget_chart.py`, gallery 19 |
+
+**What the numerical dissipation is.** Dotting the discrete momentum
+equation with the cell velocity and summing gives the discrete
+kinetic-energy budget. Its viscous part is exact face by face: an
+interior face removes F·(u_N − u_P), with F the diffusive flux the
+momentum rows use (non-orthogonal and skewness corrections included), and
+a wall gives work F·u_b and dissipation F·(u_b − u_P). The ledger books
+this discrete viscous dissipation, which converges to ∫ μ ∇u:∇u dV, so the
+remainder holds only what the convection scheme, the Rhie–Chow coupling
+and the iteration error take out. A first version used μ ∇u:∇u with the
+least-squares cell gradients: it left 12 % to 15 % of the cavity's lid
+power unexplained, nearly all of it in the cells at the corners, where
+the gradient of the cell is not the gradient of the face differences.
+
+**Measured** (64 x 64 is the catalogue case):
+
+| Case | Mesh | Boundary power | Viscous dissipation | Numerical dissipation |
+|---|---|---|---|---|
+| cavity, steady (W) | 16² | 1.9670e-3 | 1.9267e-3 | 4.03e-5 (2.05 %) |
+| | 32² | 2.4499e-3 | 2.4110e-3 | 3.88e-5 (1.59 %) |
+| | 64² | 2.9194e-3 | 2.8771e-3 | 4.23e-5 (1.45 %) |
+| | 128² | 3.3851e-3 | 3.3399e-3 | 4.51e-5 (1.33 %) |
+| Taylor–Green, over 0.4 s (J) | 16² | | 1.8324e-3 | 4.07e-4 |
+| | 32² | | 1.8317e-3 | 7.38e-5 |
+| | 64² | | 1.8302e-3 | 1.20e-5 |
+
+On the cavity the share falls, slowly: the lid meets the side walls in
+two singular corners, where the velocity jumps and the pressure goes like
+1/r, so the lid power grows with the mesh and the dissipation of the
+schemes in the corner cells stays of the same size. In Stokes flow
+(convection off) the numerical part is 4.88e-5 W on all three meshes: the
+pressure–velocity coupling at the corners. On the smooth Taylor–Green
+vortex the numerical dissipation falls with order 2.46 and 2.62. A handful of
+steps (1 or 2 of 20 to 80) have a negative numerical dissipation within
+round-off of the start; they are counted (`negative_steps`), as D90 asks.
+
+**Cost.** Steady runs evaluate the ledger at the table cadence and at the
+end. Transient runs evaluate it every step, since the trapezoidal rule
+needs both ends of the step: one download of the fields and a pass over
+the faces on the host, about 1 % of a step on the CPU; on the GPU it is a
+transfer per step of 20 values per cell (to be measured on the T4; the
+download can later move to every N steps with a cumulative device sum).
+The divergence copy of u, p and ṁ before each iteration or step is four
+device copies.
+
+**Divergence detection.** The check is the one that was there: every
+residual of every outer iteration or corrector finite. It now uses all
+residuals (`Residuals::finite`): `max` skipped a NaN in the continuity
+residual. A breakdown of the pressure CG on non-finite values is a
+divergence too. When the fields are still finite (the solver broke down
+first), the failing cells are those with a speed above a tenth of the
+largest. The causes are scored from the evidence: the Courant number of
+the first step against `max_cfl`, the relaxation factors (for SIMPLE
+against α_p ≈ 1 − α_u), the non-orthogonality and volume ratio of the
+failing cells, patches next to them (and backflow at an outflow), a
+failure within the first steps, and linear solvers at their limits.
+
 ## Limits of this part of stage 5
 
 - The further stage-5 items (the bounded central scheme, the new boundary
   conditions, potential-flow initialisation, expressions, the Python
-  package) follow in their own pull requests; the conservation ledger and
-  the divergence report with part 4b.
+  package) follow in their own pull requests.
+- The ledger covers mass and kinetic energy; momentum (the patch forces
+  are in the reports), total energy and entropy (D90 parts 1–3) come with
+  the energy equation (L1); regions (D73) later.
 - Signals need unix; on Windows the `.stop` file and the limits stop a
   run.
 - Restart files need the `hdf5` feature (on by default); a build without

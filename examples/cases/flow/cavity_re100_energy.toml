@@ -1,0 +1,65 @@
+# Lid-driven cavity at Re = 100: the energy budget (stage 5, D88–D90).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cavity_re100_energy.toml
+#
+# The cavity of cavity_re100.toml with the conservation ledger in the log:
+# the full balance table every 100 outer iterations and at the end. The
+# lid does work on the fluid (viscous power through ymax); in the steady
+# state it all goes into dissipation, the viscous dissipation of the
+# discrete viscous operator plus the numerical dissipation of the schemes
+# (convection, pressure–velocity coupling). The second law asks that the
+# numerical part is not negative (D90 part 4); on 64 x 64 cells it is about
+# 1.5 % of the lid power, falling slowly with the mesh because the two
+# upper corners, where the lid meets the walls, are singular. The mass
+# ledger of the closed cavity is zero. balance.csv holds the history,
+# balance.svg the bars of the final state, flow.md the table.
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.015625]
+cells = [64, 64, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+relaxation_velocity = 0.9
+tolerance = 1e-8
+max_iterations = 3000
+
+[balance]
+every = 100                  # the full table every 100 iterations
+
+[verification]
+reference = "ghia-re100"
+reference_tolerance = 0.02
+lid_velocity = 1.0
+require_convergence = true
+
+[[output.lines]]
+name = "vertical"            # u along x = 0.5
+from = [0.5, 0.0, 0.0078125]
+to = [0.5, 1.0, 0.0078125]
+[[output.lines]]
+name = "horizontal"          # v along y = 0.5
+from = [0.0, 0.5, 0.0078125]
+to = [1.0, 0.5, 0.0078125]
