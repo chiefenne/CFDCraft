@@ -31,7 +31,7 @@ say **valid**, and the total volume should be 1.
 
 ```
 pip install vtk numpy
-python3 tools/check_vtkhdf.py output/poly_partition/mesh.vtkhdf
+python3 -m tools.check.vtkhdf output/poly_partition/mesh.vtkhdf
 ```
 
 The check reads the file with VTK, the library ParaView uses, and compares

@@ -3,11 +3,11 @@
 # states whether each GPU run is bitwise equal to the CPU run (and so to
 # the other GPU run); the run fails if they differ by more than 1e-10.
 #
-#   gpu/ptx-kernels/build.sh sm_75
+#   python3 gpu/ptx-kernels/build.py sm_75
 #   cargo build --release -p foehncraft-cli --features cuda
 #   target/release/foehn scalar examples/cases/scalar/mms_poly_gpu.toml
 #
-# or on Google Colab: tools/stage2_colab.ipynb. Needs a GPU of compute
+# or on Google Colab: tools/notebooks/stage2_colab.ipynb. Needs a GPU of compute
 # capability 7.0 or newer and about 1 GB of GPU memory.
 
 [mesh.generate]

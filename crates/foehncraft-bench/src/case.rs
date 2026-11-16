@@ -133,7 +133,7 @@ pub struct RunSection {
     /// CUDA device ordinal.
     pub device: usize,
     /// PTX module of the single-source route, built by
-    /// `gpu/ptx-kernels/build.sh`.
+    /// `python3 gpu/ptx-kernels/build.py`.
     pub rust_ptx: PathBuf,
     /// Allowed relative difference between a backend's results and
     /// `cpu-serial` (GPUs may contract a·b+c into one fused operation).

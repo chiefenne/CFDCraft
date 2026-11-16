@@ -47,7 +47,7 @@ tetrahedra. Re = 100 on 64 × 64 hexahedra: 0.44 % / 0.95 %
 cargo build --release -p foehncraft-cli
 target/release/foehn flow examples/cases/flow/cavity_re1000.toml
 # report: output/cavity_re1000/flow.md, charts: centreline_u.svg, centreline_v.svg, residuals.svg
-python3 tools/render_mesh.py output/cavity_re1000/fields.vtkhdf cavity.png --field speed --top --no-edges
+python3 -m tools.mesh.render_mesh output/cavity_re1000/fields.vtkhdf cavity.png --field speed --top --no-edges
 ```
 
 [↑ back to top](#incompressible-flow)
@@ -173,7 +173,7 @@ after the lift maximum.
 target/release/foehn flow examples/cases/flow/cylinder_re20.toml
 target/release/foehn flow examples/cases/flow/cylinder_re100.toml
 # report: output/cylinder_re100/flow.md, chart: coefficients.svg, histories: forces.csv, probes.csv
-python3 tools/render_mesh.py output/cylinder_re20/fields.vtkhdf cylinder.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
+python3 -m tools.mesh.render_mesh output/cylinder_re20/fields.vtkhdf cylinder.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
 ```
 
 [↑ back to top](#incompressible-flow)
@@ -230,9 +230,9 @@ instead of 1570 outer iterations.
 
 ```
 target/release/foehn flow examples/cases/flow/taylor_green_error.toml
-python3 tools/time_step_chart.py time_step_error.svg
+python3 -m tools.plot.time_step_chart time_step_error.svg
 target/release/foehn flow examples/cases/flow/cylinder_potential.toml
-python3 tools/render_mesh.py output/cylinder_potential/fields.vtkhdf potential.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
+python3 -m tools.mesh.render_mesh output/cylinder_potential/fields.vtkhdf potential.png --field speed --top --no-edges --size 1800x420 --zoom 2.9
 ```
 
 [↑ back to top](#incompressible-flow)

@@ -1,16 +1,16 @@
 # The steady flow loop (SIMPLEC, stage 4) on the GPU: the lid-driven cavity
 # at Re = 100 on about one million three-dimensional polyhedra, 30 outer
 # iterations on the CPU and on the GPU (stage 5, D31). The two runs must give
-# bitwise the same fields, residuals and reports; tools/stage5_cloud.py runs
-# both and compares them with tools/compare_runs.py.
+# bitwise the same fields, residuals and reports; tools/bench/stage5_cloud.py runs
+# both and compares them with tools/check/compare_runs.py.
 #
-#   gpu/ptx-kernels/build.sh sm_75
+#   python3 gpu/ptx-kernels/build.py sm_75
 #   cargo build --release -p foehncraft-cli --features cuda
 #   target/release/foehn flow examples/cases/flow/cavity_poly3d_gpu.toml --backend cpu --out output/gpu/cpu
 #   target/release/foehn flow examples/cases/flow/cavity_poly3d_gpu.toml --backend cuda --out output/gpu/cuda
-#   python3 tools/compare_runs.py output/gpu/cpu output/gpu/cuda
+#   python3 -m tools.check.compare_runs output/gpu/cpu output/gpu/cuda
 #
-# or on Google Colab: tools/stage5_colab.ipynb. Needs a GPU of compute
+# or on Google Colab: tools/notebooks/stage5_colab.ipynb. Needs a GPU of compute
 # capability 7.0 or newer and about 4 GB of GPU memory. The flow is not
 # converged after 30 iterations; the case measures the time per cell and
 # iteration and checks CPU = GPU, the converged cavity is

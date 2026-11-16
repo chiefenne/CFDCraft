@@ -139,7 +139,7 @@ links it only with the cargo feature `hypre` and finds it through
 `brew install cmake`).
 
 ```
-tools/build_hypre.sh $PWD/target/hypre                 # about 1–3 minutes
+python3 -m tools.bench.build_hypre $PWD/target/hypre                 # about 1–3 minutes
 export HYPRE_DIR=$PWD/target/hypre
 cargo build --release -p foehncraft-cli --features hypre
 target/release/foehn info                            # features: ..., hypre

@@ -2,9 +2,9 @@
 # polyhedra (14 faces per interior cell), natural and shuffled order are
 # both worth a run (--ordering shuffled). cuda-rust against cuda-reference,
 # the CPU pair as well. The rerun of the GPU verdict that
-# docs/benchmarks/g1.md asks for; fits a free Colab T4 (tools/g1_colab.ipynb).
+# docs/benchmarks/g1.md asks for; fits a free Colab T4 (tools/notebooks/g1_colab.ipynb).
 #
-#   gpu/ptx-kernels/build.sh
+#   python3 gpu/ptx-kernels/build.py
 #   cargo build --release -p foehncraft-cli --features cuda
 #   target/release/foehn bench g1 examples/cases/bench/g1_gpu_poly_4m.toml
 #

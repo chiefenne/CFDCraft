@@ -63,11 +63,11 @@ reference ranges with both.
 ```
 target/release/foehn flow examples/cases/flow/pipe_wedge.toml
 target/release/foehn flow examples/cases/flow/pipe_wedge.toml --set mesh.generate.wedge=20.0 --set 'verification.levels=[1]' --set mesh.generate.perturb=0.0 --set output.vtkhdf=true --out output/wedge20
-python3 tools/render_mesh.py output/wedge20/fields.vtkhdf pipe_wedge.png --field speed --size 1400x600 --zoom 1.6
+python3 -m tools.mesh.render_mesh output/wedge20/fields.vtkhdf pipe_wedge.png --field speed --size 1400x600 --zoom 1.6
 target/release/foehn flow examples/cases/flow/cylinder_re100.toml
 target/release/foehn flow examples/cases/flow/cylinder_re100_short.toml
 target/release/foehn flow examples/cases/flow/cylinder_re100_convective.toml
-python3 tools/outlet_chart.py cylinder_outlets.svg
+python3 -m tools.plot.outlet_chart cylinder_outlets.svg
 ```
 
 [↑ back to top](#boundary-conditions-of-the-flow-solver)

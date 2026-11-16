@@ -48,7 +48,7 @@ four cores, most of it on the finest mesh (in the `long` set).
 
 ```
 target/release/foehn flow examples/cases/flow/cylinder_re20_gci.toml
-python3 tools/gci_chart.py docs/figures/gallery/gci.svg output/couette_viscosity output/cylinder_re20_gci
+python3 -m tools.plot.gci_chart docs/figures/gallery/gci.svg output/couette_viscosity output/cylinder_re20_gci
 ```
 
 **The manual.** `tools/release/verification_manual.py` collects every

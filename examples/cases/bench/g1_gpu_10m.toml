@@ -1,10 +1,10 @@
 # Gate G1 on an NVIDIA GPU: 10 million cells. The decisive run of stage 0.
-# cuda-rust (single-source Rust kernels, PTX built by gpu/ptx-kernels/build.sh)
+# cuda-rust (single-source Rust kernels, PTX built by python3 gpu/ptx-kernels/build.py)
 # against cuda-reference (hand-written CUDA C, compiled by NVRTC); the CPU
 # pair runs as well. Pass: every kernel of cuda-rust within 10 % of
 # cuda-reference, results identical to the CPU.
 #
-#   gpu/ptx-kernels/build.sh
+#   python3 gpu/ptx-kernels/build.py
 #   cargo build --release -p foehncraft-cli --features cuda
 #   target/release/foehn bench g1 examples/cases/bench/g1_gpu_10m.toml
 #

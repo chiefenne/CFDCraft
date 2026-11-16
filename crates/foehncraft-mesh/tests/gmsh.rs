@@ -1,6 +1,6 @@
 //! Stage-1 acceptance: meshes written by Gmsh load, ASCII and binary give
 //! the same mesh, cells are closed and the volume is the domain volume.
-//! The files are made by `tools/gmsh_test_meshes.py`.
+//! The files are made by `tools/mesh/gmsh_test_meshes.py`.
 
 use foehncraft_mesh::Geometry;
 use foehncraft_mesh::gmsh;

@@ -5,7 +5,7 @@ and their pass bands.
     python3 tools/release/verification_manual.py [OUTPUT] [--docs DOCS]
 
 OUTPUT is the output directory of a catalogue run (default `output`, as
-`tools/ci_cases.sh` writes it: OUTPUT/<case>/ per case file). The script
+`python3 -m tools.check.ci_cases` writes it: OUTPUT/<case>/ per case file). The script
 reads every case file of examples/cases/{flow,scalar,poisson} (the GPU
 variants aside), its pass bands (`[verification]`) and the report of its
 run, and writes
@@ -21,7 +21,7 @@ run, and writes
 DOCS defaults to `docs`. Regenerate it for every release and after a
 change of a scheme, from a run of all catalogue sets:
 
-    for s in linux-1 linux-2 linux-3 long; do bash tools/ci_cases.sh $s target/release/foehn; done
+    for s in linux-1 linux-2 linux-3 long; do python3 -m tools.check.ci_cases $s target/release/foehn; done
     python3 tools/release/verification_manual.py output
 
 The output depends only on the reports (no dates, no timings), so the
@@ -309,7 +309,7 @@ def markdown(data: dict) -> str:
     if missing:
         out += ["## Cases without a run", "",
                 "These case files had no report in the output directory "
-                "(for example the `long` set of `tools/ci_cases.sh`):", ""]
+                "(for example the `long` set of `tools/check/ci_cases.py`):", ""]
         out += [f"- `{c['file']}`: {c['description']}" for c in missing]
         out.append("")
     return "\n".join(out).rstrip("\n") + "\n"

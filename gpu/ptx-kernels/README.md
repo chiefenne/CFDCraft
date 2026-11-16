@@ -11,8 +11,8 @@ gate G1 (requirements D8, D11); the other half is the hand-written CUDA C
 reference in [`crates/foehncraft-cuda/kernels/g1_reference.cu`](../../crates/foehncraft-cuda/kernels/g1_reference.cu).
 
 ```
-gpu/ptx-kernels/build.sh          # sm_70 PTX, runs on Volta and every newer GPU
-gpu/ptx-kernels/build.sh sm_86    # tuned for one architecture
+python3 gpu/ptx-kernels/build.py          # sm_70 PTX, runs on Volta and every newer GPU
+python3 gpu/ptx-kernels/build.py sm_86    # tuned for one architecture
 ```
 
 Needs the nightly toolchain (`rust-toolchain.toml` installs it): the
@@ -22,6 +22,6 @@ can run the CUDA reference but not this module.
 
 Not a member of the main Cargo workspace, because it is built for another
 target with another toolchain. CI builds it on every pull request and checks
-that all entry points are present; `tools/check_kernels.sh` then checks
+that all entry points are present; `python3 -m tools.check.kernels` then checks
 that the PTX has no atomic instructions and no fused or approximate f64
 arithmetic (R10).

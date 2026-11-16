@@ -180,7 +180,7 @@ pub trait Backend: LevelOps {
 }
 
 /// Builds a GPU backend on device `ordinal` from the discretisation and the
-/// kernel module (for CUDA the PTX file of `gpu/ptx-kernels/build.sh`).
+/// kernel module (for CUDA the PTX file of `gpu/ptx-kernels/build.py`).
 pub type GpuFactory =
     fn(&Discretisation, usize, &std::path::Path) -> anyhow::Result<Box<dyn Backend>>;
 
@@ -199,7 +199,7 @@ pub fn gpu_backend() -> Option<&'static str> {
 }
 
 /// Builds a backend by name: `cpu` (all threads), `cpu-serial`, or `cuda`
-/// (when registered; `ptx` is the module built by `gpu/ptx-kernels/build.sh`).
+/// (when registered; `ptx` is the module built by `gpu/ptx-kernels/build.py`).
 pub fn create(
     name: &str,
     disc: &Discretisation,

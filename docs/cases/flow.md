@@ -33,7 +33,7 @@ charts `residuals.svg`, `convergence.svg` (sweeps) and `centreline_u.svg`,
 `centreline_v.svg` (cavity against the reference data). The run fails when
 a check of the case fails (observed order, error, reference deviation,
 convergence, mass balance). CI runs every case on Linux and the quick ones
-on macOS and Windows (R5); the sets are in `tools/ci_cases.sh`, and the
+on macOS and Windows (R5); the sets are in `tools/check/ci_cases.py`, and the
 long cylinder at Re 100 runs on main, nightly and with the label `full-ci`.
 
 A transient case also writes `history.csv` (one row per time step: time,

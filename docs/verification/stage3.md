@@ -175,13 +175,13 @@ interface (IJ matrix and vectors, ParCSR PCG, BoomerAMG) on the CSR matrix
 that the in-house setup also starts from. hypre is licensed under MIT or
 Apache-2.0, so linking it is compatible with Foehncraft's MIT licence; no
 hypre code is copied (D21), and a build without the feature does not need
-it. `tools/build_hypre.sh` builds it from source (sequential, shared, CPU
+it. `python3 -m tools.bench.build_hypre` builds it from source (sequential, shared, CPU
 or CUDA) for CI, Colab and local machines; no binary is redistributed.
 
 ## GPU against CPU and hypre (Tesla T4)
 
 Run on a Google Colab Tesla T4 (sm_75, 15 GB, driver 580.82.07) with
-`tools/stage3_colab.ipynb`. hypre 3.2.1 was built with CUDA for sm_75 and
+`tools/notebooks/stage3_colab.ipynb`. hypre 3.2.1 was built with CUDA for sm_75 and
 without Umpire (the Colab image has no Umpire; hypre allocates with
 `cudaMalloc`). The CPU column is 2 threads on the same Colab machine.
 

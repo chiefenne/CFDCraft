@@ -22,7 +22,8 @@ fields ([below](#derived-fields-part-5c)), part 6a the expressions,
 materials and regions ([below](#expressions-materials-and-regions-part-6a)),
 part 6b the Python package ([below](#the-python-package-part-6b)), part 6c
 the discretisation uncertainty and the verification manual
-([below](#discretisation-uncertainty-and-the-verification-manual-part-6c)).
+([below](#discretisation-uncertainty-and-the-verification-manual-part-6c)),
+part 6d the scripts in Python ([below](#scripts-in-python-part-6d)).
 The commands are in
 [recipes 21–35](../recipes.md#transient-flow), the pictures in
 [gallery 14–25](../gallery.md#taylor-green), the generated tables of every
@@ -250,7 +251,7 @@ CUDA C does, `.param .align 8 .b8 [N]`; the largest block, the momentum
 rows, has 1 104 bytes of the 4 096 allowed). Host and device compile one
 struct definition, so an argument list cannot be wrong on one side only.
 The PTX has no fused multiply-adds and IEEE division (R10,
-`tools/check_kernels.sh`), and the norms, extrema and dot products use the
+`python3 -m tools.check.kernels`), and the norms, extrema and dot products use the
 fixed blocks of 256 and the fixed tree of D31 on both.
 
 **Data stay on the device.** All fields, old time levels, matrices and
@@ -267,18 +268,18 @@ flow executor, the scalar and multigrid backend of stages 2–3, the G1
 backends and the hand-written CUDA C reference) is in
 `crates/foehncraft-cuda`; the solver crates register no vendor code and
 find the GPU through factories that the front end installs
-(`foehncraft_cuda::register`). `tools/check_backend.py` fails CI when a
+(`foehncraft_cuda::register`). `tools/check/backend.py` fails CI when a
 CUDA type, call, header or source appears anywhere else.
 
 **The CPU path is unchanged.** All 19 flow cases of the catalogue give, on
 the CPU, bitwise the files of v0.4 and part 1 (fields, histories, forces,
-restart files, reports; `tools/compare_runs.py` against the previous
+restart files, reports; `tools/check/compare_runs.py` against the previous
 build).
 
 | Check | Result | Where |
 |---|---|---|
-| CPU results unchanged by the executor | all 19 flow cases bitwise equal to the previous build | `tools/compare_runs.py` |
-| GPU = CPU, bitwise | all 8 cases bitwise equal (fields, residual histories, forces, reports, restart files; 6 to 13 files per case), Tesla T4, 2026-11-15 | `tools/stage5_cloud.py`, [`docs/benchmarks/stage5_gpu_t4.md`](../benchmarks/stage5_gpu_t4.md) |
+| CPU results unchanged by the executor | all 19 flow cases bitwise equal to the previous build | `tools/check/compare_runs.py` |
+| GPU = CPU, bitwise | all 8 cases bitwise equal (fields, residual histories, forces, reports, restart files; 6 to 13 files per case), Tesla T4, 2026-11-15 | `tools/bench/stage5_cloud.py`, [`docs/benchmarks/stage5_gpu_t4.md`](../benchmarks/stage5_gpu_t4.md) |
 | Time per cell and iteration on the GPU | 722 ns on 970 225 polyhedra (CPU, 2 threads: 5 116 ns, ×7.1); 1 049 ns per step on 98 304 cells (CPU 9 692 ns, ×9.2) | as above, gallery 16 |
 
 The speed-up grows with the mesh: 2.3–3.8 times on 4 096 to 12 288 cells,
@@ -306,7 +307,7 @@ sensitivities, shape optimisation, adjoint error indicators), at little
 cost if followed from stage 5. This part reviews the kernels of stages 2
 to 5 against its six items and adds what was missing. No result of a run
 changes: the 20 flow cases of the catalogue that run on the CPU give
-bitwise the files of part 2 (160 files, `tools/compare_runs.py` against
+bitwise the files of part 2 (160 files, `tools/check/compare_runs.py` against
 the build of `main`).
 
 | D59 item | How Foehncraft meets it | Check |
@@ -391,7 +392,7 @@ an agent through the later MCP server (L18). This part adds them on the
 solver side; the conservation ledger and the divergence report (D63, D88,
 D89) follow as part 4b. No result changes: the 20 flow cases of the
 catalogue give bitwise the fields, CSV files and report values of the
-build of `main` (`tools/compare_runs.py --across-versions`; the resolved
+build of `main` (`tools/check/compare_runs.py --across-versions`; the resolved
 case gains the empty `[run.limits]` table).
 
 | Check | Result | Where |
@@ -402,8 +403,8 @@ case gains the empty `[run.limits]` table).
 | Exit codes 0–3 and JSON error objects (D64, D78, D79) | out-of-range value `CASE004` with its key, typo `CASE002` with key, location and hint, non-convergence exit 2 (`RUN006`), limit exit 3 (`RUN004`) | test `exit_codes` |
 | Schema and key reference (D77) | every run-time key of D40 in the schema; `docs/keys.md` equal to `foehn schema --markdown` | tests in `schema.rs` |
 | Codes documented (D78) | every code of the registry is a row of `docs/interfaces.md` | test in `diag.rs` |
-| Estimate (D81) | 11 cases, 128 to 28 227 cells: peak memory within 6 %, file sizes within 9 % | `tools/estimate_chart.py`, gallery 18 |
-| C-free core (D87) | `foehncraft-flow` without default features: no `-sys` crate, no C build | `tools/check_c_free.sh` in CI |
+| Estimate (D81) | 11 cases, 128 to 28 227 cells: peak memory within 6 %, file sizes within 9 % | `tools/plot/estimate_chart.py`, gallery 18 |
+| C-free core (D87) | `foehncraft-flow` without default features: no `-sys` crate, no C build | `python3 -m tools.check.c_free` in CI |
 
 **How a stop stays bitwise.** A stop (signal, `.stop` or limit) is tested
 after an iteration or step is complete, the same place where the run
@@ -433,7 +434,7 @@ loop is taken as three quarters of the face part (to be measured on a GPU).
 Requirements D63, D88, D89, D90 part 4 and D91. Every run books mass and
 kinetic energy; a run that diverges explains itself. No result changes:
 the flow cases of the catalogue give bitwise the fields, CSV files and
-report values of part 4a (`tools/compare_runs.py --across-versions`; the
+report values of part 4a (`tools/check/compare_runs.py --across-versions`; the
 resolved case gains the `[balance]` table, the reports the `balance`
 values; one new warning, `BAL003` on the Taylor–Green sweep at Courant
 number 10, see below).
@@ -446,7 +447,7 @@ number 10, see below).
 | SIMPLE without relaxation (steady divergence) | exit 1, `RUN014`; last valid state, restart, snapshot, report; first cause `DIV002` with a fix that runs | test `steady_divergence_gives_the_report` |
 | Crank–Nicolson at a Courant number above 100 (transient divergence) | first cause `DIV001` with a smaller time step; the restart file of the last valid state reads back | test `transient_divergence_points_to_the_time_step` |
 | Restart geometry (D91) | optional points and volumes round-trip | test `restart_geometry_round_trip` |
-| Energy budget over the mesh | the table and chart below | `tools/energy_budget_chart.py`, gallery 19 |
+| Energy budget over the mesh | the table and chart below | `tools/plot/energy_budget_chart.py`, gallery 19 |
 
 **What the numerical dissipation is.** Dotting the discrete momentum
 equation with the cell velocity and summing gives the discrete
@@ -543,7 +544,7 @@ are bitwise those of part 4b (the catalogue below).
 | Bounded central, Taylor–Green space order | 16² to 128²: 3.22, 2.65, 2.10; L2 error on 128² 1.291e-4 (linear upwind 1.290e-4), pressure L∞ 7.66e-4 (1.08e-3) | `taylor_green_space` with `--set 'solver.scheme="central"'` |
 | Bounded central, kinetic energy | Taylor–Green 64², 0.4 s: numerical dissipation −1.5e-6 J (pressure part +1.4e-6 J, scheme part −2.9e-6 J), −0.08 % of the viscous dissipation, inside `tolerance_energy`; linear upwind +1.2e-5 J | `taylor_green_bdf2` with `verification.time_steps=[]` |
 | Central momentum flux, derivatives | dual-number Jacobian of the central face flux against central differences | test `jacobian_of_the_central_momentum_face_flux` |
-| Error-based time step, Taylor–Green 64² | tolerance 1e-4 / 1e-5 / 1e-6: 26 / 37 / 50 steps, 0 / 6 / 9 rejected, velocity error L2 1.53e-3 / 8.36e-4 / 6.25e-4 at t = 0.4 s (Courant control alone 25 steps, 1.64e-3; spatial error of the mesh 5.5e-4) | case `taylor_green_error`, `tools/time_step_chart.py` |
+| Error-based time step, Taylor–Green 64² | tolerance 1e-4 / 1e-5 / 1e-6: 26 / 37 / 50 steps, 0 / 6 / 9 rejected, velocity error L2 1.53e-3 / 8.36e-4 / 6.25e-4 at t = 0.4 s (Courant control alone 25 steps, 1.64e-3; spatial error of the mesh 5.5e-4) | case `taylor_green_error`, `tools/plot/time_step_chart.py` |
 | A rejected step is taken back exactly | BDF2 and Crank–Nicolson: the repeated step and the next one bitwise those of the run that took the short step at once | test `rejected_step_repeats_bitwise` |
 | Restart with the error estimate | a run with rejected steps continues from a restart file bit-identically | test `error_controlled_steps_restart_bit_identically` |
 | Output at exact times | monitor rows at the multiples of 0.05 s to 1e-12 s, the numbered restart at its time, no step below half the one before | test `output_lands_on_scheduled_times` |
@@ -628,7 +629,7 @@ start pressure stays, and the run builds its own multigrid.
 the scalar cases `oblique_step_2d` (its four variants of part 4b),
 `mms_poly_2d` and `mms_poly_box`, run with the binaries of main and of
 this part: every field, restart dataset, CSV row and report value
-bitwise equal (`tools/compare_runs.py --across-versions`, 263 files).
+bitwise equal (`tools/check/compare_runs.py --across-versions`, 263 files).
 What differs by design: the resolved case lists the new keys, and the
 restart file has the attribute `dt_prev2`; the comparison now matches
 the lines of the older resolved case in order and HDF5 files by their
@@ -651,7 +652,7 @@ those of part 5a (the catalogue below).
 | Backflow suppressed | a side outlet held 0.1 Pa above the channel: the faces close and act as a slip wall, no mass crosses (exactly 0), the uniform flow stays exact (1.3e-11); with the total-pressure treatment fluid enters | test `suppressed_backflow_closes_the_outlet` |
 | Convective outlet, mass and start-up | no pressure boundary: outlet flow equal to the inflow to round-off in every step (largest relative imbalance 5e-18 in the cylinder run); the start-up disturbance leaves, error 2.4e-2, 1.6e-3, 3.9e-5 after 0.25, 2 and 4 s (two flow-through times) | test `convective_outlet_balances_the_flow_and_lets_the_start_leave` |
 | Convective outlet, restart and rejection | error-controlled steps with rejections, continued from a restart file bit-identically, including the old boundary levels | test `convective_outlet_restarts_bit_identically` |
-| Cylinder at Re 100, outlet 5.5 D behind the cylinder | pressure outlet (total-pressure backflow): C_D,max 3.2336, C_L,max 0.9713, St 0.2951, Δp 2.4825 (long channel 3.2319, 0.9712, 0.2955, 2.4819); convective outlet 3.2261, 0.9555, 0.2952, 2.4779 | cases `cylinder_re100_short` (fails above 2.5 %), `cylinder_re100_convective` (above 4 %), `tools/outlet_chart.py` |
+| Cylinder at Re 100, outlet 5.5 D behind the cylinder | pressure outlet (total-pressure backflow): C_D,max 3.2336, C_L,max 0.9713, St 0.2951, Δp 2.4825 (long channel 3.2319, 0.9712, 0.2955, 2.4819); convective outlet 3.2261, 0.9555, 0.2952, 2.4779 | cases `cylinder_re100_short` (fails above 2.5 %), `cylinder_re100_convective` (above 4 %), `tools/plot/outlet_chart.py` |
 | Checks | convective outlet in a steady case (BC021), without inflow and convection velocity (BC022), one wedge plane (BC023), a wedge over 10° (BC024) | test `checks_of_the_new_conditions` |
 
 **Slip wall and wedge.** Both use the kernels of the symmetry plane: no
@@ -718,7 +719,7 @@ rows (BC020).
 
 **The catalogue against part 5a.** The 23 flow cases of the CI sets of
 part 5a, the scalar, Poisson and mesh cases, run with the binaries of main
-and of this part (`tools/compare_runs.py --across-versions`, 309 files):
+and of this part (`tools/check/compare_runs.py --across-versions`, 309 files):
 20 flow cases and every scalar and Poisson case bitwise equal; the mesh
 reports differ only in their timings. `poiseuille_tet`, `poiseuille_poly`
 and `poiseuille_mixed` differ by the new default backflow treatment: on
@@ -771,7 +772,7 @@ estimate before the run (D81) counts the derived datasets.
 **The catalogue against part 5b.** Every case of the CI sets (linux-1 to
 linux-3 and the long set: 29 flow cases including the three cylinder
 benchmarks, the scalar, Poisson and mesh cases) run with the binaries of
-main and of this part (`tools/compare_runs.py --across-versions`, 360
+main and of this part (`tools/check/compare_runs.py --across-versions`, 360
 files): all flow, scalar and Poisson results bitwise equal; the mesh
 reports differ only in their timings.
 
@@ -825,7 +826,7 @@ equation uses them. The properties are evaluated once at
 **The catalogue against part 5c.** Every case of the CI sets linux-1 to
 linux-3 (the 27 flow cases of part 5c in them, the scalar, Poisson and mesh
 cases) run with the binaries of main and of this part
-(`tools/compare_runs.py --across-versions`, 343 files): all flow, scalar
+(`tools/check/compare_runs.py --across-versions`, 343 files): all flow, scalar
 and Poisson results bitwise equal; the mesh reports differ only in their
 timings. The six new cases pass in the same sets.
 
@@ -914,12 +915,33 @@ only adds to the reports (`uncertainty` in `flow.json` and `result.json`,
 the table in `flow.md`); the CI sets run bitwise unchanged (396 files, the
 only differences are the timings of the mesh reports).
 
+## Scripts in Python (part 6d)
+
+Every script around the solver is Python now (D61 (2)): the shell
+scripts of `tools/` and the PTX build are ported, and `tools/` is split
+into groups that run as modules from the repository root
+(`python3 -m tools.check.ci_cases linux-1`, `tools/README.md`).
+
+| Check | Result | Where |
+|---|---|---|
+| The case sets | `python3 -m tools.check.ci_cases --list` gives the same commands and case files as the shell script for all five sets; `--check` refuses a flow case in no set or in two | CI (lint and Python jobs), recipe 5 |
+| The checks | the C-free core (D87), the kernel rules (R10) and the backend lint (D60) give the verdicts of the shell versions | CI jobs "Test", "PTX", "Lint" |
+| The PTX build | `gpu/ptx-kernels/build.py` builds the module and checks every entry point | CI job "PTX" |
+| The cloud drivers | `tools/bench/cloud.py` holds the shared steps (GPU check, Rust, CUDA paths, kernels, CLI); the notebooks call `python3 -m tools.bench.<stage>_cloud` | `tools/notebooks/` |
+| Lint | `ruff check --select E9,F` over `tools/`, `gpu/` and `examples/` (syntax errors and undefined or unused names) | CI job "Python package" |
+
+`tools/` is split as D61 lists it (`check/`, `bench/`, `mesh/`,
+`release/`, `notebooks/`) and has one more group, `plot/`, for the
+charts of the gallery and the verification pages. The cloud drivers are
+checked on a GPU only by the owner's Colab runs; CI runs the CPU-side
+scripts.
+
 ## Limits of this part of stage 5
 
 - The stepping API of D105 (fields from arrays, n steps at a time, snapshots in
   memory), the start of a study variant from the nearest finished one and the
   reuse of mesh and AMG setup between variants are not in the Python package
-  yet; the scripts of `tools/` are ported in part 6d. The uncertainty of
+  yet. The uncertainty of
   probes and of field values, the remapping of a solution onto the finest
   mesh to estimate its error without an exact solution (D67), and the
   uncertainty of the periodic values of a transient sweep over meshes come

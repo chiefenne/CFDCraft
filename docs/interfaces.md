@@ -68,7 +68,7 @@ The limits may change during a run (a re-read of the case file, D40).
 | `restart.h5` | Foehncraft restart | With `foehncraft_version` and `units`; transient files carry the attribute `dt_prev2` (the step before the last; read as 0 from older files) and, with the error estimate of the time step (D65), the datasets `u_old2_x`, `u_old2_y`, `u_old2_z`, and with a convective outlet (D29) the old boundary velocity `ub_old_x`, `ub_old_y`, `ub_old_z`; optional datasets `point_id`, `points_x`, `points_y`, `points_z` and `volume_<k>` for meshes that move (D91), left out for fixed meshes. |
 | `*.csv` | `foehncraft-<kind>` | Residuals, history, forces, probes, patches, wall and line data, each with a comment preamble (below). |
 | `balance.csv` | `foehncraft-balance` | The conservation ledger (D88, D89, below): one row per time step (every `output.history_every`) or per balance table of a steady run and its final state. |
-| `balance.svg` | SVG | Bars of the kinetic-energy terms at the end: of the final state (steady, W) or over the run (transient, J). `tools/balance_chart.py` draws the time histories of a transient `balance.csv`. |
+| `balance.svg` | SVG | Bars of the kinetic-energy terms at the end: of the final state (steady, W) or over the run (transient, J). `tools/plot/balance_chart.py` draws the time histories of a transient `balance.csv`. |
 | `case.read_toml_N.toml` | TOML | The settings in force after a re-read (D40). |
 | `divergence.md`, `divergence.json` | `foehncraft.divergence` | After a divergence (D63, below): the report for people and for programs. |
 | `divergence.vtkhdf` | VTKHDF 2.x | The failing cells and three layers of neighbours as a mesh of their own, with the failed fields, the last valid fields, `divergence_layer` (0 failing, 1–3 neighbours) and the global `cell_id`. |
@@ -344,5 +344,5 @@ The Python API is in [recipe 33](recipes/python.md#python).
 ## C-free core (D87)
 
 `foehncraft-flow` without default features (no HDF5) depends on no C
-library: `tools/check_c_free.sh` checks the dependency tree in CI. HDF5
+library: `python3 -m tools.check.c_free` checks the dependency tree in CI. HDF5
 (output and restart) and METIS (partitioning) are optional.

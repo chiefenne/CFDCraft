@@ -86,11 +86,11 @@ impl CudaBackend {
     }
 
     /// The single-source Rust kernels, from the PTX file built by
-    /// `gpu/ptx-kernels/build.sh`.
+    /// `python3 gpu/ptx-kernels/build.py`.
     pub fn rust(ordinal: usize, ptx_path: &Path) -> anyhow::Result<Self> {
         anyhow::ensure!(
             ptx_path.exists(),
-            "PTX module {} not found; build it with gpu/ptx-kernels/build.sh",
+            "PTX module {} not found; build it with python3 gpu/ptx-kernels/build.py",
             ptx_path.display()
         );
         let ctx =

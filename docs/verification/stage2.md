@@ -20,7 +20,7 @@ in [gallery 8–9](../gallery/scalar-pressure.md#scalar-mms), the case files in 
 | The limiter creates no new extrema | with K = 0 every limited face value lies inside the range of the cell and its neighbours (random field, all mesh types); the converged oblique step stays in [0, 1] to 1e-7 with both limiters | tests `limited_face_values_create_no_new_extrema`, `oblique_step_stays_bounded_with_the_limiters`; case `oblique_step_2d` |
 | Convection–diffusion with an exact solution, observed order 1.8–2.2 on hexahedral, tetrahedral, polyhedral and mixed meshes | 1.87 to 2.08 on the finest pair of all eight meshes (table below) | test `order_of_accuracy_on_all_mesh_types` (release builds, CI); cases `mms_*` |
 | Bitwise identical results from run to run | bitwise equal for 1, 2, 3 and 4 threads and from run to run, with the limiter on | test `results_are_bitwise_reproducible` |
-| GPU and CPU agree to round-off | **bitwise equal** on a Tesla T4 (Colab, 2026-11-14): 912 673 polyhedra with the Venkatakrishnan limiter, both GPU runs equal the CPU run bit for bit; the four oblique-step schemes and the polyhedral sweep are bitwise equal too (see below) | case `mms_poly_gpu`, `tools/stage2_colab.ipynb` |
+| GPU and CPU agree to round-off | **bitwise equal** on a Tesla T4 (Colab, 2026-11-14): 912 673 polyhedra with the Venkatakrishnan limiter, both GPU runs equal the CPU run bit for bit; the four oblique-step schemes and the polyhedral sweep are bitwise equal too (see below) | case `mms_poly_gpu`, `tools/notebooks/stage2_colab.ipynb` |
 
 ### Order of accuracy
 
@@ -64,7 +64,7 @@ observed order settles towards 2 from about 4 000 cells on.
 
 ### GPU against CPU (Tesla T4, 2026-11-14)
 
-`tools/stage2_colab.ipynb` on a free Colab T4 (driver 580.82, CUDA 13.0,
+`tools/notebooks/stage2_colab.ipynb` on a free Colab T4 (driver 580.82, CUDA 13.0,
 the CPU side is the Colab VM: Intel Xeon @ 2.0 GHz, 2 threads). Case
 `mms_poly_gpu`: 912 673 polyhedra, linear upwind with the Venkatakrishnan
 limiter (K = 5), 21 outer iterations, final residual 8.0e-11, L2 error
@@ -168,7 +168,7 @@ entry points `fv_*` and `blas_*`) and launched through the CUDA driver; all
 fields stay on the GPU, only the block sums of the dot products (one value
 per 256 cells) and the limiter range come back. The PTX has no fused
 multiply-add on f64, IEEE-rounded division and no atomic instructions,
-which CI checks on every pull request (`tools/check_kernels.sh`, R10), so
+which CI checks on every pull request (`python3 -m tools.check.kernels`, R10), so
 the GPU results are expected to equal the CPU results bitwise.
 
 **Figure of merit (R6).** Every run reports wall-clock seconds per phase

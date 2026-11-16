@@ -5,12 +5,12 @@
 # iterations, the setup and solve times and ns per cell and CG iteration of
 # every solver, and whether each GPU solve is bitwise equal to the CPU solve.
 #
-#   tools/build_hypre.sh target/hypre-cuda 75
-#   gpu/ptx-kernels/build.sh sm_75
+#   python3 -m tools.bench.build_hypre target/hypre-cuda 75
+#   python3 gpu/ptx-kernels/build.py sm_75
 #   HYPRE_DIR=target/hypre-cuda cargo build --release -p foehncraft-cli --features cuda,hypre
 #   target/release/foehn poisson examples/cases/poisson/poisson_poly_gpu.toml
 #
-# or on Google Colab: tools/stage3_colab.ipynb. Needs a GPU of compute
+# or on Google Colab: tools/notebooks/stage3_colab.ipynb. Needs a GPU of compute
 # capability 7.0 or newer and about 2 GB of GPU memory. The run fails if a
 # solution differs from hypre's by more than 1e-6 (relative) or if a solver
 # differs between the CPU and the GPU.

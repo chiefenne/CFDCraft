@@ -66,8 +66,8 @@ of the Colab machine (2 virtual cores). Reading and limits:
 | Case file | `bench/g1_gpu_10m.toml` |
 
 ```
-bash tools/g1_cloud.sh      # on any Linux machine with an NVIDIA GPU of compute capability 7.0+
-# or open tools/g1_colab.ipynb in Google Colab (recipe 3)
+python3 -m tools.bench.g1_cloud      # on any Linux machine with an NVIDIA GPU of compute capability 7.0+
+# or open tools/notebooks/g1_colab.ipynb in Google Colab (recipe 3)
 ```
 
 [↑ back to top](#kernel-benchmarks-and-gpu-runs)
@@ -153,13 +153,13 @@ product back per iteration (D76 follows later).
 | Report | `docs/benchmarks/stage5_gpu_t4.md` |
 
 ```
-cargo build --release --features cuda   # nightly Rust, PTX: gpu/ptx-kernels/build.sh
-python3 tools/stage5_cloud.py           # eight cases on cpu and cuda, bitwise comparison, report.md
+cargo build --release --features cuda   # nightly Rust, PTX: python3 gpu/ptx-kernels/build.py
+python3 -m tools.bench.stage5_cloud           # eight cases on cpu and cuda, bitwise comparison, report.md
 target/release/foehn flow examples/cases/flow/cylinder_re100_gpu.toml --backend cuda
-python3 tools/gpu_chart.py output/stage5_gpu/report.md gpu_flow_times.svg
+python3 -m tools.plot.gpu_chart output/stage5_gpu/report.md gpu_flow_times.svg
 ```
 
-Without a GPU of your own: `tools/stage5_colab.ipynb` on a free Colab T4
+Without a GPU of your own: `tools/notebooks/stage5_colab.ipynb` on a free Colab T4
 (recipe 24).
 
 [↑ back to top](#kernel-benchmarks-and-gpu-runs)

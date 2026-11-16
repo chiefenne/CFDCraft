@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+**Scripts in Python (stage 5 part 6d, D61 (2)).** The shell scripts are
+ported to Python and `tools/` is split into groups that run as modules
+from the repository root: `tools/check/` (`ci_cases`, `compare_runs`,
+`backend`, `c_free`, `kernels`, `vtkhdf`), `tools/bench/` (`build_hypre`
+and the cloud GPU drivers with their shared steps in `cloud`),
+`tools/mesh/`, `tools/plot/` (the charts), `tools/release/`
+(`verification_manual`) and `tools/notebooks/` (the Colab notebooks).
+`tools/ci_cases.sh SET` is now `python3 -m tools.check.ci_cases SET`,
+`gpu/ptx-kernels/build.sh` is `python3 gpu/ptx-kernels/build.py`; CI,
+docs, examples and error messages are updated, and CI lints the scripts
+(ruff, syntax and names). See `tools/README.md`.
+
 **Discretisation uncertainty and the verification manual (stage 5 part
 6c, D67, D68).** A sweep of three or more meshes or time steps reports
 for every monitored quantity (patch mass flows, mean pressures and forces,

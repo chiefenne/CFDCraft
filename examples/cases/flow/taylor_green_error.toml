@@ -14,7 +14,7 @@
 # and repeated with a shorter one; the log names each. The probe row
 # every 0.05 s and the fields every 0.1 s land on their times exactly: the
 # steps before them are shortened (in two equal steps when the time lies
-# within two steps). tools/time_step_chart.py runs the tolerances 1e-3 to
+# within two steps). tools/plot/time_step_chart.py runs the tolerances 1e-3 to
 # 1e-5 and draws the steps.
 
 [mesh.generate]
