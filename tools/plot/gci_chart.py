@@ -85,7 +85,7 @@ def main(argv):
     cyl = argv[2] if len(argv) > 2 else os.path.join("output", "cylinder_re20_gci")
     rc = json.load(open(os.path.join(couette, "result.json"), encoding="utf-8"))
     ry = json.load(open(os.path.join(cyl, "result.json"), encoding="utf-8"))
-    ec = estimate(rc, "patches.ymin.force_x")
+    ec = estimate(rc, "boundaries.ymin.force_x")
     ed = estimate(ry, "benchmark.C_D")
     exact = MU0 * U * A / math.log1p(A) * AREA
     rng = next(v["range"] for v in ry["solves"][-1]["benchmark"]["values"] if v["range"]["name"] == "C_D")

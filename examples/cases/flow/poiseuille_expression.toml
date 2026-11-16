@@ -18,6 +18,8 @@
 # gravity produces spurious velocities near the walls. A balanced-force
 # interpolation comes with buoyancy (L1, energy).
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2
@@ -60,9 +62,11 @@ type = "symmetry"
 type = "symmetry"
 
 [solver]
-relaxation_velocity = 0.9
 tolerance = 1e-9
 max_iterations = 5000
+
+[solver.momentum]
+relaxation = 0.9
 
 [analytic]
 type = "poiseuille"

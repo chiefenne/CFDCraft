@@ -201,7 +201,7 @@ fn suppressed_backflow_closes_the_outlet() {
     let e = rep.solves[0].errors.as_ref().unwrap();
     assert!(e.l2 < 1e-9, "{e:?}");
     let ymax = rep.solves[0]
-        .patches
+        .boundaries
         .iter()
         .find(|p| p.name == "ymax")
         .unwrap();
@@ -210,7 +210,7 @@ fn suppressed_backflow_closes_the_outlet() {
     open.verification.max_error = None;
     let rep = run_case(&open, "suppress_open");
     let ymax = rep.solves[0]
-        .patches
+        .boundaries
         .iter()
         .find(|p| p.name == "ymax")
         .unwrap();
@@ -244,8 +244,8 @@ fn convective_outlet_balances_the_flow_and_lets_the_start_leave() {
     assert!(rep.failures.is_empty(), "{:?}", rep.failures);
     let s = &rep.solves[0];
     assert!(s.mass_imbalance < 1e-12, "{}", s.mass_imbalance);
-    let xmax = s.patches.iter().find(|p| p.name == "xmax").unwrap();
-    let xmin = s.patches.iter().find(|p| p.name == "xmin").unwrap();
+    let xmax = s.boundaries.iter().find(|p| p.name == "xmax").unwrap();
+    let xmin = s.boundaries.iter().find(|p| p.name == "xmin").unwrap();
     assert!((xmax.mass_flow + xmin.mass_flow).abs() < 1e-12 * xmax.mass_flow);
 }
 
@@ -275,7 +275,7 @@ fn checks_of_the_new_conditions() {
         );
     let (ok, all) = check_lines(&parse(&t));
     assert!(!ok && all.contains("BC022"), "{all}");
-    // one wedge patch is not a wedge
+    // one wedge boundary is not a wedge
     let one = text("pipe_wedge.toml").replace(
         "[boundary.zmax]\ntype = \"wedge\"",
         "[boundary.zmax]\ntype = \"symmetry\"",

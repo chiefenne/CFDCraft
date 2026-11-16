@@ -11,6 +11,8 @@
 # differs from the exact Poiseuille solution by more than 2e-3 (the error
 # of this mesh is 1.6e-3, that of poiseuille_hex.toml on it).
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2

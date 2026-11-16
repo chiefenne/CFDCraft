@@ -559,12 +559,12 @@ pub fn analyse(
             x.max(if ctx.done < 50 { 0.3 } else { 0.1 })
         };
         let nu = round2((0.7 * au).max(0.1));
-        let mut fix = vec![format!("solver.relaxation_velocity={nu}")];
+        let mut fix = vec![format!("solver.momentum.relaxation={nu}")];
         let mut advice = "Relax the velocity more strongly.".to_string();
         if simple {
             let np = round2((0.7 * ap).min(1.0 - nu).max(0.05));
             if np < ap {
-                fix.push(format!("solver.relaxation_pressure={np}"));
+                fix.push(format!("solver.pressure.relaxation={np}"));
                 advice = "Relax more strongly; SIMPLE wants α_p ≈ 1 − α_u.".into();
             }
         }
@@ -656,7 +656,7 @@ pub fn analyse(
     // DIV004: a boundary next to the failing cells
     {
         let mut hits: Vec<(String, String, bool)> = Vec::new();
-        for p in &mesh.patches {
+        for p in &mesh.boundaries {
             let mut touch = false;
             let mut backflow = false;
             for f in p.range() {
@@ -688,14 +688,14 @@ pub fn analyse(
                 code: diag::DIV_BOUNDARY,
                 cause: "boundary condition",
                 score: if back { 0.8 } else { 0.4 },
-                evidence: format!("failing cells at the patches {}", names.join(", ")),
+                evidence: format!("failing cells at the boundaries {}", names.join(", ")),
                 advice: if back {
                     "Flow enters through an outflow boundary: move it further downstream or \
                      prescribe the pressure there; see the boundary-condition check (`foehn flow \
                      --check`)."
                         .into()
                 } else {
-                    "Check the condition of those patches against the guidance of `foehn flow \
+                    "Check the condition of those boundaries against the guidance of `foehn flow \
                      --check`."
                         .into()
                 },
@@ -710,7 +710,7 @@ pub fn analyse(
             Some(t) if !t.adaptive => vec![format!("time.time_step={}", sig3(0.25 * dt))],
             Some(_) => vec!["time.max_growth=1.1".to_string()],
             None => vec![format!(
-                "solver.relaxation_velocity={}",
+                "solver.momentum.relaxation={}",
                 round2((0.5 * au).max(0.1))
             )],
         };
@@ -743,24 +743,24 @@ pub fn analyse(
             let Some(r) = r else { continue };
             if r.momentum_iterations
                 .iter()
-                .any(|&n| n >= s.momentum_max_iter)
+                .any(|&n| n >= s.momentum.max_iter)
             {
                 hit.push(format!(
                     "momentum BiCGStab at its limit of {} iterations ({when} iteration)",
-                    s.momentum_max_iter
+                    s.momentum.max_iter
                 ));
-                let f = format!("solver.momentum_max_iter={}", 2 * s.momentum_max_iter);
+                let f = format!("solver.momentum.max_iter={}", 2 * s.momentum.max_iter);
                 if !fix.contains(&f) {
                     fix.push(f);
                 }
                 score = score.max(w);
             }
-            if r.pressure_iterations >= s.pressure_max_iter {
+            if r.pressure_iterations >= s.pressure.max_iter {
                 hit.push(format!(
                     "pressure CG at its limit of {} iterations ({when} iteration)",
-                    s.pressure_max_iter
+                    s.pressure.max_iter
                 ));
-                let f = format!("solver.pressure_max_iter={}", 2 * s.pressure_max_iter);
+                let f = format!("solver.pressure.max_iter={}", 2 * s.pressure.max_iter);
                 if !fix.contains(&f) {
                     fix.push(f);
                 }
@@ -954,6 +954,7 @@ pub(crate) fn finish(
     geo: &Geometry,
     out: &Path,
     prepared: anyhow::Result<(State, Vec<&'static str>)>,
+    style: crate::console::Style,
     line: &mut dyn FnMut(&str),
 ) -> anyhow::Error {
     let r = (|| -> anyhow::Result<Report> {
@@ -968,30 +969,33 @@ pub(crate) fn finish(
     })();
     match r {
         Ok(rep) => {
-            line(&format!(
-                "      DIVERGED in {} {}: {} failing cells, {} first; report in divergence.md",
-                if rep.kind == "steady" {
-                    "outer iteration"
-                } else {
-                    "time step"
-                },
-                rep.at,
-                rep.failing_cells,
-                rep.first_variable
-            ));
+            let unit = if rep.kind == "steady" {
+                "outer iteration"
+            } else {
+                "time step"
+            };
+            let mut f = crate::console::Frame::new("Divergence")
+                .kv(
+                    "Diverged in",
+                    format!("{unit} {}, {} first", rep.at, rep.first_variable),
+                )
+                .kv("Failing cells", rep.failing_cells)
+                .kv("Report", "divergence.md, divergence.json");
+            if !rep.causes.is_empty() {
+                f.push_rule();
+            }
             for c in rep.causes.iter().take(3) {
-                line(&format!(
-                    "        {} {} ({:.2}): {}{}",
-                    c.code,
-                    c.cause,
-                    c.score,
-                    c.evidence,
-                    if c.fix.is_empty() {
-                        String::new()
-                    } else {
-                        format!("; try --set {}", c.fix.join(" --set "))
-                    }
-                ));
+                f.push_kv(
+                    &format!("{} {} ({:.2})", c.code, c.cause, c.score),
+                    &c.evidence,
+                );
+                if !c.fix.is_empty() {
+                    f.push_kv("    try", format!("--set {}", c.fix.join(" --set ")));
+                }
+            }
+            line("");
+            for l in f.render(style) {
+                line(&l);
             }
             diag::err(rep.diagnostic())
         }

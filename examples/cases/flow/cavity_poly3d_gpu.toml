@@ -16,6 +16,8 @@
 # iteration and checks CPU = GPU, the converged cavity is
 # cavity_re100_poly3d.toml.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "poly"
 dimension = 3
@@ -44,10 +46,12 @@ type = "symmetry"
 type = "symmetry"
 
 [solver]
-relaxation_velocity = 0.9
 tolerance = 1e-8
 max_iterations = 30
 log_every = 5
+
+[solver.momentum]
+relaxation = 0.9
 
 [verification]
 require_convergence = false

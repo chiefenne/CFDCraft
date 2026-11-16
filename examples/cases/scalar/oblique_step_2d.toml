@@ -17,6 +17,8 @@
 # Output per variant in output/oblique_step_2d/<variant>/, the profiles
 # along x = 0.8 in profile.svg.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "poly"
 dimension = 2

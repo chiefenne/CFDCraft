@@ -8,6 +8,8 @@
 # z; the two z patches take the zero-gradient (symmetry) condition, which
 # enters the least-squares gradient as a stencil point on the face normal.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "poly"          # prisms on the dual polygons of a triangulation
 dimension = 2

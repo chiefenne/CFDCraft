@@ -10,6 +10,8 @@
 #
 # Needs about 6 GB of host memory (generator) and 2 GB of GPU memory.
 
+case_format = "0.6"
+
 [mesh]
 type = "poly"
 cells = 4_000_000

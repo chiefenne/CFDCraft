@@ -8,6 +8,8 @@
 #
 # Needs about 3 GB of memory (the generator dominates).
 
+case_format = "0.6"
+
 [mesh]
 type = "poly"          # periodic-box | hex | tet | poly | mixed
 cells = 2_000_000

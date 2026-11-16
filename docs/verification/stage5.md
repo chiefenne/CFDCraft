@@ -528,7 +528,7 @@ first), the failing cells are those with a speed above a tenth of the
 largest. The causes are scored from the evidence: the Courant number of
 the first step against `max_cfl`, the relaxation factors (for SIMPLE
 against α_p ≈ 1 − α_u), the non-orthogonality and volume ratio of the
-failing cells, patches next to them (and backflow at an outflow), a
+failing cells, boundaries next to them (and backflow at an outflow), a
 failure within the first steps, and linear solvers at their limits.
 
 ## Numerics (part 5a)
@@ -541,7 +541,7 @@ are bitwise those of part 4b (the catalogue below).
 | Check | Result | Where |
 |---|---|---|
 | Bounded central, oblique step on 2 401 distorted polygons | φ in [0, 1], 57 outer iterations, 10–90 % width of the step 0.090 m (linear upwind with the Venkatakrishnan limiter 0.082 m, upwind 0.172 m) | variant `bounded-central` of `scalar/oblique_step_2d.toml` (fails outside [0, 1]) |
-| Bounded central, Taylor–Green space order | 16² to 128²: 3.22, 2.65, 2.10; L2 error on 128² 1.291e-4 (linear upwind 1.290e-4), pressure L∞ 7.66e-4 (1.08e-3) | `taylor_green_space` with `--set 'solver.scheme="central"'` |
+| Bounded central, Taylor–Green space order | 16² to 128²: 3.22, 2.65, 2.10; L2 error on 128² 1.291e-4 (linear upwind 1.290e-4), pressure L∞ 7.66e-4 (1.08e-3) | `taylor_green_space` with `--set 'solver.momentum.scheme="central"'` |
 | Bounded central, kinetic energy | Taylor–Green 64², 0.4 s: numerical dissipation −1.5e-6 J (pressure part +1.4e-6 J, scheme part −2.9e-6 J), −0.08 % of the viscous dissipation, inside `tolerance_energy`; linear upwind +1.2e-5 J | `taylor_green_bdf2` with `verification.time_steps=[]` |
 | Central momentum flux, derivatives | dual-number Jacobian of the central face flux against central differences | test `jacobian_of_the_central_momentum_face_flux` |
 | Error-based time step, Taylor–Green 64² | tolerance 1e-4 / 1e-5 / 1e-6: 26 / 37 / 50 steps, 0 / 6 / 9 rejected, velocity error L2 1.53e-3 / 8.36e-4 / 6.25e-4 at t = 0.4 s (Courant control alone 25 steps, 1.64e-3; spatial error of the mesh 5.5e-4) | case `taylor_green_error`, `tools/plot/time_step_chart.py` |
@@ -646,7 +646,7 @@ those of part 5a (the catalogue below).
 |---|---|---|
 | Slip walls | uniform flow between slip walls on hex, tet, poly and mixed cells perturbed by 20 %: velocity error 1.5e-11, pressure 1.0e-11 | case `channel_slip`, test `slip_walls_hold_the_uniform_flow_on_every_mesh_type` |
 | Wedge, Hagen–Poiseuille | 0.5°, 256 to 4 096 cells perturbed by 15 %: L2 error 2.11e-3, 5.00e-4, 1.21e-4, order 2.07, 2.04; polygonal prisms revolved (1 105 cells) 3.0e-4 | case `pipe_wedge`, tests `wedge_pipe_is_second_order`, `wedge_pipe_on_polyhedra` |
-| Wedge mesh | every cell type of the box generator, perturbed or not: closed cells, the volume of the planar wedge to 1e-12, wedge planes planar at ∓θ/2; an annulus keeps its inner patch | tests `wedges_of_every_type`, `annulus_keeps_the_inner_wall` |
+| Wedge mesh | every cell type of the box generator, perturbed or not: closed cells, the volume of the planar wedge to 1e-12, wedge planes planar at ∓θ/2; an annulus keeps its inner boundary | tests `wedges_of_every_type`, `annulus_keeps_the_inner_wall` |
 | Inlet profile from a table | the table's rows at the inlet face centres give the run with the exact parabola (L2 error 1.592e-3 for both, equal to 1e-6); missing and malformed tables refused (BC019) | case `poiseuille_table`, tests `table_inlet_matches_the_exact_profile`, `bad_tables_are_refused` |
 | Backflow as total pressure | the reversed uniform flow leaves through the velocity inlet and enters through the outlet: uniform flow exact, static pressure p_set − ½ρU² to 3e-11, 132 iterations; with `zero-gradient` the residual falls by only 0.81 per 200 iterations | test `backflow_takes_the_outlet_pressure_as_total_pressure` |
 | Backflow suppressed | a side outlet held 0.1 Pa above the channel: the faces close and act as a slip wall, no mass crosses (exactly 0), the uniform flow stays exact (1.3e-11); with the total-pressure treatment fluid enters | test `suppressed_backflow_closes_the_outlet` |
@@ -742,7 +742,7 @@ they write the same file. Without `derived` the output is that of part 5b
 |---|---|---|
 | Formulas | solid-body rotation: ω_z = 2Ω, Q = Ω², λ₂ = −Ω², enstrophy 2Ω², no strain; simple shear: Q = λ₂ = 0, shear rate γ; pure strain: Q = −a², λ₂ = a²; to 1e-12 | unit tests `solid_body_rotation`, `simple_shear_is_no_vortex`, `pure_strain` |
 | Eigenvalues of λ₂ | rotated diagonal matrices, also with double and triple eigenvalues: to 1e-13 | unit test `eigenvalues_of_symmetric_matrices` |
-| Couette flow on every cell type | hex, tet, poly and mixed cells: vorticity, Q, λ₂, enstrophy and shear rate to 1e-8, total pressure p + ½ρu², pressure coefficient, wall shear stress μU/H = 0.1 Pa to 1e-9 and y⁺ = d√(τ_w/ρ)/ν to 1e-8 relative on both walls, zero on the other patches | case `couette_derived`, test `couette_derived_fields_are_exact_on_every_mesh_type` |
+| Couette flow on every cell type | hex, tet, poly and mixed cells: vorticity, Q, λ₂, enstrophy and shear rate to 1e-8, total pressure p + ½ρu², pressure coefficient, wall shear stress μU/H = 0.1 Pa to 1e-9 and y⁺ = d√(τ_w/ρ)/ν to 1e-8 relative on both walls, zero on the other boundaries | case `couette_derived`, test `couette_derived_fields_are_exact_on_every_mesh_type` |
 | Taylor–Green vortex | Q, λ₂ and ω_z against the formulas applied to the exact velocity gradient at the cell centroids, t = 0.1 s, 16², 32², 64² cells: RMS errors relative to the exact RMS 7.0e-2, 1.3e-2, 2.3e-3 (Q, orders 2.42, 2.48), 1.0e-1, 1.7e-2, 2.6e-3 (λ₂, 2.58, 2.68), 3.4e-2, 6.8e-3, 1.3e-3 (ω_z, 2.30, 2.41) | test `taylor_green_vortex_criteria_converge` |
 | Post derive is the file of the run | steady (Couette on polyhedra) and transient (Taylor–Green, BDF2): `derived.vtkhdf` from `restart.h5` equal byte for byte to `fields.vtkhdf`; the command line with `--json`, `--fields`, `--file`, `latest` and the error codes CASE003, CASE005, RUN011 | tests `post_derive_gives_the_file_of_the_run`, `post_derive_from_the_restart_file` |
 | Keys | names in any order and repeated give the same datasets; an unknown name, a pressure coefficient without a reference velocity, a negative reference velocity or density refused with their codes | test `checks_of_the_derived_keys` |
@@ -758,15 +758,15 @@ Q = (u/r) ∂u/∂r is positive in the boundary layer (the cylinder of gallery
 2013): the closed form of the cubic loses half the digits where two
 eigenvalues are equal, which is every 2D vortex (−Ω² twice), and λ₂ is
 then the one that matters. The wall shear stress and y⁺ use the wall
-values of `wall_<patch>.csv` (the viscous force of the fluid on the face,
+values of `wall_<boundary>.csv` (the viscous force of the fluid on the face,
 its tangential part per area); y⁺ takes the distance of the owner centroid
 from the face plane.
 
 **Where the fields go.** Cell fields join the `internal` block of the
-VTKHDF file; the wall fields go to the patch blocks (the boundary faces,
-in the order of their global identities), zero on patches that are not
-walls. ParaView shows them on the patch surfaces (block selection
-`boundary/<patch>`). The `units` attribute lists every dataset. The
+VTKHDF file; the wall fields go to the boundary blocks (the boundary faces,
+in the order of their global identities), zero on boundaries that are not
+walls. ParaView shows them on the boundary surfaces (block selection
+`boundary/<boundary>`). The `units` attribute lists every dataset. The
 estimate before the run (D81) counts the derived datasets.
 
 **The catalogue against part 5b.** Every case of the CI sets (linux-1 to
@@ -895,7 +895,7 @@ lift that tends to zero); the report then leaves the GCI out. The error
 norms against an exact solution are not repeated; they have their orders
 (`orders`, `time_orders`).
 
-**Monitored quantities.** Per patch the mass flow, the mean pressure and
+**Monitored quantities.** Per boundary the mass flow, the mean pressure and
 the three force components; the drag and lift coefficients; the values of
 a benchmark (C_D, C_L, Δp, Strouhal number, C_D,max, …); the viscous and
 the numerical dissipation of the kinetic-energy ledger. Quantities that
@@ -959,7 +959,7 @@ scripts.
   a 2D mesh of the box generator; wedges from Gmsh meshes come with D3.
 - The potential-flow start does not yet interpolate from a result on
   another mesh, and has no grid sequencing (D52 later).
-- The ledger covers mass and kinetic energy; momentum (the patch forces
+- The ledger covers mass and kinetic energy; momentum (the boundary forces
   are in the reports), total energy and entropy (D90 parts 1–3) come with
   the energy equation (L1); regions (D73) later.
 - Signals need unix; on Windows the `.stop` file and the limits stop a

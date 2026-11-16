@@ -11,6 +11,8 @@
 # (1982); the run fails if the largest deviation exceeds 2 % of the lid
 # speed.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2

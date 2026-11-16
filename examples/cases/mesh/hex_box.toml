@@ -4,6 +4,8 @@
 #
 #   foehn mesh examples/cases/mesh/hex_box.toml
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 3

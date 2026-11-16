@@ -10,6 +10,8 @@
 # all sides the prescribed boundary flux must balance exactly, which a
 # perturbed boundary does not do (periodic boundaries follow in stage 6).
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2

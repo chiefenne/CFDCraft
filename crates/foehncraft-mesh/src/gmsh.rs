@@ -4,9 +4,9 @@
 //!   pyramids. Higher-order elements are refused with a message (mesh with
 //!   `-order 1`).
 //! - 2D elements (triangles, quadrilaterals) on the boundary name the
-//!   boundary faces: the patch is the name of the physical group of their
+//!   boundary faces: the boundary is the name of the physical group of their
 //!   surface (or `surface_<tag>` without one). Boundary faces not covered by
-//!   any 2D element go to the patch `default`, with a warning.
+//!   any 2D element go to the boundary `default`, with a warning.
 //! - Volume physical groups become cell zones (or `volume_<tag>`).
 //! - `$Periodic` links are read and kept for the periodic boundary condition.
 //! - Nodes not used by any cell are dropped.
@@ -524,19 +524,19 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
     soup.set_zone_names(zones);
 
     // boundary faces named by the 2D elements
-    let mut face_patch: HashMap<Vec<u32>, String> = HashMap::new();
-    let mut patch_names: Vec<String> = Vec::new();
-    // patches in the order of the physical names, then entity order
+    let mut face_boundary: HashMap<Vec<u32>, String> = HashMap::new();
+    let mut boundary_names: Vec<String> = Vec::new();
+    // boundaries in the order of the physical names, then entity order
     for &(d, t) in &phys_order {
         if d == 2 {
-            patch_names.push(phys_name(d, t));
+            boundary_names.push(phys_name(d, t));
         }
     }
     let mut skipped = 0usize;
     for b in blocks.iter().filter(|b| b.dim == 2) {
         let name = entity_name(2, b.entity);
-        if !patch_names.contains(&name) {
-            patch_names.push(name.clone());
+        if !boundary_names.contains(&name) {
+            boundary_names.push(name.clone());
         }
         for e in b.nodes.chunks(b.nodes_per) {
             let mut k = Vec::with_capacity(4);
@@ -553,7 +553,7 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
                 continue;
             }
             k.sort_unstable();
-            face_patch.insert(k, name.clone());
+            face_boundary.insert(k, name.clone());
         }
     }
     if skipped > 0 {
@@ -561,15 +561,15 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
             "{skipped} surface elements are not faces of any cell and are ignored"
         ));
     }
-    patch_names.push("default".into());
+    boundary_names.push("default".into());
     let unnamed = std::cell::Cell::new(0usize);
-    let n_face_patch = face_patch.len();
+    let n_face_boundary = face_boundary.len();
     let used = std::cell::Cell::new(0usize);
-    let names: Vec<&str> = patch_names.iter().map(|s| s.as_str()).collect();
+    let names: Vec<&str> = boundary_names.iter().map(|s| s.as_str()).collect();
     let mut mesh = soup.finish(&names, |bf| {
         let mut k = bf.nodes.to_vec();
         k.sort_unstable();
-        match face_patch.get(&k) {
+        match face_boundary.get(&k) {
             Some(n) => {
                 used.set(used.get() + 1);
                 n.clone()
@@ -582,19 +582,19 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
     })?;
     if unnamed.get() > 0 {
         warnings.push(format!(
-            "{} boundary faces belong to no surface physical group and are in the patch \
+            "{} boundary faces belong to no surface physical group and are in the boundary \
              'default'",
             unnamed.get()
         ));
     }
-    if used.get() < n_face_patch {
+    if used.get() < n_face_boundary {
         warnings.push(format!(
             "{} surface elements lie inside the domain (internal surfaces) and are ignored",
-            n_face_patch - used.get()
+            n_face_boundary - used.get()
         ));
     }
-    // drop empty patches
-    mesh.patches.retain(|p| p.len > 0);
+    // drop empty boundaries
+    mesh.boundaries.retain(|p| p.len > 0);
 
     let periodic = periodic
         .into_iter()

@@ -12,6 +12,8 @@
 # property program is hashed into result.json (D94 (3)). Mean velocity
 # 0.05 m/s, Re = 76. The run fails if the velocity error is above 1e-3.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2
@@ -47,9 +49,11 @@ type = "symmetry"
 type = "symmetry"
 
 [solver]
-relaxation_velocity = 0.9
 tolerance = 1e-9
 max_iterations = 5000
+
+[solver.momentum]
+relaxation = 0.9
 
 [analytic]
 type = "poiseuille"

@@ -4,6 +4,8 @@
 #
 #   foehn bench g1 examples/cases/bench/g1_cpu_10m_shuffled.toml
 
+case_format = "0.6"
+
 [mesh]
 cells = 10_000_000
 ordering = "shuffled"

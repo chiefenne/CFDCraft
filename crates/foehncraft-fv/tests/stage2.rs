@@ -21,11 +21,11 @@ fn gradient_of_a_linear_field_is_exact_on_every_mesh_type() {
         for dim in [2u8, 3] {
             for perturb in [0.0, 0.2] {
                 let (m, g) = test_mesh(kind, dim, 4, 0, perturb).unwrap();
-                for grad_patches in [&[][..], &["xmin", "ymax"][..]] {
-                    let e = gradient_linear(&m, &g, dim, grad_patches).unwrap();
+                for grad_boundaries in [&[][..], &["xmin", "ymax"][..]] {
+                    let e = gradient_linear(&m, &g, dim, grad_boundaries).unwrap();
                     assert!(
                         e < 1e-13,
-                        "{} {dim}D perturb {perturb} {grad_patches:?}: error {e:e}",
+                        "{} {dim}D perturb {perturb} {grad_boundaries:?}: error {e:e}",
                         kind.name()
                     );
                 }

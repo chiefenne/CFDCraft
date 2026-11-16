@@ -25,7 +25,7 @@ fn load(file: &str) -> FlowCase {
     FlowCase::from_file(&cases().join(file)).unwrap()
 }
 
-/// A small case: the 2D unit square with one cell layer and four patches.
+/// A small case: the 2D unit square with one cell layer and four boundaries.
 fn square(n: usize, kind: &str, extra: &str) -> FlowCase {
     let text = format!(
         r#"
@@ -104,7 +104,7 @@ fn stokes_cavity_converges_quickly() {
     let case = square(
         16,
         "hex",
-        "[flow]\nconvection = false\n[solver]\nrelaxation_velocity = 0.8\ntolerance = 1e-8\n",
+        "[flow]\nconvection = false\n[solver]\ntolerance = 1e-8\n[solver.momentum]\nrelaxation = 0.8\n",
     );
     let rep = run_case(&case, "stokes_cavity");
     let s = &rep.solves[0];
@@ -133,7 +133,7 @@ fn results_are_bitwise_equal_on_1_and_4_threads() {
     let (ra, rb) = (&a.solves[0].residuals, &b.solves[0].residuals);
     assert_eq!(ra.momentum.map(f64::to_bits), rb.momentum.map(f64::to_bits));
     assert_eq!(ra.continuity.to_bits(), rb.continuity.to_bits());
-    let (pa, pb) = (&a.solves[0].patches, &b.solves[0].patches);
+    let (pa, pb) = (&a.solves[0].boundaries, &b.solves[0].boundaries);
     for (x, y) in pa.iter().zip(pb) {
         assert_eq!(
             x.force.map(f64::to_bits),
@@ -160,7 +160,7 @@ fn unknown_keys_and_values_get_a_hint() {
 }
 
 #[test]
-fn boundary_check_finds_unknown_and_missing_patches() {
+fn boundary_check_finds_unknown_and_missing_boundaries() {
     let mut case = square(4, "hex", "");
     let lid = case.boundary.remove("ymax").unwrap();
     case.boundary.insert("ymx".into(), lid);
@@ -207,13 +207,13 @@ fn converged_result_does_not_depend_on_relaxation() {
             16,
             "hex",
             &format!(
-                "[solver]\nrelaxation_velocity = {alpha}\ntolerance = 1e-11\nmax_iterations = 5000\n"
+                "[solver]\ntolerance = 1e-11\nmax_iterations = 5000\n[solver.momentum]\nrelaxation = {alpha}\n"
             ),
         );
         let rep = run_case(&case, &format!("relax{alpha}"));
         assert!(rep.solves[0].converged);
         rep.solves[0]
-            .patches
+            .boundaries
             .iter()
             .find(|p| p.name == "ymax")
             .unwrap()

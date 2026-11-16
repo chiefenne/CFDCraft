@@ -197,19 +197,11 @@ pub fn gauss_weights(d: &Discretisation) -> Soa3 {
 pub struct Settings {
     /// Pressure–velocity algorithm (default SIMPLEC, PISO with `[time]`).
     pub algorithm: Option<Algorithm>,
-    /// Convection scheme of the momentum equations.
-    pub scheme: Scheme,
-    /// `scheme = "central"`: fraction of the bounded central scheme on the
-    /// interior faces, the rest linear upwind (0 to 1).
-    pub central_blending: f64,
-    /// `scheme = "central"`: β of the normalised-variable bounding; the
-    /// scheme moves to upwind where the normalised upwind value leaves
-    /// [β, 1) (0: plain central, unbounded).
-    pub central_bounding: f64,
-    /// Limiter of the velocity gradients.
-    pub limiter: LimiterKind,
-    /// Constant K of the limiter.
-    pub limiter_k: f64,
+    /// The momentum equations (`[solver.momentum]`): convection scheme,
+    /// relaxation and linear solver.
+    pub momentum: MomentumSettings,
+    /// The pressure (correction) equation (`[solver.pressure]`).
+    pub pressure: PressureSettings,
     /// Gradient of the pressure (D24, D50): `least-squares`, or `gauss`,
     /// the face sum of the face pressures (robust on tetrahedra with skewed
     /// faces).
@@ -225,30 +217,10 @@ pub struct Settings {
     pub skewness_limit: f64,
     /// Non-orthogonal correction of the viscous term (D26).
     pub nonorth_correction: bool,
-    /// Under-relaxation of the momentum equations α_u (default 0.7 steady,
-    /// 1 transient).
-    pub relaxation_velocity: Option<f64>,
-    /// Relaxation of the pressure correction α_p (default 1 for SIMPLEC and
-    /// PISO, 0.3 for SIMPLE).
-    pub relaxation_pressure: Option<f64>,
     /// Largest number of outer iterations (steady).
     pub max_iterations: usize,
     /// Convergence: every residual below this value (steady).
     pub tolerance: f64,
-    /// Relative tolerance of each momentum solve (default 1e-2 steady, 1e-8
-    /// transient).
-    pub momentum_tolerance: Option<f64>,
-    /// Largest number of BiCGStab iterations per momentum solve.
-    pub momentum_max_iter: usize,
-    /// Relative tolerance of each pressure-correction solve (default 1e-2
-    /// steady, 1e-8 transient).
-    pub pressure_tolerance: Option<f64>,
-    /// Largest number of CG iterations per pressure solve.
-    pub pressure_max_iter: usize,
-    /// Preconditioner of the pressure solve.
-    pub pressure_preconditioner: Preconditioner,
-    /// Multigrid settings.
-    pub amg: AmgSettings,
     /// Rebuild the multigrid hierarchy every N outer iterations (steady) or
     /// N time steps (transient).
     pub amg_rebuild: usize,
@@ -269,29 +241,91 @@ pub struct Settings {
     pub extrapolation: bool,
 }
 
+/// `[solver.momentum]`: the momentum equations (the velocity column of the
+/// "solution flags" of the log).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct MomentumSettings {
+    /// Convection scheme of the momentum equations.
+    pub scheme: Scheme,
+    /// `scheme = "central"`: fraction of the bounded central scheme on the
+    /// interior faces, the rest linear upwind (0 to 1).
+    pub central_blending: f64,
+    /// `scheme = "central"`: β of the normalised-variable bounding; the
+    /// scheme moves to upwind where the normalised upwind value leaves
+    /// [β, 1) (0: plain central, unbounded).
+    pub central_bounding: f64,
+    /// Limiter of the velocity gradients.
+    pub limiter: LimiterKind,
+    /// Constant K of the limiter.
+    pub limiter_k: f64,
+    /// Under-relaxation of the momentum equations α_u (default 0.7 steady,
+    /// 1 transient).
+    pub relaxation: Option<f64>,
+    /// Relative tolerance of each momentum solve (default 1e-2 steady, 1e-8
+    /// transient).
+    pub tolerance: Option<f64>,
+    /// Largest number of BiCGStab iterations per momentum solve.
+    pub max_iter: usize,
+}
+
+impl Default for MomentumSettings {
+    fn default() -> Self {
+        Self {
+            scheme: Scheme::LinearUpwind,
+            central_blending: 1.0,
+            central_bounding: 0.1,
+            limiter: LimiterKind::None,
+            limiter_k: 5.0,
+            relaxation: None,
+            tolerance: None,
+            max_iter: 50,
+        }
+    }
+}
+
+/// `[solver.pressure]`: the pressure (correction) equation.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct PressureSettings {
+    /// Relaxation of the pressure correction α_p (default 1 for SIMPLEC and
+    /// PISO, 0.3 for SIMPLE).
+    pub relaxation: Option<f64>,
+    /// Relative tolerance of each pressure-correction solve (default 1e-2
+    /// steady, 1e-8 transient).
+    pub tolerance: Option<f64>,
+    /// Largest number of CG iterations per pressure solve.
+    pub max_iter: usize,
+    /// Preconditioner of the pressure solve.
+    pub preconditioner: Preconditioner,
+    /// Multigrid settings.
+    pub amg: AmgSettings,
+}
+
+impl Default for PressureSettings {
+    fn default() -> Self {
+        Self {
+            relaxation: None,
+            tolerance: None,
+            max_iter: 100,
+            preconditioner: Preconditioner::Amg,
+            amg: AmgSettings::default(),
+        }
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             algorithm: None,
-            scheme: Scheme::LinearUpwind,
-            limiter: LimiterKind::None,
-            limiter_k: 5.0,
+            momentum: MomentumSettings::default(),
+            pressure: PressureSettings::default(),
             pressure_gradient: PressureGradient::LeastSquares,
             remediation: Remediation::Auto,
             skewness_limit: 0.9,
-            central_blending: 1.0,
-            central_bounding: 0.1,
             nonorth_correction: true,
-            relaxation_velocity: None,
-            relaxation_pressure: None,
             max_iterations: 2000,
             tolerance: 1e-8,
-            momentum_tolerance: None,
-            momentum_max_iter: 50,
-            pressure_tolerance: None,
-            pressure_max_iter: 100,
-            pressure_preconditioner: Preconditioner::Amg,
-            amg: AmgSettings::default(),
             amg_rebuild: 10,
             log_every: 10,
             correctors: 2,
@@ -317,26 +351,30 @@ impl Settings {
     /// accurate solves (their error is not iterated away), a steady outer
     /// iteration does not.
     pub fn momentum_tol(&self, transient: bool) -> f64 {
-        self.momentum_tolerance
+        self.momentum
+            .tolerance
             .unwrap_or(if transient { 1e-8 } else { 1e-2 })
     }
 
     /// Relative tolerance of the pressure solves (see
     /// [`momentum_tol`](Self::momentum_tol)).
     pub fn pressure_tol(&self, transient: bool) -> f64 {
-        self.pressure_tolerance
+        self.pressure
+            .tolerance
             .unwrap_or(if transient { 1e-8 } else { 1e-2 })
     }
 
     /// α_u.
     pub fn alpha_u(&self, transient: bool) -> f64 {
-        self.relaxation_velocity
+        self.momentum
+            .relaxation
             .unwrap_or(if transient { 1.0 } else { 0.7 })
     }
 
     /// α_p.
     pub fn alpha_p(&self, transient: bool) -> f64 {
-        self.relaxation_pressure
+        self.pressure
+            .relaxation
             .unwrap_or(match self.algorithm(transient) {
                 Algorithm::Simplec | Algorithm::Piso => 1.0,
                 Algorithm::Simple => 0.3,
@@ -357,9 +395,9 @@ impl Settings {
             s.pressure_gradient = PressureGradient::Gauss;
             changes.push("solver.pressure_gradient: \"least-squares\" -> \"gauss\"".into());
         }
-        if s.scheme != Scheme::Upwind && s.limiter == LimiterKind::None {
-            s.limiter = LimiterKind::Venkatakrishnan;
-            changes.push("solver.limiter: \"none\" -> \"venkatakrishnan\"".into());
+        if s.momentum.scheme != Scheme::Upwind && s.momentum.limiter == LimiterKind::None {
+            s.momentum.limiter = LimiterKind::Venkatakrishnan;
+            changes.push("solver.momentum.limiter: \"none\" -> \"venkatakrishnan\"".into());
         }
         (s, changes)
     }
@@ -371,13 +409,13 @@ impl Settings {
         crate::need!(
             au > 0.0 && au <= 1.0,
             CASE_RANGE,
-            "[solver] relaxation_velocity must lie in (0, 1]"
+            "[solver.momentum] relaxation must lie in (0, 1]"
         );
         let ap = self.alpha_p(transient);
         crate::need!(
             ap > 0.0 && ap <= 1.0,
             CASE_RANGE,
-            "[solver] relaxation_pressure must lie in (0, 1]"
+            "[solver.pressure] relaxation must lie in (0, 1]"
         );
         if transient {
             crate::need!(
@@ -408,7 +446,7 @@ impl Settings {
             crate::need!(
                 !(self.outer_iterations == 1 && au < 1.0),
                 CASE_INCONSISTENT,
-                "[solver] relaxation_velocity < 1 needs outer_iterations > 1 in a transient case \
+                "[solver.momentum] relaxation < 1 needs outer_iterations > 1 in a transient case \
                  (with one outer iteration the relaxation would lag the solution)"
             );
         } else {
@@ -420,10 +458,10 @@ impl Settings {
             crate::diag::check_fix(
                 !(alg == Algorithm::Simplec && au >= 1.0),
                 crate::diag::CASE_INCONSISTENT,
-                &["solver.relaxation_velocity=0.7"],
+                &["solver.momentum.relaxation=0.7"],
                 || {
                     String::from(
-                        "[solver] SIMPLEC needs relaxation_velocity < 1 for a steady case \
+                        "[solver.momentum] SIMPLEC needs relaxation < 1 for a steady case \
                  (D^C = V/(a_P/α − Σ|a_N|) is singular at α = 1); try 0.7",
                     )
                 },
@@ -435,9 +473,9 @@ impl Settings {
             "[solver] tolerance must be > 0"
         );
         crate::need!(
-            self.limiter_k >= 0.0,
+            self.momentum.limiter_k >= 0.0,
             CASE_RANGE,
-            "[solver] limiter_k must be >= 0"
+            "[solver.momentum] limiter_k must be >= 0"
         );
         crate::need!(
             self.skewness_limit > 0.0,
@@ -445,24 +483,20 @@ impl Settings {
             "[solver] skewness_limit must be > 0"
         );
         crate::need!(
-            (0.0..=1.0).contains(&self.central_blending),
+            (0.0..=1.0).contains(&self.momentum.central_blending),
             CASE_RANGE,
-            "[solver] central_blending must lie in [0, 1]"
+            "[solver.momentum] central_blending must lie in [0, 1]"
         );
         crate::need!(
-            (0.0..1.0).contains(&self.central_bounding),
+            (0.0..1.0).contains(&self.momentum.central_bounding),
             CASE_RANGE,
-            "[solver] central_bounding must lie in [0, 1)"
+            "[solver.momentum] central_bounding must lie in [0, 1)"
         );
         for (name, t) in [
-            ("momentum_tolerance", self.momentum_tol(transient)),
-            ("pressure_tolerance", self.pressure_tol(transient)),
+            ("[solver.momentum] tolerance", self.momentum_tol(transient)),
+            ("[solver.pressure] tolerance", self.pressure_tol(transient)),
         ] {
-            crate::need!(
-                t > 0.0 && t < 1.0,
-                CASE_RANGE,
-                "[solver] {name} must lie in (0, 1)"
-            );
+            crate::need!(t > 0.0 && t < 1.0, CASE_RANGE, "{name} must lie in (0, 1)");
         }
         crate::need!(
             self.amg_rebuild >= 1,
@@ -474,7 +508,7 @@ impl Settings {
             CASE_RANGE,
             "[solver] log_every must be >= 1"
         );
-        self.amg.validate().map_err(|e| {
+        self.pressure.amg.validate().map_err(|e| {
             let m = e.to_string();
             let mut d = crate::diag::Diagnostic::new(crate::diag::CASE_RANGE, m.clone());
             d.key = crate::diag::key_of(&m).map(|k| format!("solver.{k}"));
@@ -765,7 +799,7 @@ fn disc_with(
     points: &std::collections::BTreeMap<String, BoundaryKind>,
 ) -> Result<Discretisation> {
     let mut prob = Problem::default();
-    for p in &mesh.patches {
+    for p in &mesh.boundaries {
         let kind = points
             .get(&p.name)
             .copied()
@@ -895,8 +929,8 @@ impl Flow {
         let nc = disc.n_cells;
         let nf = disc.n_faces;
         let nb = nf - disc.n_interior;
-        let eps2 = match settings.limiter {
-            LimiterKind::Venkatakrishnan => disc.venkat_eps2(settings.limiter_k),
+        let eps2 = match settings.momentum.limiter {
+            LimiterKind::Venkatakrishnan => disc.venkat_eps2(settings.momentum.limiter_k),
             _ => Vec::new(),
         };
         let mut dev = device::create(
@@ -1214,8 +1248,8 @@ impl Flow {
             self.dev.fill(b, 0.0)?;
         }
         let kept = self.settings.clone();
-        self.settings.pressure_tolerance = Some(1e-10);
-        self.settings.pressure_max_iter = self.settings.pressure_max_iter.max(500);
+        self.settings.pressure.tolerance = Some(1e-10);
+        self.settings.pressure.max_iter = self.settings.pressure.max_iter.max(500);
         self.update_boundaries()?;
         let a = self.flux_args(None, w.zero_face, None);
         self.dev.mass_flux(&a, f.mass_flux)?;
@@ -1459,10 +1493,10 @@ impl Flow {
         self.dev
             .gradient(Lsq::Pressure, f.p, Mask::Pressure, f.pb, f.grad_p)?;
         let s = &self.settings;
-        if s.scheme == Scheme::Upwind || s.limiter == LimiterKind::None {
+        if s.momentum.scheme == Scheme::Upwind || s.momentum.limiter == LimiterKind::None {
             return Ok(());
         }
-        let (lim, kk) = (s.limiter, s.limiter_k);
+        let (lim, kk) = (s.momentum.limiter, s.momentum.limiter_k);
         for i in 0..3 {
             let (u, ub, psi) = (f.u.all()[i], f.ub.all()[i], f.psi.all()[i]);
             let eps2 = match lim {
@@ -1541,13 +1575,17 @@ impl Flow {
             grad_u: f.grad_u,
             psi: f.psi,
             ub: f.ub,
-            blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
-            central: if s.scheme == Scheme::Central {
-                s.central_blending
+            blend: if s.momentum.scheme == Scheme::Upwind {
+                0.0
+            } else {
+                1.0
+            },
+            central: if s.momentum.scheme == Scheme::Central {
+                s.momentum.central_blending
             } else {
                 0.0
             },
-            beta: s.central_bounding,
+            beta: s.momentum.central_bounding,
             nonorth: if s.nonorth_correction { 1.0 } else { 0.0 },
             convection: if self.phys.convection { 1.0 } else { 0.0 },
             cp: w.cp,
@@ -1562,7 +1600,7 @@ impl Flow {
         let (f, w) = (self.f, self.w);
         let sym = self.bc.mom_kind.contains(&k::MOM_SYMMETRY);
         let s = &self.settings;
-        let (tol, max) = (s.momentum_tol(self.transient), s.momentum_max_iter);
+        let (tol, max) = (s.momentum_tol(self.transient), s.momentum.max_iter);
         for i in 0..3 {
             if sym {
                 // the diagonal of this component (symmetry planes)
@@ -1609,8 +1647,8 @@ impl Flow {
         self.timings.pressure_assembly += t.elapsed().as_secs_f64();
         let t = Instant::now();
         let s = self.settings.clone();
-        if s.pressure_preconditioner == Preconditioner::Amg && (self.amg_setups == 0 || rebuild) {
-            if let Err(e) = self.dev.amg_setup(w.pval, &s.amg) {
+        if s.pressure.preconditioner == Preconditioner::Amg && (self.amg_setups == 0 || rebuild) {
+            if let Err(e) = self.dev.amg_setup(w.pval, &s.pressure.amg) {
                 if self.amg_setups == 0 {
                     return Err(e);
                 }
@@ -1638,10 +1676,10 @@ impl Flow {
             w.pval,
             w.prhs,
             w.pc,
-            s.pressure_preconditioner,
+            s.pressure.preconditioner,
             true,
             s.pressure_tol(self.transient),
-            s.pressure_max_iter,
+            s.pressure.max_iter,
         )?;
         if let Some(r) = self.reference_cell {
             let shift = self.dev.value(w.pc, r)?;
@@ -1674,7 +1712,7 @@ impl Flow {
     pub fn restore_amg(&mut self, m: &[f64], setups: usize) -> Result<()> {
         let w = self.w;
         self.dev.upload(w.pval, m)?;
-        let amg = self.settings.amg.clone();
+        let amg = self.settings.pressure.amg.clone();
         self.dev.amg_setup(w.pval, &amg)?;
         self.amg_setups = setups;
         self.amg_matrix = Some(m.to_vec());

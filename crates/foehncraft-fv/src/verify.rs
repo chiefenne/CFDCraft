@@ -14,7 +14,7 @@ use crate::disc::Discretisation;
 use crate::problem::{Boundary, BoundaryKind, Problem, Profile};
 use crate::solver::{self, Outcome, Settings, Timings};
 use anyhow::Result;
-use foehncraft_mesh::generate::{BOX_PATCHES, BoxSpec, Kind};
+use foehncraft_mesh::generate::{BOX_BOUNDARIES, BoxSpec, Kind};
 use foehncraft_mesh::renumber::{Ordering, renumber};
 use foehncraft_mesh::{Geometry, Mesh};
 use serde::Serialize;
@@ -37,14 +37,14 @@ pub fn test_mesh(
 }
 
 /// Largest relative error of the least-squares gradient of the linear field
-/// φ = 1 + g·x over all cells. Patches in `gradient_patches` take the
+/// φ = 1 + g·x over all cells. Boundaries in `gradient_boundaries` take the
 /// fixed normal gradient of the field, the others its value; with
-/// `dimension = 2` the z patches are zero-gradient (g_z = 0).
+/// `dimension = 2` the z boundaries are zero-gradient (g_z = 0).
 pub fn gradient_linear(
     mesh: &Mesh,
     geo: &Geometry,
     dimension: u8,
-    gradient_patches: &[&str],
+    gradient_boundaries: &[&str],
 ) -> Result<f64> {
     let g = if dimension == 2 {
         [0.7, -1.3, 0.0]
@@ -52,10 +52,10 @@ pub fn gradient_linear(
         [0.7, -1.3, 2.1]
     };
     let mut p = Problem::default();
-    for name in BOX_PATCHES {
+    for name in BOX_BOUNDARIES {
         let kind = if dimension == 2 && (name == "zmin" || name == "zmax") {
             BoundaryKind::ZeroGradient
-        } else if gradient_patches.contains(&name) {
+        } else if gradient_boundaries.contains(&name) {
             BoundaryKind::FixedGradient
         } else {
             BoundaryKind::FixedValue
@@ -122,7 +122,7 @@ pub struct MmsResult {
 }
 
 /// The manufactured-solution problem on a box mesh: fixed values on all
-/// patches (in 2D zero gradient on the z patches and a planar solution).
+/// boundaries (in 2D zero gradient on the z boundaries and a planar solution).
 ///
 /// Γ = 0.2 kg/(m s) with |u| ≈ 1.2 m/s gives a Péclet number of about 6 on
 /// the unit box, so convection and diffusion both matter. At smaller Γ the
@@ -133,7 +133,7 @@ pub fn mms_problem(dimension: u8) -> Problem {
     let mut p = if dimension == 2 {
         Problem::manufactured(&["xmin", "xmax", "ymin", "ymax"], &["zmin", "zmax"], true)
     } else {
-        Problem::manufactured(&BOX_PATCHES, &[], false)
+        Problem::manufactured(&BOX_BOUNDARIES, &[], false)
     };
     p.diffusivity = MMS_DIFFUSIVITY;
     p
@@ -241,7 +241,7 @@ pub fn order_sweep(
 /// Leonard 1979): pure convection at 30° to the x axis across the unit
 /// square, φ = 1 entering through `xmin` above y = 0.25... in fact through
 /// the lower part of `xmin` and 0 through `ymin`, zero gradient at the
-/// outflow and on the z patches; nearly no diffusion. The exact solution is
+/// outflow and on the z boundaries; nearly no diffusion. The exact solution is
 /// a discontinuity along the characteristic, so φ must stay in [0, 1].
 pub fn oblique_step_problem(diffusivity: f64) -> Problem {
     let a = 30f64.to_radians();

@@ -7,6 +7,7 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 | 17 | [Adjoint-ready kernels: derivatives and checkpointing](#adjoint-ready) | 5 | dual numbers through the kernel bodies, transposed matrices, binomial checkpointing |
 | 18 | [A run that a program can drive](#run-contract) | 5 | `--json`, exit codes, `--set`, limits, signals, `--restart latest`, diagnostic codes, estimate before the run, byte-identical files |
 | 19 | [Balances and the divergence report](#health) | 5 | mass and kinetic-energy ledger, numerical dissipation of the schemes (second law), divergence report with ranked causes |
+| 27 | [A log that can be circulated](#log) | 5 | frames, blocks of settings, tables with headers, summaries, closing frame with exit code (D125) |
 
 ---
 
@@ -114,7 +115,7 @@ python3 -m tools.plot.estimate_chart estimate.svg
 ![Numerical dissipation of kinetic energy over the mesh size, lid-driven cavity and Taylor–Green vortex](../figures/gallery/energy_budget.svg)
 
 Every run books mass and kinetic energy: what flows and works through
-each patch, what the body force adds, what viscosity dissipates, and what
+each boundary, what the body force adds, what viscosity dissipates, and what
 is left, the dissipation of the numerical schemes. The second law asks
 that this rest is not negative. In the steady lid-driven cavity the lid
 works on the fluid and everything ends up as dissipation; the schemes take
@@ -143,10 +144,10 @@ $ foehn flow cavity_re100_energy.toml
 When a run diverges it keeps its last valid state and says why:
 
 ```
-$ foehn flow cavity_re1000.toml --set 'solver.algorithm="simple"' --set solver.relaxation_velocity=0.99 --set solver.relaxation_pressure=1.0
+$ foehn flow cavity_re1000.toml --set 'solver.algorithm="simple"' --set solver.momentum.relaxation=0.99 --set solver.pressure.relaxation=1.0
       DIVERGED in outer iteration 16: 1 failing cells, velocity first; report in divergence.md
-        DIV002 under-relaxation (0.80): relaxation factors velocity 0.99, pressure 1 (SIMPLE); try --set solver.relaxation_velocity=0.69 --set solver.relaxation_pressure=0.31
-        DIV006 linear solve (0.60): momentum BiCGStab at its limit of 50 iterations; try --set solver.momentum_max_iter=100
+        DIV002 under-relaxation (0.80): relaxation factors velocity 0.99, pressure 1 (SIMPLE); try --set solver.momentum.relaxation=0.69 --set solver.pressure.relaxation=0.31
+        DIV006 linear solve (0.60): momentum BiCGStab at its limit of 50 iterations; try --set solver.momentum.max_iter=100
 Error RUN014: the solution diverged in outer iteration 16 ...
 ```
 
@@ -169,6 +170,57 @@ Error RUN014: the solution diverged in outer iteration 16 ...
 ```
 cargo test --release -p foehncraft-flow --test health
 python3 -m tools.plot.energy_budget_chart energy_budget.svg
+```
+
+[↑ back to top](#run-control-health-and-adjoint-readiness)
+
+---
+
+<a id="log"></a>
+## 27. A log that can be circulated
+
+Part of what a run says about itself (D125): the log shows what the case file set, so a log mailed on its own is enough to see the run. Every block is framed by asterisk rules (80 columns, no colour); the console and `flow.log` are identical. Excerpt of the transient cavity (Re 100, 64 x 64, BDF2), blocks between the banner and the table left out:
+
+```
+********************************************************************************
+  Foehncraft  -  general purpose CFD solver
+  Version                       0.5.0  (build a1b2c3d)
+  Date and time                 2026-11-16 12:00:00 UTC
+  Host name                     vm
+  Platform                      linux-x86_64, Intel(R) Xeon(R) Processor @
+                                2.10GHz
+  Features                      hdf5, metis
+  Threads / backend             4 / cpu
+  ...
+********************************************************************************
+  Time steps (PISO, BDF2)
+
+         -- time ------------------- -- scaled residuals ----------------- -- solvers --
+    Step    Time [s]   Dt [s] Cour.       ResU     ResV     ResW     ResM   Outer    CG 
+       1  1.0000E-01 1.00E-01 4.645   1.00E+00 0.00E+00 0.00E+00 6.33E-02       1    22
+      50  5.0000E+00 1.00E-01 6.089   1.03E-04 9.33E-05 0.00E+00 1.20E-05       1    22
+  ...
+********************************************************************************
+  Run finished: every check passed
+  Exit code                     0
+  Elapsed time                  0:00:25
+  Results in                    output/cavity_re100_transient
+  Report                        flow.md, result.json
+********************************************************************************
+
+```
+
+Before the table, the log lists the input and output files, the run control, the mesh information with its quality, the fluid properties, the solution settings as a matrix per equation and the boundary conditions with their values. After it come the summaries: convergence or time stepping, verification, results per boundary, the ledger, the run time and the warnings. Messages are tagged `[I]`, `[W]` or `[E]`; a failed run ends with `Run FAILED: <code>`, the reason and the exit code. `[log] style = "box"` draws the frames with box characters.
+
+| | |
+|---|---|
+| Code | `crates/foehncraft-flow/src/console.rs`, `logblocks.rs`, `case.rs`, `unsteady.rs` |
+| Tests | `crates/foehncraft-flow/src/console.rs` (frames, tables), `tests/health.rs`, `tests/stage5.rs` |
+| Case files | every file of `examples/cases/flow/` |
+
+```
+target/release/foehn flow examples/cases/flow/cavity_re100_transient.toml
+less output/cavity_re100_transient/flow.log
 ```
 
 [↑ back to top](#run-control-health-and-adjoint-readiness)

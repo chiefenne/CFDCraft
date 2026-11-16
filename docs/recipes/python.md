@@ -58,7 +58,7 @@ res = run(case, out="output/my_case",
           on_step=None,                                     # transient runs
           log=print)
 res.ok, res.status, res.exit_code, res.orders
-res.value("errors.l2"), res.value("patches.ymin.force.0")
+res.value("errors.l2"), res.value("boundaries.ymin.force.0")
 res.table("residuals")["continuity"]      # any CSV of the run as columns
 res.fields()["velocity_x"]                # VTKHDF cell data (h5py)
 ```

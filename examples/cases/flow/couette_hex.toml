@@ -8,6 +8,8 @@
 # error must be at round-off level (D27 acceptance). The run fails if the
 # relative L2 velocity error exceeds 1e-9.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2

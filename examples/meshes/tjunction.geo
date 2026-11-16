@@ -9,7 +9,7 @@
 // cell-quality remediation (D50). tjunction_netgen.geo makes the same mesh
 // optimised by Netgen, the better choice for flow runs.
 //
-// Physical groups name the patches: inlet_main, inlet_branch, outlet,
+// Physical groups name the boundaries: inlet_main, inlet_branch, outlet,
 // wall; the volume is the zone fluid.
 
 SetFactory("OpenCASCADE");

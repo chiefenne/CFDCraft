@@ -33,6 +33,8 @@ use std::time::Instant;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct MeshCase {
+    /// Format of the case file (`case_format`, see [`crate::case_format`]).
+    pub case_format: Option<String>,
     /// The mesh.
     pub mesh: MeshSection,
     /// Domain decomposition.
@@ -62,8 +64,8 @@ pub struct MeshSection {
     pub renumber: Ordering,
     /// Seed of `shuffle`.
     pub seed: u64,
-    /// Patch renaming, `old = "new"`.
-    pub patches: BTreeMap<String, String>,
+    /// Boundary renaming, `old = "new"`.
+    pub boundaries: BTreeMap<String, String>,
 }
 
 impl Default for MeshSection {
@@ -76,7 +78,7 @@ impl Default for MeshSection {
             polyhedral: false,
             renumber: Ordering::None,
             seed: 2026,
-            patches: BTreeMap::new(),
+            boundaries: BTreeMap::new(),
         }
     }
 }
@@ -146,8 +148,9 @@ impl MeshCase {
     pub fn from_file(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let mut case: Self =
-            toml::from_str(&text).with_context(|| format!("{}", path.display()))?;
+        let (mut case, _notes): (Self, _) =
+            crate::case_format::read(&text).with_context(|| format!("{}", path.display()))?;
+        case.case_format = Some(crate::case_format::CURRENT.into());
         if let Some(f) = &case.mesh.file
             && f.is_relative()
         {
@@ -220,8 +223,8 @@ pub fn build_mesh(case: &MeshSection) -> Result<(Mesh, String, Vec<String>)> {
     }
     if let Some(spec) = &case.cylinder {
         let mut mesh = spec.generate().map_err(anyhow::Error::msg)?;
-        for (old, new) in &case.patches {
-            mesh.rename_patch(old, new).map_err(anyhow::Error::msg)?;
+        for (old, new) in &case.boundaries {
+            mesh.rename_boundary(old, new).map_err(anyhow::Error::msg)?;
         }
         return Ok((mesh, spec.describe(), Vec::new()));
     }
@@ -264,8 +267,8 @@ pub fn build_mesh(case: &MeshSection) -> Result<(Mesh, String, Vec<String>)> {
             mesh.n_cells
         );
     }
-    for (old, new) in &case.patches {
-        mesh.rename_patch(old, new).map_err(anyhow::Error::msg)?;
+    for (old, new) in &case.boundaries {
+        mesh.rename_boundary(old, new).map_err(anyhow::Error::msg)?;
     }
     Ok((mesh, source, warnings))
 }

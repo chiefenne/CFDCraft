@@ -6,6 +6,8 @@
 #
 # Needs about 4 GB of memory.
 
+case_format = "0.6"
+
 [mesh]
 cells = 10_000_000     # periodic box 215 x 215 x 216
 ordering = "natural"

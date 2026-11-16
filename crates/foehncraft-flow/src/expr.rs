@@ -31,7 +31,7 @@
 //! Each string is parsed and checked when the case is read: syntax, names
 //! (with a "did you mean"), the number of arguments, and the variables the
 //! key allows (a steady case has no `t`; a mass flow is one number for the
-//! patch, so it takes only `t`; the viscosity takes no `t`, as properties
+//! boundary, so it takes only `t`; the viscosity takes no `t`, as properties
 //! do not change during a run, D100). Then it is compiled into a program of
 //! the stack machine in `foehncraft_kernels::expr`, with the parts that
 //! depend on no variable folded into constants by the same machine. The
@@ -1091,7 +1091,7 @@ pub fn compile(src: &str, env: &Env, allowed: Vars, key: &str) -> Result<Program
         let why = if extra.time() && !allowed.time() && allowed.space() {
             " (`t` needs a transient case, and properties do not change in time)"
         } else if extra.space() && !allowed.space() {
-            " (this value is one number for the whole patch or case)"
+            " (this value is one number for the whole boundary or case)"
         } else {
             ""
         };

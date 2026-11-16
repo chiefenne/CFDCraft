@@ -9,6 +9,8 @@
 #
 # Needs about 1.4 GB of GPU memory and 2 GB of host memory.
 
+case_format = "0.6"
+
 [mesh]
 cells = 4_000_000
 ordering = "natural"

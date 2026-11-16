@@ -14,7 +14,7 @@
 //!   2. processor faces `n_inner_faces..n_interior_faces()`: the neighbour is
 //!      a halo cell; kept apart so that their work can wait for the halo
 //!      exchange while the inner faces are computed (D38);
-//!   3. boundary faces `n_interior_faces()..n_faces()`, grouped by patch.
+//!   3. boundary faces `n_interior_faces()..n_faces()`, grouped by boundary.
 //!
 //!   `owner` has one entry per face, `neighbour` one per interior face. The
 //!   nodes of a face are ordered so that its normal (right-hand rule) points
@@ -37,17 +37,17 @@ use foehncraft_kernels::{pack_face, unpack_face};
 
 /// A named set of boundary faces.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Patch {
+pub struct Boundary {
     /// Name, from the Gmsh physical group or the generator.
     pub name: String,
-    /// First face of the patch.
+    /// First face of the boundary.
     pub start: usize,
     /// Number of faces.
     pub len: usize,
 }
 
-impl Patch {
-    /// Face range of the patch.
+impl Boundary {
+    /// Face range of the boundary.
     pub fn range(&self) -> std::ops::Range<usize> {
         self.start..self.start + self.len
     }
@@ -77,8 +77,8 @@ pub struct Mesh {
     pub n_inner_cells: usize,
     /// Number of halo cells.
     pub n_halo: usize,
-    /// Boundary patches, in face order.
-    pub patches: Vec<Patch>,
+    /// Boundary boundaries, in face order.
+    pub boundaries: Vec<Boundary>,
     /// Start of the face list of each local cell (length `n_cells + 1`).
     pub cell_ptr: Vec<u32>,
     /// Faces of each local cell, packed with their orientation.
@@ -145,14 +145,14 @@ impl Mesh {
         Some(if p == c { n } else { p })
     }
 
-    /// Patch index of boundary face `f`.
-    pub fn patch_of(&self, f: usize) -> Option<usize> {
-        self.patches.iter().position(|p| p.range().contains(&f))
+    /// Boundary index of boundary face `f`.
+    pub fn boundary_of(&self, f: usize) -> Option<usize> {
+        self.boundaries.iter().position(|p| p.range().contains(&f))
     }
 
-    /// Patch by name.
-    pub fn patch(&self, name: &str) -> Option<&Patch> {
-        self.patches.iter().find(|p| p.name == name)
+    /// Boundary by name.
+    pub fn boundary(&self, name: &str) -> Option<&Boundary> {
+        self.boundaries.iter().find(|p| p.name == name)
     }
 
     /// Distinct nodes of local cell `c`, in first-seen order.
@@ -240,14 +240,17 @@ impl Mesh {
             }
         }
         let mut next = ni;
-        for p in &self.patches {
+        for p in &self.boundaries {
             if p.start != next {
-                return Err(format!("patch {} does not follow the previous one", p.name));
+                return Err(format!(
+                    "boundary {} does not follow the previous one",
+                    p.name
+                ));
             }
             next += p.len;
         }
         if next != nf {
-            return Err("patches do not cover all boundary faces".into());
+            return Err("boundaries do not cover all boundary faces".into());
         }
         if self.cell_ptr.len() != nc + 1 || self.cell_ptr[0] != 0 {
             return Err("cell_ptr has the wrong length or start".into());
@@ -385,16 +388,16 @@ impl Mesh {
         (lo, hi)
     }
 
-    /// Renames a patch.
-    pub fn rename_patch(&mut self, old: &str, new: &str) -> Result<(), String> {
-        if self.patch(new).is_some() {
-            return Err(format!("patch {new} exists already"));
+    /// Renames a boundary.
+    pub fn rename_boundary(&mut self, old: &str, new: &str) -> Result<(), String> {
+        if self.boundary(new).is_some() {
+            return Err(format!("boundary {new} exists already"));
         }
         let p = self
-            .patches
+            .boundaries
             .iter_mut()
             .find(|p| p.name == old)
-            .ok_or_else(|| format!("no patch named {old}"))?;
+            .ok_or_else(|| format!("no boundary named {old}"))?;
         p.name = new.to_string();
         Ok(())
     }

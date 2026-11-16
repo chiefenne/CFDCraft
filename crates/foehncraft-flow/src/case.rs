@@ -29,7 +29,7 @@
 //! [pressure]                     # only used when no boundary fixes the pressure
 //! reference_point = [0.5, 0.5, 0.0]
 //! reference_value = 0.0
-//! [boundary.ymax]                # one table per patch (required), crate::bc
+//! [boundary.ymax]                # one table per boundary (required), crate::bc
 //! type = "wall"
 //! velocity = [1.0, 0.0, 0.0]
 //! [solver]                       # crate::simplec::Settings
@@ -56,14 +56,15 @@
 //! ```
 //!
 //! Output (D43): `flow.log` (header with what is written and how large),
-//! `residuals.csv`, `patches.csv` (mass flow, mean pressure and force per
-//! patch), `wall_<patch>.csv`, `line_<name>.csv`, `fields.vtkhdf`,
+//! `residuals.csv`, `boundaries.csv` (mass flow, mean pressure and force per
+//! boundary), `wall_<boundary>.csv`, `line_<name>.csv`, `fields.vtkhdf`,
 //! `case.resolved.toml` (the case with every default filled in), `flow.json`
 //! and `flow.md` (the report), SVG charts.
 
 use crate::analytic::{Analytic, Benchmark, Reference};
 use crate::balance::{self, BalanceSummary};
 use crate::bc::{self, BoundaryCondition, Level};
+use crate::console::{Col, Group};
 use crate::control::{self, Control};
 use crate::diag;
 use crate::divergence;
@@ -417,12 +418,12 @@ pub struct Probe {
 }
 
 /// Force coefficients, `[output.coefficients]`: C = 2 F / (ρ U² A) of the
-/// sum of the forces on `patches`.
+/// sum of the forces on `boundaries`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Coefficients {
-    /// Patches whose forces are summed.
-    pub patches: Vec<String>,
+    /// Boundaries whose forces are summed.
+    pub boundaries: Vec<String>,
     /// Reference velocity U (m/s).
     pub velocity: f64,
     /// Reference area A (m²).
@@ -473,8 +474,8 @@ pub struct VerificationSection {
     pub expected_time_order: Option<[f64; 2]>,
     /// Benchmark data (the cylinder of Schäfer & Turek).
     pub benchmark: Option<Benchmark>,
-    /// Patch of the cylinder of the benchmark.
-    pub benchmark_patch: Option<String>,
+    /// Boundary of the cylinder of the benchmark.
+    pub benchmark_boundary: Option<String>,
     /// Largest accepted distance from the reference ranges, relative to
     /// the midpoint of each range.
     pub benchmark_tolerance: Option<f64>,
@@ -512,7 +513,7 @@ pub struct OutputSection {
     pub vtkhdf: bool,
     /// Write a row of `residuals.csv` every N outer iterations.
     pub history_every: usize,
-    /// Write `wall_<patch>.csv` for every wall.
+    /// Write `wall_<boundary>.csv` for every wall.
     pub wall_csv: bool,
     /// Sample lines.
     pub lines: Vec<Line>,
@@ -536,7 +537,7 @@ pub struct OutputSection {
     pub monitor_interval: Option<f64>,
     /// Point probes: velocity and pressure per step (`probes.csv`).
     pub probes: Vec<Probe>,
-    /// Force coefficients of some patches (`forces.csv`, the report).
+    /// Force coefficients of some boundaries (`forces.csv`, the report).
     pub coefficients: Option<Coefficients>,
     /// Derived fields written with the fields (D72), from the cell
     /// gradients: vorticity, q-criterion, lambda2, enstrophy, strain-rate,
@@ -572,6 +573,16 @@ impl Default for OutputSection {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct FlowCase {
+    /// Format of the case file: the Foehncraft version that introduced its
+    /// key layout (default `"0.5"`, the layout before this key). An older
+    /// file keeps running (its old keys are mapped, the log says which);
+    /// `foehn case upgrade` rewrites it in the current format.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub case_format: Option<String>,
+    /// What reading the case file did: one note per key of an older format
+    /// that was mapped (printed in the log; not a key).
+    #[serde(skip)]
+    pub notes: Vec<String>,
     /// The mesh.
     pub mesh: MeshSection,
     /// Fluid properties.
@@ -597,7 +608,7 @@ pub struct FlowCase {
     pub initial: InitialSection,
     /// Pressure level.
     pub pressure: PressureSection,
-    /// Boundary conditions per patch.
+    /// Boundary conditions per boundary.
     pub boundary: BTreeMap<String, BoundaryCondition>,
     /// Solver settings.
     pub solver: Settings,
@@ -613,6 +624,8 @@ pub struct FlowCase {
     pub time: Option<TimeSection>,
     /// Conservation ledger: report schedule and tolerances (D88, D89).
     pub balance: crate::balance::BalanceSection,
+    /// How the console and `flow.log` look.
+    pub log: crate::console::LogSection,
     /// The case file (for re-reading it during a run).
     #[serde(skip)]
     pub source: Option<PathBuf>,
@@ -805,20 +818,29 @@ impl FlowCase {
     /// As [`from_toml_with`](Self::from_toml_with), without reading the
     /// profile tables.
     fn from_toml_parts(text: &str, dir: &Path, sets: &[String]) -> Result<Self> {
-        let mut c: Self = if sets.is_empty() {
+        let mut v: toml::Table =
+            toml::from_str(text).map_err(|e| diag::err(toml_diagnostic(text, &e)))?;
+        for s in sets {
+            apply_set(&mut v, s)?;
+        }
+        // keys of an older case format are mapped (after the overrides, so
+        // that `--set` may use the old names of an old file)
+        let notes = foehncraft_mesh::case_format::migrate(&mut v).map_err(|m| {
+            diag::err(diag::Diagnostic::new(diag::CASE_BAD_VALUE, m).key("case_format"))
+        })?;
+        let mut c: Self = if sets.is_empty() && notes.is_empty() {
             toml::from_str(text).map_err(|e| diag::err(toml_diagnostic(text, &e)))?
         } else {
-            let mut v: toml::Table =
-                toml::from_str(text).map_err(|e| diag::err(toml_diagnostic(text, &e)))?;
-            for s in sets {
-                apply_set(&mut v, s)?;
-            }
             Self::deserialize(toml::Value::Table(v)).map_err(|e| {
                 let mut d = toml_diagnostic("", &e);
-                d.message = format!("after --set: {}", d.message);
+                if !sets.is_empty() {
+                    d.message = format!("after --set: {}", d.message);
+                }
                 diag::err(d)
             })?
         };
+        c.case_format = Some(foehncraft_mesh::case_format::CURRENT.into());
+        c.notes = notes;
         c.overrides = sets.to_vec();
         if let Some(f) = &c.mesh.file {
             c.mesh.file = Some(dir.join(f));
@@ -1103,9 +1125,9 @@ impl FlowCase {
                 "[output.coefficients] velocity and area must be > 0"
             );
             crate::need!(
-                !c.patches.is_empty(),
+                !c.boundaries.is_empty(),
                 CASE_INCONSISTENT,
-                "[output.coefficients] patches must name at least one patch"
+                "[output.coefficients] boundaries must name at least one boundary"
             );
         }
         crate::derived::validate(self)?;
@@ -1276,9 +1298,9 @@ pub struct ReferenceComparison {
     pub v_line: Vec<(f64, f64)>,
 }
 
-/// Forces and fluxes of one patch.
+/// Forces and fluxes of one boundary.
 #[derive(Debug, Clone, Serialize)]
-pub struct PatchSummary {
+pub struct BoundarySummary {
     /// Name.
     pub name: String,
     /// Condition.
@@ -1289,7 +1311,7 @@ pub struct PatchSummary {
     pub mass_flow: f64,
     /// Area-weighted mean pressure (Pa).
     pub mean_pressure: f64,
-    /// Force of the fluid on the patch, pressure and viscous (N).
+    /// Force of the fluid on the boundary, pressure and viscous (N).
     pub force: [f64; 3],
 }
 
@@ -1320,10 +1342,10 @@ pub struct Solve {
     pub errors: Option<ErrorNorms>,
     /// Reference comparison.
     pub reference: Option<ReferenceComparison>,
-    /// Patches.
-    pub patches: Vec<PatchSummary>,
-    /// Net mass flow out of the domain over the largest patch mass flow (in
-    /// a closed domain over ρ |u|max times the largest patch area).
+    /// Boundaries.
+    pub boundaries: Vec<BoundarySummary>,
+    /// Net mass flow out of the domain over the largest boundary mass flow (in
+    /// a closed domain over ρ |u|max times the largest boundary area).
     pub mass_imbalance: f64,
     /// Force coefficients (drag, lift) of `[output.coefficients]` at the
     /// end.
@@ -1435,13 +1457,40 @@ pub(crate) fn dimension(case: &FlowCase) -> u8 {
 pub(crate) struct Log<'a, F: FnMut(&str)> {
     pub(crate) out: &'a mut F,
     pub(crate) text: String,
+    pub(crate) style: crate::console::Style,
 }
 
-impl<F: FnMut(&str)> Log<'_, F> {
+impl<'a, F: FnMut(&str)> Log<'a, F> {
+    pub(crate) fn new(out: &'a mut F, style: crate::console::Style) -> Self {
+        Self {
+            out,
+            text: String::new(),
+            style,
+        }
+    }
+
     pub(crate) fn line(&mut self, l: &str) {
         (self.out)(l);
         self.text.push_str(l);
         self.text.push('\n');
+    }
+
+    /// An information line, ` [I] ...`.
+    pub(crate) fn note(&mut self, msg: &str) {
+        self.line(&crate::console::tagged("note", msg));
+    }
+
+    /// A warning line, ` [W] ...`.
+    pub(crate) fn warn(&mut self, msg: &str) {
+        self.line(&crate::console::tagged("warning", msg));
+    }
+
+    /// A blank line and a frame.
+    pub(crate) fn frame(&mut self, f: &crate::console::Frame) {
+        self.line("");
+        for l in f.render(self.style) {
+            self.line(&l);
+        }
     }
 }
 
@@ -1462,6 +1511,44 @@ pub(crate) fn value_at(fl: &Solution, geo: &Geometry, c: usize, x: [f64; 3]) -> 
             u[2] + dot(g[2], r),
         ],
         fl.p[c] + dot(fl.grad_p.get(c), r),
+    )
+}
+
+/// The warnings and failed checks of a run in one frame, at its end.
+pub(crate) fn end_frames<F: FnMut(&str)>(lg: &mut Log<F>, rep: &FlowReport) {
+    let mut rows: Vec<String> = Vec::new();
+    for f in &rep.findings {
+        if f.level == Level::Warning {
+            rows.push(finding_line(f).trim_start().to_string());
+        }
+    }
+    for d in &rep.warnings {
+        rows.push(format!("[W] {}: {}", d.code, d.message));
+    }
+    for f in &rep.failures {
+        rows.push(format!("[E] FAILED: {f}"));
+    }
+    let mut fr = crate::console::Frame::new(format!("Warnings and failed checks ({})", rows.len()));
+    if rows.is_empty() {
+        fr.push_text("none");
+    }
+    for r in rows {
+        fr.push_text(r);
+    }
+    lg.frame(&fr);
+}
+
+/// A boundary-condition finding as a tagged message line.
+pub(crate) fn finding_line(f: &bc::Finding) -> String {
+    let t = f.to_string();
+    let rest = t.split_once(' ').map_or(t.as_str(), |x| x.1);
+    crate::console::tagged(
+        match f.level {
+            Level::Note => "note",
+            Level::Warning => "warning",
+            Level::Error => "error",
+        },
+        rest,
     )
 }
 
@@ -1605,10 +1692,7 @@ pub fn run_steered(
     let control = Control::new(out)?;
     let mut case = case.clone();
     let mut log = log;
-    let mut lg = Log {
-        out: &mut log,
-        text: String::new(),
-    };
+    let mut lg = Log::new(&mut log, case.log.style);
     let levels: Vec<Option<u32>> = if case.verification.levels.is_empty() {
         vec![None]
     } else {
@@ -1649,6 +1733,10 @@ pub fn run_steered(
     for (li, level) in levels.iter().enumerate() {
         let (mesh, geo, desc) = mesh_for(&case, *level)?;
         let mesh_hash = crate::engine::mesh_hash(&mesh);
+        let nc = mesh.n_cells;
+        if li == 0 {
+            lg.frame(&crate::logblocks::banner(steer.build.as_ref(), &case));
+        }
         // boundary-condition check (D30)
         let findings = bc::check(
             &mesh,
@@ -1659,9 +1747,6 @@ pub fn run_steered(
             case.check_context(),
         );
         if li == 0 {
-            for f in &findings {
-                lg.line(&f.to_string());
-            }
             rep.findings = findings.clone();
         }
         if findings.iter().any(|f| f.level == Level::Error) {
@@ -1670,17 +1755,47 @@ pub fn run_steered(
                 .filter(|f| f.level == Level::Error)
                 .map(|f| f.to_string())
                 .collect();
+            lg.line("");
+            for f in &findings {
+                lg.line(&finding_line(f));
+            }
             std::fs::write(out.join("flow.log"), &lg.text)?;
             bail!(
                 "the boundary conditions cannot be run:\n  {}",
                 msg.join("\n  ")
             );
         }
-        let nc = mesh.n_cells;
-        if li == 0 || li == last {
-            header(&mut lg, &case, &mesh, &desc, li == last);
+        let (quality, _) = foehncraft_mesh::quality::QualityReport::compute(&mesh, &geo);
+        if li == 0 {
+            if single {
+                lg.frame(&files_frame(&case, &mesh, &desc, out));
+            }
+            lg.frame(&crate::logblocks::control_steady(&case));
         }
-        lg.line(&format!("mesh  {desc}"));
+        lg.frame(&crate::logblocks::mesh(&quality, &desc));
+        if li == 0 {
+            lg.frame(&crate::logblocks::fluid(&case));
+            lg.frame(&crate::logblocks::solution(&case, false));
+            lg.frame(&crate::logblocks::boundaries(&case, &quality));
+            let mut any = false;
+            for n in crate::logblocks::notes(&case) {
+                if !any {
+                    lg.line("");
+                    any = true;
+                }
+                lg.line(&n);
+            }
+            for f in &findings {
+                if !any {
+                    lg.line("");
+                    any = true;
+                }
+                lg.line(&finding_line(f));
+            }
+        }
+        if !single && li == last {
+            lg.frame(&files_frame(&case, &mesh, &desc, out));
+        }
         let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, at)?;
         let disc = simplec::discretisation(&mesh, &geo, &arrays)?;
         let phys = physics_on(&case, &phys, &mesh, &geo)?;
@@ -1736,18 +1851,20 @@ pub fn run_steered(
                 let m = "note: the restart file has another cell or face order; the fields were \
                          mapped by identity and the multigrid rebuilt (the continuation is not \
                          bit-identical)";
-                lg.line(m);
+                lg.note(m.trim_start_matches("note: "));
                 rep.warnings
                     .push(diag::Diagnostic::new(diag::RUN_RESTART_MAPPED, m));
             }
-            lg.line(&format!(
+            lg.note(&format!(
                 "restart from {} at iteration {}",
                 path.display(),
                 r.iteration
             ));
         } else if case.initial.potential_flow {
             let it = fl.potential_flow(&mesh, &geo)?;
-            lg.line(&format!("start  potential flow (D52): {it} CG iterations"));
+            lg.note(&format!(
+                "start from potential flow (D52): {it} CG iterations"
+            ));
         }
         let first = fl.iteration();
         let mut csv = csv_preamble(
@@ -1769,6 +1886,36 @@ pub fn run_steered(
         let mut converged = false;
         let mut res = Residuals::default();
         let ts = Instant::now();
+        let mut table = crate::console::Table::new(
+            Col::int("Iter", 6),
+            vec![
+                Group::new(
+                    "scaled residuals",
+                    vec![
+                        Col::num("ResU"),
+                        Col::num("ResV"),
+                        Col::num("ResW"),
+                        Col::num("ResM"),
+                    ],
+                ),
+                Group::new(
+                    "linear iterations",
+                    vec![
+                        Col::int("U", 4),
+                        Col::int("V", 4),
+                        Col::int("W", 4),
+                        Col::int("P", 5),
+                    ],
+                ),
+            ],
+            case.log.style,
+            case.log.header_every,
+        );
+        lg.frame(&crate::console::Frame::new(format!(
+            "Iterations ({}, steady)",
+            crate::logblocks::spelled(&case.solver.algorithm(false)).to_uppercase()
+        )));
+        lg.line("");
         loop {
             if fl.iteration() >= case.solver.max_iterations {
                 break;
@@ -1779,7 +1926,7 @@ pub fn run_steered(
                 Ok(r) => r,
                 Err(e) if divergence::is_divergence(&e, &mut fl) => {
                     // D63: the last valid state, the snapshot and the report
-                    lg.line(&format!("      {e:#}"));
+                    lg.line(&crate::console::tagged("error", &format!("{e:#}")));
                     let at = fl.iteration();
                     let ctx = divergence::Context {
                         name,
@@ -1820,10 +1967,16 @@ pub fn run_steered(
                         }
                         Ok((failed, files))
                     })();
-                    let e =
-                        divergence::finish(&mut fl, &ctx, &mesh, &geo, out, prepared, &mut |l| {
-                            lg.line(l)
-                        });
+                    let e = divergence::finish(
+                        &mut fl,
+                        &ctx,
+                        &mesh,
+                        &geo,
+                        out,
+                        prepared,
+                        case.log.style,
+                        &mut |l| lg.line(l),
+                    );
                     steer.record.flush();
                     std::fs::write(out.join("flow.log"), &lg.text)?;
                     return Err(e);
@@ -1860,15 +2013,23 @@ pub fn run_steered(
             }
             if it == first + 1 || it % case.solver.log_every == 0 || done {
                 steer.record.flush();
-                lg.line(&format!(
-                    "iter {it:6}  momentum {:.3e} {:.3e} {:.3e}  continuity {:.3e}  bicgstab {:?}  cg {}",
-                    res.momentum[0],
-                    res.momentum[1],
-                    res.momentum[2],
-                    res.continuity,
-                    res.momentum_iterations,
-                    res.pressure_iterations
-                ));
+                let cells: Vec<String> = res
+                    .momentum
+                    .iter()
+                    .copied()
+                    .chain([res.continuity])
+                    .map(crate::console::sci3)
+                    .chain(
+                        res.momentum_iterations
+                            .iter()
+                            .copied()
+                            .chain([res.pressure_iterations])
+                            .map(|n| n.to_string()),
+                    )
+                    .collect();
+                for l in table.row(it, &cells) {
+                    lg.line(&l);
+                }
             }
             if done {
                 converged = true;
@@ -1899,10 +2060,11 @@ pub fn run_steered(
                 if steer.record.on() {
                     steer.record.row(&balance::record_row(&b));
                 }
-                lg.line(
-                    balance::table(&format!("      balance of iteration {it}"), &b, false)
-                        .trim_end(),
-                );
+                lg.frame(&crate::logblocks::balance_block(
+                    &format!("Balance of iteration {it}"),
+                    &b,
+                    false,
+                ));
             }
             // control files (D40), signals and limits (D64, D83)
             let req = control.check(it, case.run.reread_every);
@@ -1923,8 +2085,8 @@ pub fn run_steered(
                     analytic.as_ref(),
                     Some((it, None)),
                 )?;
-                lg.line(&format!(
-                    "      fields of iteration {it} written (fields_{it:06}.vtkhdf)"
+                lg.note(&format!(
+                    "fields of iteration {it} written (fields_{it:06}.vtkhdf)"
                 ));
             }
             let r = &case.run;
@@ -1938,7 +2100,7 @@ pub fn run_steered(
                 if case.run.restart_at.contains(&it) {
                     restart::write(&out.join(format!("restart_{it:06}.h5")), &rs)?;
                 }
-                lg.line(&format!("      iteration {it}: restart.h5 written"));
+                lg.note(&format!("iteration {it}: restart.h5 written"));
             }
             if req.reread {
                 reread_case(
@@ -1952,7 +2114,7 @@ pub fn run_steered(
                 )?;
             }
             if let Some(s) = steer.poll(&case.run.limits, it - first, false, req.stop) {
-                lg.line(&format!("      iteration {it}: {}", s.message));
+                lg.note(&format!("iteration {it}: {}", s.message));
                 stopped = true;
                 break;
             }
@@ -1960,17 +2122,32 @@ pub fn run_steered(
         steer.record.flush();
         let secs = ts.elapsed().as_secs_f64();
         let iters = fl.iteration();
-        lg.line(&format!(
-            "      {} in {iters} outer iterations, {secs:.2} s, {:.0} ns/cell/iteration",
-            if converged {
-                "converged"
-            } else if stopped {
-                "stopped"
-            } else {
-                "NOT converged"
-            },
-            1e9 * fl.timings.total() / (nc as f64 * (iters - first).max(1) as f64)
-        ));
+        {
+            let wall = ts.elapsed().as_secs_f64();
+            let _ = secs;
+            let mut f = crate::console::Frame::new("Convergence").kv(
+                "Status",
+                if converged {
+                    format!(
+                        "CONVERGED in {iters} iterations (criterion {})",
+                        crate::console::sci(case.solver.tolerance, 1)
+                    )
+                } else if stopped {
+                    format!("STOPPED after {iters} iterations")
+                } else {
+                    format!("NOT CONVERGED in {iters} iterations")
+                },
+            );
+            f.push_kv("Largest scaled residual", crate::console::sci3(res.max()));
+            f.push_kv(
+                "Solve time",
+                format!(
+                    "{wall:.2} s  ({:.0} ns per cell and iteration)",
+                    1e9 * fl.timings.total() / (nc as f64 * (iters - first).max(1) as f64)
+                ),
+            );
+            lg.frame(&f);
+        }
         let suffix = level.map_or(String::new(), |l| format!("_level{l}"));
         std::fs::write(out.join(format!("residuals{suffix}.csv")), &csv)?;
         histories.push((
@@ -1993,43 +2170,56 @@ pub fn run_steered(
         };
         let sol = &fl_host;
         let errors = analytic.map(|a| error_norms(sol, &mesh, &geo, &a, dimension(&case)));
+        let mut verification = crate::console::Frame::new("Verification");
         if let Some(e) = &errors {
-            lg.line(&format!(
-                "      velocity error L2 {:.3e}, Linf {:.3e} (relative), pressure Linf {:.3e}",
-                e.l2, e.linf, e.pressure_linf
-            ));
+            verification.push_kv(
+                "Velocity error L2 / Linf",
+                format!(
+                    "{} / {}  (relative)",
+                    crate::console::sci3(e.l2),
+                    crate::console::sci3(e.linf)
+                ),
+            );
+            verification.push_kv("Pressure error Linf", crate::console::sci3(e.pressure_linf));
         }
         let reference = case
             .verification
             .reference
             .map(|r| compare_reference(sol, &mesh, &geo, &loc, r, &case));
         if let Some(r) = &reference {
-            lg.line(&format!(
-                "      {}: largest deviation u {:.4}, v {:.4} (lid speeds)",
-                r.reference, r.u_max_dev, r.v_max_dev
-            ));
+            verification.push_kv(
+                &format!("Reference {}", r.reference),
+                format!(
+                    "largest deviation u {:.4}, v {:.4}  (lid speeds)",
+                    r.u_max_dev, r.v_max_dev
+                ),
+            );
         }
-        let patches = patch_summaries(sol, &mesh, &geo, &case);
-        let total: f64 = patches.iter().map(|p| p.mass_flow).sum();
-        // scale: the largest patch mass flow, or in a closed domain the
-        // flow ρ |u|max A through the largest patch
+        let boundaries = boundary_summaries(sol, &mesh, &geo, &case);
+        let total: f64 = boundaries.iter().map(|p| p.mass_flow).sum();
+        // scale: the largest boundary mass flow, or in a closed domain the
+        // flow ρ |u|max A through the largest boundary
         let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);
-        let big = patches
+        let big = boundaries
             .iter()
             .map(|p| p.mass_flow.abs().max(case.rho() * umax * p.area))
             .fold(0.0f64, f64::max);
         let mass_imbalance = if big > 0.0 { total / big } else { 0.0 };
-        let coefficients = crate::monitor::coefficients(&case, &patches);
+        let coefficients = crate::monitor::coefficients(&case, &boundaries);
         if let Some([cd, cl]) = coefficients {
-            lg.line(&format!(
-                "      force coefficients C_D {cd:.5}, C_L {cl:.5}"
-            ));
+            verification.push_kv("Force coefficients", format!("C_D {cd:.5}, C_L {cl:.5}"));
         }
         let benchmark =
-            crate::unsteady::steady_benchmark_of(&case, sol, &mesh, &geo, &loc, &patches);
+            crate::unsteady::steady_benchmark_of(&case, sol, &mesh, &geo, &loc, &boundaries);
         if let Some(b) = &benchmark {
-            crate::unsteady::log_benchmark(b, |l| lg.line(l));
+            crate::unsteady::log_benchmark(b, |l| {
+                verification.push_text(l.trim_start().to_string())
+            });
         }
+        if !verification.is_empty() {
+            lg.frame(&verification);
+        }
+        lg.frame(&crate::logblocks::results(&boundaries));
         // the ledger of the final state (D88, D89, D90 part 4)
         let bal = balance::steady(
             &balance::rates(
@@ -2043,7 +2233,17 @@ pub fn run_steered(
             ),
             iters,
         );
-        lg.line(balance::table("      balance of the final state", &bal, false).trim_end());
+        lg.frame(&crate::logblocks::balance_block(
+            "Balance of the final state",
+            &bal,
+            false,
+        ));
+        lg.frame(&crate::logblocks::run_time(
+            &fl.timings,
+            nc,
+            iters - first,
+            "iterations",
+        ));
         bcsv.push_str(&balance::csv_row(&bal));
         bcsv.push('\n');
         if steer.record.on() {
@@ -2056,7 +2256,7 @@ pub fn run_steered(
             ..Default::default()
         };
         for d in balance::check(&summary, &case.balance) {
-            lg.line(&format!("      warning {}: {}", d.code, d.message));
+            lg.warn(&format!("{}: {}", d.code, d.message));
             steer.event(d.code, iters, &d.message);
             rep.warnings.push(d);
         }
@@ -2072,7 +2272,7 @@ pub fn run_steered(
                 &geo,
                 sol,
                 analytic.as_ref(),
-                &patches,
+                &boundaries,
                 &loc,
                 Some((iters, None)),
             )?;
@@ -2099,7 +2299,7 @@ pub fn run_steered(
             amg_setups: fl.amg_setups,
             errors,
             reference,
-            patches,
+            boundaries,
             mass_imbalance,
             coefficients,
             transient: None,
@@ -2234,9 +2434,7 @@ pub fn run_steered(
         ),
     )?;
     rep.seconds = t0.elapsed().as_secs_f64();
-    for f in &rep.failures {
-        lg.line(&format!("FAILED: {f}"));
-    }
+    end_frames(&mut lg, &rep);
     std::fs::write(out.join("flow.log"), &lg.text)?;
     std::fs::write(out.join("flow.json"), serde_json::to_string_pretty(&rep)?)?;
     std::fs::write(out.join("flow.md"), rep.to_markdown())?;
@@ -2261,22 +2459,20 @@ pub(crate) fn reread_case<F: FnMut(&str)>(
         "iteration"
     };
     let Some(src) = case.source.clone() else {
-        lg.line(&format!("      {what} {n}: no case file to re-read"));
+        lg.note(&format!("{what} {n}: no case file to re-read"));
         return Ok(None);
     };
     match control::reread(&src, case) {
         Ok(rr) => {
             if rr.applied.is_empty() && rr.not_applied.is_empty() {
-                lg.line(&format!(
-                    "      {what} {n}: case file re-read, nothing changed"
-                ));
+                lg.note(&format!("{what} {n}: case file re-read, nothing changed"));
             }
             for l in &rr.applied {
-                lg.line(&format!("      {what} {n}: changed {l}"));
+                lg.note(&format!("{what} {n}: changed {l}"));
             }
             for l in &rr.not_applied {
                 let m = format!("{what} {n}: not applied (cannot change during a run): {l}");
-                lg.line(&format!("      {m}"));
+                lg.warn(&m);
                 steer.event(diag::RUN_NOT_APPLIED, n, &m);
                 warnings.push(diag::Diagnostic::new(diag::RUN_NOT_APPLIED, m));
             }
@@ -2295,7 +2491,7 @@ pub(crate) fn reread_case<F: FnMut(&str)>(
         Err(e) => {
             let m =
                 format!("{what} {n}: the case file was not applied, it does not validate: {e:#}");
-            lg.line(&format!("      {m}"));
+            lg.warn(&m);
             steer.event(diag::RUN_REREAD_INVALID, n, &m);
             warnings.push(diag::Diagnostic::new(diag::RUN_REREAD_INVALID, m));
             Ok(None)
@@ -2303,13 +2499,15 @@ pub(crate) fn reread_case<F: FnMut(&str)>(
     }
 }
 
-pub(crate) fn header<F: FnMut(&str)>(
-    lg: &mut Log<F>,
+/// The files of a steady run: the inputs, the output directory and what
+/// will be written there with its estimated size.
+pub(crate) fn files_frame(
     case: &FlowCase,
     mesh: &Mesh,
     desc: &str,
-    last: bool,
-) {
+    out: &Path,
+) -> crate::console::Frame {
+    use crate::console::size;
     let nc = mesh.n_cells;
     let walls = case
         .boundary
@@ -2317,48 +2515,51 @@ pub(crate) fn header<F: FnMut(&str)>(
         .filter(|(_, b)| matches!(b, BoundaryCondition::Wall { .. }))
         .count();
     let rows = case.solver.max_iterations / case.output.history_every;
-    lg.line(&format!(
-        "Foehncraft {} flow solver (SIMPLEC, steady, laminar)",
-        env!("CARGO_PKG_VERSION")
-    ));
-    lg.line(&format!(
-        "fluid  ρ = {} kg/m³, μ = {} Pa s; convection {}",
-        case.rho(),
-        case.mu(),
-        if case.flow.convection {
-            "on"
-        } else {
-            "off (Stokes)"
-        }
-    ));
-    if last {
-        lg.line(&format!("output for {desc}:"));
-        lg.line(&format!(
-            "  residuals.csv: up to {rows} rows (every {} iterations), about {} kB",
+    let mut f = crate::logblocks::files(case, desc, out);
+    f.push_rule();
+    f.push_kv(
+        "residuals.csv",
+        format!(
+            "up to {rows} rows (every {} iterations), about {}",
             case.output.history_every,
-            rows * 90 / 1000 + 1
-        ));
-        if case.output.vtkhdf {
-            lg.line(&format!(
-                "  fields.vtkhdf: velocity, pressure{} on {nc} cells, about {} MB",
+            size(rows * 90)
+        ),
+    );
+    if case.output.vtkhdf {
+        f.push_kv(
+            "fields.vtkhdf",
+            format!(
+                "velocity, pressure{} on {nc} cells, about {}",
                 if case.analytic.is_some() {
                     ", error"
                 } else {
                     ""
                 },
-                (nc * (8 * 6) + mesh.face_nodes.len() * 8 + mesh.points.len() * 24) / 1_000_000 + 1
-            ));
-        }
-        if case.output.wall_csv && walls > 0 {
-            lg.line(&format!(
-                "  wall_<patch>.csv for {walls} wall(s): pressure and wall shear stress per face"
-            ));
-        }
-        for l in &case.output.lines {
-            lg.line(&format!("  line_{}.csv: {} points", l.name, l.points));
-        }
-        lg.line("  balance.csv, balance.svg, patches.csv, flow.json, flow.md, residuals.svg, case.resolved.toml");
+                size(nc * (8 * 6) + mesh.face_nodes.len() * 8 + mesh.points.len() * 24)
+            ),
+        );
     }
+    if case.output.wall_csv && walls > 0 {
+        f.push_kv(
+            "wall_<boundary>.csv",
+            format!("{walls} wall(s): pressure and wall shear stress per face"),
+        );
+    }
+    for l in &case.output.lines {
+        f.push_kv(
+            &format!("line_{}.csv", l.name),
+            format!("{} points", l.points),
+        );
+    }
+    f.push_kv("flow.md, flow.json", "report and its data");
+    f.push_kv("result.json", "summary for programs (exit code, checks)");
+    f.push_kv("balance.csv, balance.svg", "mass and energy ledger");
+    f.push_kv(
+        "boundaries.csv",
+        "area, mass flow, pressure and force per boundary",
+    );
+    f.push_kv("residuals.svg", "residual history");
+    f
 }
 
 pub(crate) fn error_norms(
@@ -2526,14 +2727,14 @@ pub(crate) fn wall_face_values(
     (p, fv, tau)
 }
 
-pub(crate) fn patch_summaries(
+pub(crate) fn boundary_summaries(
     fl: &Solution,
     mesh: &Mesh,
     geo: &Geometry,
     case: &FlowCase,
-) -> Vec<PatchSummary> {
+) -> Vec<BoundarySummary> {
     let ni = mesh.n_interior_faces();
-    mesh.patches
+    mesh.boundaries
         .iter()
         .map(|p| {
             let bc = &case.boundary[&p.name];
@@ -2555,7 +2756,7 @@ pub(crate) fn patch_summaries(
                     force[i] += pf * s[i] + fv[i];
                 }
             }
-            PatchSummary {
+            BoundarySummary {
                 name: p.name.clone(),
                 kind: bc.type_name().into(),
                 area,
@@ -2575,20 +2776,20 @@ pub(crate) fn write_outputs(
     geo: &Geometry,
     fl: &Solution,
     analytic: Option<&Analytic>,
-    patches: &[PatchSummary],
+    boundaries: &[BoundarySummary],
     loc: &Locator,
     at: Option<(usize, Option<f64>)>,
 ) -> Result<()> {
     let name = case_name(case);
     let mut csv = csv_preamble(
-        "patches",
+        "boundaries",
         &name,
         at,
-        "patch -, type -, area m², mass_flow kg/s (out of the domain), mean_pressure Pa, \
+        "boundary -, type -, area m², mass_flow kg/s (out of the domain), mean_pressure Pa, \
          force_x force_y force_z N",
     );
-    csv.push_str("patch,type,area,mass_flow,mean_pressure,force_x,force_y,force_z\n");
-    for p in patches {
+    csv.push_str("boundary,type,area,mass_flow,mean_pressure,force_x,force_y,force_z\n");
+    for p in boundaries {
         let _ = writeln!(
             csv,
             "{},{},{:e},{:e},{:e},{:e},{:e},{:e}",
@@ -2602,10 +2803,10 @@ pub(crate) fn write_outputs(
             p.force[2]
         );
     }
-    std::fs::write(out.join("patches.csv"), csv)?;
+    std::fs::write(out.join("boundaries.csv"), csv)?;
     let ni = mesh.n_interior_faces();
     if case.output.wall_csv {
-        for p in &mesh.patches {
+        for p in &mesh.boundaries {
             if !matches!(case.boundary[&p.name], BoundaryCondition::Wall { .. }) {
                 continue;
             }
@@ -3069,9 +3270,9 @@ impl FlowReport {
         if let Some(v) = self.solves.last() {
             let _ = writeln!(
                 s,
-                "\n| Patch | Type | Mass flow (kg/s) | Mean pressure (Pa) | Force (N) |\n|---|---|---|---|---|"
+                "\n| Boundary | Type | Mass flow (kg/s) | Mean pressure (Pa) | Force (N) |\n|---|---|---|---|---|"
             );
-            for p in &v.patches {
+            for p in &v.boundaries {
                 let _ = writeln!(
                     s,
                     "| {} | {} | {:.6e} | {:.6e} | [{:.4e}, {:.4e}, {:.4e}] |",

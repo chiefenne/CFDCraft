@@ -4,7 +4,7 @@
 //!
 //! with a prescribed, constant velocity u (so the discrete mass fluxes are
 //! conservative to round-off on every mesh), constant ρ and Γ, a source s and
-//! a boundary condition per patch. A manufactured solution (Roache 2002)
+//! a boundary condition per boundary. A manufactured solution (Roache 2002)
 //! supplies s and the boundary values of the order-of-accuracy tests.
 
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ pub enum BoundaryKind {
     ZeroGradient,
 }
 
-/// Values of a boundary condition over the patch.
+/// Values of a boundary condition over the boundary.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Profile {
     /// One value.
@@ -55,7 +55,7 @@ pub enum Profile {
     Manufactured,
 }
 
-/// Boundary condition of one patch. In the case file a flat table:
+/// Boundary condition of one boundary. In the case file a flat table:
 /// `type`, `profile` (`constant`, `step`, `linear`, `manufactured`) and the
 /// keys of the profile (`value`; `axis`, `at`, `below`, `above`;
 /// `value`, `gradient`).
@@ -330,7 +330,7 @@ pub struct Problem {
     /// Manufactured solution: sets the source and the `manufactured`
     /// boundary values, and the error norms of the report.
     pub manufactured: Option<Manufactured>,
-    /// Boundary condition per patch name.
+    /// Boundary condition per boundary name.
     pub boundary: BTreeMap<String, Boundary>,
 }
 
@@ -357,7 +357,7 @@ impl Problem {
     }
 
     /// A manufactured-solution problem with fixed values on the given
-    /// patches and zero gradient (symmetry) on the others; with `planar` the
+    /// boundaries and zero gradient (symmetry) on the others; with `planar` the
     /// solution has no z dependence.
     pub fn manufactured(fixed: &[&str], symmetric: &[&str], planar: bool) -> Self {
         let m = if planar {

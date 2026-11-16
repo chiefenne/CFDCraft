@@ -12,6 +12,8 @@
 # exact solution on all six patches. The run fails if the order on the
 # finest pair is outside 1.8–2.2.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "poly"
 cells = [4, 4, 4]

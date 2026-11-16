@@ -1,7 +1,7 @@
 """Reads Foehncraft VTKHDF files with VTK's own reader (the reader ParaView
 uses) and checks them:
 
-- the file loads, with the block `internal` and one block per patch;
+- the file loads, with the block `internal` and one block per boundary;
 - the cell volumes agree with the field `volume` written by Foehncraft. For
   standard cells VTK's own cell volumes are used (this checks the node order
   of tetrahedra, hexahedra, prisms and pyramids); for polyhedra the volume is
@@ -43,7 +43,7 @@ def check(path):
     grid = out.GetPartitionedDataSet(names.index("internal")).GetPartition(0)
     n = grid.GetNumberOfCells()
     types = np.array([grid.GetCellType(i) for i in range(n)])
-    msg = f"{path}: {n} cells, {len(names) - 1} patches"
+    msg = f"{path}: {n} cells, {len(names) - 1} boundaries"
     ours = grid.GetCellData().GetArray("volume")
     # Volumes are compared only where Foehncraft wrote them (the mesh files);
     # computing them for a field file without `volume` checked nothing and

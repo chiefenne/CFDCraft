@@ -10,6 +10,8 @@
 # the smallest steps is outside 1.8–2.2 (stage 5 acceptance: order 2 also at
 # CFL 10 with outer correctors converged per step).
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "hex"
 dimension = 2
@@ -47,7 +49,9 @@ type = "taylor-green"    # U = 1 m/s, period L = 1 m
 [solver]
 outer_iterations = 200
 outer_tolerance = 1e-9
-relaxation_velocity = 0.9
+
+[solver.momentum]
+relaxation = 0.9
 
 [time]
 scheme = "bdf2"

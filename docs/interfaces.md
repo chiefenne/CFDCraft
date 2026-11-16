@@ -60,13 +60,13 @@ The limits may change during a run (a re-read of the case file, D40).
 
 | File | Format | Contents |
 |---|---|---|
-| `result.json` | `foehncraft.result` | The result summary (D62): status, exit code, stop, overrides, provenance, diagnostics, one entry per solve (mesh hash, iterations, residuals, mass imbalance, patches, coefficients, errors, transient summary), observed orders, the discretisation uncertainty of a sweep of three or more meshes or time steps (`uncertainty`, D67: per quantity the values, ratios, order, extrapolated value, band, GCI and verdict), and the output files with sizes and SHA-256 hashes. No timings: two identical runs give the same bytes. |
+| `result.json` | `foehncraft.result` | The result summary (D62): status, exit code, stop, overrides, provenance, diagnostics, one entry per solve (mesh hash, iterations, residuals, mass imbalance, boundaries, coefficients, errors, transient summary), observed orders, the discretisation uncertainty of a sweep of three or more meshes or time steps (`uncertainty`, D67: per quantity the values, ratios, order, extrapolated value, band, GCI and verdict), and the output files with sizes and SHA-256 hashes. No timings: two identical runs give the same bytes. |
 | `run.jsonl` | `foehncraft.run_record` | The run record (D69), one JSON object per line, flushed at every log line, so it can be followed while the run goes on (`tail -f`). |
 | `flow.log`, `flow.md`, `flow.json` | | The log and the report for people, with timings. |
-| `fields.vtkhdf`, `fields_N.vtkhdf` | VTKHDF 2.x | Fields, with the root attributes `foehncraft_format`, `foehncraft_format_version`, `foehncraft_version`, `case`, `units` and `step`/`time` or `iteration`. The derived fields of `[output] derived` (D72) are cell datasets of the `internal` block; the wall shear stress and y⁺ are cell datasets of the patch blocks (one value per boundary face, zero off walls). `units` names every dataset. |
+| `fields.vtkhdf`, `fields_N.vtkhdf` | VTKHDF 2.x | Fields, with the root attributes `foehncraft_format`, `foehncraft_format_version`, `foehncraft_version`, `case`, `units` and `step`/`time` or `iteration`. The derived fields of `[output] derived` (D72) are cell datasets of the `internal` block; the wall shear stress and y⁺ are cell datasets of the boundary blocks (one value per boundary face, zero off walls). `units` names every dataset. |
 | `derived.vtkhdf`, `derived_N.vtkhdf` | VTKHDF 2.x | Written by `foehn post derive`; the same layout and attributes as `fields.vtkhdf`. |
 | `restart.h5` | Foehncraft restart | With `foehncraft_version` and `units`; transient files carry the attribute `dt_prev2` (the step before the last; read as 0 from older files) and, with the error estimate of the time step (D65), the datasets `u_old2_x`, `u_old2_y`, `u_old2_z`, and with a convective outlet (D29) the old boundary velocity `ub_old_x`, `ub_old_y`, `ub_old_z`; optional datasets `point_id`, `points_x`, `points_y`, `points_z` and `volume_<k>` for meshes that move (D91), left out for fixed meshes. |
-| `*.csv` | `foehncraft-<kind>` | Residuals, history, forces, probes, patches, wall and line data, each with a comment preamble (below). |
+| `*.csv` | `foehncraft-<kind>` | Residuals, history, forces, probes, boundaries, wall and line data, each with a comment preamble (below). |
 | `balance.csv` | `foehncraft-balance` | The conservation ledger (D88, D89, below): one row per time step (every `output.history_every`) or per balance table of a steady run and its final state. |
 | `balance.svg` | SVG | Bars of the kinetic-energy terms at the end: of the final state (steady, W) or over the run (transient, J). `tools/plot/balance_chart.py` draws the time histories of a transient `balance.csv`. |
 | `case.read_toml_N.toml` | TOML | The settings in force after a re-read (D40). |
@@ -114,13 +114,13 @@ without object timestamps. Dates (in reports and in `run.jsonl`) come from
 ## Conservation ledger (D88, D89, D90 part 4)
 
 Every run books mass and kinetic energy. Per quantity: the storage (time
-derivative of the integral over the domain), the boundary terms per patch,
+derivative of the integral over the domain), the boundary terms per boundary,
 the volume sources, and the imbalance, relative to the largest term:
 
 | Term | Mass (kg/s) | Kinetic energy (W) |
 |---|---|---|
 | storage | 0 (constant density) | (Kⁿ⁺¹ − Kⁿ)/Δt, K = ∫ ½ρ\|u\|² dV |
-| boundary, per patch | mass flow out | viscous work in, Σ (μ∇u·S)·u_b; convected out, Σ ṁ ½\|u_b\|²; pressure work out, Σ p_b u_b·S |
+| boundary, per boundary | mass flow out | viscous work in, Σ (μ∇u·S)·u_b; convected out, Σ ṁ ½\|u_b\|²; pressure work out, Σ p_b u_b·S |
 | sources | | body force, ∫ f·u dV |
 | sinks | | viscous dissipation of the discrete viscous operator (converges to ∫ μ∇u:∇u dV) |
 | imbalance | net outflow | numerical dissipation = boundary + sources − viscous dissipation − storage |
@@ -149,7 +149,7 @@ then `mass_outflow,mass_relative,kinetic_energy,storage,boundary_power,
 body_force_power,viscous_dissipation,numerical_dissipation,numerical_relative,
 pressure_dissipation,scheme_dissipation`.
 `result.json` carries per solve `balance`: `last` (the final state or the
-last step, with the terms per patch), `run` (transient), `steps`,
+last step, with the terms per boundary), `run` (transient), `steps`,
 `negative_steps` (steps whose numerical dissipation is below
 −`tolerance_energy`:
 a health number, not an error) and `largest_mass_relative`.
@@ -220,7 +220,7 @@ A diagnostic is an object:
 }
 ```
 
-`key` is the case key (`section.key`), `boundary` the patch of a
+`key` is the case key (`section.key`), `boundary` the boundary of a
 boundary-condition finding, `location` line and column in the case file
 (for syntax errors and unknown keys), and `fix` a list of `--set`
 arguments that resolve it, where one exists (`{"set": ["time.adaptive=false"]}`).
@@ -237,8 +237,8 @@ A code keeps its meaning; a retired code stays in the table.
 | `CASE007` | error | A path outside the read roots or the write roots (D82). |
 | `CASE008` | error | A `--set key=value` that cannot be applied. |
 | `CASE009` | error | A key that the case needs is missing. |
-| `BC001` | error | A mesh patch without a boundary condition. |
-| `BC002` | error | A boundary condition for a patch the mesh does not have. |
+| `BC001` | error | A mesh boundary without a boundary condition. |
+| `BC002` | error | A boundary condition for a boundary the mesh does not have. |
 | `BC003` | error | A condition that a later stage brings. |
 | `BC004` | error | A velocity inlet with none or more than one of `velocity`, `normal_velocity` and `profile`. |
 | `BC005` | error | `profile = "analytic"` without an `[analytic]` table. |
@@ -249,7 +249,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `BC010` | warning | A wall velocity with a component normal to the wall. |
 | `BC011` | note | The exact solution leaves the domain through a velocity inlet. |
 | `BC012` | warning | A velocity inlet whose velocity points out of the domain. |
-| `BC013` | warning | A symmetry patch that is not planar. |
+| `BC013` | warning | A symmetry boundary that is not planar. |
 | `BC014` | error | A net mass flow through the prescribed boundaries and no pressure boundary to balance it. |
 | `BC015` | note | No pressure boundary: the pressure level is fixed in the reference cell. |
 | `BC016` | error | A flow path whose flow rate is over-specified. |
@@ -259,13 +259,13 @@ A code keeps its meaning; a retired code stays in the table.
 | `BC020` | warning | Faces of a table inlet outside the range of the table (they take the end values). |
 | `BC021` | error | A convective outlet in a steady case. |
 | `BC022` | error | A convective outlet without `convection_velocity` and no prescribed inflow to take it from. |
-| `BC023` | error | Wedge patches that do not form one wedge about an axis. |
+| `BC023` | error | Wedge boundaries that do not form one wedge about an axis. |
 | `BC024` | warning | A wedge wider than 10° (the axisymmetric error grows with the angle). |
 | `BC025` | error | A potential-flow start with a convective outlet and no pressure boundary. |
 | `BC026` | error | Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure). |
 | `EXPR001` | error | An expression that cannot be parsed. |
 | `EXPR002` | error | An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint). |
-| `EXPR003` | error | An expression that uses a variable its key does not take (`t` in a steady case or in a property, x, y, z in a value for a whole patch). |
+| `EXPR003` | error | An expression that uses a variable its key does not take (`t` in a steady case or in a property, x, y, z in a value for a whole boundary). |
 | `EXPR004` | error | A `[tables]` entry that is missing, unreadable or not a valid table. |
 | `EXPR005` | error | An expression or constant whose value is not finite where it is evaluated. |
 | `MAT001` | error | A material that neither the case nor the database defines (with the nearest name as a hint). |

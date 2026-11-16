@@ -77,7 +77,7 @@ def main(argv):
     rows = Study(base, variants, out).run()
     results = []
     for a, r in zip(GRADIENTS, rows):
-        tau = r["patches.ymin.force.0"] / r["patches.ymin.area"]
+        tau = r["boundaries.ymin.force.0"] / r["boundaries.ymin.area"]
         results.append({"a": a, "tau": tau})
         print(
             f"a = {a:5.1f}  {r['status']:<9}  τ_w {tau:.6f} Pa, exact {exact_shear(a):.6f} "

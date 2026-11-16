@@ -1,7 +1,7 @@
 //! Boundary conditions of the incompressible flow solver (D29) and the check
 //! of their combination before a run (D30).
 //!
-//! Every patch of the mesh takes one condition, `[boundary.<patch>]` with a
+//! Every boundary of the mesh takes one condition, `[boundary.<boundary>]` with a
 //! `type`:
 //!
 //! | type | velocity | pressure | mass flux |
@@ -59,7 +59,7 @@ pub enum InletProfile {
     /// the time of the step in a transient case).
     Analytic,
     /// A parabola normal to the face, u_n = U_max Π_a 4 η_a (1 − η_a) with
-    /// η_a = (x_a − x_a,min)/(x_a,max − x_a,min) over the patch extent along
+    /// η_a = (x_a − x_a,min)/(x_a,max − x_a,min) over the boundary extent along
     /// each axis a of `profile_axes` (developed laminar inflow; two axes for
     /// a duct).
     Parabolic,
@@ -236,11 +236,11 @@ pub enum Axis {
     Z,
 }
 
-/// Bounding box of the nodes of a patch.
+/// Bounding box of the nodes of a boundary.
 pub type Extent = ([f64; 3], [f64; 3]);
 
-/// The bounding box of the nodes of patch `p`.
-pub fn patch_extent(mesh: &Mesh, p: &foehncraft_mesh::Patch) -> Extent {
+/// The bounding box of the nodes of boundary `p`.
+pub fn boundary_extent(mesh: &Mesh, p: &foehncraft_mesh::Boundary) -> Extent {
     let mut lo = [f64::INFINITY; 3];
     let mut hi = [f64::NEG_INFINITY; 3];
     for f in p.range() {
@@ -283,7 +283,7 @@ impl InletTurbulence {
     }
 }
 
-/// One boundary condition, `[boundary.<patch>]`.
+/// One boundary condition, `[boundary.<boundary>]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum BoundaryCondition {
@@ -441,7 +441,7 @@ pub enum BoundaryCondition {
     Wedge,
     /// Periodic pair (stage 6).
     Periodic {
-        /// The partner patch.
+        /// The partner boundary.
         #[serde(default)]
         partner: Option<String>,
     },
@@ -630,7 +630,7 @@ impl Values {
     }
 }
 
-/// The compiled values of every condition, by patch.
+/// The compiled values of every condition, by boundary.
 pub type Compiled = BTreeMap<String, Values>;
 
 /// Where and when the conditions are evaluated: the exact solution, the
@@ -657,8 +657,8 @@ impl<'a> At<'a> {
         }
     }
 
-    fn of(&self, patch: &str) -> Option<&'a Values> {
-        self.values.get(patch)
+    fn of(&self, boundary: &str) -> Option<&'a Values> {
+        self.values.get(boundary)
     }
 }
 
@@ -676,13 +676,13 @@ fn vval(s: &Vector, v: Option<&[Value; 3]>, x: [f64; 3], t: f64) -> [f64; 3] {
 }
 
 impl BoundaryCondition {
-    /// Compiles the numbers and expressions of the condition of `patch`
+    /// Compiles the numbers and expressions of the condition of `boundary`
     /// (D53): a transient case allows `t`; a mass flow is one number for
-    /// the patch (only `t`).
-    pub fn compile(&self, patch: &str, env: &Env, transient: bool) -> Result<Values> {
+    /// the boundary (only `t`).
+    pub fn compile(&self, boundary: &str, env: &Env, transient: bool) -> Result<Values> {
         let field = if transient { Vars::ALL } else { Vars::SPACE };
-        let patch_total = if transient { Vars::T } else { Vars::NONE };
-        let key = |k: &str| format!("boundary.{patch}.{k}");
+        let boundary_total = if transient { Vars::T } else { Vars::NONE };
+        let key = |k: &str| format!("boundary.{boundary}.{k}");
         let one = |s: &Scalar, k: &str, a: Vars| crate::expr::value(s, env, a, &key(k));
         let mut v = Values::default();
         match self {
@@ -713,7 +713,7 @@ impl BoundaryCondition {
                 }
             }
             BoundaryCondition::MassFlowInlet { mass_flow, .. } => {
-                v.mass_flow = Some(one(mass_flow, "mass_flow", patch_total)?);
+                v.mass_flow = Some(one(mass_flow, "mass_flow", boundary_total)?);
             }
             BoundaryCondition::StaticPressureInlet { pressure, .. }
             | BoundaryCondition::StaticPressureOutlet { pressure, .. } => {
@@ -807,7 +807,7 @@ pub struct Finding {
     /// Diagnostic code (D78).
     pub code: &'static str,
     /// The boundary it concerns, if one.
-    pub patch: Option<String>,
+    pub boundary: Option<String>,
     /// What is wrong and what to change.
     pub message: String,
 }
@@ -821,7 +821,7 @@ impl Finding {
                 Level::Warning => diag::Severity::Warning,
                 Level::Error => diag::Severity::Error,
             });
-        if let Some(p) = &self.patch {
+        if let Some(p) = &self.boundary {
             d = d.boundary(p.clone()).key(format!("boundary.{p}"));
         }
         d
@@ -835,7 +835,7 @@ impl fmt::Display for Finding {
             Level::Warning => "warning",
             Level::Error => "error",
         };
-        match &self.patch {
+        match &self.boundary {
             Some(p) => write!(f, "{l} {}: boundary `{p}`: {}", self.code, self.message),
             None => write!(f, "{l} {}: {}", self.code, self.message),
         }
@@ -878,7 +878,7 @@ fn hint(word: &str, candidates: &[&str]) -> String {
     }
 }
 
-/// Mass flow (kg/s) out of the domain through the faces of every patch whose
+/// Mass flow (kg/s) out of the domain through the faces of every boundary whose
 /// condition prescribes the flux, for the initial velocity of the
 /// conditions (walls and symmetry planes give 0).
 fn prescribed_outflow(
@@ -890,10 +890,10 @@ fn prescribed_outflow(
 ) -> (BTreeMap<String, f64>, f64) {
     let mut out = BTreeMap::new();
     let mut gross = 0.0;
-    for p in &mesh.patches {
+    for p in &mesh.boundaries {
         let Some(bc) = bcs.get(&p.name) else { continue };
         let area: f64 = p.range().map(|f| norm(geo.face_area[f])).sum();
-        let ext = patch_extent(mesh, p);
+        let ext = boundary_extent(mesh, p);
         let q = match bc {
             BoundaryCondition::VelocityInlet { .. } => p
                 .range()
@@ -931,7 +931,7 @@ fn prescribed_outflow(
     (out, gross)
 }
 
-/// The prescribed velocity of face `f` of a velocity inlet whose patch has
+/// The prescribed velocity of face `f` of a velocity inlet whose boundary has
 /// the extent `ext` (None for other conditions).
 pub fn inlet_velocity(
     bc: &BoundaryCondition,
@@ -1025,11 +1025,11 @@ pub fn table_position(
     })
 }
 
-/// The plane of a planar patch: unit normal and a point, if every face
+/// The plane of a planar boundary: unit normal and a point, if every face
 /// normal agrees with the first to `tol` (the distance of their tips).
-fn patch_plane(
+fn boundary_plane(
     geo: &Geometry,
-    p: &foehncraft_mesh::Patch,
+    p: &foehncraft_mesh::Boundary,
     tol: f64,
 ) -> Option<([f64; 3], [f64; 3])> {
     if p.len == 0 {
@@ -1069,17 +1069,17 @@ pub fn check(
     let analytic = at.analytic;
     let laminar = ctx.laminar;
     let mut out = Vec::new();
-    let mut push = |level, code, patch: Option<&str>, message: String| {
+    let mut push = |level, code, boundary: Option<&str>, message: String| {
         out.push(Finding {
             level,
             code,
-            patch: patch.map(str::to_string),
+            boundary: boundary.map(str::to_string),
             message,
         })
     };
-    let names: Vec<&str> = mesh.patches.iter().map(|p| p.name.as_str()).collect();
-    // every patch has a condition and every condition a patch
-    for p in &mesh.patches {
+    let names: Vec<&str> = mesh.boundaries.iter().map(|p| p.name.as_str()).collect();
+    // every boundary has a condition and every condition a boundary
+    for p in &mesh.boundaries {
         if !bcs.contains_key(&p.name) {
             push(
                 Level::Error,
@@ -1096,13 +1096,13 @@ pub fn check(
         }
     }
     for name in bcs.keys() {
-        if mesh.patch(name).is_none() {
+        if mesh.boundary(name).is_none() {
             push(
                 Level::Error,
-                diag::BC_NO_PATCH,
+                diag::BC_NO_BOUNDARY,
                 Some(name),
                 format!(
-                    "the mesh has no such patch{}; its patches are {}",
+                    "the mesh has no such boundary{}; its boundaries are {}",
                     hint(name, &names),
                     names.join(", ")
                 ),
@@ -1110,7 +1110,7 @@ pub fn check(
         }
     }
     let present: Vec<(&str, &BoundaryCondition)> = mesh
-        .patches
+        .boundaries
         .iter()
         .filter_map(|p| bcs.get(&p.name).map(|b| (p.name.as_str(), b)))
         .collect();
@@ -1269,7 +1269,7 @@ pub fn check(
     }
     // wall velocity normal to the wall, velocity inlets with outflow,
     // non-planar symmetry planes
-    for p in &mesh.patches {
+    for p in &mesh.boundaries {
         let Some(bc) = bcs.get(&p.name) else { continue };
         match bc {
             BoundaryCondition::Wall { .. }
@@ -1334,7 +1334,7 @@ pub fn check(
         }
         match bc {
             BoundaryCondition::VelocityInlet { profile, .. } => {
-                let ext = patch_extent(mesh, p);
+                let ext = boundary_extent(mesh, p);
                 let out_faces = p
                     .range()
                     .filter(|&f| {
@@ -1385,7 +1385,7 @@ pub fn check(
                         diag::BC_SYMMETRY_NOT_PLANAR,
                         Some(&p.name),
                         format!(
-                            "the symmetry patch is not planar (normals differ by up to {:.2}°); \
+                            "the symmetry boundary is not planar (normals differ by up to {:.2}°); \
                              the condition is applied face by face",
                             2.0 * (worst / 2.0).asin().to_degrees()
                         ),
@@ -1397,21 +1397,23 @@ pub fn check(
     }
     // the wedge planes of an axisymmetric case: two planes that meet in
     // the axis
-    let wedges: Vec<&foehncraft_mesh::Patch> = mesh
-        .patches
+    let wedges: Vec<&foehncraft_mesh::Boundary> = mesh
+        .boundaries
         .iter()
         .filter(|p| matches!(bcs.get(&p.name), Some(BoundaryCondition::Wedge)))
         .collect();
     if !wedges.is_empty() {
-        let planes: Vec<Option<([f64; 3], [f64; 3])>> =
-            wedges.iter().map(|p| patch_plane(geo, p, 1e-6)).collect();
+        let planes: Vec<Option<([f64; 3], [f64; 3])>> = wedges
+            .iter()
+            .map(|p| boundary_plane(geo, p, 1e-6))
+            .collect();
         if wedges.len() != 2 {
             push(
                 Level::Error,
                 diag::BC_WEDGE,
                 Some(&wedges[0].name),
                 format!(
-                    "{} wedge patch(es); an axisymmetric wedge has exactly two side planes \
+                    "{} wedge boundary(es); an axisymmetric wedge has exactly two side planes \
                      (the other boundaries are walls, inlets, outlets or symmetry planes)",
                     wedges.len()
                 ),
@@ -1451,7 +1453,7 @@ pub fn check(
                         Level::Error,
                         diag::BC_WEDGE,
                         Some(&p.name),
-                        "the wedge patch is not planar; each side plane of a wedge mesh is one \
+                        "the wedge boundary is not planar; each side plane of a wedge mesh is one \
                          plane through the axis"
                             .into(),
                     );
@@ -1673,19 +1675,19 @@ pub struct BoundaryArrays {
     pub ub: [Vec<f64>; 3],
     /// Prescribed pressure or total pressure.
     pub pset: Vec<f64>,
-    /// Patch of each boundary face.
-    pub patch: Vec<u32>,
+    /// Boundary of each boundary face.
+    pub boundary: Vec<u32>,
     /// 1 where the velocity has a zero normal gradient in the least-squares
     /// gradient (outlets), else 0 (the face value enters).
     pub u_zero_gradient: Vec<f64>,
     /// 1 where the pressure has a zero normal gradient in the least-squares
     /// gradient (walls, symmetry planes), else 0.
     pub p_zero_gradient: Vec<f64>,
-    /// Stencil point of the velocity gradient per patch: `ZeroGradient` for
+    /// Stencil point of the velocity gradient per boundary: `ZeroGradient` for
     /// the normal projection of the face centroid (outlets, symmetry
     /// planes), `FixedValue` for the face centroid.
     pub u_points: BTreeMap<String, foehncraft_fv::problem::BoundaryKind>,
-    /// Stencil point of the pressure gradient per patch (`ZeroGradient` at
+    /// Stencil point of the pressure gradient per boundary (`ZeroGradient` at
     /// walls and symmetry planes).
     pub p_points: BTreeMap<String, foehncraft_fv::problem::BoundaryKind>,
     /// Convection velocity U_c (m/s) of the faces of convective outlets
@@ -1719,7 +1721,7 @@ pub fn arrays(
         pb_rule: vec![PB_EXTRAPOLATE; nb],
         ub: [vec![0.0; nb], vec![0.0; nb], vec![0.0; nb]],
         pset: vec![0.0; nb],
-        patch: vec![0; nb],
+        boundary: vec![0; nb],
         u_zero_gradient: vec![0.0; nb],
         p_zero_gradient: vec![0.0; nb],
         u_points: BTreeMap::new(),
@@ -1727,12 +1729,12 @@ pub fn arrays(
         convection: vec![0.0; nb],
     };
     use foehncraft_fv::problem::BoundaryKind as K;
-    for (pi, p) in mesh.patches.iter().enumerate() {
+    for (pi, p) in mesh.boundaries.iter().enumerate() {
         let bc = bcs
             .get(&p.name)
             .ok_or_else(|| anyhow::anyhow!("no boundary condition for `{}`", p.name))?;
         let area: f64 = p.range().map(|f| norm(geo.face_area[f])).sum();
-        let ext = patch_extent(mesh, p);
+        let ext = boundary_extent(mesh, p);
         let outlet = bc.is_pressure_outlet();
         let wall_like = bc.is_symmetry_like()
             || matches!(
@@ -1758,7 +1760,7 @@ pub fn arrays(
         );
         for f in p.range() {
             let fb = f - ni;
-            a.patch[fb] = pi as u32;
+            a.boundary[fb] = pi as u32;
             a.u_zero_gradient[fb] = if outlet { 1.0 } else { 0.0 };
             a.p_zero_gradient[fb] = if wall_like { 1.0 } else { 0.0 };
             let s = geo.face_area[f];

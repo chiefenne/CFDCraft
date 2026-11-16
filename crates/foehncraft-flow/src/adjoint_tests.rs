@@ -172,7 +172,7 @@ fn transposed_products_do_not_depend_on_the_threads() {
 fn the_linear_solvers_solve_the_transposed_systems() {
     let mut fl = cavity(None);
     let nc = fl.disc.n_cells;
-    let amg = fl.settings.amg.clone();
+    let amg = fl.settings.pressure.amg.clone();
     let cases = [
         (fl.w.pval, Preconditioner::Amg, true),
         (fl.w.val, Preconditioner::Jacobi, false),

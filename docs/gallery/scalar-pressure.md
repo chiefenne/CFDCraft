@@ -19,7 +19,7 @@ Part of the [Example gallery](../gallery.md): convection–diffusion order of ac
 Steady convection–diffusion of a scalar with a manufactured solution
 (Roache 2002) on perturbed polyhedral meshes: φ = 1 + sin(πx + 0.5)
 cos(πy + 0.3) cos(πz/2 + 0.2), u = (1, 0.6, 0.3) m/s, Γ = 0.2 kg/(m s),
-fixed values of the exact solution on all six patches. The operators of
+fixed values of the exact solution on all six boundaries. The operators of
 stage 2 at work: weighted least-squares gradients, linear upwind as a
 deferred correction, diffusion with the over-relaxed non-orthogonal
 correction, gather-based assembly into a sliced-ELL matrix, BiCGStab with

@@ -27,10 +27,10 @@ fn check(name: &str, volume: f64) -> (gmsh::GmshMesh, QualityReport) {
         "{name}"
     );
     eprintln!(
-        "{name}: {} {:?} patches {:?} zones {:?} warnings {:?}",
+        "{name}: {} {:?} boundaries {:?} zones {:?} warnings {:?}",
         g.format,
         q.shapes,
-        q.patches.iter().map(|p| (&p.0, p.1)).collect::<Vec<_>>(),
+        q.boundaries.iter().map(|p| (&p.0, p.1)).collect::<Vec<_>>(),
         g.mesh.zones,
         g.warnings
     );
@@ -50,10 +50,10 @@ fn box_tet_ascii_and_binary_are_equal() {
     }
     assert_eq!(a.mesh.face_nodes, b.mesh.face_nodes);
     assert_eq!(a.mesh.owner, b.mesh.owner);
-    let names: Vec<&str> = a.mesh.patches.iter().map(|p| p.name.as_str()).collect();
+    let names: Vec<&str> = a.mesh.boundaries.iter().map(|p| p.name.as_str()).collect();
     for n in ["xmin", "xmax", "ymin", "ymax", "zmin", "zmax"] {
         assert!(names.contains(&n), "{names:?}");
-        let area = qa.patches.iter().find(|p| p.0 == n).unwrap().2;
+        let area = qa.boundaries.iter().find(|p| p.0 == n).unwrap().2;
         assert!((area - 1.0).abs() < 1e-12);
     }
     assert_eq!(a.mesh.zones, vec!["fluid".to_string()]);
@@ -70,7 +70,7 @@ fn channel_with_zones_prisms_and_periodic_link() {
     assert!(q.shapes.iter().any(|s| s.0 == "prisms"));
     assert_eq!(a.periodic.len(), b.periodic.len());
     assert!(a.periodic.iter().any(|p| p.dim == 2 && !p.nodes.is_empty()));
-    let names: Vec<&str> = a.mesh.patches.iter().map(|p| p.name.as_str()).collect();
+    let names: Vec<&str> = a.mesh.boundaries.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, ["back", "front", "inlet", "outlet", "walls"]);
 }
 
@@ -80,7 +80,7 @@ fn pyramids_and_unnamed_surfaces() {
     assert!(q.shapes.iter().any(|s| s.0 == "pyramids"), "{:?}", q.shapes);
     assert!(
         g.mesh
-            .patches
+            .boundaries
             .iter()
             .all(|p| p.name.starts_with("surface_"))
     );

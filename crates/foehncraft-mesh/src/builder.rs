@@ -1,7 +1,7 @@
 //! Assembling a [`Mesh`] from faces or from cells.
 //!
 //! - [`MeshBuilder`]: faces are given with their cells (interior) or with
-//!   their patch (boundary); the builder orders them into the layout of
+//!   their boundary (boundary); the builder orders them into the layout of
 //!   [`Mesh`].
 //! - [`CellSoup`]: cells are given as closed sets of polygons; faces shared
 //!   by two cells are found by their node sets. A quadrilateral that meets two
@@ -11,7 +11,7 @@
 //!   unmatched are boundary faces, named by a classification function.
 
 use crate::geometry::{add, polygon_area_centroid, sub};
-use crate::mesh::{Mesh, Patch};
+use crate::mesh::{Boundary, Mesh};
 use std::collections::HashMap;
 
 const NONE: u32 = u32::MAX;
@@ -25,8 +25,8 @@ pub struct MeshBuilder {
     nodes: Vec<u32>,
     a: Vec<u32>,
     b: Vec<u32>,
-    patch: Vec<u32>,
-    patch_names: Vec<String>,
+    boundary: Vec<u32>,
+    boundary_names: Vec<String>,
     cell_zone: Vec<u32>,
     zones: Vec<String>,
 }
@@ -44,14 +44,14 @@ impl MeshBuilder {
         }
     }
 
-    /// Declares a patch, so that patches appear in the order of declaration
+    /// Declares a boundary, so that boundaries appear in the order of declaration
     /// (also when empty). Returns its index.
-    pub fn declare_patch(&mut self, name: &str) -> u32 {
-        if let Some(i) = self.patch_names.iter().position(|p| p == name) {
+    pub fn declare_boundary(&mut self, name: &str) -> u32 {
+        if let Some(i) = self.boundary_names.iter().position(|p| p == name) {
             return i as u32;
         }
-        self.patch_names.push(name.to_string());
-        (self.patch_names.len() - 1) as u32
+        self.boundary_names.push(name.to_string());
+        (self.boundary_names.len() - 1) as u32
     }
 
     /// Sets the cell zones (names and one zone index per cell).
@@ -69,18 +69,18 @@ impl MeshBuilder {
         self.ptr.push(self.nodes.len() as u32);
         self.a.push(from);
         self.b.push(to);
-        self.patch.push(NONE);
+        self.boundary.push(NONE);
     }
 
-    /// Boundary face of `cell` in patch `name`; the normal points out of the
+    /// Boundary face of `cell` in boundary `name`; the normal points out of the
     /// domain.
     pub fn add_boundary(&mut self, nodes: &[u32], cell: u32, name: &str) {
-        let p = self.declare_patch(name);
+        let p = self.declare_boundary(name);
         self.nodes.extend_from_slice(nodes);
         self.ptr.push(self.nodes.len() as u32);
         self.a.push(cell);
         self.b.push(NONE);
-        self.patch.push(p);
+        self.boundary.push(p);
     }
 
     /// Orders the faces and builds the mesh. Identities are the positions
@@ -94,14 +94,14 @@ impl MeshBuilder {
     pub fn finish_with_order(self) -> Result<(Mesh, Vec<u32>), String> {
         let nf = self.a.len();
         // sort key: interior faces by (owner, neighbour), then boundary
-        // faces by (patch, owner); ties keep insertion order
+        // faces by (boundary, owner); ties keep insertion order
         let mut order: Vec<u32> = (0..nf as u32).collect();
         let key = |f: usize| -> (u32, u32, u32) {
-            if self.patch[f] == NONE {
+            if self.boundary[f] == NONE {
                 let (p, n) = (self.a[f].min(self.b[f]), self.a[f].max(self.b[f]));
                 (0, p, n)
             } else {
-                (1 + self.patch[f], self.a[f], 0)
+                (1 + self.boundary[f], self.a[f], 0)
             }
         };
         order.sort_by_key(|&f| (key(f as usize), f));
@@ -118,7 +118,7 @@ impl MeshBuilder {
         mesh.face_ptr.push(0);
         mesh.face_nodes.reserve(self.nodes.len());
         mesh.owner.reserve(nf);
-        let mut patch_count = vec![0usize; self.patch_names.len()];
+        let mut boundary_count = vec![0usize; self.boundary_names.len()];
         for &f in &order {
             let f = f as usize;
             let nodes = &self.nodes[self.ptr[f] as usize..self.ptr[f + 1] as usize];
@@ -127,7 +127,7 @@ impl MeshBuilder {
                 return Err(format!("face with cell index out of range ({a}, {b})"));
             }
             if b == NONE {
-                patch_count[self.patch[f] as usize] += 1;
+                boundary_count[self.boundary[f] as usize] += 1;
                 mesh.face_nodes.extend_from_slice(nodes);
                 mesh.owner.push(a);
             } else if a < b {
@@ -145,8 +145,8 @@ impl MeshBuilder {
         }
         mesh.n_inner_faces = mesh.neighbour.len();
         let mut start = mesh.neighbour.len();
-        for (name, len) in self.patch_names.into_iter().zip(patch_count) {
-            mesh.patches.push(Patch { name, start, len });
+        for (name, len) in self.boundary_names.into_iter().zip(boundary_count) {
+            mesh.boundaries.push(Boundary { name, start, len });
             start += len;
         }
         for w in mesh.owner[..mesh.n_inner_faces]
@@ -181,7 +181,7 @@ pub struct CellSoup {
 }
 
 /// What [`CellSoup::finish`] needs to know about an unmatched face to name
-/// its patch.
+/// its boundary.
 #[derive(Debug, Clone, Copy)]
 pub struct BoundaryFace<'a> {
     /// Nodes, ordered with the normal pointing out of the domain.
@@ -269,12 +269,12 @@ impl CellSoup {
         &self.nodes[self.face_ptr[f] as usize..self.face_ptr[f + 1] as usize]
     }
 
-    /// Matches the faces and builds the mesh. `patches` lists the patch
-    /// names in the order they should appear; `classify` names the patch of
+    /// Matches the faces and builds the mesh. `boundaries` lists the boundary
+    /// names in the order they should appear; `classify` names the boundary of
     /// each unmatched face.
     pub fn finish(
         self,
-        patches: &[&str],
+        boundaries: &[&str],
         classify: impl Fn(BoundaryFace) -> String,
     ) -> Result<Mesh, String> {
         let nf = self.face_ptr.len() - 1;
@@ -374,8 +374,8 @@ impl CellSoup {
 
         let mut b = MeshBuilder::new(self.points.clone(), nc);
         b.set_zones(self.zones.clone(), self.zone.clone());
-        for p in patches {
-            b.declare_patch(p);
+        for p in boundaries {
+            b.declare_boundary(p);
         }
         for f in 0..nf {
             if removed[f] {

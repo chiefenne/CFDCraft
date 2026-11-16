@@ -177,6 +177,8 @@ pub struct Steer {
     /// A stop that the run itself asked for (`[balance] action = "stop"`),
     /// returned by the next [`poll`](Self::poll).
     pending: Option<Stop>,
+    /// The build and host, for the banner of the log.
+    pub(crate) build: Option<BuildInfo>,
 }
 
 impl Steer {
@@ -194,6 +196,7 @@ impl Steer {
             },
             stop: None,
             pending: None,
+            build: None,
         })
     }
 
@@ -206,6 +209,7 @@ impl Steer {
             record: Record::none(),
             stop: None,
             pending: None,
+            build: None,
         }
     }
 
@@ -542,7 +546,7 @@ pub fn properties_hash(case: &FlowCase) -> String {
         .unwrap_or_default()
 }
 
-/// SHA-256 of a mesh: points, faces, cells, patches and the global
+/// SHA-256 of a mesh: points, faces, cells, boundaries and the global
 /// identities, as stored (D85).
 pub fn mesh_hash(m: &Mesh) -> String {
     let mut h = Sha256::new();
@@ -569,7 +573,7 @@ pub fn mesh_hash(m: &Mesh) -> String {
             h.update(x.to_le_bytes());
         }
     }
-    for p in &m.patches {
+    for p in &m.boundaries {
         h.update(p.name.as_bytes());
         h.update([0]);
         h.update((p.start as u64).to_le_bytes());
@@ -984,7 +988,7 @@ pub(crate) fn outputs(case: &FlowCase, mesh: &Mesh, steps: usize) -> Vec<OutputE
     }
     if o.wall_csv {
         for w in &walls {
-            if let Some(p) = mesh.patch(w) {
+            if let Some(p) = mesh.boundary(w) {
                 add(&format!("wall_{w}.csv"), 1, p.len as f64 * 100.0);
             }
         }
@@ -993,7 +997,7 @@ pub(crate) fn outputs(case: &FlowCase, mesh: &Mesh, steps: usize) -> Vec<OutputE
         add(&format!("line_{}.csv", l.name), 1, l.points as f64 * 110.0);
     }
     add(
-        "flow.log, flow.json, flow.md, result.json, run.jsonl, patches.csv, case.resolved.toml, SVG charts",
+        "flow.log, flow.json, flow.md, result.json, run.jsonl, boundaries.csv, case.resolved.toml, SVG charts",
         1,
         2e4 + rows as f64 * 200.0,
     );
@@ -1337,7 +1341,7 @@ pub struct ResultSummary {
     pub reynolds: Option<f64>,
     /// One entry per solve (level or time step of a sweep): mesh, cells,
     /// mesh hash, iterations, convergence, residuals, mass imbalance,
-    /// patches (mass flow, mean pressure, force), coefficients, errors,
+    /// boundaries (mass flow, mean pressure, force), coefficients, errors,
     /// benchmark, transient summary.
     pub solves: Vec<serde_json::Value>,
     /// Observed orders in space.
@@ -1425,6 +1429,7 @@ pub fn run(
     opts: &RunOptions,
     log: impl FnMut(&str),
 ) -> Result<Outcome> {
+    let mut log = log;
     opts.roots.check_write(dir)?;
     std::fs::create_dir_all(dir).map_err(|e| {
         diag::err(Diagnostic::new(
@@ -1435,6 +1440,7 @@ pub fn run(
     let mut case = case.clone();
     let mut steer = Steer::new(opts.interrupts.clone(), dir, true)?;
     steer.record.observer = opts.observer.clone();
+    steer.build = Some(opts.build.clone());
     let res = resolve_latest(&mut case, dir)
         .and_then(|()| check_paths(&case, &opts.roots))
         .and_then(|()| {
@@ -1452,7 +1458,7 @@ pub fn run(
                 "settings": case,
             }));
             steer.record.flush();
-            crate::case::run_steered(&case, name, dir, &mut steer, log)
+            crate::case::run_steered(&case, name, dir, &mut steer, &mut log)
         });
     let summary = match &res {
         Ok(rep) => summary_of(&case, rep, dir, &opts.build)?,
@@ -1491,6 +1497,13 @@ pub fn run(
     }
     let text = serde_json::to_string_pretty(&summary)?;
     std::fs::write(dir.join("result.json"), format!("{text}\n"))?;
+    closing_frame(
+        &case,
+        &summary,
+        dir,
+        steer.start.elapsed().as_secs_f64(),
+        &mut log,
+    );
     steer
         .record
         .row(&serde_json::json!({"type": "result", "result": summary}));
@@ -1500,6 +1513,57 @@ pub fn run(
         report: res.ok(),
         summary,
     })
+}
+
+/// The last frame of the log: the verdict and the exit code. It goes to the
+/// terminal and to the end of `flow.log`.
+fn closing_frame(
+    case: &FlowCase,
+    s: &ResultSummary,
+    dir: &Path,
+    secs: f64,
+    log: &mut impl FnMut(&str),
+) {
+    use std::io::Write as _;
+    let first_error = s
+        .diagnostics
+        .iter()
+        .find(|d| d.severity == diag::Severity::Error);
+    let title = match s.status {
+        Status::Finished => "Run finished: every check passed".to_string(),
+        Status::FailedChecks => "Run finished with failed checks".to_string(),
+        Status::Stopped => format!(
+            "Run stopped: {}",
+            s.stop.as_ref().map_or("", |x| x.message.as_str())
+        ),
+        Status::Error => format!(
+            "Run FAILED: {}",
+            first_error.map_or(String::new(), |d| d.code.to_string())
+        ),
+    };
+    let mut f = crate::console::Frame::new(title);
+    if let (Status::Error, Some(d)) = (s.status, first_error) {
+        f.push_kv("Reason", &d.message);
+    }
+    let mut f = f
+        .kv("Exit code", s.exit_code)
+        .kv("Elapsed time", crate::console::clock(secs))
+        .kv("Results in", dir.display());
+    if dir.join("flow.md").exists() {
+        f.push_kv("Report", "flow.md, result.json");
+    }
+    let mut lines = vec![String::new()];
+    lines.extend(f.render(case.log.style));
+    for l in &lines {
+        log(l);
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("flow.log"))
+    {
+        let _ = writeln!(file, "{}", lines.join("\n"));
+    }
 }
 
 /// The result summary of a finished report.

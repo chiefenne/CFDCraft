@@ -16,6 +16,8 @@
 # cylinder_re100_short.toml and cylinder_re100.toml; docs/verification/
 # stage5.md has the numbers.
 
+case_format = "0.6"
+
 [mesh.cylinder]
 refine = 0
 length = 0.75           # the outlet 5.5 D behind the cylinder centre

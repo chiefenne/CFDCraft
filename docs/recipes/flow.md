@@ -29,7 +29,7 @@ done
 for m in hex tet poly mixed; do
   target/release/foehn flow examples/cases/flow/poiseuille_${m}.toml
 done
-cat output/poiseuille_poly/flow.md          # errors per level, observed order, patches
+cat output/poiseuille_poly/flow.md          # errors per level, observed order, boundaries
 # plots: output/poiseuille_poly/convergence.svg, residuals.svg
 ```
 
@@ -92,13 +92,13 @@ max_iterations = 10000
 <a id="flow-boundaries"></a>
 ## 20. Set up the boundary conditions of a flow case
 
-Every patch of the mesh needs a `[boundary.<patch>]` table. Check a case
+Every boundary of the mesh needs a `[boundary.<boundary>]` table. Check a case
 before running it: the check (D30) names each boundary that is missing,
 unknown (with "did you mean"), over-specified or unsuitable, and says what
 to change; `--check` stops after it.
 
 ```
-target/release/foehn mesh examples/cases/mesh/hex_2d.toml     # patch names: output/hex_2d/mesh_report.md
+target/release/foehn mesh examples/cases/mesh/hex_2d.toml     # boundary names: output/hex_2d/mesh_report.md
 target/release/foehn flow my_case.toml --check
 ```
 
@@ -231,7 +231,7 @@ max_iterations = 12000
 Keys: `[verification]` `benchmark = "schafer-turek-2d1"` or
 `"schafer-turek-2d2"`, `benchmark_tolerance` (relative to the midpoints of
 the reference ranges), `evaluation_start` (2D-2). Force coefficients of
-any case: `[output.coefficients]` with `patches`, `velocity`, `area`;
+any case: `[output.coefficients]` with `boundaries`, `velocity`, `area`;
 point histories: `[[output.probes]]` with `name` and `point`.
 
 [↑ back to top](#incompressible-flow)
@@ -270,7 +270,7 @@ error_absolute = 1e-6      # m/s
 
 The tolerance is per step: the error at the end of a run is up to the
 number of steps times larger. Keep it at least ten times above the
-tolerances of the linear solvers (`solver.momentum_tolerance`,
+tolerances of the linear solvers (`solver.momentum.tolerance`,
 `pressure_tolerance`), whose noise the estimate would otherwise chase. With
 plain PISO at Courant numbers above about 2 the error grows faster than
 the step, and the estimate cuts the step there (the steep drops in the

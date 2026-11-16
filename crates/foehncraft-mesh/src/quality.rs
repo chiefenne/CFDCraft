@@ -99,8 +99,8 @@ pub struct QualityReport {
     pub shapes: Vec<(String, usize)>,
     /// Faces per cell.
     pub faces_per_cell: Stat,
-    /// Patches: name, number of faces, area.
-    pub patches: Vec<(String, usize, f64)>,
+    /// Boundaries: name, number of faces, area.
+    pub boundaries: Vec<(String, usize, f64)>,
     /// Bounding box.
     pub bounding_box: ([f64; 3], [f64; 3]),
     /// Sum of the cell volumes (pairwise sum, D31).
@@ -231,8 +231,8 @@ impl QualityReport {
             .map(|(s, n)| (s.name().to_string(), n))
             .collect();
 
-        let patches = mesh
-            .patches
+        let boundaries = mesh
+            .boundaries
             .iter()
             .map(|p| {
                 let a: Vec<f64> = p.range().map(|f| norm(geo.face_area[f])).collect();
@@ -259,7 +259,7 @@ impl QualityReport {
             points: mesh.n_points(),
             shapes,
             faces_per_cell: Stat::of(&faces_per_cell),
-            patches,
+            boundaries,
             bounding_box: mesh.bounding_box(),
             total_volume: foehncraft_core::repro::pairwise_sum(vols),
             boundary_volume: foehncraft_core::repro::pairwise_sum(&bvol),
@@ -328,9 +328,9 @@ impl QualityReport {
         );
         let _ = writeln!(
             s,
-            "\n## Patches\n\n| patch | faces | area |\n|---|---:|---:|"
+            "\n## Boundaries\n\n| boundary | faces | area |\n|---|---:|---:|"
         );
-        for (n, k, a) in &self.patches {
+        for (n, k, a) in &self.boundaries {
             let _ = writeln!(s, "| {n} | {k} | {a:.6e} |");
         }
         let _ = writeln!(

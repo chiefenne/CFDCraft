@@ -18,6 +18,7 @@
 
 pub mod builder;
 pub mod case;
+pub mod case_format;
 pub mod cylinder;
 pub mod decompose;
 pub mod generate;
@@ -31,6 +32,6 @@ pub mod renumber;
 pub mod wedge;
 
 pub use geometry::Geometry;
-pub use mesh::{CellShape, Mesh, Patch};
+pub use mesh::{Boundary, CellShape, Mesh};
 #[cfg(feature = "hdf5")]
 pub mod vtkhdf;

@@ -17,8 +17,8 @@
 //! | `pressure-coefficient` | `pressure_coefficient` | (p − p_ref) / (½ ρ_ref U_ref²) | - |
 //! | `total-pressure` | `total_pressure` | p + ½ ρ u·u | Pa |
 //!
-//! Boundary face fields, on the patch blocks of the file (zero on patches
-//! that are not walls), from the same wall values as `wall_<patch>.csv`:
+//! Boundary face fields, on the boundary blocks of the file (zero on boundaries
+//! that are not walls), from the same wall values as `wall_<boundary>.csv`:
 //!
 //! | name | fields | definition | unit |
 //! |---|---|---|---|
@@ -133,7 +133,7 @@ impl Derived {
         }
     }
 
-    /// True for the fields on the boundary faces (the patch blocks).
+    /// True for the fields on the boundary faces (the boundary blocks).
     pub fn on_faces(self) -> bool {
         matches!(self, Derived::WallShearStress | Derived::YPlus)
     }
@@ -636,7 +636,7 @@ fn with_restart<R>(
 /// stress and the transfer coefficients of the wall treatment.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct WallExchange {
-    /// The wall faces (mesh face indices), patch by patch.
+    /// The wall faces (mesh face indices), boundary by boundary.
     pub faces: Vec<usize>,
     /// Shear stress of the fluid on the wall, tangential (Pa).
     pub shear: Vec<[f64; 3]>,
@@ -656,7 +656,7 @@ pub struct WallExchange {
 pub fn wall_exchange(case: &FlowCase, mesh: &Mesh, geo: &Geometry, fl: &Solution) -> WallExchange {
     let ni = mesh.n_interior_faces();
     let mut w = WallExchange::default();
-    for p in &mesh.patches {
+    for p in &mesh.boundaries {
         if !matches!(
             case.boundary.get(&p.name),
             Some(BoundaryCondition::Wall { .. })
@@ -685,7 +685,7 @@ fn wall_values(
 ) -> Vec<([f64; 3], f64)> {
     let ni = mesh.n_interior_faces();
     let mut v = vec![([0.0; 3], 0.0); mesh.n_boundary_faces()];
-    for p in &mesh.patches {
+    for p in &mesh.boundaries {
         if !matches!(
             case.boundary.get(&p.name),
             Some(BoundaryCondition::Wall { .. })

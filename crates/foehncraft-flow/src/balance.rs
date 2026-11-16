@@ -3,7 +3,7 @@
 //!
 //! The ledger books, for each conserved quantity, the storage (the time
 //! derivative of its integral over the domain), the boundary fluxes per
-//! patch and the volume sources, and closes it:
+//! boundary and the volume sources, and closes it:
 //!
 //! imbalance = storage − Σ boundary fluxes into the domain − Σ sources.
 //!
@@ -16,7 +16,7 @@
 //! constant ρ and μ and the Laplacian form of the viscous term that the
 //! solver discretises,
 //!
-//! d/dt ∫ ½ρ|u|² dV = Σ_patches [ −∮ ½ρ|u|² u·dS − ∮ p u·dS + ∮ (μ∇u·dS)·u ]
+//! d/dt ∫ ½ρ|u|² dV = Σ_boundaries [ −∮ ½ρ|u|² u·dS − ∮ p u·dS + ∮ (μ∇u·dS)·u ]
 //!                    + ∫ f·u dV − ∫ μ ∇u:∇u dV,
 //!
 //! boundary power (convected kinetic energy, pressure work, viscous work),
@@ -138,11 +138,11 @@ impl BalanceSection {
     }
 }
 
-/// The boundary terms of one patch.
+/// The boundary terms of one boundary.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
-pub struct PatchTerms {
-    /// Patch name.
-    pub patch: String,
+pub struct BoundaryTerms {
+    /// Boundary name.
+    pub boundary: String,
     /// Boundary condition.
     pub kind: String,
     /// Mass flow out of the domain (kg/s).
@@ -155,7 +155,7 @@ pub struct PatchTerms {
     pub viscous_power: f64,
 }
 
-impl PatchTerms {
+impl BoundaryTerms {
     /// Power into the fluid: viscous work − convected kinetic energy −
     /// pressure work (W).
     pub fn power(&self) -> f64 {
@@ -164,7 +164,7 @@ impl PatchTerms {
 
     fn scaled(&self, a: f64) -> Self {
         Self {
-            patch: self.patch.clone(),
+            boundary: self.boundary.clone(),
             kind: self.kind.clone(),
             mass_flow: a * self.mass_flow,
             convective_power: a * self.convective_power,
@@ -186,8 +186,8 @@ impl PatchTerms {
 pub struct Rates {
     /// Kinetic energy in the domain, ∫ ½ρ|u|² dV (J).
     pub kinetic_energy: f64,
-    /// Boundary terms per patch.
-    pub patches: Vec<PatchTerms>,
+    /// Boundary terms per boundary.
+    pub boundaries: Vec<BoundaryTerms>,
     /// Power of the body force, ∫ f·u dV (W).
     pub body_force_power: f64,
     /// Power of the pressure source of the momentum rows on the cell
@@ -197,8 +197,8 @@ pub struct Rates {
     /// Viscous dissipation: of the discrete viscous operator, which
     /// converges to ∫ μ ∇u:∇u dV (W).
     pub viscous_dissipation: f64,
-    /// Scale of the mass flows: the largest patch mass flow, or in a closed
-    /// domain ρ |u|max times the largest patch area (kg/s).
+    /// Scale of the mass flows: the largest boundary mass flow, or in a closed
+    /// domain ρ |u|max times the largest boundary area (kg/s).
     pub mass_scale: f64,
 }
 
@@ -273,9 +273,9 @@ pub fn rates(
         }
         *ph = e;
     }
-    let mut patches = Vec::with_capacity(mesh.patches.len());
+    let mut boundaries = Vec::with_capacity(mesh.boundaries.len());
     let mut scale = 0.0f64;
-    for p in &mesh.patches {
+    for p in &mesh.boundaries {
         let bc = &case.boundary[&p.name];
         let wall = matches!(bc, crate::bc::BoundaryCondition::Wall { .. });
         let n = p.len;
@@ -329,8 +329,8 @@ pub fn rates(
                 vw.push(0.0);
             }
         }
-        let t = PatchTerms {
-            patch: p.name.clone(),
+        let t = BoundaryTerms {
+            boundary: p.name.clone(),
             kind: bc.type_name().into(),
             mass_flow: pairwise_sum(&m),
             convective_power: pairwise_sum(&kc),
@@ -340,11 +340,11 @@ pub fn rates(
         scale = scale
             .max(t.mass_flow.abs())
             .max(rho * umax * pairwise_sum(&area));
-        patches.push(t);
+        boundaries.push(t);
     }
     Rates {
         kinetic_energy: pairwise_sum(&ke),
-        patches,
+        boundaries,
         body_force_power: pairwise_sum(&body),
         pressure_source_power: pairwise_sum(&press),
         viscous_dissipation: pairwise_sum(&phi),
@@ -372,7 +372,7 @@ pub struct EnergyBalance {
     pub energy: f64,
     /// Storage: its change per time (W) or over the run (J).
     pub storage: f64,
-    /// Power of all patches into the fluid.
+    /// Power of all boundaries into the fluid.
     pub boundary: f64,
     /// Power of the body force.
     pub body_force: f64,
@@ -413,23 +413,33 @@ pub struct Balance {
     pub mass: MassBalance,
     /// Kinetic energy.
     pub kinetic_energy: EnergyBalance,
-    /// Boundary terms per patch (rates; integrals over a run).
-    pub patches: Vec<PatchTerms>,
+    /// Boundary terms per boundary (rates; integrals over a run).
+    pub boundaries: Vec<BoundaryTerms>,
 }
 
 #[allow(clippy::too_many_arguments)]
 fn close(
     storage_ke: f64,
     energy: f64,
-    patches: Vec<PatchTerms>,
+    boundaries: Vec<BoundaryTerms>,
     body: f64,
     source: f64,
     phi: f64,
     scale: f64,
-) -> (MassBalance, EnergyBalance, Vec<PatchTerms>) {
-    let out = pairwise_sum(&patches.iter().map(|p| p.mass_flow).collect::<Vec<_>>());
-    let boundary = pairwise_sum(&patches.iter().map(PatchTerms::power).collect::<Vec<_>>());
-    let wall_pressure = pairwise_sum(&patches.iter().map(|p| p.pressure_power).collect::<Vec<_>>());
+) -> (MassBalance, EnergyBalance, Vec<BoundaryTerms>) {
+    let out = pairwise_sum(&boundaries.iter().map(|p| p.mass_flow).collect::<Vec<_>>());
+    let boundary = pairwise_sum(
+        &boundaries
+            .iter()
+            .map(BoundaryTerms::power)
+            .collect::<Vec<_>>(),
+    );
+    let wall_pressure = pairwise_sum(
+        &boundaries
+            .iter()
+            .map(|p| p.pressure_power)
+            .collect::<Vec<_>>(),
+    );
     let pressure = -(source + wall_pressure);
     let num = boundary + body - phi - storage_ke;
     let mut big = storage_ke
@@ -437,7 +447,7 @@ fn close(
         .max(body.abs())
         .max(phi.abs())
         .max(source.abs());
-    for p in &patches {
+    for p in &boundaries {
         big = big
             .max(p.viscous_power.abs())
             .max(p.convective_power.abs())
@@ -461,16 +471,16 @@ fn close(
             scheme_dissipation: num - pressure,
             relative: if big > 0.0 { num / big } else { 0.0 },
         },
-        patches,
+        boundaries,
     )
 }
 
 /// The ledger of a steady state (no storage).
 pub fn steady(r: &Rates, iteration: usize) -> Balance {
-    let (mass, kinetic_energy, patches) = close(
+    let (mass, kinetic_energy, boundaries) = close(
         0.0,
         r.kinetic_energy,
-        r.patches.clone(),
+        r.boundaries.clone(),
         r.body_force_power,
         r.pressure_source_power,
         r.viscous_dissipation,
@@ -480,7 +490,7 @@ pub fn steady(r: &Rates, iteration: usize) -> Balance {
         iteration: Some(iteration),
         mass,
         kinetic_energy,
-        patches,
+        boundaries,
         ..Default::default()
     }
 }
@@ -493,7 +503,7 @@ pub struct Ledger {
     start_time: f64,
     time: f64,
     step: usize,
-    patches: Vec<PatchTerms>,
+    boundaries: Vec<BoundaryTerms>,
     body: f64,
     source: f64,
     phi: f64,
@@ -521,7 +531,7 @@ impl Ledger {
             start_time: t,
             time: t,
             step,
-            patches: r.patches.iter().map(|p| p.scaled(0.0)).collect(),
+            boundaries: r.boundaries.iter().map(|p| p.scaled(0.0)).collect(),
             prev: Some(r),
             ..Default::default()
         }
@@ -532,10 +542,10 @@ impl Ledger {
         let prev = self.prev.take().unwrap_or_else(|| r.clone());
         let dt = t - self.time;
         let half = 0.5;
-        let patches: Vec<PatchTerms> = prev
-            .patches
+        let boundaries: Vec<BoundaryTerms> = prev
+            .boundaries
             .iter()
-            .zip(&r.patches)
+            .zip(&r.boundaries)
             .map(|(a, b)| {
                 let mut m = a.scaled(half);
                 m.add(b, half);
@@ -554,9 +564,16 @@ impl Ledger {
         } else {
             0.0
         };
-        let (mass, kinetic_energy, patches) =
-            close(storage, r.kinetic_energy, patches, body, source, phi, scale);
-        for (acc, p) in self.patches.iter_mut().zip(&patches) {
+        let (mass, kinetic_energy, boundaries) = close(
+            storage,
+            r.kinetic_energy,
+            boundaries,
+            body,
+            source,
+            phi,
+            scale,
+        );
+        for (acc, p) in self.boundaries.iter_mut().zip(&boundaries) {
             acc.add(p, dt);
         }
         self.body += dt * body;
@@ -578,17 +595,17 @@ impl Ledger {
             duration: Some(dt),
             mass,
             kinetic_energy,
-            patches,
+            boundaries,
             ..Default::default()
         }
     }
 
     /// The ledger of the run so far: integrals over time (kg, J).
     pub fn run(&self) -> Balance {
-        let (mass, kinetic_energy, patches) = close(
+        let (mass, kinetic_energy, boundaries) = close(
             self.energy - self.start_energy,
             self.energy,
-            self.patches.clone(),
+            self.boundaries.clone(),
             self.body,
             self.source,
             self.phi,
@@ -600,7 +617,7 @@ impl Ledger {
             duration: Some(self.time - self.start_time),
             mass,
             kinetic_energy,
-            patches,
+            boundaries,
             ..Default::default()
         }
     }
@@ -636,7 +653,7 @@ pub fn check(s: &BalanceSummary, set: &BalanceSection) -> Vec<Diagnostic> {
                 diag::BAL_MASS_STEP,
                 format!(
                     "the relative mass imbalance reached {:.2e}, above [balance] tolerance_step {:.1e} \
-                     (tighten [solver] pressure_tolerance)",
+                     (tighten [solver.pressure] tolerance)",
                     s.largest_mass_relative, set.tolerance_step
                 ),
             )
@@ -694,7 +711,7 @@ pub fn compact(b: &Balance) -> String {
     )
 }
 
-/// The full table (log, report): per quantity, patch and term.
+/// The full table (log, report): per quantity, boundary and term.
 pub fn table(title: &str, b: &Balance, integrated: bool) -> String {
     let (m, e) = if integrated {
         ("kg", "J")
@@ -708,10 +725,10 @@ pub fn table(title: &str, b: &Balance, integrated: bool) -> String {
         s.push_str(&format!("{ind}  {name:<44} {v:>+14.6e} {unit}\n"));
     };
     s.push_str(&format!("{ind}  mass\n"));
-    for p in &b.patches {
+    for p in &b.boundaries {
         row(
             &mut s,
-            &format!("  {} ({}) out", p.patch, p.kind),
+            &format!("  {} ({}) out", p.boundary, p.kind),
             p.mass_flow,
             m,
         );
@@ -724,11 +741,11 @@ pub fn table(title: &str, b: &Balance, integrated: bool) -> String {
         m,
     );
     s.push_str(&format!("{ind}  kinetic energy\n"));
-    for p in &b.patches {
+    for p in &b.boundaries {
         if p.viscous_power != 0.0 {
             row(
                 &mut s,
-                &format!("  {} viscous work in", p.patch),
+                &format!("  {} viscous work in", p.boundary),
                 p.viscous_power,
                 e,
             );
@@ -736,7 +753,7 @@ pub fn table(title: &str, b: &Balance, integrated: bool) -> String {
         if p.convective_power != 0.0 {
             row(
                 &mut s,
-                &format!("  {} convected out", p.patch),
+                &format!("  {} convected out", p.boundary),
                 p.convective_power,
                 e,
             );
@@ -744,7 +761,7 @@ pub fn table(title: &str, b: &Balance, integrated: bool) -> String {
         if p.pressure_power != 0.0 {
             row(
                 &mut s,
-                &format!("  {} pressure work out", p.patch),
+                &format!("  {} pressure work out", p.boundary),
                 p.pressure_power,
                 e,
             );
@@ -788,10 +805,10 @@ pub fn markdown(s: &BalanceSummary, cells: usize) -> String {
         s.largest_mass_relative,
         "",
     );
-    for p in &b.patches {
+    for p in &b.boundaries {
         if p.power() != 0.0 {
             row(
-                format!("power into the fluid through {}", p.patch),
+                format!("power into the fluid through {}", p.boundary),
                 p.power(),
                 unit_e,
             );
@@ -911,10 +928,10 @@ pub fn record_row(b: &Balance) -> serde_json::Value {
 pub fn chart(name: &str, b: &Balance, integrated: bool) -> String {
     let e = if integrated { "J" } else { "W" };
     let mut bars: Vec<(String, f64)> = Vec::new();
-    for p in &b.patches {
+    for p in &b.boundaries {
         let w = p.power();
         if w != 0.0 {
-            bars.push((format!("{} (power in)", p.patch), w));
+            bars.push((format!("{} (power in)", p.boundary), w));
         }
     }
     let k = &b.kinetic_energy;
@@ -942,8 +959,8 @@ mod tests {
     fn rates(ke: f64, lid: f64, phi: f64) -> Rates {
         Rates {
             kinetic_energy: ke,
-            patches: vec![PatchTerms {
-                patch: "lid".into(),
+            boundaries: vec![BoundaryTerms {
+                boundary: "lid".into(),
                 kind: "wall".into(),
                 viscous_power: lid,
                 ..Default::default()
@@ -976,7 +993,7 @@ mod tests {
         }
         let r = l.run();
         assert!((r.kinetic_energy.storage - t * t).abs() < 1e-12);
-        assert!((r.patches[0].viscous_power - (t * t + t)).abs() < 1e-12);
+        assert!((r.boundaries[0].viscous_power - (t * t + t)).abs() < 1e-12);
         assert!(r.kinetic_energy.numerical_dissipation.abs() < 1e-12);
         assert_eq!(l.negative_steps, 0);
     }

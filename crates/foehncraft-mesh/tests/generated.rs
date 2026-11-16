@@ -1,5 +1,5 @@
 //! Stage-1 acceptance tests on the generated meshes: every cell closed,
-//! total volume equal to the domain volume, patches complete.
+//! total volume equal to the domain volume, boundaries complete.
 
 use foehncraft_mesh::Geometry;
 use foehncraft_mesh::generate::{BoxSpec, Grading, Kind};
@@ -45,7 +45,7 @@ fn generated_meshes_are_closed_and_fill_the_box() {
             q.total_volume
         );
         assert!(((q.boundary_volume - vol) / vol).abs() < 1e-12, "{name}");
-        let area = |p: &str| q.patches.iter().find(|x| x.0 == p).unwrap().2;
+        let area = |p: &str| q.boundaries.iter().find(|x| x.0 == p).unwrap().2;
         assert!(
             (area("xmin") - 0.75).abs() < 1e-12,
             "{name}: xmin {}",
@@ -53,7 +53,7 @@ fn generated_meshes_are_closed_and_fill_the_box() {
         );
         assert!((area("ymax") - 1.5).abs() < 1e-12, "{name}");
         assert!((area("zmin") - 4.5).abs() < 1e-12, "{name}");
-        assert_eq!(q.patches.len(), 6);
+        assert_eq!(q.boundaries.len(), 6);
         eprintln!(
             "{name}: {} cells, faces/cell {:.0}-{:.0}, shapes {:?}, max non-orth {:.1}",
             q.cells, q.faces_per_cell.min, q.faces_per_cell.max, q.shapes, q.non_orthogonality.max

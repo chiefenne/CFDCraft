@@ -7,6 +7,7 @@ Part of the [Recipes](../recipes.md): restart, stop and steer runs, drive runs f
 | 22 | [Restart a run, stop it and steer it while it runs](#restart) |
 | 26 | [Drive runs from a script or an agent](#run-contract) |
 | 27 | [Check the balances and read a divergence report](#health) |
+| 37 | [Read the log and upgrade a case file](#log) |
 
 ---
 
@@ -78,7 +79,7 @@ the value in TOML (a bare word is a string). The overrides are in the
 result and survive a re-read of the case file.
 
 ```
-target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml --set fluid.viscosity=0.005 --set solver.relaxation_velocity=0.8 --out output/re200
+target/release/foehn --json flow examples/cases/flow/cavity_re100_budget.toml --set fluid.viscosity=0.005 --set solver.momentum.relaxation=0.8 --out output/re200
 ```
 
 **Check before running** (D81): the findings with codes and an estimate
@@ -192,12 +193,12 @@ threshold on `divergence_layer` in ParaView) and the report
 to change. Provoke one: SIMPLE with no relaxation
 
 ```
-target/release/foehn flow examples/cases/flow/cavity_re1000.toml --set 'solver.algorithm="simple"' --set solver.relaxation_velocity=0.99 --set solver.relaxation_pressure=1.0 --out output/diverge; echo "exit $?"
+target/release/foehn flow examples/cases/flow/cavity_re1000.toml --set 'solver.algorithm="simple"' --set solver.momentum.relaxation=0.99 --set solver.pressure.relaxation=1.0 --out output/diverge; echo "exit $?"
 cat output/diverge/divergence.md
 ```
 
 The first cause is `DIV002` (relaxation) with the fix
-`--set solver.relaxation_velocity=0.69 --set solver.relaxation_pressure=0.31`,
+`--set solver.momentum.relaxation=0.69 --set solver.pressure.relaxation=0.31`,
 which runs. A time step far too large for a transient case points to
 `DIV001` with a smaller time step:
 
@@ -207,5 +208,25 @@ target/release/foehn flow examples/cases/flow/cavity_re100_transient.toml --set 
 
 With `--json`, the `RUN014` diagnostic in `result.json` carries the fix
 of the most likely cause as `--set` arguments, so a script can retry.
+
+[↑ back to top](#run-control-and-health)
+
+<a id="log"></a>
+## 37. Read the log and upgrade a case file
+
+The log (gallery 27, D125) starts with the version and the build, then the blocks that show what was set; read it top down: **Input and output files** (the case file and every `--set`), **Run control**, **Mesh information** (counts and quality), **Fluid properties**, **Solution settings** (one column per equation), **Boundary conditions**. The table follows (every `solver.log_every` iterations or steps; the balance lines follow `balance.every`), then the summaries and the closing frame with the exit code.
+
+Frame style and the case-file version:
+
+```
+target/release/foehn flow examples/cases/flow/cavity_re100.toml --set 'log.style="box"'
+target/release/foehn case upgrade examples/cases/flow/old_case.toml          # list the changes
+target/release/foehn case upgrade --write examples/cases/flow/old_case.toml  # rewrite, comments kept
+target/release/foehn case upgrade --check examples/cases/flow/*.toml         # exit 1 if one is old
+```
+
+A case file without `case_format` is read as 0.5: its flat solver keys (`solver.relaxation_velocity`, `solver.momentum_tolerance`, ...) map to the tables `[solver.momentum]` and `[solver.pressure]`, and `patch` maps to `boundary`; each mapping is listed in the log. Scripts that read `patches.csv` or the field `patches` of `result.json` read `boundaries.csv` and `boundaries` now.
+
+Keys: `case_format`, `log.style`, `solver.log_every`, `balance.every`.
 
 [↑ back to top](#run-control-and-health)

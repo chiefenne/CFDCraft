@@ -42,7 +42,7 @@ the cell volumes with those written by Foehncraft. A relative difference near
 
 Open `output/poly_partition/mesh.vtkhdf` in ParaView 5.13 or newer. Colour
 the cells by `rank` to see the four parts, or by `volume`. Use the `internal`
-block for the cells and the patch blocks for the walls.
+block for the cells and the boundary blocks for the walls.
 
 Next steps:
 

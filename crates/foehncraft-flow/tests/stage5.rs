@@ -182,7 +182,7 @@ fn error_controlled_steps_restart_bit_identically() {
         "no step was rejected:\n{log}"
     );
     assert!(
-        log.contains("  error 0."),
+        log.contains(" Error "),
         "no error estimate in the log:\n{log}"
     );
     let from = da.join("restart_000012.h5");
@@ -293,7 +293,7 @@ fn stop_file_ends_the_run() {
     std::fs::create_dir_all(&dir).unwrap();
     let stop = dir.join(".stop");
     let rep = run(&case, "stop", &dir, |l: &str| {
-        if l.starts_with("step") && l.split_whitespace().nth(1) == Some("5") {
+        if l.starts_with(" ") && l.split_whitespace().next() == Some("5") && l.contains("E-") {
             std::fs::write(&stop, "").unwrap();
         }
     })
@@ -353,7 +353,7 @@ steps = {steps}
     std::fs::write(dir.join(".read_toml_4"), "").unwrap();
     let case = FlowCase::from_file(&file).unwrap();
     let rep = run(&case, "reread", &dir, |l: &str| {
-        if l.starts_with("step") && l.split_whitespace().nth(1) == Some("2") {
+        if l.starts_with(" ") && l.split_whitespace().next() == Some("2") && l.contains("E-") {
             std::fs::write(&file, text(3, 0.02, 8)).unwrap();
         }
     })

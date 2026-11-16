@@ -10,6 +10,8 @@
 # centre lines is compared with Ghia, Ghia & Shin (1982); the run fails if
 # the largest deviation exceeds 3 % of the lid speed.
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "tet"
 dimension = 3
@@ -38,9 +40,11 @@ type = "symmetry"
 type = "symmetry"
 
 [solver]
-relaxation_velocity = 0.9
 tolerance = 1e-8
 max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.9
 
 [verification]
 reference = "ghia-re100"

@@ -1,7 +1,7 @@
 //! Discretisation uncertainty of level and time-step sweeps (D67).
 //!
 //! For every monitored quantity of a sweep with three or more solutions
-//! (patch mass flows, mean pressures and forces, force coefficients,
+//! (boundary mass flows, mean pressures and forces, force coefficients,
 //! benchmark values, viscous and numerical dissipation) the report gives
 //! the observed order, the extrapolated value, the uncertainty band and
 //! the grid convergence index of the three finest solutions, after the procedure of
@@ -51,7 +51,7 @@ impl Verdict {
 /// The estimate for one quantity.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Estimate {
-    /// The quantity (`patches.<name>.force_x`, `benchmark.C_D` …).
+    /// The quantity (`boundaries.<name>.force_x`, `benchmark.C_D` …).
     pub quantity: String,
     /// Its values, finest solution first (φ1, φ2, φ3).
     pub values: [f64; 3],
@@ -160,18 +160,18 @@ pub fn celik(quantity: &str, h: [f64; 3], phi: [f64; 3]) -> Estimate {
 pub fn quantities(solve: &serde_json::Value) -> Vec<(String, f64)> {
     let mut out = Vec::new();
     let num = |v: &serde_json::Value| v.as_f64().filter(|x| x.is_finite());
-    if let Some(ps) = solve.get("patches").and_then(|p| p.as_array()) {
+    if let Some(ps) = solve.get("boundaries").and_then(|p| p.as_array()) {
         for p in ps {
             let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("?");
             for k in ["mass_flow", "mean_pressure"] {
                 if let Some(v) = p.get(k).and_then(num) {
-                    out.push((format!("patches.{name}.{k}"), v));
+                    out.push((format!("boundaries.{name}.{k}"), v));
                 }
             }
             if let Some(f) = p.get("force").and_then(|f| f.as_array()) {
                 for (c, v) in ["x", "y", "z"].iter().zip(f) {
                     if let Some(v) = num(v) {
-                        out.push((format!("patches.{name}.force_{c}"), v));
+                        out.push((format!("boundaries.{name}.force_{c}"), v));
                     }
                 }
             }
@@ -327,7 +327,7 @@ mod tests {
     fn quantities_of_a_solve() {
         let s = serde_json::json!({
             "errors": {"l2": 1e-3, "linf": 2e-3, "pressure_linf": 0.1, "h": 0.5, "cells": 10},
-            "patches": [{"name": "wall", "area": 1.0, "mass_flow": 0.0, "mean_pressure": 2.0,
+            "boundaries": [{"name": "wall", "area": 1.0, "mass_flow": 0.0, "mean_pressure": 2.0,
                          "force": [0.5, 0.0, 0.0]}],
             "benchmark": {"values": [{"range": {"name": "C_D", "lower": 5.5, "upper": 5.6},
                                       "value": 5.58, "deviation": 0.0}]},
@@ -336,11 +336,11 @@ mod tests {
         assert_eq!(
             q,
             [
-                "patches.wall.mass_flow",
-                "patches.wall.mean_pressure",
-                "patches.wall.force_x",
-                "patches.wall.force_y",
-                "patches.wall.force_z",
+                "boundaries.wall.mass_flow",
+                "boundaries.wall.mean_pressure",
+                "boundaries.wall.force_x",
+                "boundaries.wall.force_y",
+                "boundaries.wall.force_z",
                 "benchmark.C_D"
             ]
         );

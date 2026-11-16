@@ -7,10 +7,10 @@
 //! - block `internal`: the cells as an `UnstructuredGrid`; tetrahedra,
 //!   hexahedra, prisms and pyramids as VTK's linear cells, everything else
 //!   as `VTK_POLYHEDRON` with its faces; cell fields under `CellData`;
-//! - one `PolyData` block per boundary patch, named after the patch, with
-//!   the patch index and the boundary face fields ([`FaceField`], such as
+//! - one `PolyData` block per boundary boundary, named after the boundary, with
+//!   the boundary index and the boundary face fields ([`FaceField`], such as
 //!   the wall shear stress) as cell fields;
-//! - an assembly `internal`, `boundary/<patch>` for ParaView's block
+//! - an assembly `internal`, `boundary/<boundary>` for ParaView's block
 //!   selection.
 //!
 //! Cells, nodes and boundary faces are written in the order of their global
@@ -44,7 +44,7 @@ pub struct CellField<'a> {
     pub values: &'a [f64],
 }
 
-/// A field on the boundary faces, written to the patch blocks.
+/// A field on the boundary faces, written to the boundary blocks.
 pub struct FaceField<'a> {
     /// Name shown in ParaView.
     pub name: &'a str,
@@ -83,7 +83,7 @@ pub fn write_with(
 }
 
 /// As [`write_with`], with fields on the boundary faces, which go to the
-/// patch blocks.
+/// boundary blocks.
 pub fn write_all(
     path: impl AsRef<Path>,
     mesh: &Mesh,
@@ -138,10 +138,10 @@ pub fn write_all(
     let assembly = group(&root, "Assembly")?;
     assembly.link_soft("/VTKHDF/internal", "internal")?;
     let boundary = group(&assembly, "boundary")?;
-    for (i, p) in mesh.patches.iter().enumerate() {
+    for (i, p) in mesh.boundaries.iter().enumerate() {
         let name = block_name(&p.name);
         let g = group(&root, &name)?;
-        write_patch(&g, mesh, p.range(), i as f64, face_fields)?;
+        write_boundary(&g, mesh, p.range(), i as f64, face_fields)?;
         index_attr(&g, i as i64 + 1)?;
         boundary.link_soft(&format!("/VTKHDF/{name}"), &name)?;
     }
@@ -169,9 +169,9 @@ pub fn estimate_bytes(mesh: &Mesh, n_fields: usize) -> f64 {
             }
         }
     }
-    // boundary blocks: points of each patch and the face connectivity
+    // boundary blocks: points of each boundary and the face connectivity
     let mut boundary = 0usize;
-    for p in &mesh.patches {
+    for p in &mesh.boundaries {
         let mut points = std::collections::HashSet::new();
         let mut nodes = 0usize;
         for f in p.range() {
@@ -182,14 +182,14 @@ pub fn estimate_bytes(mesh: &Mesh, n_fields: usize) -> f64 {
         boundary += points.len() * 24 + nodes * 8 + p.len * (8 + 1 + 8 + 8);
     }
     (mesh.n_points() * 24 + nc * (8 * (n_fields + 1) + 8 + 1 + 8 + 8) + ids * 8 + boundary) as f64
-        + 8192.0 * (3 + mesh.patches.len()) as f64
+        + 8192.0 * (3 + mesh.boundaries.len()) as f64
 }
 
 /// Block names must not clash with the reserved group names.
-fn block_name(patch: &str) -> String {
-    match patch {
-        "internal" | "Assembly" => format!("patch_{patch}"),
-        _ => patch.replace('/', "_"),
+fn block_name(boundary: &str) -> String {
+    match boundary {
+        "internal" | "Assembly" => format!("boundary_{boundary}"),
+        _ => boundary.replace('/', "_"),
     }
 }
 
@@ -407,11 +407,11 @@ fn write_internal(g: &h5::Group, mesh: &Mesh, fields: &[CellField]) -> Result<()
     Ok(())
 }
 
-fn write_patch(
+fn write_boundary(
     g: &h5::Group,
     mesh: &Mesh,
     faces: std::ops::Range<usize>,
-    patch: f64,
+    boundary: f64,
     face_fields: &[FaceField],
 ) -> Result<()> {
     type_attr(g, "PolyData")?;
@@ -447,7 +447,7 @@ fn write_patch(
         ds(&sg, "Connectivity", &c)?;
     }
     let cd = group(g, "CellData")?;
-    ds(&cd, "patch", &vec![patch; faces.len()])?;
+    ds(&cd, "boundary", &vec![boundary; faces.len()])?;
     let ni = mesh.n_interior_faces();
     for ff in face_fields {
         let v: Vec<f64> = order.iter().map(|&f| ff.values[f - ni]).collect();

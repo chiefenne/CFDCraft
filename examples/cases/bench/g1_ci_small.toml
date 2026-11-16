@@ -4,6 +4,8 @@
 #
 #   foehn bench g1 examples/cases/bench/g1_ci_small.toml
 
+case_format = "0.6"
+
 [mesh]
 cells = 200_000        # near-cubic periodic box, 58 x 58 x 59
 ordering = "shuffled"  # worst-case memory access, also exercises the SELL permutation

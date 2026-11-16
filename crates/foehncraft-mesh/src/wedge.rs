@@ -7,10 +7,10 @@
 //! Nodes on the axis (y = 0) of both layers become one node: the cells
 //! next to the axis lose their face on it (a face of zero area) and become
 //! prisms (from hexahedra) or polyhedra with an edge on the axis, so the
-//! mesh has no degenerate faces and no axis patch. The patch `ymin`
+//! mesh has no degenerate faces and no axis boundary. The boundary `ymin`
 //! disappears when it lies on the axis (`lower[1] = 0`); with
 //! `lower[1] > 0` (an annulus) it stays. `zmin` and `zmax` become the two
-//! wedge planes (at −θ/2 and +θ/2); the other patches keep their names.
+//! wedge planes (at −θ/2 and +θ/2); the other boundaries keep their names.
 //!
 //! Every cell type of the box generator revolves: hexahedra, prisms on a
 //! triangulation, polygonal prisms and the mixed bands, perturbed or not
@@ -18,7 +18,7 @@
 //! planar and axis nodes stay on the axis).
 
 use crate::builder::{BoundaryFace, CellSoup};
-use crate::generate::BOX_PATCHES;
+use crate::generate::BOX_BOUNDARIES;
 use crate::mesh::Mesh;
 use std::collections::HashMap;
 
@@ -77,10 +77,10 @@ pub fn revolve(m: &Mesh, angle: f64) -> Result<Mesh, String> {
         }
         (v.len() >= 3).then_some(v)
     };
-    // the patch of each boundary face that survives, by its sorted nodes
+    // the boundary of each boundary face that survives, by its sorted nodes
     let mut names: HashMap<Vec<u32>, String> = HashMap::new();
     let mut kept: Vec<String> = Vec::new();
-    for p in &m.patches {
+    for p in &m.boundaries {
         for f in p.range() {
             if let Some(mut v) = face(f) {
                 v.sort_unstable();
@@ -96,8 +96,8 @@ pub fn revolve(m: &Mesh, angle: f64) -> Result<Mesh, String> {
         let faces: Vec<Vec<u32>> = m.cell_face_iter(c).filter_map(|(f, _)| face(f)).collect();
         soup.add_cell(faces.iter().map(|v| &v[..]));
     }
-    // patch order: that of the box, then any other
-    let mut order: Vec<&str> = BOX_PATCHES
+    // boundary order: that of the box, then any other
+    let mut order: Vec<&str> = BOX_BOUNDARIES
         .iter()
         .copied()
         .filter(|n| kept.iter().any(|k| k == n))
@@ -140,7 +140,7 @@ mod tests {
     /// The volume of every type is that of the planar wedge (the faces are
     /// planar polygons, so the revolved rectangle becomes a prism with the
     /// section ½ R² sin θ), every cell is closed, the wedge planes are
-    /// planar and the patches are named.
+    /// planar and the boundaries are named.
     #[test]
     fn wedges_of_every_type() {
         let angle: f64 = 5.0;
@@ -159,7 +159,7 @@ mod tests {
                     (vol - exact).abs() < 1e-12 * exact,
                     "{kind:?}: {vol} {exact}"
                 );
-                let names: Vec<&str> = m.patches.iter().map(|p| p.name.as_str()).collect();
+                let names: Vec<&str> = m.boundaries.iter().map(|p| p.name.as_str()).collect();
                 assert_eq!(names, ["xmin", "xmax", "ymax", "zmin", "zmax"], "{kind:?}");
                 // closure of every cell
                 for c in 0..m.n_cells {
@@ -176,7 +176,7 @@ mod tests {
                 }
                 // the wedge planes are planar at ∓θ/2
                 for (name, sgn) in [("zmin", -1.0), ("zmax", 1.0)] {
-                    let p = m.patch(name).unwrap();
+                    let p = m.boundary(name).unwrap();
                     for f in p.range() {
                         let a = g.face_area[f];
                         let n = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt();
@@ -189,13 +189,13 @@ mod tests {
         }
     }
 
-    /// An annulus keeps its inner patch.
+    /// An annulus keeps its inner boundary.
     #[test]
     fn annulus_keeps_the_inner_wall() {
         let mut s = spec(Kind::Hex, 0.0);
         s.lower[1] = 0.1;
         let m = revolve(&s.generate().unwrap(), 2.0).unwrap();
-        assert!(m.patch("ymin").is_some());
+        assert!(m.boundary("ymin").is_some());
         assert_eq!(m.n_cells, 48);
     }
 }

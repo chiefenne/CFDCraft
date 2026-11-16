@@ -6,7 +6,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 |---|---|---|---|
 | 3 | [The four test-mesh types in 3D](#mesh-types-3d) | 1 | built-in mesher, grading, perturbation, quality report |
 | 4 | [A polyhedral mesh in four parts](#poly-partition) | 1 | partitioning, halo layout, point location |
-| 5 | [The four test-mesh types in 2D](#mesh-types-2d) | 1 | one-cell-thick 2D meshes, patch renaming |
+| 5 | [The four test-mesh types in 2D](#mesh-types-2d) | 1 | one-cell-thick 2D meshes, boundary renaming |
 | 6 | [T-junction from Gmsh](#tjunction) | 1 | Gmsh reader, conversion to polyhedra, renumbering |
 | 26 | [Flow on raw Gmsh tetrahedra: the cell-quality remediation](#skewed-tets) | 6 | skewed faces, Gauss pressure gradient, limiter, divergence report (D50, D63) |
 
@@ -56,7 +56,7 @@ A polyhedral mesh of the unit cube (2 197 cells, nodes perturbed by 20 %)
 split into four parts with METIS (D32), one colour per rank. Each part is
 laid out as solver ranks will see it: inner cells, then cells touching the
 halo, then the halo cells by source rank, each group in reverse
-Cuthill-McKee order; faces inner, processor, then boundary by patch. The
+Cuthill-McKee order; faces inner, processor, then boundary by boundary. The
 report lists the cells, halo cells, processor faces and neighbours of each
 rank (imbalance 1.001, 1 230 cut faces). The point-location test of D47
 throws 5 000 random points and finds each one by walking from a random cell
@@ -85,8 +85,8 @@ python3 -m tools.mesh.render_mesh output/poly_partition/mesh.vtkhdf part.png --c
 2D meshes are one cell thick in z (D3): quadrilaterals become hexahedra,
 triangles become prisms, polygons become prismatic polyhedra. The mixed
 mesh combines both. Clustering towards x = 0 and towards the walls, nodes
-perturbed in x and y. The case files rename the generator's patches
-(`xmin` to `inlet` and so on) with a `[mesh.patches]` table; `zmin` and
+perturbed in x and y. The case files rename the generator's boundaries
+(`xmin` to `inlet` and so on) with a `[mesh.boundaries]` table; `zmin` and
 `zmax` take the symmetry condition in a 2D case.
 
 | | |
@@ -114,7 +114,7 @@ python3 -m tools.mesh.render_mesh output/poly_2d/mesh.vtkhdf poly_2d.png --top
 
 The T-junction mixer of stage 7 (D45) meshed with Gmsh
 (`examples/meshes/tjunction.geo`, main pipe 100 mm diameter, branch 50 mm)
-and read by the Gmsh v4 reader (D33). Physical groups become patches
+and read by the Gmsh v4 reader (D33). Physical groups become boundaries
 (`inlet_main`, `inlet_branch`, `outlet`, `wall`) and the cell zone `fluid`.
 The second case converts the 77 776 tetrahedra into 15 927 polyhedra, one
 per node; on the curved wall the boundary faces follow the triangles of
@@ -168,7 +168,7 @@ so (`MESH002`, `flow.log`, `flow.md`) and converges in 105 iterations:
 
 ```
 mesh quality: 28 faces with skewness above 0.9 (largest 1.233) in 44 cells; an optimised mesh avoids them (Gmsh: Mesh.OptimizeNetgen = 1)
-cell-quality remediation (D50, solver.remediation = "auto"): solver.pressure_gradient: "least-squares" -> "gauss", solver.limiter: "none" -> "venkatakrishnan"
+cell-quality remediation (D50, solver.remediation = "auto"): solver.pressure_gradient: "least-squares" -> "gauss", solver.momentum.limiter: "none" -> "venkatakrishnan"
 ```
 
 The switch is global, not per cell: treating only the cells at the

@@ -40,7 +40,7 @@ From Python:
 ```python
 from foehncraft import run
 res = run("examples/cases/flow/couette_viscosity.toml")
-e = res.uncertainty["patches.ymin.force_x"]
+e = res.uncertainty["boundaries.ymin.force_x"]
 print(e["order"], e["extrapolated"], e["band"], e["gci"], e["verdict"])
 ```
 

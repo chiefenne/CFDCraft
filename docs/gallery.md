@@ -21,7 +21,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25 |
 | [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22 |
-| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report | 17, 18, 19 |
+| [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log | 17, 18, 19, 27 |
 
 ## All examples by number
 
@@ -53,6 +53,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="python-study"></a>24 | [A parametric study from Python: Couette flow with a viscosity gradient](gallery/python.md#python-study) | [Python](gallery/python.md) |
 | <a id="gci"></a>25 | [Grid convergence index: Couette flow and the cylinder at Re = 20](gallery/verification.md#gci) | [Verification](gallery/verification.md) |
 | <a id="skewed-tets"></a>26 | [Flow on raw Gmsh tetrahedra: the cell-quality remediation](gallery/meshes.md#skewed-tets) | [Meshes](gallery/meshes.md) |
+| <a id="log"></a>27 | [A log that can be circulated](gallery/runs.md#log) | [Run control, health and adjoint readiness](gallery/runs.md) |
 
 ## Adding a feature
 

@@ -147,8 +147,8 @@ pub fn apply(mesh: &Mesh, perm: &[u32]) -> Result<Mesh, String> {
         zone[perm[c] as usize] = mesh.cell_zone[c];
     }
     b.set_zones(mesh.zones.clone(), zone);
-    for p in &mesh.patches {
-        b.declare_patch(&p.name);
+    for p in &mesh.boundaries {
+        b.declare_boundary(&p.name);
     }
     for f in 0..mesh.n_interior_faces() {
         b.add_interior(
@@ -157,7 +157,7 @@ pub fn apply(mesh: &Mesh, perm: &[u32]) -> Result<Mesh, String> {
             perm[mesh.neighbour[f] as usize],
         );
     }
-    for p in &mesh.patches {
+    for p in &mesh.boundaries {
         for f in p.range() {
             b.add_boundary(mesh.face(f), perm[mesh.owner[f] as usize], &p.name);
         }
@@ -214,7 +214,7 @@ mod tests {
         );
         let vol_r: f64 = Geometry::compute(&r).cell_volume.iter().sum();
         assert!((vol - vol_r).abs() < 1e-12);
-        assert_eq!(r.patches, m.patches);
+        assert_eq!(r.boundaries, m.boundaries);
         // identities still name the input cells and faces
         let g = Geometry::compute(&r);
         let g0 = Geometry::compute(&m);

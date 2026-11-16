@@ -25,6 +25,16 @@
 - `tools/plot/residuals_chart.py`: residual histories of several runs in
   one chart.
 
+**Log output (D125–D127).** The log of `foehn flow` is rewritten so that a log passed on alone shows the run: a banner with version and build, framed blocks (input and output files, run control, mesh information with quality, fluid properties, solution settings as a matrix per equation, boundary conditions), tables with repeating header rows for iterations and time steps, summaries (convergence, verification, results per boundary, ledger, run time, warnings) and a closing frame with the exit code. Frames use asterisk rules; `[log] style = "box"` draws them with box characters. Console and `flow.log` are identical. Gallery 27, recipe 37.
+
+**Case-file format 0.6 (D126).** New key `case_format` (absent = 0.5); old keys are mapped on reading and listed in the log; `foehn case upgrade [--write|--check]` rewrites files and keeps their comments.
+
+**Renamed: "patch" is now "boundary" (D126).** Keys `[boundary.<boundary>]` stay as they were; the names that change are the file `patches.csv` → `boundaries.csv`, the field `patches` → `boundaries` in `result.json`, `flow.json` and the ledger, the quantity names `patches.*`, the VTKHDF array `patch` → `boundary`, and the words in the log and the reports. Scripts that read the old names must follow.
+
+**Solver settings per equation (D127).** `[solver.momentum]` and `[solver.pressure]` replace the flat keys: `relaxation_velocity` → `momentum.relaxation`, `relaxation_pressure` → `pressure.relaxation`, `momentum_tolerance` → `momentum.tolerance`, `momentum_max_iter` → `momentum.max_iter`, `pressure_tolerance` → `pressure.tolerance`, `pressure_max_iter` → `pressure.max_iter`, `pressure_preconditioner` → `pressure.preconditioner`, `amg` → `pressure.amg`, and `scheme`, `limiter`, `limiter_k`, `central_blending`, `central_bounding` → `momentum.*`. All 73 example case files are upgraded. Old files still run (format 0.5).
+
+CPU results are bitwise unchanged against 0.5 (checked with `tools/check/compare_runs.py --across-versions` on the steady and the transient cavity; only the renamed names differ).
+
 ## Summary
 
 | Version | Stage | Highlights |

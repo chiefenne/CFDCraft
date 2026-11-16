@@ -125,7 +125,7 @@ seed = 59
     let (mesh, _, _) = build_mesh(&sec).unwrap();
     let geo = Geometry::compute(&mesh);
     let mut prob = Problem::default();
-    for (i, p) in mesh.patches.iter().enumerate() {
+    for (i, p) in mesh.boundaries.iter().enumerate() {
         let b = if i % 2 == 0 {
             Boundary::value(1.0)
         } else {

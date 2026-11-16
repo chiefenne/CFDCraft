@@ -7,7 +7,7 @@
 # 1 m/s) at the inlet, a static pressure outlet, Re = ρ U D / μ = 10. The 2D
 # mesh of the half plane 0 < r < R is revolved into a wedge of 0.5° about
 # the x axis: the cells next to the axis become prisms with an edge on the
-# axis and there is no axis patch. The wedge planes `zmin` and `zmax` take
+# axis and there is no axis boundary. The wedge planes `zmin` and `zmax` take
 # the `wedge` condition. Three nested meshes (32 x 8, 64 x 16, 128 x 32
 # cells); the run fails if the observed order of the velocity error on the
 # finest pair is outside 1.8–2.2 (observed 2.07 and 2.04).
@@ -17,6 +17,8 @@
 # differs from the circular pipe by about θ²/8 (relative), 9e-4 at 5°, which
 # hides the discretisation error of the finest mesh. A verification sweep
 # takes a small angle; 2–5° are fine for applications.
+
+case_format = "0.6"
 
 [mesh.generate]
 type = "hex"
@@ -47,9 +49,11 @@ type = "wedge"
 type = "wedge"
 
 [solver]
-relaxation_velocity = 0.9
 tolerance = 1e-9
 max_iterations = 5000
+
+[solver.momentum]
+relaxation = 0.9
 
 [analytic]
 type = "pipe-poiseuille"

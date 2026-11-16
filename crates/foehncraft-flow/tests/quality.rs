@@ -60,7 +60,7 @@ fn raw_gmsh_tetrahedra_converge_with_the_remediation() {
         q.changes,
         [
             "solver.pressure_gradient: \"least-squares\" -> \"gauss\"",
-            "solver.limiter: \"none\" -> \"venkatakrishnan\""
+            "solver.momentum.limiter: \"none\" -> \"venkatakrishnan\""
         ]
     );
     let codes: Vec<&str> = r.warnings.iter().map(|w| w.code).collect();
@@ -139,7 +139,7 @@ fn the_gauss_weights_give_the_exact_gradient_of_a_linear_field_without_skewness(
     let m = spec.generate().unwrap();
     let g = Geometry::compute(&m);
     let mut prob = Problem::default();
-    for p in &m.patches {
+    for p in &m.boundaries {
         prob.boundary.insert(p.name.clone(), Boundary::value(0.0));
     }
     let d = Discretisation::new(&m, &g, &prob).unwrap();
@@ -188,20 +188,16 @@ fn the_remediation_changes_only_what_the_case_does_not_set() {
     let (r, ch) = s.remedied(1.3);
     assert_eq!(ch.len(), 2);
     assert_eq!(r.pressure_gradient, PressureGradient::Gauss);
-    assert_eq!(r.limiter, LimiterKind::Venkatakrishnan);
+    assert_eq!(r.momentum.limiter, LimiterKind::Venkatakrishnan);
     // first-order upwind needs no limiter; a limiter of the case stays
-    let up = Settings {
-        scheme: Scheme::Upwind,
-        ..Settings::default()
-    };
+    let mut up = Settings::default();
+    up.momentum.scheme = Scheme::Upwind;
     assert_eq!(up.remedied(1.3).1.len(), 1);
-    let wang = Settings {
-        limiter: LimiterKind::VenkatakrishnanWang,
-        ..Settings::default()
-    };
+    let mut wang = Settings::default();
+    wang.momentum.limiter = LimiterKind::VenkatakrishnanWang;
     let (r, ch) = wang.remedied(1.3);
     assert_eq!(ch.len(), 1);
-    assert_eq!(r.limiter, LimiterKind::VenkatakrishnanWang);
+    assert_eq!(r.momentum.limiter, LimiterKind::VenkatakrishnanWang);
     // a stricter limit treats milder faces
     let strict = Settings {
         skewness_limit: 0.5,

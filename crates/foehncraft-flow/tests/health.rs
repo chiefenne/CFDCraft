@@ -112,14 +112,14 @@ fn cavity_energy_budget_on_three_meshes() {
         assert!(r.solves[0].converged);
         let b = &balance(&r).last;
         let k = &b.kinetic_energy;
-        let lid = b.patches.iter().find(|p| p.patch == "ymax").unwrap();
+        let lid = b.boundaries.iter().find(|p| p.boundary == "ymax").unwrap();
         assert!(lid.viscous_power > 0.0);
         // a closed domain: no mass flow, no convected energy, no pressure work
         assert_eq!(b.mass.imbalance, 0.0);
         let other: f64 = b
-            .patches
+            .boundaries
             .iter()
-            .filter(|p| p.patch != "ymax")
+            .filter(|p| p.boundary != "ymax")
             .map(|p| p.power().abs())
             .sum();
         assert!(other < 1e-12 * lid.viscous_power, "{other}");
@@ -212,8 +212,7 @@ fn steady_divergence_gives_the_report() {
     let d = out("diverge");
     let c = cavity(
         32,
-        "[solver]\nalgorithm = \"simple\"\nrelaxation_velocity = 0.99\nrelaxation_pressure = 1.0\n\
-         max_iterations = 200",
+        "[solver]\nalgorithm = \"simple\"\nmax_iterations = 200\n[solver.momentum]\nrelaxation = 0.99\n[solver.pressure]\nrelaxation = 1.0",
     );
     let mut c = c;
     c.fluid.viscosity = Some(0.001.into());
@@ -223,7 +222,7 @@ fn steady_divergence_gives_the_report() {
     let fix = dg.fix.unwrap().set;
     assert!(
         fix.iter()
-            .any(|f| f.starts_with("solver.relaxation_velocity="))
+            .any(|f| f.starts_with("solver.momentum.relaxation="))
     );
     for f in [
         "divergence.md",

@@ -4,6 +4,8 @@
 #
 #   foehn mesh examples/cases/mesh/tet_box.toml
 
+case_format = "0.6"
+
 [mesh.generate]
 type = "tet"
 dimension = 3

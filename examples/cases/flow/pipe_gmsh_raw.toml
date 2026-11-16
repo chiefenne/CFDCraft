@@ -22,6 +22,8 @@
 #   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pipe_gmsh_raw.toml \
 #       --set solver.remediation=off --out output/pipe_gmsh_raw_off
 
+case_format = "0.6"
+
 [mesh]
 file = "../../meshes/pipe_gmsh_raw.msh"
 renumber = "rcm"

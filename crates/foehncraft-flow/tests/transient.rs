@@ -43,7 +43,11 @@ wall_csv = false
 
 fn lid_force(r: &FlowReport) -> [f64; 3] {
     let s = r.solves.last().unwrap();
-    s.patches.iter().find(|p| p.name == "ymax").unwrap().force
+    s.boundaries
+        .iter()
+        .find(|p| p.name == "ymax")
+        .unwrap()
+        .force
 }
 
 /// D27: the Rhie–Chow flux carries the time-step term in the form whose
@@ -54,7 +58,7 @@ fn lid_force(r: &FlowReport) -> [f64; 3] {
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn steady_state_of_the_time_stepping_is_the_simplec_solution() {
     let steady = FlowCase::from_toml(
-        &format!("{CAVITY}\n[solver]\ntolerance = 1e-12\nmax_iterations = 5000\nmomentum_tolerance = 1e-10\npressure_tolerance = 1e-10\n"),
+        &format!("{CAVITY}\n[solver]\ntolerance = 1e-12\nmax_iterations = 5000\n[solver.momentum]\ntolerance = 1e-10\n[solver.pressure]\ntolerance = 1e-10\n"),
         Path::new("."),
     )
     .unwrap();

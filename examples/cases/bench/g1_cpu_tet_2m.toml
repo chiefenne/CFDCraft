@@ -4,6 +4,8 @@
 #
 #   foehn bench g1 examples/cases/bench/g1_cpu_tet_2m.toml
 
+case_format = "0.6"
+
 [mesh]
 type = "tet"
 cells = 2_000_000

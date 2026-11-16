@@ -39,6 +39,7 @@ clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 toml = "1.2"
+toml_edit = "0.25"
 mpi = "0.8"
 hdf5-metno = { version = "0.15", features = ["static"] }
 metis = "0.2"
