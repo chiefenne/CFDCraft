@@ -15,7 +15,8 @@
 //!   before, for the extrapolation), with the error estimate of the time
 //!   step (D65) also `u_old2_<i>` (the level before that);
 //! - per face (with `face_id`): `mass_flux`, and transient `m_old`, `x_cur`,
-//!   `x_old`; per boundary face `ub_<i>`, `pb`;
+//!   `x_old`; per boundary face `ub_<i>`, `pb`, and with convective outlets
+//!   (D29) the boundary velocity of the level before, `ub_old_<i>`;
 //! - `amg_matrix`: the pressure matrix of the last multigrid setup (the
 //!   hierarchy is rebuilt from it, so the preconditioner is the same);
 //! - optional, for meshes that move (D91, L22): `point_id`,
@@ -197,6 +198,11 @@ mod io {
                     ds(&g, "u_old2_y", &u[1])?;
                     ds(&g, "u_old2_z", &u[2])?;
                 }
+                if let Some(u) = &o.ub_old {
+                    ds(&g, "ub_old_x", &u[0])?;
+                    ds(&g, "ub_old_y", &u[1])?;
+                    ds(&g, "ub_old_z", &u[2])?;
+                }
             }
             if let Some(geo) = &r.geometry {
                 ds_u64(&g, "point_id", &geo.point_id)?;
@@ -292,6 +298,15 @@ mod io {
                             rd(&g, "u_old2_x")?,
                             rd(&g, "u_old2_y")?,
                             rd(&g, "u_old2_z")?,
+                        ])
+                    } else {
+                        None
+                    },
+                    ub_old: if g.link_exists("ub_old_x") {
+                        Some([
+                            rd(&g, "ub_old_x")?,
+                            rd(&g, "ub_old_y")?,
+                            rd(&g, "ub_old_z")?,
                         ])
                     } else {
                         None
@@ -474,6 +489,10 @@ impl Restart {
                         .u_old2
                         .as_ref()
                         .map(|u| [remap(&u[0], &mc), remap(&u[1], &mc), remap(&u[2], &mc)]),
+                    ub_old: o
+                        .ub_old
+                        .as_ref()
+                        .map(|u| [remap(&u[0], &mb), remap(&u[1], &mb), remap(&u[2], &mb)]),
                 };
             }
             if let Some(geo) = &mut self.geometry {

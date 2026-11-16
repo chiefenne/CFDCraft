@@ -370,3 +370,84 @@ steps = {steps}
     assert_eq!(r.transient.unwrap().1.step, 8);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A channel with a parabolic inflow between slip walls (the profile
+/// flattens downstream) and a convective outlet, error-controlled steps.
+fn convective_channel(time: &str, extra: &str) -> FlowCase {
+    let text = format!(
+        r#"
+[mesh.generate]
+type = "mixed"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [24, 12, 1]
+perturb = 0.2
+[fluid]
+viscosity = 0.01
+[flow]
+convection = true
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 1.5
+profile_axes = ["y"]
+[boundary.xmax]
+type = "convective-outlet"
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymax]
+type = "slip-wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[output]
+vtkhdf = false
+wall_csv = false
+[time]
+{time}
+{extra}
+"#
+    );
+    FlowCase::from_toml(&text, Path::new(".")).unwrap()
+}
+
+/// The convective outlet keeps its old boundary levels: a run with
+/// rejected steps continued from a restart file ends bit-identically to the
+/// run without the interruption (D42), and the outlet carries the inflow.
+#[test]
+fn convective_outlet_restarts_bit_identically() {
+    let time = "scheme = \"bdf2\"\ntime_step = 0.1\nsteps = 30\nadaptive = true\nmax_cfl = 4.0\n\
+                error_tolerance = 1e-3";
+    let full = convective_channel(time, "[run]\nrestart_at = [12]");
+    let da = out("restart_conv_full");
+    let ra = run_in(&full, "full", &da);
+    assert!(ra.failures.is_empty(), "{:?}", ra.failures);
+    assert!(
+        ra.solves[0].mass_imbalance < 1e-12,
+        "{}",
+        ra.solves[0].mass_imbalance
+    );
+    let log = std::fs::read_to_string(da.join("flow.log")).unwrap();
+    assert!(
+        log.contains(" rejected: error "),
+        "no step was rejected:\n{log}"
+    );
+    let from = da.join("restart_000012.h5");
+    let r = restart::read(&from).unwrap();
+    assert!(r.transient.as_ref().unwrap().0.ub_old.is_some());
+    let cont = convective_channel(time, &format!("[run]\nrestart = '{}'", from.display()));
+    let db = out("restart_conv_cont");
+    let rb = run_in(&cont, "cont", &db);
+    assert!(rb.failures.is_empty(), "{:?}", rb.failures);
+    let a = restart::read(&da.join("restart.h5")).unwrap();
+    let b = restart::read(&db.join("restart.h5")).unwrap();
+    assert!(same_restart(&a, &b), "the continued run differs");
+    let (oa, ob) = (
+        &a.transient.as_ref().unwrap().0,
+        &b.transient.as_ref().unwrap().0,
+    );
+    assert!(oa.ub_old.is_some() && oa.ub_old == ob.ub_old);
+    let _ = std::fs::remove_dir_all(&da);
+    let _ = std::fs::remove_dir_all(&db);
+}

@@ -62,7 +62,7 @@ The limits may change during a run (a re-read of the case file, D40).
 | `run.jsonl` | `foehncraft.run_record` | The run record (D69), one JSON object per line, flushed at every log line, so it can be followed while the run goes on (`tail -f`). |
 | `flow.log`, `flow.md`, `flow.json` | | The log and the report for people, with timings. |
 | `fields.vtkhdf`, `fields_N.vtkhdf` | VTKHDF 2.x | Fields, with the root attributes `foehncraft_format`, `foehncraft_format_version`, `foehncraft_version`, `case`, `units` and `step`/`time` or `iteration`. |
-| `restart.h5` | Foehncraft restart | With `foehncraft_version` and `units`; transient files carry the attribute `dt_prev2` (the step before the last; read as 0 from older files) and, with the error estimate of the time step (D65), the datasets `u_old2_x`, `u_old2_y`, `u_old2_z`; optional datasets `point_id`, `points_x`, `points_y`, `points_z` and `volume_<k>` for meshes that move (D91), left out for fixed meshes. |
+| `restart.h5` | Foehncraft restart | With `foehncraft_version` and `units`; transient files carry the attribute `dt_prev2` (the step before the last; read as 0 from older files) and, with the error estimate of the time step (D65), the datasets `u_old2_x`, `u_old2_y`, `u_old2_z`, and with a convective outlet (D29) the old boundary velocity `ub_old_x`, `ub_old_y`, `ub_old_z`; optional datasets `point_id`, `points_x`, `points_y`, `points_z` and `volume_<k>` for meshes that move (D91), left out for fixed meshes. |
 | `*.csv` | `foehncraft-<kind>` | Residuals, history, forces, probes, patches, wall and line data, each with a comment preamble (below). |
 | `balance.csv` | `foehncraft-balance` | The conservation ledger (D88, D89, below): one row per time step (every `output.history_every`) or per balance table of a steady run and its final state. |
 | `balance.svg` | SVG | Bars of the kinetic-energy terms at the end: of the final state (steady, W) or over the run (transient, J). `tools/balance_chart.py` draws the time histories of a transient `balance.csv`. |
@@ -248,6 +248,13 @@ A code keeps its meaning; a retired code stays in the table.
 | `BC016` | error | A flow path whose flow rate is over-specified. |
 | `BC017` | warning | Nothing drives a flow: the result is the fluid at rest. |
 | `BC018` | note | No prescribed inflow: the flow rate follows from the pressure boundaries. |
+| `BC019` | error | A table inlet profile that is missing, unreadable or not a valid table. |
+| `BC020` | warning | Faces of a table inlet outside the range of the table (they take the end values). |
+| `BC021` | error | A convective outlet in a steady case. |
+| `BC022` | error | A convective outlet without `convection_velocity` and no prescribed inflow to take it from. |
+| `BC023` | error | Wedge patches that do not form one wedge about an axis. |
+| `BC024` | warning | A wedge wider than 10° (the axisymmetric error grows with the angle). |
+| `BC025` | error | A potential-flow start with a convective outlet and no pressure boundary. |
 | `RUN001` | note | Stopped by the `.stop` control file. |
 | `RUN002` | note | Stopped by a signal (SIGTERM, SIGINT or SIGUSR2). |
 | `RUN003` | warning | Stopped at the wall-time limit (`[run.limits] max_wall_time`). |

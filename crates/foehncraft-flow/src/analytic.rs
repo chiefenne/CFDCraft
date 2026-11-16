@@ -1,9 +1,12 @@
 //! Exact solutions and reference data of the stage-4 verification and
 //! validation cases (D45):
 //!
+//! - uniform flow (the exact solution between slip walls, D29);
 //! - plane Couette flow between two walls, the upper one moving in x;
 //! - plane Poiseuille flow between two walls at rest, driven by a pressure
 //!   drop in x;
+//! - Hagen–Poiseuille flow in a pipe along the x axis (the axisymmetric
+//!   check on wedge meshes, D29);
 //! - the lid-driven cavity centre-line velocities of Ghia, Ghia & Shin
 //!   (1982), tables I and II, Re = 100 and 1000;
 //! - the decaying Taylor–Green vortex in two dimensions (Taylor & Green
@@ -20,6 +23,18 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Analytic {
+    /// Uniform flow: u = U, p constant (exact between slip walls).
+    Uniform {
+        /// The velocity U (m/s).
+        #[serde(default = "unit_x")]
+        velocity: [f64; 3],
+        /// The constant pressure (Pa).
+        #[serde(default)]
+        pressure: f64,
+        /// Length scale of the Reynolds number (m).
+        #[serde(default = "one")]
+        length: f64,
+    },
     /// Plane Couette flow: u = U (y − y₀)/(y₁ − y₀), p constant.
     Couette {
         /// y of the wall at rest.
@@ -49,6 +64,26 @@ pub enum Analytic {
         mean_velocity: f64,
         /// Dynamic viscosity μ (Pa s), for the pressure gradient (set by the
         /// case from `[fluid]`).
+        #[serde(default)]
+        viscosity: f64,
+        /// x of the outlet.
+        #[serde(default = "one")]
+        x_outlet: f64,
+        /// Pressure at the outlet (Pa).
+        #[serde(default)]
+        pressure_outlet: f64,
+    },
+    /// Hagen–Poiseuille flow in a pipe of radius R along the x axis:
+    /// u = 2 U_m (1 − r²/R²), r² = y² + z², p = p_out + G (x_out − x) with
+    /// G = 8 μ U_m / R².
+    PipePoiseuille {
+        /// Pipe radius R (m).
+        #[serde(default = "one")]
+        radius: f64,
+        /// Mean velocity U_m (m/s).
+        #[serde(default = "one")]
+        mean_velocity: f64,
+        /// Dynamic viscosity μ (Pa s), set by the case from `[fluid]`.
         #[serde(default)]
         viscosity: f64,
         /// x of the outlet.
@@ -88,10 +123,15 @@ fn one() -> f64 {
     1.0
 }
 
+fn unit_x() -> [f64; 3] {
+    [1.0, 0.0, 0.0]
+}
+
 impl Analytic {
     /// Exact velocity at `x`.
     pub fn velocity(&self, x: [f64; 3]) -> [f64; 3] {
         match *self {
+            Self::Uniform { velocity, .. } => velocity,
             Self::Couette {
                 lower,
                 upper,
@@ -106,6 +146,14 @@ impl Analytic {
             } => {
                 let eta = (x[1] - lower) / (upper - lower);
                 [6.0 * mean_velocity * eta * (1.0 - eta), 0.0, 0.0]
+            }
+            Self::PipePoiseuille {
+                radius,
+                mean_velocity,
+                ..
+            } => {
+                let r2 = (x[1] * x[1] + x[2] * x[2]) / (radius * radius);
+                [2.0 * mean_velocity * (1.0 - r2), 0.0, 0.0]
             }
             Self::TaylorGreen {
                 velocity,
@@ -129,7 +177,7 @@ impl Analytic {
     /// Exact pressure at `x`.
     pub fn pressure(&self, x: [f64; 3]) -> f64 {
         match *self {
-            Self::Couette { pressure, .. } => pressure,
+            Self::Uniform { pressure, .. } | Self::Couette { pressure, .. } => pressure,
             Self::Poiseuille {
                 lower,
                 upper,
@@ -140,6 +188,16 @@ impl Analytic {
             } => {
                 let h = upper - lower;
                 pressure_outlet + 12.0 * viscosity * mean_velocity / (h * h) * (x_outlet - x[0])
+            }
+            Self::PipePoiseuille {
+                radius,
+                mean_velocity,
+                viscosity,
+                x_outlet,
+                pressure_outlet,
+            } => {
+                pressure_outlet
+                    + 8.0 * viscosity * mean_velocity / (radius * radius) * (x_outlet - x[0])
             }
             Self::TaylorGreen {
                 velocity,
@@ -179,12 +237,14 @@ impl Analytic {
     /// Sets the fluid properties the solution depends on.
     pub fn with_fluid(mut self, density: f64, viscosity: f64) -> Self {
         match &mut self {
-            Self::Poiseuille { viscosity: v, .. } => *v = viscosity,
+            Self::Poiseuille { viscosity: v, .. } | Self::PipePoiseuille { viscosity: v, .. } => {
+                *v = viscosity
+            }
             Self::TaylorGreen { nu, rho, .. } => {
                 *nu = viscosity / density;
                 *rho = density;
             }
-            Self::Couette { .. } => {}
+            Self::Uniform { .. } | Self::Couette { .. } => {}
         }
         self
     }
@@ -195,6 +255,8 @@ impl Analytic {
             Self::Couette { lower, upper, .. } | Self::Poiseuille { lower, upper, .. } => {
                 upper - lower
             }
+            Self::PipePoiseuille { radius, .. } => 2.0 * radius,
+            Self::Uniform { length, .. } => length,
             Self::TaylorGreen { length, .. } => length,
         }
     }
@@ -202,15 +264,19 @@ impl Analytic {
     /// Velocity scale for the error norms (the wall or the largest speed).
     pub fn velocity_scale(&self) -> f64 {
         match *self {
+            Self::Uniform { velocity: v, .. } => (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt(),
             Self::Couette { wall_velocity, .. } => wall_velocity.abs(),
             Self::Poiseuille { mean_velocity, .. } => 1.5 * mean_velocity.abs(),
+            Self::PipePoiseuille { mean_velocity, .. } => 2.0 * mean_velocity.abs(),
             Self::TaylorGreen { velocity, .. } => velocity.abs(),
         }
     }
 
     /// Sets the viscosity of the pressure gradient.
     pub fn with_viscosity(mut self, mu: f64) -> Self {
-        if let Self::Poiseuille { viscosity, .. } = &mut self {
+        if let Self::Poiseuille { viscosity, .. } | Self::PipePoiseuille { viscosity, .. } =
+            &mut self
+        {
             *viscosity = mu;
         }
         self

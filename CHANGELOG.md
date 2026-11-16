@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+**Boundary conditions of stage 5 (part 5b, D29).** New condition types
+`slip-wall`, `wedge` and `convective-outlet` (∂u/∂t + U_c ∂u/∂n = 0 in
+transient runs, the outlet flow balanced with the inflow, U_c by default
+the mean outflow speed); inlet profiles from a table (`profile = "table"`,
+`table`, `table_coordinate` x, y, z or the radius about an axis, the
+table's sha256 in the case hash); backflow treatment at static and total
+pressure outlets (`backflow = "total-pressure"`, the new default,
+`"zero-gradient"`, the treatment before, or `"suppress"`, which closes the
+faces where the flow would enter). Axisymmetric wedge meshes from any 2D
+mesh of the box generator (`mesh.generate.wedge`, the axis without a
+patch), and the exact solutions `uniform` and `pipe-poiseuille`. Seven new
+diagnostic codes BC019–BC025. The restart file of a run with a
+convective outlet gains the datasets `ub_old_x|y|z`. New cases
+`flow/channel_slip.toml`, `poiseuille_table.toml` (with
+`poiseuille_profile.csv`), `pipe_wedge.toml`, `cylinder_re100_short.toml`
+and `cylinder_re100_convective.toml`; gallery 21, recipe 29. Runs whose
+outlets see no backflow are bitwise as before; the Poiseuille cases on
+perturbed prisms, polygons and mixed cells, where a few outlet faces see
+inflow in the first iterations, change by 2e-6 relative
+(`backflow = "zero-gradient"` gives the earlier results bitwise).
+
 **Numerics of stage 5 (part 5a).** A bounded central convection scheme
 (`solver.scheme = "central"`, D25) with the bound β and a blend with linear
 upwind; the time step from the error estimate of BDF2 and Crank–Nicolson

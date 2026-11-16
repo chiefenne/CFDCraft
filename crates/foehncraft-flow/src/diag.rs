@@ -94,6 +94,13 @@ codes! {
     BC_OVER_SPECIFIED = "BC016", Error, "A flow path whose flow rate is over-specified.";
     BC_FLUID_AT_REST = "BC017", Warning, "Nothing drives a flow: the result is the fluid at rest.";
     BC_PRESSURE_DRIVEN = "BC018", Note, "No prescribed inflow: the flow rate follows from the pressure boundaries.";
+    BC_TABLE = "BC019", Error, "A table inlet profile that is missing, unreadable or not a valid table.";
+    BC_TABLE_RANGE = "BC020", Warning, "Faces of a table inlet outside the range of the table (they take the end values).";
+    BC_CONVECTIVE_STEADY = "BC021", Error, "A convective outlet in a steady case.";
+    BC_CONVECTIVE_VELOCITY = "BC022", Error, "A convective outlet without `convection_velocity` and no prescribed inflow to take it from.";
+    BC_WEDGE = "BC023", Error, "Wedge patches that do not form one wedge about an axis.";
+    BC_WEDGE_ANGLE = "BC024", Warning, "A wedge wider than 10° (the axisymmetric error grows with the angle).";
+    BC_POTENTIAL_CONVECTIVE = "BC025", Error, "A potential-flow start with a convective outlet and no pressure boundary.";
     // the run (D40, D62, D64, D83)
     RUN_STOP_FILE = "RUN001", Note, "Stopped by the `.stop` control file.";
     RUN_SIGNAL = "RUN002", Note, "Stopped by a signal (SIGTERM, SIGINT or SIGUSR2).";

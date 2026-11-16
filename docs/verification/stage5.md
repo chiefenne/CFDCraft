@@ -323,17 +323,17 @@ mesh of 54 cells and 48 nodes, for each coordinate of each node.
 
 | Kernel | Outputs per index | Derivatives compared | Largest relative difference |
 |---|---:|---:|---:|
-| least-squares gradient (`fv::lsq_gradient`) | 3 | 21 600 | 3.4e-8 |
-| Venkatakrishnan limiter (`fv::venkat_limiter`) | 1 | 7 200 | 1.3e-7 |
-| scalar face flux (`fv::face_coefficients`) | 3 | 61 020 | 6.2e-8 |
-| momentum face flux (`flow::momentum_face`) | 5 | 101 700 | 5.3e-8 |
-| Rhie–Chow mass flux, steady (`flow::face_mass_flux`) | 1 | 20 340 | 4.0e-7 |
-| Rhie–Chow mass flux in a time step | 1 | 20 340 | 5.0e-7 |
-| pressure-correction coefficient (`flow::pressure_face`) | 1 | 20 340 | 4.4e-8 |
-| flux correction (`flow::correct_flux`) | 1 | 20 340 | 1.8e-7 |
-| flux of a velocity increment (`flow::delta_flux`) | 1 | 20 340 | 1.0e-7 |
-| boundary velocity, four rules (`flow::boundary_velocity`) | 3 | 20 520 | 1.4e-7 |
-| boundary pressure, three rules (`flow::boundary_pressure`) | 1 | 6 840 | 7.6e-8 |
+| least-squares gradient (`fv::lsq_gradient`) | 3 | 23 400 | 1.0e-7 |
+| Venkatakrishnan limiter (`fv::venkat_limiter`) | 1 | 7 800 | 1.1e-7 |
+| scalar face flux (`fv::face_coefficients`) | 3 | 66 105 | 8.5e-8 |
+| momentum face flux (`flow::momentum_face`) | 5 | 110 175 | 5.2e-8 |
+| Rhie–Chow mass flux, steady (`flow::face_mass_flux`) | 1 | 22 035 | 4.1e-7 |
+| Rhie–Chow mass flux in a time step | 1 | 22 035 | 5.1e-7 |
+| pressure-correction coefficient (`flow::pressure_face`) | 1 | 22 035 | 1.8e-7 |
+| flux correction (`flow::correct_flux`) | 1 | 22 035 | 3.8e-8 |
+| flux of a velocity increment (`flow::delta_flux`) | 1 | 22 035 | 8.7e-8 |
+| boundary velocity, seven rules (`flow::boundary_velocity`) | 3 | 22 230 | 1.7e-7 |
+| boundary pressure, six rules (`flow::boundary_pressure`) | 1 | 7 410 | 5.1e-8 |
 | geometry from the node coordinates (`geometry::polygon_area_centroid`, `cell_volume_centroid_of`) | 6 per face, 4 per cell | 165 024 | 2.8e-7 |
 
 The differences are those of the central differences (truncation 10⁻¹²
@@ -626,11 +626,108 @@ restart file has the attribute `dt_prev2`; the comparison now matches
 the lines of the older resolved case in order and HDF5 files by their
 datasets.
 
+## Boundary conditions (part 5b)
+
+The conditions of D29 that are not periodic: slip wall, wedge, inlet
+profiles from a table, backflow treatment at pressure outlets and the
+convective outlet. Runs whose pressure outlets see no backflow are bitwise
+those of part 5a (the catalogue below).
+
+| Check | Result | Where |
+|---|---|---|
+| Slip walls | uniform flow between slip walls on hex, tet, poly and mixed cells perturbed by 20 %: velocity error 1.5e-11, pressure 1.0e-11 | case `channel_slip`, test `slip_walls_hold_the_uniform_flow_on_every_mesh_type` |
+| Wedge, Hagen–Poiseuille | 0.5°, 256 to 4 096 cells perturbed by 15 %: L2 error 2.11e-3, 5.00e-4, 1.21e-4, order 2.07, 2.04; polygonal prisms revolved (1 105 cells) 3.0e-4 | case `pipe_wedge`, tests `wedge_pipe_is_second_order`, `wedge_pipe_on_polyhedra` |
+| Wedge mesh | every cell type of the box generator, perturbed or not: closed cells, the volume of the planar wedge to 1e-12, wedge planes planar at ∓θ/2; an annulus keeps its inner patch | tests `wedges_of_every_type`, `annulus_keeps_the_inner_wall` |
+| Inlet profile from a table | the table's rows at the inlet face centres give the run with the exact parabola (L2 error 1.592e-3 for both, equal to 1e-6); missing and malformed tables refused (BC019) | case `poiseuille_table`, tests `table_inlet_matches_the_exact_profile`, `bad_tables_are_refused` |
+| Backflow as total pressure | the reversed uniform flow leaves through the velocity inlet and enters through the outlet: uniform flow exact, static pressure p_set − ½ρU² to 3e-11, 132 iterations; with `zero-gradient` the residual falls by only 0.81 per 200 iterations | test `backflow_takes_the_outlet_pressure_as_total_pressure` |
+| Backflow suppressed | a side outlet held 0.1 Pa above the channel: the faces close and act as a slip wall, no mass crosses (exactly 0), the uniform flow stays exact (1.3e-11); with the total-pressure treatment fluid enters | test `suppressed_backflow_closes_the_outlet` |
+| Convective outlet, mass and start-up | no pressure boundary: outlet flow equal to the inflow to round-off in every step (largest relative imbalance 5e-18 in the cylinder run); the start-up disturbance leaves, error 2.4e-2, 1.6e-3, 3.9e-5 after 0.25, 2 and 4 s (two flow-through times) | test `convective_outlet_balances_the_flow_and_lets_the_start_leave` |
+| Convective outlet, restart and rejection | error-controlled steps with rejections, continued from a restart file bit-identically, including the old boundary levels | test `convective_outlet_restarts_bit_identically` |
+| Cylinder at Re 100, outlet 5.5 D behind the cylinder | pressure outlet (total-pressure backflow): C_D,max 3.2336, C_L,max 0.9713, St 0.2951, Δp 2.4825 (long channel 3.2319, 0.9712, 0.2955, 2.4819); convective outlet 3.2261, 0.9555, 0.2952, 2.4779 | cases `cylinder_re100_short` (fails above 2.5 %), `cylinder_re100_convective` (above 4 %), `tools/outlet_chart.py` |
+| Checks | convective outlet in a steady case (BC021), without inflow and convection velocity (BC022), one wedge plane (BC023), a wedge over 10° (BC024) | test `checks_of_the_new_conditions` |
+
+**Slip wall and wedge.** Both use the kernels of the symmetry plane: no
+normal velocity, the tangential velocity of the cell, no shear stress, the
+extrapolated pressure. On the wedge planes this is also the axisymmetric
+treatment: the two planes see the velocity rotated by ±θ/2, and the
+viscous flux through them is the hoop-stress term −μ u_r/r² of the
+axisymmetric equations (in the limit of a small θ), so no source term is
+needed. The axis carries no face: the nodes with y = 0 of both layers are
+one node, the faces there have zero area and are dropped, and the cells
+next to the axis become prisms (from hexahedra) or polyhedra with an edge
+on it. The faces of the wedge are planar, so a wedge of θ is a slice of a
+pipe whose cross-section is a regular polygon of 360°/θ sides. At 5° this
+polygonal pipe differs from the round one by 9e-4 in the velocity (about
+θ²/8); on the finest mesh of the sweep that is larger than the
+discretisation error (observed order −0.8 at 5°, 2.4 at 1°, 2.04 at
+0.5°), hence the small angle of the case.
+
+**Backflow at pressure outlets.** A face of a static pressure outlet whose
+flux points into the domain takes, with `"total-pressure"`, the
+prescribed pressure as the total pressure of the entering fluid,
+p_b = p_set − ½ρ(ṁ/(ρ|S|))², and the velocity normal to the face,
+u_b = (u_e·n̂) n̂ (u_e the extrapolated velocity): the entering fluid has
+no more energy than the reservoir behind the outlet, which is what keeps
+the iteration stable where a vortex crosses the outlet. With
+`"zero-gradient"` (the treatment before) both stay as on outflow; the
+reversed-flow channel then converges at 0.81 per 200 iterations instead
+of in 132 iterations. With `"suppress"` the predicted flux of such a face
+is set to zero and the face leaves the pressure-correction equation for
+that iteration; its velocity is the tangential part of u_e and its
+pressure the extrapolated one, so the closed face is a slip wall. The
+predicted flux is computed with the prescribed pressure, not the
+extrapolated one, so a closed face opens again exactly when the
+prescribed pressure would drive the flow out (with the extrapolated
+pressure the faces flip between open and closed and the run stalls at a
+residual of 7e-3). The rules read only the mass flux, so a restart or a
+rejected step needs no state of the closed faces.
+
+**Convective outlet.** On the outlet faces
+∂u/∂t + U_c ∂u/∂n = 0 is discretised between the face and its cell with
+the backward difference of the run (BDF1 for Crank–Nicolson and the
+first step): a₀u_b + a₁u_bⁿ + a₂u_bⁿ⁻¹ = −Δt U_c (u_b − u_e)/Δn, so
+u_b = (c + βu_e)/(1 + β) with c = −(a₁u_bⁿ + a₂u_bⁿ⁻¹)/a₀ and
+β = U_c Δt/(a₀ Δn), Δn the distance from the cell centre to the face along
+the normal and u_e the velocity of the cell extrapolated along the face.
+c and β are set per step on the device. U_c defaults to the mean outflow
+speed −Q_in/(ρA_out). When no boundary prescribes the pressure, the
+outlet velocity is shifted by one normal velocity per iteration so that
+the outflow equals the prescribed inflow, an exact reduction in face
+order (D31), and the reference cell holds the pressure level. Between
+steps (at the start, after a restart and while a step is repeated) β = 0
+holds u_b = c exactly, so restart and rejection are bitwise; the restart
+file stores the level u_bⁿ⁻¹ (`ub_old_x|y|z`). In the short channel the
+convective outlet lowers C_L,max by 1.6 % against the long channel, while
+the pressure outlet with the total-pressure backflow keeps it; the
+convection speed is the mean outflow speed by default;
+`convection_velocity` sets another.
+
+**Inlet profile from a table.** The table is read when the case loads,
+after the read-root check (D82); its sha256 is part of the case hash
+(D85), so a changed table is a changed case. Values are linear between the
+rows and constant beyond the ends; the check names the faces outside the
+rows (BC020).
+
+**The catalogue against part 5a.** The 23 flow cases of the CI sets of
+part 5a, the scalar, Poisson and mesh cases, run with the binaries of main
+and of this part (`tools/compare_runs.py --across-versions`, 309 files):
+20 flow cases and every scalar and Poisson case bitwise equal; the mesh
+reports differ only in their timings. `poiseuille_tet`, `poiseuille_poly`
+and `poiseuille_mixed` differ by the new default backflow treatment: on
+these perturbed meshes a few outlet faces next to the walls see inflow in
+the first iterations; the iteration counts are the same and the errors
+agree to 2e-6 relative (finest polygonal level 7.73569e-5 against
+7.73571e-5; observed orders unchanged to 3e-6). With
+`--set boundary.xmax.backflow=zero-gradient` all three are bitwise those
+of main.
+
 ## Limits of this part of stage 5
 
-- The further stage-5 items (the new boundary conditions and derived
-  fields of part 5b, expressions, the Python package) follow in their own
-  pull requests.
+- The further stage-5 items (the derived fields of part 5c, expressions,
+  the Python package) follow in their own pull requests.
+- The turbulence values of the backflow at pressure outlets are accepted
+  and take effect with the turbulence models of stage 6. The wedge needs
+  a 2D mesh of the box generator; wedges from Gmsh meshes come with D3.
 - The potential-flow start does not yet interpolate from a result on
   another mesh, and has no grid sequencing (D52 later).
 - The ledger covers mass and kinetic energy; momentum (the patch forces

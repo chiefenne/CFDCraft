@@ -1,0 +1,69 @@
+# Flow around a cylinder at Re = 100 in a short channel: a static pressure
+# outlet with backflow treatment (stage 5, D29).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cylinder_re100_short.toml
+#
+# The case cylinder_re100.toml with the outlet at x = 0.75 m, 5.5 D behind
+# the cylinder centre instead of 20 D (the mesh is the near wake of the
+# long channel, cell for cell). The vortices of the street cross the
+# outlet, so fluid enters through it in parts of every period; the default
+# `backflow = "total-pressure"` takes the outlet pressure as the total
+# pressure of the entering fluid. On 4 928 cells C_D,max 3.234, St 0.2951
+# and Δp 2.483 Pa lie inside the reference ranges and C_L,max is 0.971, as
+# in the long channel (1.9 % below the range); the run fails above 2.5 %.
+# Compare with cylinder_re100_convective.toml (the same channel with a
+# convective outlet) and cylinder_re100.toml (the long channel);
+# docs/verification/stage5.md has the numbers.
+
+[mesh.cylinder]
+refine = 0
+length = 0.75           # the outlet 5.5 D behind the cylinder centre
+wake = 26               # the near wake of the 2.2 m channel, cell for cell
+wake_ratio = 2.28
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[flow]
+convection = true
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 1.5
+profile_axes = ["y"]
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.walls]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+log_every = 500
+
+[time]
+scheme = "bdf2"
+time_step = 0.0005
+end_time = 8.0
+adaptive = true
+max_cfl = 0.8
+
+[verification]
+benchmark = "schafer-turek-2d2"
+benchmark_tolerance = 0.025
+evaluation_start = 5.0
+
+[output]
+vtkhdf = false
+fields_every = 0
+wall_csv = false

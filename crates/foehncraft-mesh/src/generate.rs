@@ -162,6 +162,11 @@ pub struct BoxSpec {
     /// Seed of the perturbation.
     #[serde(default = "default_seed")]
     pub seed: u64,
+    /// Revolve the 2D mesh about the x axis into an axisymmetric wedge of
+    /// this angle (degrees; y is the radius, `zmin` and `zmax` become the
+    /// wedge planes, see [`crate::wedge`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wedge: Option<f64>,
 }
 
 /// Grading of the three directions.
@@ -207,6 +212,7 @@ impl Default for BoxSpec {
             refine: 0,
             perturb: 0.0,
             seed: default_seed(),
+            wedge: None,
         }
     }
 }
@@ -270,6 +276,20 @@ impl BoxSpec {
                 return Err(format!("grading ratio of direction {d} must be positive"));
             }
         }
+        if let Some(a) = self.wedge {
+            if self.dimension != 2 {
+                return Err("a wedge revolves a 2D mesh: set dimension = 2".into());
+            }
+            if self.lower[1] < 0.0 {
+                return Err(format!(
+                    "a wedge needs lower[1] >= 0 (y is the radius), not {}",
+                    self.lower[1]
+                ));
+            }
+            if !(a > 0.0 && a <= 90.0) {
+                return Err(format!("the wedge angle must lie in (0°, 90°], not {a}°"));
+            }
+        }
         let est = self.estimated_cells();
         if est > foehncraft_core::index::MAX_LOCAL_INDEX as usize / 8 {
             return Err(format!(
@@ -297,10 +317,14 @@ impl BoxSpec {
     /// Generates the mesh.
     pub fn generate(&self) -> Result<Mesh, String> {
         self.validate()?;
-        match (self.kind, self.dimension) {
+        let m = match (self.kind, self.dimension) {
             (Kind::Poly, 3) => self.poly3d(),
             (Kind::Poly, _) => self.poly2d(),
             _ => self.structured(),
+        }?;
+        match self.wedge {
+            Some(a) => crate::wedge::revolve(&m, a),
+            None => Ok(m),
         }
     }
 

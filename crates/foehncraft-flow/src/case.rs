@@ -685,16 +685,35 @@ impl FlowCase {
     /// applied before the case is validated (`--set`, D62). A re-read of
     /// the case file during the run applies them again.
     pub fn from_file_with(path: &Path, sets: &[String]) -> Result<Self> {
+        let mut c = Self::from_file_unloaded(path, sets)?;
+        c.load_tables()?;
+        Ok(c)
+    }
+
+    /// As [`from_file_with`](Self::from_file_with), without reading the
+    /// files the case refers to (the profile tables): the caller checks
+    /// their paths first (read roots, D82) and then calls
+    /// [`load_tables`](Self::load_tables).
+    pub fn from_file_unloaded(path: &Path, sets: &[String]) -> Result<Self> {
         let text = std::fs::read_to_string(path).map_err(|e| {
             diag::err(diag::Diagnostic::new(
                 diag::CASE_FILE,
                 format!("reading {}: {e}", path.display()),
             ))
         })?;
-        let mut c = Self::from_toml_with(&text, path.parent().unwrap_or(Path::new(".")), sets)
+        let mut c = Self::from_toml_parts(&text, path.parent().unwrap_or(Path::new(".")), sets)
             .with_context(|| format!("in case file {}", path.display()))?;
         c.source = Some(path.to_path_buf());
         Ok(c)
+    }
+
+    /// Reads the profile tables of the boundary conditions (their paths are
+    /// resolved against the case file already).
+    pub fn load_tables(&mut self) -> Result<()> {
+        for b in self.boundary.values_mut() {
+            b.load_table(Path::new(""))?;
+        }
+        Ok(())
     }
 
     /// Parses and validates a case from TOML text.
@@ -705,6 +724,14 @@ impl FlowCase {
     /// Parses a case from TOML text, applies the `key=value` overrides and
     /// validates it.
     pub fn from_toml_with(text: &str, dir: &Path, sets: &[String]) -> Result<Self> {
+        let mut c = Self::from_toml_parts(text, dir, sets)?;
+        c.load_tables()?;
+        Ok(c)
+    }
+
+    /// As [`from_toml_with`](Self::from_toml_with), without reading the
+    /// profile tables.
+    fn from_toml_parts(text: &str, dir: &Path, sets: &[String]) -> Result<Self> {
         let mut c: Self = if sets.is_empty() {
             toml::from_str(text).map_err(|e| diag::err(toml_diagnostic(text, &e)))?
         } else {
@@ -727,6 +754,9 @@ impl FlowCase {
             && r.as_os_str() != LATEST
         {
             c.run.restart = Some(dir.join(r));
+        }
+        for b in c.boundary.values_mut() {
+            b.resolve_paths(dir);
         }
         c.validate()?;
         Ok(c)
@@ -911,6 +941,15 @@ impl FlowCase {
     fn analytic(&self) -> Option<Analytic> {
         self.analytic
             .map(|a| a.with_fluid(self.fluid.density, self.fluid.viscosity))
+    }
+
+    /// What the boundary-condition check needs to know about the case.
+    pub fn check_context(&self) -> bc::CheckContext {
+        bc::CheckContext {
+            laminar: true,
+            transient: self.time.is_some(),
+            potential_flow: self.initial.potential_flow,
+        }
     }
 
     /// The exact solution at time `t` (transient solutions decay in time).
@@ -1220,7 +1259,7 @@ pub fn run_steered(
             &case.boundary,
             phys.rho,
             analytic.as_ref(),
-            true,
+            case.check_context(),
         );
         if li == 0 {
             for f in &findings {
@@ -2406,7 +2445,7 @@ pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Re
         &case.boundary,
         case.fluid.density,
         case.analytic().as_ref(),
-        true,
+        case.check_context(),
     );
     for f in &findings {
         log(&f.to_string());

@@ -217,6 +217,15 @@ pub struct Mesh {
     pub pset: Raw<f64>,
     /// Viscosity per face.
     pub mu_face: Raw<f64>,
+    /// Closed state per boundary face of the backflow suppression (1
+    /// closed, 0 open), written by [`CloseBackflow`] in every outer
+    /// iteration.
+    pub closed: Raw<f64>,
+    /// Old-level part c of the convective outlets per boundary face, set
+    /// per time step ([`k::UB_CONVECTIVE`]).
+    pub conv: Raw3,
+    /// β of the convective outlets per boundary face, set per time step.
+    pub beta: Raw<f64>,
 }
 
 impl Mesh {
@@ -409,6 +418,32 @@ impl Entry for BlockSumSq {
     }
 }
 
+/// Arguments of [`BlockDot`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct DotArgs {
+    /// First array.
+    pub x: Raw<f64>,
+    /// Second array (as long as `x`).
+    pub y: Raw<f64>,
+    /// Block sums, one per block of `foehncraft_core::repro::BLOCK`.
+    pub out: Raw<f64>,
+}
+
+/// Σ x y per block (the leaves of the fixed tree of D31).
+pub struct BlockDot;
+impl Entry for BlockDot {
+    type Args = DotArgs;
+    const NAME: &'static str = "block_dot";
+    #[inline(always)]
+    unsafe fn run(b: usize, a: &DotArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            *a.out.out().add(b) = blas::block_dot(b, a.x.get(), a.y.get());
+        }
+    }
+}
+
 /// Minimum and maximum per block.
 pub struct BlockMinMax;
 impl Entry for BlockMinMax {
@@ -491,7 +526,13 @@ impl Entry for BoundaryValues {
                 mass_flux: a.mass_flux.get(),
             };
             let (u, g, ub0) = (a.u.v(), a.grad_u.v(), a.ub_set.v());
-            let v = k::boundary_velocity(fb, &inp, ld(a.m.ub_rule.get(), fb), ub0.at(fb), &u, &g);
+            let rule = ld(a.m.ub_rule.get(), fb);
+            let conv = if rule == k::UB_CONVECTIVE {
+                (a.m.conv.v().at(fb), ld(a.m.beta.get(), fb))
+            } else {
+                ([0.0; 3], 0.0)
+            };
+            let v = k::boundary_velocity(fb, &inp, rule, ub0.at(fb), conv, &u, &g);
             *a.ub.x.out().add(fb) = v[0];
             *a.ub.y.out().add(fb) = v[1];
             *a.ub.z.out().add(fb) = v[2];
@@ -648,6 +689,7 @@ impl Entry for MassFlux {
                 p: a.p.get(),
                 grad_p: a.grad_p.v(),
                 pb: a.pb.get(),
+                pset: a.m.pset.get(),
                 ub: a.ub.v(),
                 flux_kind: a.m.flux_kind.get(),
                 mom_kind: a.m.mom_kind.get(),
@@ -1004,7 +1046,42 @@ impl Entry for PressureFaces {
                 a.m.flux_kind.get(),
                 a.s,
                 a.x.get(),
+                a.m.closed.get(),
             )
+        }
+    }
+}
+
+/// Arguments of [`CloseBackflow`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct CloseArgs {
+    /// Mesh (its `closed` array is written).
+    pub m: Mesh,
+    /// Predicted face mass flux, updated in place on the boundary faces.
+    pub mass_flux: Raw<f64>,
+}
+
+/// Backflow suppression of boundary face `fb` ([`k::close_backflow`]):
+/// writes the flux of the face (the output is the input, at the same
+/// index) and its closed state.
+pub struct CloseBackflow;
+impl Entry for CloseBackflow {
+    type Args = CloseArgs;
+    const NAME: &'static str = "close_backflow";
+    #[inline(always)]
+    unsafe fn run(fb: usize, a: &CloseArgs) {
+        // SAFETY: guaranteed by the caller; index fb only.
+        unsafe {
+            let f = fb + a.m.n_interior as usize;
+            let kind = ld(a.m.flux_kind.get(), fb);
+            if kind == k::FLUX_PRESSURE_NO_BACKFLOW {
+                let (v, c) = k::close_backflow(kind, a.mass_flux.read(f));
+                *a.mass_flux.out().add(f) = v;
+                *a.m.closed.out().add(fb) = c;
+            } else {
+                *a.m.closed.out().add(fb) = 0.0;
+            }
         }
     }
 }
@@ -1234,6 +1311,7 @@ impl Entry for DeltaFlux {
                 a.m.flux_kind.get(),
                 a.rho,
                 &a.delta.v(),
+                a.m.closed.get(),
             )
         }
     }
@@ -1242,6 +1320,8 @@ impl Entry for DeltaFlux {
 send_sync!(
     LinArgs,
     BlockArgs,
+    DotArgs,
+    CloseArgs,
     ConstArgs,
     BoundaryValuesArgs,
     GradientArgs,
@@ -1261,13 +1341,14 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 30] = [
+pub const NAMES: [&str; 32] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     Fill::NAME,
     Subtract::NAME,
     ScaleEntry::NAME,
     BlockSumSq::NAME,
+    BlockDot::NAME,
     BlockMinMax::NAME,
     BoundaryConstants::NAME,
     BoundaryValues::NAME,
@@ -1284,6 +1365,7 @@ pub const NAMES: [&str; 30] = [
     Throughflow::NAME,
     Courant::NAME,
     PressureFaces::NAME,
+    CloseBackflow::NAME,
     PressureRows::NAME,
     CorrectFluxes::NAME,
     CorrectVelocity::NAME,
@@ -1307,6 +1389,8 @@ mod tests {
         let sizes = [
             size_of::<LinArgs>(),
             size_of::<BlockArgs>(),
+            size_of::<DotArgs>(),
+            size_of::<CloseArgs>(),
             size_of::<ConstArgs>(),
             size_of::<BoundaryValuesArgs>(),
             size_of::<GradientArgs>(),
@@ -1339,7 +1423,22 @@ mod tests {
         assert_eq!(size_of::<Raw3>(), 48);
         assert_eq!(
             size_of::<Mesh>(),
-            3 * 8 + 4 * 16 + 3 * 48 + 16 + 48 + 16 + 16 + 2 * 48 + 8 + 2 * 16 + 4 * 16 + 16 + 16
+            3 * 8
+                + 4 * 16
+                + 3 * 48
+                + 16
+                + 48
+                + 16
+                + 16
+                + 2 * 48
+                + 8
+                + 2 * 16
+                + 4 * 16
+                + 16
+                + 16
+                + 16
+                + 48
+                + 16
         );
     }
 
@@ -1362,6 +1461,6 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 30);
+        assert_eq!(NAMES.len(), 32);
     }
 }

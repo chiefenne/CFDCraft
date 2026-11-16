@@ -248,6 +248,8 @@ pub trait FlowDevice {
     fn lincomb(&mut self, out: Buf, a: f64, x: Buf, b: f64, y: Buf) -> Result<()>;
     /// Σ x² in the fixed block order.
     fn sum_sq(&mut self, x: Buf) -> Result<f64>;
+    /// Σ x y in the fixed block order (x and y of equal length).
+    fn dot(&mut self, x: Buf, y: Buf) -> Result<f64>;
     /// Minimum and maximum.
     fn min_max(&mut self, x: Buf) -> Result<(f64, f64)>;
     /// One value.
@@ -259,6 +261,15 @@ pub trait FlowDevice {
 
     /// New boundary velocity and pressure from the current fields.
     fn boundary_values(&mut self, a: &BoundaryArgs) -> Result<()>;
+    /// The per-boundary-face buffers of the convective outlets that the
+    /// boundary values read ([`foehncraft_kernels::flow::UB_CONVECTIVE`]):
+    /// the old-level part c (three components) and β, zero at creation.
+    fn convective_buffers(&self) -> (Buf3, Buf);
+    /// Backflow suppression after the predicted fluxes `m`: closes the
+    /// pressure-outlet faces whose predicted flux enters the domain (their
+    /// flux in `m` becomes 0, the closed state is kept on the device for
+    /// the pressure correction of this iteration).
+    fn close_backflow(&mut self, m: Buf) -> Result<()>;
     /// Least-squares gradient of `phi` with boundary values `value`, where
     /// `zero_gradient` (one of [`Lsq`]'s masks, by `mask`) is 1 the owner
     /// value is used instead.

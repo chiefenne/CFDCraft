@@ -45,6 +45,11 @@ pub const MOM_SYMMETRY: u32 = 2;
 pub const FLUX_FIXED: u32 = 0;
 /// Flux kind of a boundary face: pressure prescribed, Rhie–Chow flux.
 pub const FLUX_PRESSURE: u32 = 1;
+/// Flux kind of a boundary face: as [`FLUX_PRESSURE`], but a face whose
+/// predicted flux enters the domain is closed for that outer iteration
+/// (ṁ_f = 0 and no pressure-correction coefficient; backflow suppression
+/// at pressure outlets, see [`close_backflow`]).
+pub const FLUX_PRESSURE_NO_BACKFLOW: u32 = 2;
 
 /// Update rule of the boundary velocity: keep the prescribed value.
 pub const UB_FIXED: u32 = 0;
@@ -57,6 +62,23 @@ pub const UB_EXTRAPOLATE: u32 = 2;
 /// Update rule: normal to the face from the face mass flux,
 /// u_b = ṁ_f n̂ / (ρ |S|) (pressure inlets).
 pub const UB_FROM_FLUX: u32 = 3;
+/// Update rule of a pressure outlet with backflow treatment: the
+/// tangential extrapolation of [`UB_EXTRAPOLATE`] where the flux leaves
+/// the domain (ṁ_f ≥ 0), its normal part (u_e·n̂) n̂ where it enters (the
+/// backflow enters normal to the face).
+pub const UB_OUTLET: u32 = 4;
+/// Update rule of a convective outlet (transient runs): the discrete
+/// convection equation ∂u/∂t + U_c ∂u/∂n = 0 between the owner and the
+/// face, u_b = (c + β u_e)/(1 + β), with u_e the owner velocity
+/// extrapolated along the face (as [`UB_EXTRAPOLATE`]), c the old-level
+/// part of the backward difference over a₀ and β = U_c Δt /(a₀ Δn) per
+/// face (both set per time step by the solver; β = 0 keeps u_b = c).
+pub const UB_CONVECTIVE: u32 = 5;
+/// Update rule of a pressure outlet that suppresses backflow: the
+/// extrapolation of [`UB_EXTRAPOLATE`] where the flux leaves the domain
+/// (ṁ_f > 0), its tangential part u_e − (u_e·n̂) n̂ where the face is closed
+/// (ṁ_f = 0 after [`close_backflow`]): the closed face is a slip wall.
+pub const UB_NO_BACKFLOW: u32 = 6;
 
 /// Update rule of the boundary pressure: keep the prescribed value.
 pub const PB_FIXED: u32 = 0;
@@ -64,6 +86,20 @@ pub const PB_FIXED: u32 = 0;
 pub const PB_EXTRAPOLATE: u32 = 1;
 /// Update rule: total pressure, p_b = p₀ − ½ ρ (ṁ_f / (ρ |S|))².
 pub const PB_TOTAL: u32 = 2;
+/// Update rule of a static-pressure outlet with backflow treatment: the
+/// prescribed static pressure where the flux leaves the domain, and where
+/// it enters the prescribed value taken as the total pressure of the
+/// entering fluid, p_b = p_set − ½ ρ (ṁ_f / (ρ |S|))².
+pub const PB_OUTLET: u32 = 3;
+/// Update rule of a static-pressure outlet that suppresses backflow: the
+/// prescribed value where the flux leaves the domain (ṁ_f > 0), the
+/// extrapolation of [`PB_EXTRAPOLATE`] where the face is closed (ṁ_f = 0).
+/// The rules read only the mass flux, so a restart or a rejected step
+/// needs no state of the closed faces.
+pub const PB_NO_BACKFLOW: u32 = 4;
+/// As [`PB_NO_BACKFLOW`] for a total-pressure outlet: [`PB_TOTAL`] where
+/// the flux leaves the domain, the extrapolation where the face is closed.
+pub const PB_TOTAL_NO_BACKFLOW: u32 = 5;
 
 #[inline(always)]
 fn dot<T: Real>(a: [T; 3], b: [T; 3]) -> T {
@@ -516,9 +552,15 @@ pub struct FluxInputs<'a, T> {
     pub grad_p: Vec3<'a, T>,
     /// Boundary face pressure.
     pub pb: &'a [T],
+    /// Prescribed boundary pressure: the trial flux of a
+    /// [`FLUX_PRESSURE_NO_BACKFLOW`] face takes it in place of `pb` (which
+    /// is the extrapolated pressure while the face is closed), so a closed
+    /// face opens only when the prescribed pressure would drive the flow out.
+    pub pset: &'a [T],
     /// Boundary face velocity.
     pub ub: Vec3<'a, T>,
-    /// Flux kind per boundary face ([`FLUX_FIXED`], [`FLUX_PRESSURE`]).
+    /// Flux kind per boundary face ([`FLUX_FIXED`], [`FLUX_PRESSURE`],
+    /// [`FLUX_PRESSURE_NO_BACKFLOW`]).
     pub flux_kind: &'a [u32],
     /// Momentum kind per boundary face: on [`MOM_OUTFLOW`] faces the
     /// boundary velocity `ub` (zero normal gradient) enters the Rhie–Chow
@@ -629,7 +671,8 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
             }
         } else {
             let fb = f - t.n_interior;
-            if ld(inp.flux_kind, fb) == FLUX_PRESSURE {
+            let kind = ld(inp.flux_kind, fb);
+            if kind != FLUX_FIXED {
                 let uf = if ld(inp.mom_kind, fb) == MOM_OUTFLOW {
                     inp.ub.at(fb)
                 } else {
@@ -639,7 +682,12 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
                         up[2] + dot(gp[2], rp),
                     ]
                 };
-                let jump = (ld(inp.pb, fb) - ld(inp.p, p)) - dot(gpp, rp);
+                let pb = if kind == FLUX_PRESSURE_NO_BACKFLOW {
+                    ld(inp.pset, fb)
+                } else {
+                    ld(inp.pb, fb)
+                };
+                let jump = (pb - ld(inp.p, p)) - dot(gpp, rp);
                 let dp = ld(inp.d, p);
                 let m = inp.rho * (dot(uf, s) - dp * dgeo * jump) + ld(inp.relax, f);
                 if inp.transient {
@@ -656,11 +704,14 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
 
 /// Coefficient c_f of the pressure correction on face `f`: the mass-flux
 /// correction is ṁ'_f = −c_f (p'_N − p'_P), c_f = ρ D̄^C_f |S|²/(d·S)
-/// (SIMPLEC, orthogonal part); on [`FLUX_PRESSURE`] boundary faces
-/// p'_b = 0 and c_f = ρ D^C_P |S|²/(d·S); on [`FLUX_FIXED`] faces c_f = 0.
+/// (SIMPLEC, orthogonal part); on pressure boundary faces
+/// ([`FLUX_PRESSURE`], open [`FLUX_PRESSURE_NO_BACKFLOW`]) p'_b = 0 and
+/// c_f = ρ D^C_P |S|²/(d·S); on [`FLUX_FIXED`] faces and closed faces
+/// (`closed` = 1 per boundary face, see [`close_backflow`]) c_f = 0.
 ///
 /// # Safety
-/// As [`momentum_face`]; `dc` has an entry per cell.
+/// As [`momentum_face`]; `dc` has an entry per cell, `closed` one per
+/// boundary face.
 #[inline(always)]
 pub unsafe fn pressure_face<T: Real>(
     f: usize,
@@ -669,6 +720,7 @@ pub unsafe fn pressure_face<T: Real>(
     flux_kind: &[u32],
     rho: T,
     dc: &[T],
+    closed: &[T],
 ) -> T {
     // SAFETY: guaranteed by the caller.
     unsafe {
@@ -678,11 +730,34 @@ pub unsafe fn pressure_face<T: Real>(
             let n = ld(topo.neighbour, f) as usize;
             let w = ld(geo.weight, f);
             rho * (w * ld(dc, p) + (T::ONE - w) * ld(dc, n)) * dgeo
-        } else if ld(flux_kind, f - topo.n_interior) == FLUX_PRESSURE {
-            rho * ld(dc, p) * dgeo
         } else {
-            T::ZERO
+            let fb = f - topo.n_interior;
+            let kind = ld(flux_kind, fb);
+            if kind == FLUX_PRESSURE
+                || (kind == FLUX_PRESSURE_NO_BACKFLOW && ld(closed, fb) == T::ZERO)
+            {
+                rho * ld(dc, p) * dgeo
+            } else {
+                T::ZERO
+            }
         }
+    }
+}
+
+/// Backflow suppression of a boundary face of flux kind `kind` with the
+/// predicted flux `m` (after the predicted face fluxes): a
+/// [`FLUX_PRESSURE_NO_BACKFLOW`] face whose predicted flux enters the
+/// domain (ṁ*_f < 0) is closed for this outer iteration, ṁ*_f = 0 and
+/// closed = 1, so that [`pressure_face`] and [`delta_flux`] give it no
+/// correction; every other face keeps its flux and gets closed = 0. The
+/// face opens again in an iteration whose predicted flux leaves the domain.
+/// Returns `(ṁ_f, closed)`.
+#[inline(always)]
+pub fn close_backflow<T: Real>(kind: u32, m: T) -> (T, T) {
+    if kind == FLUX_PRESSURE_NO_BACKFLOW && m < T::ZERO {
+        (T::ZERO, T::ONE)
+    } else {
+        (m, T::ZERO)
     }
 }
 
@@ -818,8 +893,11 @@ pub struct BoundaryInputs<'a, T> {
 
 /// New velocity of boundary face `fb` by its update rule (`UB_*`): the
 /// prescribed value `ub`, the symmetry value u_P − (u_P·n̂) n̂, the
-/// tangential extrapolation u_P + ∇u_P·r_t, or the velocity normal to the
-/// face from the mass flux.
+/// tangential extrapolation u_e = u_P + ∇u_P·r_t, the velocity normal to
+/// the face from the mass flux, the outlet value with backflow treatment
+/// ([`UB_OUTLET`]), the tangential part on a closed face ([`UB_NO_BACKFLOW`])
+/// or the convective outlet value (c + β u_e)/(1 + β)
+/// with `conv` = (c, β) of the face ([`UB_CONVECTIVE`]).
 ///
 /// # Safety
 /// As [`momentum_face`]; `fb` is a boundary face index.
@@ -829,6 +907,7 @@ pub unsafe fn boundary_velocity<T: Real>(
     inp: &BoundaryInputs<T>,
     rule: u32,
     ub: [T; 3],
+    conv: ([T; 3], T),
     u: &Vec3<T>,
     grad: &VelocityGradient<T>,
 ) -> [T; 3] {
@@ -842,16 +921,40 @@ pub unsafe fn boundary_velocity<T: Real>(
             let ss = dot(s, s);
             let un = dot(up, s) / ss;
             [up[0] - un * s[0], up[1] - un * s[1], up[2] - un * s[2]]
-        } else if rule == UB_EXTRAPOLATE {
+        } else if rule == UB_EXTRAPOLATE
+            || rule == UB_OUTLET
+            || rule == UB_CONVECTIVE
+            || rule == UB_NO_BACKFLOW
+        {
+            if rule == UB_CONVECTIVE && conv.1 == T::ZERO {
+                return conv.0;
+            }
             let r = sub(inp.geo.face_centroid.at(f), inp.geo.cell_centroid.at(p));
             let rn = dot(r, s) / dot(s, s);
             let r = [r[0] - rn * s[0], r[1] - rn * s[1], r[2] - rn * s[2]];
             let g = grad.at(p);
-            [
+            let ue = [
                 up[0] + dot(g[0], r),
                 up[1] + dot(g[1], r),
                 up[2] + dot(g[2], r),
-            ]
+            ];
+            if rule == UB_OUTLET && ld(inp.mass_flux, f) < T::ZERO {
+                let q = dot(ue, s) / dot(s, s);
+                [q * s[0], q * s[1], q * s[2]]
+            } else if rule == UB_NO_BACKFLOW && ld(inp.mass_flux, f) <= T::ZERO {
+                let q = dot(ue, s) / dot(s, s);
+                [ue[0] - q * s[0], ue[1] - q * s[1], ue[2] - q * s[2]]
+            } else if rule == UB_CONVECTIVE {
+                let (c, beta) = conv;
+                let d = T::ONE + beta;
+                [
+                    (c[0] + beta * ue[0]) / d,
+                    (c[1] + beta * ue[1]) / d,
+                    (c[2] + beta * ue[2]) / d,
+                ]
+            } else {
+                ue
+            }
         } else if rule == UB_FROM_FLUX {
             let ss = dot(s, s);
             let q = ld(inp.mass_flux, f) / (inp.rho * ss);
@@ -863,9 +966,12 @@ pub unsafe fn boundary_velocity<T: Real>(
 }
 
 /// New pressure of boundary face `fb` by its update rule (`PB_*`): the
-/// prescribed value `pset`, the extrapolation p_P + ∇p_P·(x_f − x_P), or
-/// the static pressure of the total pressure `pset`,
-/// p₀ − ½ ρ (ṁ_f / (ρ |S|))².
+/// prescribed value `pset`, the extrapolation p_P + ∇p_P·(x_f − x_P), the
+/// static pressure of the total pressure `pset`,
+/// p₀ − ½ ρ (ṁ_f / (ρ |S|))², or at an outlet with backflow treatment the
+/// static pressure `pset` on outflow and the total pressure `pset` on
+/// backflow ([`PB_OUTLET`]); with backflow suppressed the extrapolation on
+/// the closed faces ([`PB_NO_BACKFLOW`], [`PB_TOTAL_NO_BACKFLOW`]).
 ///
 /// # Safety
 /// As [`boundary_velocity`].
@@ -882,10 +988,15 @@ pub unsafe fn boundary_pressure<T: Real>(
     unsafe {
         let f = fb + inp.topo.n_interior;
         let c = ld(inp.topo.owner, f) as usize;
-        if rule == PB_EXTRAPOLATE {
+        let m = ld(inp.mass_flux, f);
+        let closed = (rule == PB_NO_BACKFLOW || rule == PB_TOTAL_NO_BACKFLOW) && m <= T::ZERO;
+        if rule == PB_EXTRAPOLATE || closed {
             let r = sub(inp.geo.face_centroid.at(f), inp.geo.cell_centroid.at(c));
             ld(p, c) + dot(grad_p.at(c), r)
-        } else if rule == PB_TOTAL {
+        } else if rule == PB_TOTAL
+            || rule == PB_TOTAL_NO_BACKFLOW
+            || (rule == PB_OUTLET && m < T::ZERO)
+        {
             let s = inp.geo.area.at(f);
             let un = ld(inp.mass_flux, f) / inp.rho;
             pset - T::from_f64(0.5) * inp.rho * un * un / dot(s, s)
@@ -1014,8 +1125,9 @@ pub unsafe fn neighbour_sum<T: Real>(
 }
 
 /// Mass flux of a cell velocity increment δ through face `f`:
-/// ρ (w δ_P + (1 − w) δ_N)·S on interior faces, ρ δ_P·S on pressure
-/// boundaries ([`FLUX_PRESSURE`]) and 0 where the boundary fixes the flux.
+/// ρ (w δ_P + (1 − w) δ_N)·S on interior faces, ρ δ_P·S on open pressure
+/// boundaries and 0 where the boundary fixes the flux or a closed face
+/// (`closed`, [`close_backflow`]) has none.
 ///
 /// # Safety
 /// As [`pressure_face`]; `delta` has an entry per cell.
@@ -1027,6 +1139,7 @@ pub unsafe fn delta_flux<T: Real>(
     flux_kind: &[u32],
     rho: T,
     delta: &Vec3<T>,
+    closed: &[T],
 ) -> T {
     // SAFETY: guaranteed by the caller.
     unsafe {
@@ -1044,10 +1157,16 @@ pub unsafe fn delta_flux<T: Real>(
                 w * dp[2] + wn * dn[2],
             ];
             rho * dot(df, s)
-        } else if ld(flux_kind, f - topo.n_interior) == FLUX_PRESSURE {
-            rho * dot(dp, s)
         } else {
-            T::ZERO
+            let fb = f - topo.n_interior;
+            let kind = ld(flux_kind, fb);
+            if kind == FLUX_PRESSURE
+                || (kind == FLUX_PRESSURE_NO_BACKFLOW && ld(closed, fb) == T::ZERO)
+            {
+                rho * dot(dp, s)
+            } else {
+                T::ZERO
+            }
         }
     }
 }
