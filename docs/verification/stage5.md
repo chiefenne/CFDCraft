@@ -762,7 +762,12 @@ walls. ParaView shows them on the patch surfaces (block selection
 `boundary/<patch>`). The `units` attribute lists every dataset. The
 estimate before the run (D81) counts the derived datasets.
 
-**The catalogue against part 5b.** CATALOGUE_5C
+**The catalogue against part 5b.** Every case of the CI sets (linux-1 to
+linux-3 and the long set: 29 flow cases including the three cylinder
+benchmarks, the scalar, Poisson and mesh cases) run with the binaries of
+main and of this part (`tools/compare_runs.py --across-versions`, 360
+files): all flow, scalar and Poisson results bitwise equal; the mesh
+reports differ only in their timings.
 
 ## Limits of this part of stage 5
 
