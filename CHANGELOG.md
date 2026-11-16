@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+**Wall film requirements (D123, D124).** Requirements for the wall film of the Lagrangian sprays (L12): an Eulerian thin film on the wall faces with parcels for splash, rebound, separation and stripping; impingement regimes (Bai–Gosman, Kuhnke), capillarity and dry patches in the first version, CHT coupling of the heated film, ledger and reproducibility rules, staging F1 to F5 and validation cases; Milestone 1 keeps a surface mesh and surface halo of the wall faces, per-face wall boundary values including a wall mass flux, and gravity as a case vector. Documentation only.
+
 **Numerics of stage 5 (part 5a).** A bounded central convection scheme
 (`solver.scheme = "central"`, D25) with the bound β and a blend with linear
 upwind; the time step from the error estimate of BDF2 and Crank–Nicolson
