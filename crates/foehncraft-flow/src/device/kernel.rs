@@ -553,6 +553,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         let outs = [a.cp, a.cn, a.bf.x, a.bf.y, a.bf.z];
         let mut ins = vec![a.mass_flux];
         ins.extend(a.u.all());
+        ins.extend(a.uc.all());
         ins.extend(a.psi.all());
         ins.extend(a.ub.all());
         for g in &a.grad_u {
@@ -563,10 +564,13 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             m: self.m,
             mass_flux: self.r(a.mass_flux),
             u: self.r3(a.u),
+            uc: self.r3(a.uc),
             grad_u: self.rg(&a.grad_u),
             psi: self.r3(a.psi),
             ub: self.r3(a.ub),
             blend: a.blend,
+            central: a.central,
+            beta: a.beta,
             nonorth: a.nonorth,
             convection: a.convection,
             cp: self.r(a.cp),

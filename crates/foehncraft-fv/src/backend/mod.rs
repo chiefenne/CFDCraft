@@ -108,6 +108,10 @@ pub enum Limiter {
 pub struct FaceSettings {
     /// 0 first-order upwind, 1 linear upwind.
     pub blend: f64,
+    /// Fraction of the bounded central scheme (0: none).
+    pub central: f64,
+    /// β of the bounding of the central scheme (0: none).
+    pub beta: f64,
     /// Apply the non-orthogonal correction.
     pub nonorth: bool,
     /// Limit of the non-orthogonal correction (negative: none).

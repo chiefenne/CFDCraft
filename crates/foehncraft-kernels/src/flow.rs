@@ -128,6 +128,10 @@ pub struct MomentumInputs<'a, T> {
     pub mu: &'a [T],
     /// Cell velocity.
     pub u: Vec3<'a, T>,
+    /// Cell velocity of the central correction: `u`, or in the first outer
+    /// iteration of a time step the velocity extrapolated to tⁿ⁺¹ (as the
+    /// gradients of the linear-upwind correction are).
+    pub uc: Vec3<'a, T>,
     /// Cell velocity gradient.
     pub grad: VelocityGradient<'a, T>,
     /// Limiter of each velocity component per cell (1: none).
@@ -138,6 +142,12 @@ pub struct MomentumInputs<'a, T> {
     pub mom_kind: &'a [u32],
     /// 1 for linear upwind, 0 for first-order upwind.
     pub blend: T,
+    /// Fraction of the bounded central scheme on interior faces (0: none;
+    /// the rest takes the linear-upwind correction of `blend`).
+    pub central: T,
+    /// β of the normalised-variable bounding of the central value (0:
+    /// plain central), see [`crate::fv::central_weight`].
+    pub beta: T,
     /// 1 with the non-orthogonal diffusion correction, 0 without.
     pub nonorth: T,
     /// 1 with convection, 0 for Stokes flow.
@@ -150,8 +160,10 @@ pub struct MomentumInputs<'a, T> {
 ///
 /// - Interior faces: first-order upwind convection and the orthogonal part of
 ///   the diffusion implicit; the linear-upwind correction
-///   ṁ ψ_U ∇u_U·(x_f − x_U) and the non-orthogonal part −μ k·∇u_f deferred
-///   (as [`crate::fv::face_coefficients`]).
+///   ṁ ψ_U ∇u_U·(x_f − x_U) (or, for the fraction `central`, the bounded
+///   central correction ṁ γ (u_f^C − u_U) per component, with u_f^C
+///   interpolated as in [`face_mass_flux`]) and the non-orthogonal part
+///   −μ k·∇u_f deferred (as [`crate::fv::face_coefficients`]).
 /// - [`MOM_FIXED`] faces: convection ṁ⁺ u_P (with the linear-upwind
 ///   correction) + ṁ⁻ u_b, diffusion −μ [D (u_b − u_P) + k·∇u_P].
 /// - [`MOM_OUTFLOW`] faces: convection ṁ⁺ u_P (with the correction) + ṁ⁻ u_b
@@ -198,6 +210,14 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
                 xf[1] - half * (xc_n[1] + xf[1] - rp[1]),
                 xf[2] - half * (xc_n[2] + xf[2] - rp[2]),
             ];
+            let xc_p = g.cell_centroid.at(p);
+            let xw = [
+                w * xc_p[0] + wn * xc_n[0],
+                w * xc_p[1] + wn * xc_n[1],
+                w * xc_p[2] + wn * xc_n[2],
+            ];
+            let rw = sub(xf, xw);
+            let (up, un) = (inp.uc.at(p), inp.uc.at(n));
             let mut i = 0;
             while i < 3 {
                 let ho = if m >= T::ZERO {
@@ -210,8 +230,21 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
                     w * gp[i][1] + wn * gn[i][1],
                     w * gp[i][2] + wn * gn[i][2],
                 ];
+                let conv = if inp.central > T::ZERO {
+                    let uc = w * up[i] + wn * un[i] + dot(gf, rw);
+                    let (uu, ud, gu, d, psi_u) = if m >= T::ZERO {
+                        (up[i], un[i], gp[i], sub(xc_n, xc_p), psi_p[i])
+                    } else {
+                        (un[i], up[i], gn[i], sub(xc_p, xc_n), psi_n[i])
+                    };
+                    let uc = crate::fv::bounded_between(uc, uu, ud, inp.beta);
+                    let gam = psi_u * crate::fv::central_weight(ud - uu, dot(gu, d), inp.beta);
+                    m * ((T::ONE - inp.central) * inp.blend * ho + inp.central * gam * (uc - uu))
+                } else {
+                    inp.blend * m * ho
+                };
                 let skew = dot(sub(gn[i], gp[i]), rm);
-                b[i] = inp.blend * m * ho - inp.nonorth * (mu * dot(kf, gf) + dd * skew);
+                b[i] = conv - inp.nonorth * (mu * dot(kf, gf) + dd * skew);
                 i += 1;
             }
             (mp + dd, mm - dd, b)
@@ -220,9 +253,20 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
             let ub = inp.ub.at(fb);
             let mut i = 0;
             let kind = ld(inp.mom_kind, fb);
+            // the central fraction takes the boundary value as the face
+            // value of the outflow, ṁ⁺ (u_b − u_P)
+            let lud = if inp.central > T::ZERO {
+                (T::ONE - inp.central) * inp.blend
+            } else {
+                inp.blend
+            };
+            let up = inp.uc.at(p);
             if kind == MOM_OUTFLOW {
                 while i < 3 {
-                    b[i] = inp.blend * mp * psi_p[i] * dot(gp[i], rp) + mm * ub[i];
+                    b[i] = lud * mp * psi_p[i] * dot(gp[i], rp) + mm * ub[i];
+                    if inp.central > T::ZERO {
+                        b[i] += inp.central * mp * (ub[i] - up[i]);
+                    }
                     i += 1;
                 }
                 (mp, T::ZERO, b)
@@ -239,9 +283,12 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
                 (dd, T::ZERO, b)
             } else {
                 while i < 3 {
-                    b[i] = inp.blend * mp * psi_p[i] * dot(gp[i], rp) + mm * ub[i]
+                    b[i] = lud * mp * psi_p[i] * dot(gp[i], rp) + mm * ub[i]
                         - dd * ub[i]
                         - inp.nonorth * mu * dot(kf, gp[i]);
+                    if inp.central > T::ZERO {
+                        b[i] += inp.central * mp * (ub[i] - up[i]);
+                    }
                     i += 1;
                 }
                 (mp + dd, T::ZERO, b)

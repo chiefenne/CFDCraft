@@ -673,6 +673,8 @@ pub struct MomentumFaceArgs {
     pub mass_flux: Raw<f64>,
     /// Cell velocity.
     pub u: Raw3,
+    /// Velocity of the central correction.
+    pub uc: Raw3,
     /// Velocity gradient.
     pub grad_u: RawGrad,
     /// Limiter per component.
@@ -681,6 +683,10 @@ pub struct MomentumFaceArgs {
     pub ub: Raw3,
     /// 1 linear upwind, 0 upwind.
     pub blend: f64,
+    /// Fraction of the bounded central scheme.
+    pub central: f64,
+    /// β of its bounding.
+    pub beta: f64,
     /// 1 with the non-orthogonal correction.
     pub nonorth: f64,
     /// 1 with convection.
@@ -708,11 +714,14 @@ impl Entry for MomentumFaces {
                 mass_flux: a.mass_flux.get(),
                 mu: a.m.mu_face.get(),
                 u: a.u.v(),
+                uc: a.uc.v(),
                 grad: a.grad_u.v(),
                 psi: a.psi.v(),
                 ub: a.ub.v(),
                 mom_kind: a.m.mom_kind.get(),
                 blend: a.blend,
+                central: a.central,
+                beta: a.beta,
                 nonorth: a.nonorth,
                 convection: a.convection,
             };

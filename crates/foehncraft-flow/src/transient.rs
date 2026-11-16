@@ -42,6 +42,7 @@
 use crate::device::{Buf, Buf3, TimeTerms};
 use crate::simplec::{Flow, Residuals};
 use anyhow::{Result, ensure};
+use foehncraft_fv::solver::Scheme;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -436,7 +437,25 @@ impl Transient {
                 w.zero_face
             };
             let c = if k == 1 { conv } else { fl.f.mass_flux };
-            let scale = fl.momentum_assembly(c, alpha, theta, Some(time))?;
+            // the central correction reads cell velocities, not gradients:
+            // extrapolate them as well, u* = (1 + ω)uⁿ − ωuⁿ⁻¹, into the
+            // corrector scratch (free until the correctors)
+            let central = k == 1 && extrapolate && s.scheme == Scheme::Central;
+            if central {
+                for ((d, a), b) in l
+                    .delta
+                    .all()
+                    .into_iter()
+                    .zip(l.u_old.all())
+                    .zip(l.u_old2.all())
+                {
+                    fl.dev.lincomb(d, 1.0 + omega, a, -omega, b)?;
+                }
+                fl.central_u = Some(l.delta);
+            }
+            let scale = fl.momentum_assembly(c, alpha, theta, Some(time));
+            fl.central_u = None;
+            let scale = scale?;
             fl.dev.sync()?;
             fl.timings.momentum_assembly += t.elapsed().as_secs_f64();
             let t = Instant::now();

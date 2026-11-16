@@ -76,6 +76,13 @@ pub struct Settings {
     pub algorithm: Option<Algorithm>,
     /// Convection scheme of the momentum equations.
     pub scheme: Scheme,
+    /// `scheme = "central"`: fraction of the bounded central scheme on the
+    /// interior faces, the rest linear upwind (0 to 1).
+    pub central_blending: f64,
+    /// `scheme = "central"`: β of the normalised-variable bounding; the
+    /// scheme moves to upwind where the normalised upwind value leaves
+    /// [β, 1) (0: plain central, unbounded).
+    pub central_bounding: f64,
     /// Limiter of the velocity gradients.
     pub limiter: LimiterKind,
     /// Constant K of the limiter.
@@ -133,6 +140,8 @@ impl Default for Settings {
             scheme: Scheme::LinearUpwind,
             limiter: LimiterKind::None,
             limiter_k: 5.0,
+            central_blending: 1.0,
+            central_bounding: 0.1,
             nonorth_correction: true,
             relaxation_velocity: None,
             relaxation_pressure: None,
@@ -269,6 +278,16 @@ impl Settings {
             self.limiter_k >= 0.0,
             CASE_RANGE,
             "[solver] limiter_k must be >= 0"
+        );
+        crate::need!(
+            (0.0..=1.0).contains(&self.central_blending),
+            CASE_RANGE,
+            "[solver] central_blending must lie in [0, 1]"
+        );
+        crate::need!(
+            (0.0..1.0).contains(&self.central_bounding),
+            CASE_RANGE,
+            "[solver] central_bounding must lie in [0, 1)"
         );
         for (name, t) in [
             ("momentum_tolerance", self.momentum_tol(transient)),
@@ -481,6 +500,10 @@ pub struct Flow {
     valid: Option<(Buf3, Buf, Buf, usize)>,
     /// The residuals of the outer iteration or corrector that diverged.
     pub(crate) diverged: Option<Residuals>,
+    /// The velocity of the central correction when it is not the current
+    /// one (the extrapolated velocity of a time step, set by
+    /// [`crate::transient`]).
+    pub(crate) central_u: Option<Buf3>,
 }
 
 fn disc_with(
@@ -687,6 +710,7 @@ impl Flow {
             iteration: 0,
             valid: None,
             diverged: None,
+            central_u: None,
         })
     }
 
@@ -921,13 +945,21 @@ impl Flow {
     pub(crate) fn momentum_assembly_faces(&mut self, conv: Buf) -> Result<()> {
         let s = &self.settings;
         let (f, w) = (self.f, self.w);
+        let uc = self.central_u.unwrap_or(f.u);
         self.dev.momentum_faces(&MomentumFaceArgs {
             mass_flux: conv,
             u: f.u,
+            uc,
             grad_u: f.grad_u,
             psi: f.psi,
             ub: f.ub,
             blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
+            central: if s.scheme == Scheme::Central {
+                s.central_blending
+            } else {
+                0.0
+            },
+            beta: s.central_bounding,
             nonorth: if s.nonorth_correction { 1.0 } else { 0.0 },
             convection: if self.phys.convection { 1.0 } else { 0.0 },
             cp: w.cp,

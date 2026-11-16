@@ -23,6 +23,10 @@ pub enum Scheme {
     /// Second-order linear upwind (with the limiter of `limiter`).
     #[default]
     LinearUpwind,
+    /// Bounded central: the linear interpolation on interior faces with
+    /// the normalised-variable bounding of `central_bounding`, blended with
+    /// linear upwind by `central_blending` (D25).
+    Central,
 }
 
 /// Limiter of the case file.
@@ -71,6 +75,13 @@ pub enum Preconditioner {
 pub struct Settings {
     /// Convection scheme.
     pub scheme: Scheme,
+    /// `scheme = "central"`: fraction of the central scheme, the rest
+    /// linear upwind (0 to 1).
+    pub central_blending: f64,
+    /// `scheme = "central"`: β of the normalised-variable bounding, the
+    /// normalised upwind value below which the scheme moves to upwind
+    /// (0: plain central, unbounded).
+    pub central_bounding: f64,
     /// Gradient limiter.
     pub limiter: LimiterKind,
     /// Constant K of the limiter (Venkatakrishnan: ε² = (K h)³;
@@ -103,6 +114,8 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             scheme: Scheme::LinearUpwind,
+            central_blending: 1.0,
+            central_bounding: 0.1,
             limiter: LimiterKind::None,
             limiter_k: 5.0,
             nonorth_correction: true,
@@ -127,6 +140,14 @@ impl Settings {
             "[solver] relaxation must lie in (0, 1]"
         );
         anyhow::ensure!(self.limiter_k >= 0.0, "[solver] limiter_k must be >= 0");
+        anyhow::ensure!(
+            (0.0..=1.0).contains(&self.central_blending),
+            "[solver] central_blending must lie in [0, 1]"
+        );
+        anyhow::ensure!(
+            (0.0..1.0).contains(&self.central_bounding),
+            "[solver] central_bounding must lie in [0, 1)"
+        );
         anyhow::ensure!(self.tolerance > 0.0, "[solver] tolerance must be > 0");
         anyhow::ensure!(
             self.linear_tolerance > 0.0 && self.linear_tolerance < 1.0,
@@ -226,6 +247,12 @@ pub fn solve(
     let mut out = Outcome::default();
     let fs = FaceSettings {
         blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
+        central: if s.scheme == Scheme::Central {
+            s.central_blending
+        } else {
+            0.0
+        },
+        beta: s.central_bounding,
         nonorth: s.nonorth_correction,
         nonorth_limit: s.nonorth_limit,
     };

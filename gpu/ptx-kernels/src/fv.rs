@@ -159,6 +159,8 @@ pub unsafe extern "ptx-kernel" fn fv_faces(
     n_faces: u32,
     n_interior: u32,
     blend: f64,
+    central: f64,
+    beta: f64,
     nonorth: f64,
     nonorth_limit: f64,
     owner: *const u32,
@@ -218,6 +220,8 @@ pub unsafe extern "ptx-kernel" fn fv_faces(
             grad: v3(nc, gx, gy, gz),
             psi: sl(psi, nc),
             blend,
+            central,
+            beta,
             nonorth,
             nonorth_limit,
         };

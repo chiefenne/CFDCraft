@@ -649,7 +649,8 @@ impl Backend for CudaBackend {
             let f = self.func("fv_faces");
             let mut l = self.stream.launch_builder(f);
             l.arg(&self.nc).arg(&self.nf).arg(&self.ni);
-            l.arg(&st.blend).arg(&nonorth).arg(&st.nonorth_limit);
+            l.arg(&st.blend).arg(&st.central).arg(&st.beta);
+            l.arg(&nonorth).arg(&st.nonorth_limit);
             l.arg(&d.owner).arg(&d.neighbour).arg(&d.bc_a).arg(&d.bc_b);
             l.arg(&d.mass_flux).arg(&d.gamma).arg(&d.dgeo);
             l.arg(&d.k.x).arg(&d.k.y).arg(&d.k.z).arg(&d.weight);

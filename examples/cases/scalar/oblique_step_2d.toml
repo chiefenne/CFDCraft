@@ -1,5 +1,5 @@
 # Oblique step: pure convection of a discontinuity at 30° to the x axis on
-# a 2D polygonal mesh, with four convection schemes (stage 2, D25).
+# a 2D polygonal mesh, with five convection schemes (stages 2 and 5, D25).
 #
 #   cargo run --release -p foehncraft-cli -- scalar examples/cases/scalar/oblique_step_2d.toml
 #
@@ -9,7 +9,11 @@
 # 30°, so φ must stay in [0, 1]. First-order upwind is bounded but smears
 # the step; linear upwind without a limiter is sharper but over- and
 # undershoots; with the Venkatakrishnan limiters at K = 0 the solution is
-# sharp and bounded. The run fails if a limited variant leaves [0, 1].
+# sharp and bounded. The bounded central scheme (stage 5) with the same
+# limiter is bounded as well; β = 0.5 of its normalised-variable bounding
+# lets this steady, nearly diffusion-free case converge (a smaller β, the
+# default 0.1, suits transient runs). The run fails if a limited variant
+# leaves [0, 1].
 # Output per variant in output/oblique_step_2d/<variant>/, the profiles
 # along x = 0.8 in profile.svg.
 
@@ -62,6 +66,11 @@ bounds = [0.0, 1.0]
 [[variants]]
 name = "venkatakrishnan-wang"
 solver = { scheme = "linear-upwind", limiter = "venkatakrishnan-wang", limiter_k = 0.0, max_outer = 400 }
+bounds = [0.0, 1.0]
+
+[[variants]]
+name = "bounded-central"
+solver = { scheme = "central", central_bounding = 0.5, limiter = "venkatakrishnan", limiter_k = 0.0, max_outer = 400 }
 bounds = [0.0, 1.0]
 
 [output]

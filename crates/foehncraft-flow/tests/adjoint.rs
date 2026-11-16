@@ -377,6 +377,8 @@ fn scalar_face<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
         grad: l.v3("gp"),
         psi: l.s("psis"),
         blend: T::ONE,
+        central: T::ZERO,
+        beta: T::ZERO,
         nonorth: T::ONE,
         nonorth_limit: T::from_f64(-1.0),
     };
@@ -386,17 +388,30 @@ fn scalar_face<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
 }
 
 fn momentum_face<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
+    momentum_face_with(fx, l, f, T::ZERO)
+}
+
+/// The blended central scheme (D25), unbounded (β = 0, a smooth function
+/// of the inputs).
+fn momentum_face_central<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
+    momentum_face_with(fx, l, f, T::from_f64(0.7))
+}
+
+fn momentum_face_with<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize, central: T) -> Vec<T> {
     let inp = MomentumInputs {
         topo: fx.topo(),
         geo: l.geo(),
         mass_flux: l.s("m"),
         mu: l.s("mu"),
         u: l.v3("u"),
+        uc: l.v3("u"),
         grad: l.grad("gu"),
         psi: l.v3("psi"),
         ub: l.v3("ub"),
         mom_kind: &fx.mom_kind,
         blend: T::ONE,
+        central,
+        beta: T::ZERO,
         nonorth: T::ONE,
         convection: T::ONE,
     };
@@ -557,6 +572,11 @@ jacobian_test!(jacobian_of_the_least_squares_gradient, gradient, cells);
 jacobian_test!(jacobian_of_the_venkatakrishnan_limiter, limiter, cells);
 jacobian_test!(jacobian_of_the_scalar_face_flux, scalar_face, faces);
 jacobian_test!(jacobian_of_the_momentum_face_flux, momentum_face, faces);
+jacobian_test!(
+    jacobian_of_the_central_momentum_face_flux,
+    momentum_face_central,
+    faces
+);
 jacobian_test!(jacobian_of_the_rhie_chow_mass_flux, mass_flux, faces);
 jacobian_test!(
     jacobian_of_the_rhie_chow_mass_flux_in_a_time_step,

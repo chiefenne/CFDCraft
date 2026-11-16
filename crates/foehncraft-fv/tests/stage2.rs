@@ -213,6 +213,8 @@ fn bicgstab_reaches_its_tolerance() {
     be.gradient().unwrap();
     be.faces(foehncraft_fv::backend::FaceSettings {
         blend: 0.0,
+        central: 0.0,
+        beta: 0.0,
         nonorth: false,
         nonorth_limit: -1.0,
     })
