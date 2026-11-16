@@ -248,6 +248,15 @@ pub struct TimeSection {
     pub min_time_step: f64,
     /// Largest time step with `adaptive` (s).
     pub max_time_step: Option<f64>,
+    /// Relative tolerance of the local time-integration error with
+    /// `adaptive` (D65): the step follows from the error estimate of BDF2
+    /// or Crank–Nicolson, bounded by `max_cfl` and `max_growth`, and a
+    /// step whose error exceeds the tolerance is repeated with a shorter
+    /// one. Off when absent.
+    pub error_tolerance: Option<f64>,
+    /// Absolute tolerance of the local time-integration error (m/s), added
+    /// to `error_tolerance` × the RMS velocity.
+    pub error_absolute: f64,
 }
 
 impl Default for TimeSection {
@@ -263,6 +272,8 @@ impl Default for TimeSection {
             max_growth: 1.2,
             min_time_step: 0.0,
             max_time_step: None,
+            error_tolerance: None,
+            error_absolute: 1e-6,
         }
     }
 }
@@ -311,6 +322,29 @@ impl TimeSection {
                 "[time] max_time_step must be > 0 and >= min_time_step"
             );
         }
+        if let Some(e) = self.error_tolerance {
+            crate::need!(
+                e > 0.0 && e < 1.0,
+                CASE_RANGE,
+                "[time] error_tolerance must lie in (0, 1)"
+            );
+            crate::need!(
+                self.adaptive,
+                CASE_RANGE,
+                "[time] error_tolerance needs adaptive = true"
+            );
+            crate::need!(
+                self.scheme != TimeScheme::Bdf1,
+                CASE_RANGE,
+                "[time] error_tolerance needs scheme bdf2 or crank-nicolson (the estimate is that \
+                 of a second-order method)"
+            );
+        }
+        crate::need!(
+            self.error_absolute >= 0.0,
+            CASE_RANGE,
+            "[time] error_absolute must be >= 0"
+        );
         Ok(())
     }
 }

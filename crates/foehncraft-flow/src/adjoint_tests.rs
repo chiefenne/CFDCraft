@@ -280,3 +280,88 @@ fn checkpointed_reverse_sweep_meets_the_forward_levels_bitwise() {
     // 13 steps with 2 snapshots: t = 3, 3·13 − β(4, 2) = 24 primal steps
     assert_eq!(st.steps, 24);
 }
+
+/// D65: a step taken back after its error estimate (`Transient::reject`)
+/// leaves every level as before, so that the repeated step and the steps
+/// after it are bitwise those of a run that took the shorter step at once;
+/// for BDF2 and Crank–Nicolson.
+#[test]
+fn rejected_step_repeats_bitwise() {
+    use crate::transient::{ErrorControl, TimeScheme};
+    for scheme in [TimeScheme::Bdf2, TimeScheme::CrankNicolson] {
+        let (case, mesh, geo) =
+            cavity_case("[time]\nscheme = \"bdf2\"\ntime_step = 0.05\nsteps = 9\n");
+        let make = || {
+            let phys = physics(&case);
+            let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, None).unwrap();
+            let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
+            let mut fl = Flow::on(
+                disc,
+                arrays,
+                phys,
+                case.solver.clone(),
+                true,
+                Some(0),
+                &Target {
+                    device: "cpu".into(),
+                    threads: None,
+                    ptx: Default::default(),
+                },
+            )
+            .unwrap();
+            let mut tr = Transient::new(&mut fl, scheme, 0.0).unwrap();
+            tr.error_control = Some(ErrorControl {
+                relative: 1e-3,
+                absolute: 1e-6,
+            });
+            let nc = mesh.n_cells;
+            fl.initialise(&foehncraft_fv::disc::Soa3::zeros(nc), &vec![0.0; nc])
+                .unwrap();
+            tr.start(&mut fl).unwrap();
+            (fl, tr)
+        };
+        let fields = |fl: &mut Flow| {
+            let s = fl.state().unwrap();
+            let mut v = s.u.x.clone();
+            v.extend(&s.u.y);
+            v.extend(&s.p);
+            v.extend(&s.mass_flux);
+            v.extend(&s.grad_u[0].x);
+            v.extend(&s.psi.y);
+            v.iter().map(|x| x.to_bits()).collect::<Vec<u64>>()
+        };
+        let steps = [0.05, 0.06, 0.07, 0.08, 0.05];
+        let (short, after) = (0.03, 0.04);
+        // the run that takes the long step, rejects it, repeats it short
+        let (mut fl, mut tr) = make();
+        for &h in &steps {
+            tr.step(&mut fl, h).unwrap();
+        }
+        fl.keep_valid().unwrap();
+        let r = tr.step(&mut fl, 0.2).unwrap();
+        assert!(r.error.is_some(), "no error estimate in step {}", r.step);
+        tr.reject(&mut fl).unwrap();
+        assert_eq!(tr.clock.step, steps.len());
+        fl.keep_valid().unwrap();
+        let a = tr.step(&mut fl, short).unwrap();
+        let fa = fields(&mut fl);
+        let a2 = tr.step(&mut fl, after).unwrap();
+        let fa2 = fields(&mut fl);
+        // the run that takes the short step at once
+        let (mut fl, mut tr) = make();
+        for &h in &steps {
+            tr.step(&mut fl, h).unwrap();
+        }
+        fl.keep_valid().unwrap();
+        let b = tr.step(&mut fl, short).unwrap();
+        assert!(
+            fields(&mut fl) == fa,
+            "{scheme:?}: the repeated step differs"
+        );
+        let b2 = tr.step(&mut fl, after).unwrap();
+        assert!(fields(&mut fl) == fa2, "{scheme:?}: the step after differs");
+        assert_eq!(a.error.map(f64::to_bits), b.error.map(f64::to_bits));
+        assert_eq!(a2.error.map(f64::to_bits), b2.error.map(f64::to_bits));
+        assert_eq!(a2.time.to_bits(), b2.time.to_bits());
+    }
+}

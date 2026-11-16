@@ -24,7 +24,11 @@ use crate::monitor::{self, History, Probes};
 use crate::plot::{self, Series};
 use crate::restart::{self, Restart};
 use crate::simplec::{self, Flow, Physics, Solution, Target};
-use crate::transient::{StepReport, TimeScheme, Transient};
+use crate::transient::{ErrorControl, StepReport, TimeScheme, Transient};
+
+/// Repetitions of one step at most when its error estimate exceeds the
+/// tolerance (D65); the last try is kept.
+const MAX_REJECTIONS: usize = 8;
 use anyhow::{Context, Result, bail};
 use foehncraft_fv::disc::Soa3;
 use foehncraft_mesh::geometry::norm;
@@ -822,6 +826,7 @@ fn run_one<F: FnMut(&str)>(
     let mut stopped = false;
     let (mut dt_min, mut dt_max, mut cfl_max) = (f64::INFINITY, 0.0f64, 0.0f64);
     let (mut outer_sum, mut cg_sum, mut nsteps) = (0usize, 0usize, 0usize);
+    let mut rejected = 0usize;
     let mut last_rep = StepReport::default();
     loop {
         let t = case.time.context("[time]")?;
@@ -839,9 +844,48 @@ fn run_one<F: FnMut(&str)>(
                 h = rest;
             }
         }
-        af.update(&case, mesh, geo, &mut fl, tr.clock.time + h)?;
-        fl.keep_valid()?;
-        let rp = match tr.step(&mut fl, h) {
+        // D65: the error estimate, with the tolerances of now (re-read)
+        tr.error_control = t
+            .error_tolerance
+            .filter(|_| t.adaptive)
+            .map(|r| ErrorControl {
+                relative: r,
+                absolute: t.error_absolute,
+            });
+        let (min_dt, t0) = (t.min_time_step, tr.clock.time);
+        let mut tries = 0;
+        let stepped = loop {
+            af.update(&case, mesh, geo, &mut fl, t0 + h)?;
+            fl.keep_valid()?;
+            let r = tr.step(&mut fl, h);
+            // a step whose error exceeds the tolerance is taken back and
+            // repeated with a shorter one (at most MAX_REJECTIONS times, and
+            // not below min_time_step); with the exponent ½ rather than ⅓,
+            // since the estimate falls only as Δt² when Δt gets small
+            // against the step before (the error constant of variable-step
+            // BDF2 grows as 1/ω)
+            if let Ok(rp) = &r
+                && let Some(e) = rp.error
+                && e > 1.0
+                && tries < MAX_REJECTIONS
+                && h > min_dt
+            {
+                tries += 1;
+                rejected += 1;
+                let hn = (h * (0.9 * e.powf(-0.5)).max(0.2)).max(min_dt);
+                lg.line(&format!(
+                    "      step {} rejected: error {e:.2} of the tolerance at Δt {h:.3e} s, \
+                     repeated with Δt {hn:.3e} s",
+                    rp.step
+                ));
+                af.update(&case, mesh, geo, &mut fl, t0)?;
+                tr.reject(&mut fl)?;
+                h = hn;
+                continue;
+            }
+            break r;
+        };
+        let rp = match stepped {
             Ok(r) => r,
             Err(e) if crate::divergence::is_divergence(&e, &mut fl) => {
                 // D63: the last valid state, the snapshot and the report
@@ -923,7 +967,7 @@ fn run_one<F: FnMut(&str)>(
                 r.pressure_iterations
             ));
             if steer.record.on() {
-                steer.record.row(&serde_json::json!({
+                let mut row = serde_json::json!({
                     "type": "step",
                     "step": n,
                     "time": rp.time,
@@ -933,7 +977,11 @@ fn run_one<F: FnMut(&str)>(
                     "continuity": r.continuity,
                     "outer": rp.outer,
                     "cg": r.pressure_iterations,
-                }));
+                });
+                if let Some(e) = rp.error {
+                    row["error"] = e.into();
+                }
+                steer.record.row(&row);
             }
         }
         let bal = {
@@ -979,9 +1027,13 @@ fn run_one<F: FnMut(&str)>(
         let log_now = n == first_step + 1 || n.is_multiple_of(case.solver.log_every);
         if log_now {
             steer.record.flush();
+            let err = rp
+                .error
+                .map(|e| format!("  error {e:.2}"))
+                .unwrap_or_default();
             lg.line(&format!(
                 "step {n:6}  t {:.6e}  Δt {h:.3e}  Courant {:.3}  momentum {:.2e} {:.2e} {:.2e}  \
-                 continuity {:.2e}  outer {}  cg {}",
+                 continuity {:.2e}  outer {}  cg {}{err}",
                 rp.time,
                 rp.cfl,
                 r.momentum[0],
@@ -1091,11 +1143,22 @@ fn run_one<F: FnMut(&str)>(
         let tnow = case.time.context("[time]")?;
         if tnow.adaptive {
             dt = h;
-            let grow = if rp.cfl > 0.0 {
+            let mut grow = if rp.cfl > 0.0 {
                 (tnow.max_cfl / rp.cfl).min(tnow.max_growth)
             } else {
                 tnow.max_growth
             };
+            // D65: the step of the error estimate, Δt (0.9/E)^⅓ for an
+            // error of third order in Δt, inside the Courant and growth
+            // bounds
+            if let Some(e) = rp.error.filter(|_| tnow.error_tolerance.is_some()) {
+                let f = if e > 0.0 {
+                    0.9 * e.powf(-1.0 / 3.0)
+                } else {
+                    tnow.max_growth
+                };
+                grow = grow.min(f.max(0.2));
+            }
             dt = (dt * grow).max(tnow.min_time_step);
             if let Some(m) = tnow.max_time_step {
                 dt = dt.min(m);
@@ -1146,6 +1209,11 @@ fn run_one<F: FnMut(&str)>(
         dt_max,
         cfl_max
     ));
+    if rejected > 0 {
+        lg.line(&format!(
+            "      {rejected} steps repeated with a shorter Δt (time-integration error above the tolerance)"
+        ));
+    }
     if last && (case.run.restart_final || stopped) && restart::AVAILABLE {
         let rs = restart_of(&mut fl, &tr, mesh, name, dt)?;
         restart::write(&out.join("restart.h5"), &rs)?;

@@ -65,6 +65,8 @@ pub const RUNTIME_KEYS: &[&str] = &[
     "time.max_growth",
     "time.min_time_step",
     "time.max_time_step",
+    "time.error_tolerance",
+    "time.error_absolute",
     "balance.every",
     "balance.tolerance_step",
     "balance.tolerance_run",

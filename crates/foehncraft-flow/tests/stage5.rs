@@ -116,6 +116,7 @@ fn same_restart(a: &restart::Restart, b: &restart::Restart) -> bool {
                 && o.x_cur == p.x_cur
                 && o.x_old == p.x_old
                 && o.g_old == p.g_old
+                && o.u_old2 == p.u_old2
                 && c == d
                 && dt == du
         }
@@ -158,6 +159,42 @@ fn restart_continues_bit_identically() {
         24,
         "the full run ends at step 24"
     );
+    assert!(same_restart(&a, &b), "the continued run differs");
+    let _ = std::fs::remove_dir_all(&da);
+    let _ = std::fs::remove_dir_all(&db);
+}
+
+/// The time step from the error estimate (D65) with rejected steps: the
+/// run steps back exactly and continues from a restart file bit-identically
+/// (the level uⁿ⁻² of the predictor and the step before the last are part
+/// of the restart).
+#[test]
+fn error_controlled_steps_restart_bit_identically() {
+    let time = "scheme = \"bdf2\"\ntime_step = 0.02\nsteps = 30\nadaptive = true\nmax_cfl = 2.0\n\
+                error_tolerance = 1e-3";
+    let full = cavity(16, time, "[run]\nrestart_at = [12]");
+    let da = out("restart_err_full");
+    let ra = run_in(&full, "full", &da);
+    assert!(ra.failures.is_empty(), "{:?}", ra.failures);
+    let log = std::fs::read_to_string(da.join("flow.log")).unwrap();
+    assert!(
+        log.contains(" rejected: error "),
+        "no step was rejected:\n{log}"
+    );
+    assert!(
+        log.contains("  error 0."),
+        "no error estimate in the log:\n{log}"
+    );
+    let from = da.join("restart_000012.h5");
+    let r = restart::read(&from).unwrap();
+    let (o, c, ..) = r.transient.as_ref().unwrap();
+    assert!(o.u_old2.is_some() && c.dt_prev2 > 0.0);
+    let cont = cavity(16, time, &format!("[run]\nrestart = '{}'", from.display()));
+    let db = out("restart_err_cont");
+    let rb = run_in(&cont, "cont", &db);
+    assert!(rb.failures.is_empty(), "{:?}", rb.failures);
+    let a = restart::read(&da.join("restart.h5")).unwrap();
+    let b = restart::read(&db.join("restart.h5")).unwrap();
     assert!(same_restart(&a, &b), "the continued run differs");
     let _ = std::fs::remove_dir_all(&da);
     let _ = std::fs::remove_dir_all(&db);
