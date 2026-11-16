@@ -46,8 +46,6 @@ type = "fixed-value"
 profile = "manufactured"
 
 [solver]
-
-[solver.momentum]
 scheme = "linear-upwind"
 limiter = "venkatakrishnan"     # exercises the limiter kernel; K = 5 keeps
 limiter_k = 5.0                 # smooth regions unlimited

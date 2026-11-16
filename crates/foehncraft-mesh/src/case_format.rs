@@ -195,6 +195,13 @@ fn has(t: &toml::Table, path: &str) -> bool {
     }
 }
 
+/// A rule applies to a case of the kind it was made for: the `solver.*`
+/// renames are those of the flow case; the scalar case (`[problem]`) and
+/// the Poisson case (`[linear]`) have their own `[solver]` keys.
+fn applies(r: &Rename, has_key: impl Fn(&str) -> bool) -> bool {
+    !(r.from.starts_with("solver.") && (has_key("problem") || has_key("linear")))
+}
+
 /// Reads the format of a case table, maps its old keys to the current ones
 /// and states the current format in it. Returns one note per mapped key.
 pub fn migrate(t: &mut toml::Table) -> Result<Vec<String>, String> {
@@ -206,7 +213,7 @@ pub fn migrate(t: &mut toml::Table) -> Result<Vec<String>, String> {
     check_version(&file)?;
     let mut notes = Vec::new();
     for r in pending(&file) {
-        if !has(t, r.from) {
+        if !applies(r, |k| t.contains_key(k)) || !has(t, r.from) {
             continue;
         }
         if has(t, r.to) {
@@ -286,7 +293,7 @@ pub fn upgrade_text(text: &str) -> Result<(String, Vec<String>), String> {
     let mut notes = Vec::new();
     for r in pending(&file) {
         let root = doc.as_table_mut();
-        if !has_item(root, r.from) {
+        if !applies(r, |k| root.contains_key(k)) || !has_item(root, r.from) {
             continue;
         }
         if has_item(root, r.to) {
@@ -425,5 +432,21 @@ mod tests {
         assert_eq!(again, out);
         let t: toml::Table = toml::from_str(&out).unwrap();
         assert_eq!(t["solver"]["momentum"]["relaxation"].as_float(), Some(0.5));
+    }
+
+    #[test]
+    fn solver_renames_leave_scalar_and_poisson_cases_alone() {
+        for text in [
+            "[problem]\n[solver]\nscheme = \"upwind\"\nrelaxation = 0.9\n",
+            "[linear]\n[solver]\nscheme = \"upwind\"\n",
+        ] {
+            let (out, _) = upgrade_text(text).unwrap();
+            assert!(!out.contains("[solver.momentum]"), "{out}");
+            let mut t: toml::Table = toml::from_str(text).unwrap();
+            migrate(&mut t).unwrap();
+            assert!(t["solver"].as_table().unwrap().contains_key("scheme"));
+        }
+        let (out, notes) = upgrade_text("[fluid]\n[solver]\nscheme = \"upwind\"\n").unwrap();
+        assert!(out.contains("momentum") && !notes.is_empty(), "{out}");
     }
 }

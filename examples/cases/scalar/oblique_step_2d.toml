@@ -5,7 +5,7 @@
 #
 # φ = 1 enters through ymin and through xmin below y = 0.2, φ = 0 through
 # xmin above it; zero gradient at the outflow (xmax, ymax) and on the z
-# boundaries. The exact solution is the step along the line from (0, 0.2) at
+# patches. The exact solution is the step along the line from (0, 0.2) at
 # 30°, so φ must stay in [0, 1]. First-order upwind is bounded but smears
 # the step; linear upwind without a limiter is sharper but over- and
 # undershoots; with the Venkatakrishnan limiters at K = 0 the solution is

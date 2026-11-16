@@ -5,7 +5,7 @@
 #   cargo run --release -p foehncraft-cli -- scalar examples/cases/scalar/mms_poly_2d.toml
 #
 # The planar solution φ = 1 + sin(πx + 0.5) cos(πy + 0.3) does not depend on
-# z; the two z boundaries take the zero-gradient (symmetry) condition, which
+# z; the two z patches take the zero-gradient (symmetry) condition, which
 # enters the least-squares gradient as a stencil point on the face normal.
 
 case_format = "0.6"
@@ -41,9 +41,9 @@ type = "zero-gradient"
 [problem.boundary.zmax]
 type = "zero-gradient"
 
+[solver]
+scheme = "linear-upwind"
+
 [verification]
 levels = [2, 3, 4, 5]
 expected_order = [1.8, 2.2]
-
-[solver.momentum]
-scheme = "linear-upwind"
