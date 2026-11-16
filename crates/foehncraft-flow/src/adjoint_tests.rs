@@ -365,3 +365,81 @@ fn rejected_step_repeats_bitwise() {
         assert_eq!(a2.time.to_bits(), b2.time.to_bits());
     }
 }
+
+/// D52: the potential-flow start in a channel with a uniform inflow is the
+/// uniform flow (exact for the linear potential on hexahedra, to the
+/// discretisation on perturbed polygons), its face fluxes are continuous,
+/// and the run after it builds its own multigrid.
+#[test]
+fn potential_flow_start_in_a_channel() {
+    for (kind, tol) in [("hex", 1e-9), ("poly", 0.025)] {
+        let text = format!(
+            r#"
+[mesh.generate]
+type = "{kind}"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [24, 12, 1]
+perturb = {}
+[fluid]
+viscosity = 0.1
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+"#,
+            if kind == "poly" { 0.15 } else { 0.0 }
+        );
+        let case = FlowCase::from_toml(&text, Path::new(".")).unwrap();
+        let (mesh, geo, _) = mesh_for(&case, None).unwrap();
+        let phys = physics(&case);
+        let arrays = bc::arrays(&mesh, &geo, &case.boundary, phys.rho, None).unwrap();
+        let disc = simplec::discretisation(&mesh, &geo, &arrays).unwrap();
+        let mut fl = Flow::new(
+            disc,
+            arrays,
+            phys,
+            case.solver.clone(),
+            [0.0; 3],
+            0.0,
+            None,
+            &Target::default(),
+        )
+        .unwrap();
+        let it = fl.potential_flow(&mesh, &geo).unwrap();
+        assert!(it > 0 && fl.amg_setups == 0);
+        let s = fl.state().unwrap();
+        let nc = mesh.n_cells;
+        let (mut worst, mut sq) = (0.0f64, 0.0);
+        for c in 0..nc {
+            let e = ((s.u.x[c] - 1.0).powi(2) + s.u.y[c].powi(2) + s.u.z[c].powi(2)).sqrt();
+            worst = worst.max(e);
+            sq += e * e;
+        }
+        let rms = (sq / nc as f64).sqrt();
+        eprintln!("{kind}: deviation from the uniform flow largest {worst:.3e}, RMS {rms:.3e}");
+        assert!(rms < tol, "{kind}: RMS deviation {rms:e}");
+        // continuity of the face fluxes: Σ ±ṁ per cell against the inflow
+        let mut div = vec![0.0; nc];
+        for (f, &m) in s.mass_flux.iter().enumerate() {
+            div[mesh.owner[f] as usize] += m;
+            if f < mesh.n_interior_faces() {
+                div[mesh.neighbour[f] as usize] -= m;
+            }
+        }
+        let inflow = 1.0 * 1.0 * 0.1;
+        let d = div.iter().fold(0.0f64, |a, x| a.max(x.abs()));
+        assert!(d < 1e-8 * inflow, "{kind}: cell imbalance {d:e}");
+        fl.iterate().unwrap();
+        assert_eq!(fl.amg_setups, 1);
+    }
+}

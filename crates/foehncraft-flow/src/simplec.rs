@@ -769,6 +769,89 @@ impl Flow {
         self.dev.mass_flux(&a, self.f.mass_flux)
     }
 
+    /// Potential-flow start (D52): the velocity of the potential φ that
+    /// carries the prescribed boundary fluxes through the domain, ∇²φ = 0
+    /// with ∂φ/∂n from the velocity inlets, ∂φ/∂n = 0 on walls and symmetry
+    /// planes and φ = 0 on pressure boundaries. It is one pressure-correction
+    /// solve from zero cell velocities with D = 1, so the AMG of the
+    /// pressure solves it with the same boundary conditions; the face fluxes
+    /// are continuous to the solver tolerance. The cell velocity comes from
+    /// the face fluxes, u_P = Σ_f ±ṁ_f (x_f − x_P)/(ρ V_P), which is exact
+    /// for a uniform flow and, unlike the gradient of φ, also holds next to
+    /// the inlets (where the correction gradient assumes ∂φ/∂n = 0). The
+    /// pressure stays at its start value, the multigrid of the run is built
+    /// anew. Returns the CG iterations.
+    pub fn potential_flow(&mut self, mesh: &Mesh, geo: &Geometry) -> Result<usize> {
+        let (f, w) = (self.f, self.w);
+        for b in f.u.all() {
+            self.dev.fill(b, 0.0)?;
+        }
+        let kept = self.settings.clone();
+        self.settings.pressure_tolerance = Some(1e-10);
+        self.settings.pressure_max_iter = self.settings.pressure_max_iter.max(500);
+        self.update_boundaries()?;
+        let a = self.flux_args(None, w.zero_face, None);
+        self.dev.mass_flux(&a, f.mass_flux)?;
+        self.dev.fill(w.dc, 1.0)?;
+        // the boundary fluxes, and per pass the non-orthogonal part of the
+        // face flux −ρ (∇φ)_f·k_f of the potential of the pass before
+        // (deferred, Jasak 1996), so that the potential is that of the full
+        // Laplacian on non-orthogonal meshes
+        let m0 = self.dev.download(f.mass_flux)?;
+        let rho = self.phys.rho;
+        let mut it = 0;
+        let mut r = Ok(());
+        for pass in 0..=POTENTIAL_NONORTH_PASSES {
+            if pass > 0 {
+                self.dev.gradient(
+                    Lsq::Pressure,
+                    w.pc,
+                    Mask::PressureCorrection,
+                    w.zero_boundary,
+                    w.gpc,
+                )?;
+                let g = [
+                    self.dev.download(w.gpc.x)?,
+                    self.dev.download(w.gpc.y)?,
+                    self.dev.download(w.gpc.z)?,
+                ];
+                let d = &self.disc;
+                let mut ms = m0.clone();
+                for (fi, m) in ms.iter_mut().enumerate().take(d.n_interior) {
+                    let (p, n, wt) = (d.owner[fi] as usize, d.neighbour[fi] as usize, d.weight[fi]);
+                    let k = [d.k.x[fi], d.k.y[fi], d.k.z[fi]];
+                    let gk: f64 = (0..3)
+                        .map(|i| (wt * g[i][p] + (1.0 - wt) * g[i][n]) * k[i])
+                        .sum();
+                    *m -= rho * gk;
+                }
+                self.dev.upload(f.mass_flux, &ms)?;
+            }
+            match self.pressure_correction(f.mass_flux, pass == 0) {
+                Ok(n) => it += n,
+                Err(e) => {
+                    r = Err(e);
+                    break;
+                }
+            }
+        }
+        self.settings = kept;
+        r?;
+        self.dev.correct_fluxes(w.cf, f.mass_flux, w.pc, w.mc)?;
+        self.dev.copy(w.mc, f.mass_flux)?;
+        let m = self.dev.download(f.mass_flux)?;
+        let u = velocity_of_fluxes(mesh, geo, &m, self.phys.rho, self.disc.n_cells);
+        self.dev.upload(f.u.x, &u.x)?;
+        self.dev.upload(f.u.y, &u.y)?;
+        self.dev.upload(f.u.z, &u.z)?;
+        self.amg_setups = 0;
+        self.amg_matrix = None;
+        self.update_boundaries()?;
+        self.gradients()?;
+        self.dev.sync()?;
+        Ok(it)
+    }
+
     /// Outer iterations done.
     pub fn iteration(&self) -> usize {
         self.iteration
@@ -1141,3 +1224,39 @@ impl Flow {
         Ok(res)
     }
 }
+
+/// Cell velocities from face mass fluxes, u_P = Σ_f ±ṁ_f (x_f − x_P)/(ρ V_P):
+/// exact for a uniform velocity, since Σ_f (x_f − x_P) S_fᵀ = V_P I for a
+/// closed cell (the start of D52).
+fn velocity_of_fluxes(mesh: &Mesh, geo: &Geometry, m: &[f64], rho: f64, nc: usize) -> Soa3 {
+    let ni = mesh.n_interior_faces();
+    let mut u = Soa3::zeros(nc);
+    for (fi, &mf) in m.iter().enumerate() {
+        let xf = geo.face_centroid[fi];
+        let sides = [(mesh.owner[fi] as usize, 1.0), (usize::MAX, 0.0)];
+        let sides = if fi < ni {
+            [sides[0], (mesh.neighbour[fi] as usize, -1.0)]
+        } else {
+            sides
+        };
+        for (c, s) in sides {
+            if c < nc {
+                let xp = geo.cell_centroid[c];
+                u.x[c] += s * mf * (xf[0] - xp[0]);
+                u.y[c] += s * mf * (xf[1] - xp[1]);
+                u.z[c] += s * mf * (xf[2] - xp[2]);
+            }
+        }
+    }
+    for c in 0..nc {
+        let r = 1.0 / (rho * geo.cell_volume[c]);
+        u.x[c] *= r;
+        u.y[c] *= r;
+        u.z[c] *= r;
+    }
+    u
+}
+
+/// Passes of the non-orthogonal correction of the potential-flow start
+/// (D52) after the first solve.
+const POTENTIAL_NONORTH_PASSES: usize = 4;

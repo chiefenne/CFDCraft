@@ -786,6 +786,10 @@ fn run_one<F: FnMut(&str)>(
         };
         af.update(&case, mesh, geo, &mut fl, time0.start_time)?;
         fl.initialise(&u, &p)?;
+        if case.initial.potential_flow {
+            let it = fl.potential_flow(mesh, geo)?;
+            lg.line(&format!("start  potential flow (D52): {it} CG iterations"));
+        }
         tr.start(&mut fl)?;
     }
     let setup = t_setup.elapsed().as_secs_f64();

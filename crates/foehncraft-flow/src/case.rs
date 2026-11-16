@@ -120,6 +120,11 @@ pub struct InitialSection {
     pub velocity: [f64; 3],
     /// Start pressure (Pa).
     pub pressure: f64,
+    /// Start from potential flow (D52) instead of `velocity`: the
+    /// irrotational velocity that carries the inflow through the domain to
+    /// the pressure boundaries, from one Laplace solve with the pressure
+    /// multigrid.
+    pub potential_flow: bool,
 }
 
 /// `[pressure]`
@@ -1299,6 +1304,9 @@ pub fn run_steered(
                 path.display(),
                 r.iteration
             ));
+        } else if case.initial.potential_flow {
+            let it = fl.potential_flow(&mesh, &geo)?;
+            lg.line(&format!("start  potential flow (D52): {it} CG iterations"));
         }
         let first = fl.iteration();
         let mut csv = csv_preamble(
