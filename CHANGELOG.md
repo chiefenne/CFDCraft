@@ -2,6 +2,93 @@
 
 ## Unreleased
 
+Nothing yet.
+
+## Summary
+
+| Version | Stage | Highlights |
+|---|---|---|
+| 0.5 (2026-11-16) | 5 Transient flow, run control, Python | Transient incompressible flow: PISO with variable-step BDF2 and Crank–Nicolson, outer correctors for large time steps, a time step from the integration error, output at exact times, restart files and control files; the whole flow loop on NVIDIA GPUs; adjoint-ready kernels (dual numbers, transposed matrices, checkpointing); the run contract for scripts and agents (`--json`, `--set`, `result.json`, run record, exit codes and signals, case schema, diagnostic codes, estimate, limits, provenance); the conservation ledger and the divergence report; the bounded central scheme and the boundary conditions of D29 (slip, wedge, tables, backflow, convective outlet); derived fields; expressions, the material database and regions; the Python package `foehncraft` with studies; the grid convergence index of every sweep and a generated verification manual; all scripts in Python. **Taylor–Green time order 2.0–2.4 and space order 2.1; Schäfer & Turek 2D-1 inside all reference ranges, C_D extrapolated to 5.5797 ± 0.0004 from three meshes; GPU flow loop bitwise equal to the CPU on a Tesla T4 (722 ns per cell and iteration on 970 225 polyhedra); a case built in Python is bitwise its TOML file.** Commands `foehn materials`, `foehn post derive`, `foehn schema`; gallery 14–25, recipes 21–35 |
+| 0.4 (2026-11-15) | 4 Laminar steady flow | First flow solver: steady incompressible laminar flow with SIMPLEC (and SIMPLE) on polyhedral meshes, relaxation-independent Rhie–Chow interpolation (Majumdar 1988), CG + AMG for the pressure correction, boundary conditions of D29 (walls also moving, velocity and mass-flow inlets, static and total pressure inlets and outlets, symmetry) with a check of their combination and guidance (D30), TOML case file with "did you mean" (D39), log, CSV, wall and line output (D43). **Couette exact to the iteration tolerance on all mesh types; Poiseuille observed order 1.80–2.00; lid-driven cavity within 0.4–1.4 % of Ghia et al. at Re 100 and 1000 in 2D and within 2.5 % on 3D tetrahedra and polyhedra.** New crate `cfdcraft-flow`, command `cfdcraft flow`, thirteen case files, gallery 12–13, recipes 18–20. CPU only; the GPU flow loop follows with stage 5 |
+| 0.3 (2026-11-14) | 3 Pressure solver | Pressure linear solver: smoothed-aggregation algebraic multigrid as the preconditioner of CG (Vaněk, Mandel, Brezina 1996), symmetric V-cycle with Chebyshev or Jacobi smoothing, float32 hierarchy with float64 Krylov iteration (mixed precision, D37), one kernel source for the CPU and the NVIDIA GPU, optional hypre 3.2.1 reference (BoomerAMG-PCG, built from source). **10–13 iterations from 512 to 274 625 cells on all mesh types; same solution as hypre to 1.6e-9; on a Tesla T4 6.5 ns per cell and iteration against 10.5 for hypre at 912 673 cells, all GPU results bitwise equal to the CPU.** New command `cfdcraft poisson`, four Poisson case files, gallery 10–11, recipes 15–17 |
+| 0.2 (2026-11-14) | 2 Operators on a scalar equation | Finite-volume operators on a scalar transport equation, one source for the CPU and the NVIDIA GPU: least-squares gradients (exact for linear fields, error 6e-15 on all mesh types), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (no new extrema at K = 0), over-relaxed non-orthogonal diffusion, reproducible gather-based assembly into sliced ELL, BiCGStab. Observed order 1.87–2.08 on hex, tet, poly and mixed meshes in 2D and 3D. **GPU and CPU results bitwise equal on a Tesla T4** (912 673 polyhedra, 311 ns per cell and iteration). New command `cfdcraft scalar`, seven case files, gallery 8–9, recipes 12–14 |
+| 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
+| 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
+
+Release 0.5 closes stage 5: the acceptance checks of the stage plan pass
+(Taylor–Green time and space order 2, also at Courant number 9 with outer
+correctors; the cylinder benchmark of Schäfer & Turek, at Re 20 inside all
+reference ranges, at Re 100 with C_L,max 0.5 % below its range on 24 576
+cells; restart bit-identical; expressions from TOML and from Python
+give the same run; the energy budget of the cavity closes; the GPU flow
+loop gives bitwise the CPU results). The generated
+[verification manual](docs/verification/manual.md) lists every case with
+its pass bands. The Cargo version of the crates is now 0.5.0; the release
+is the Git tag `v0.5` (D46).
+
+Release 0.4 closes stage 4: all acceptance tests of the stage plan pass
+(Couette at round-off, that is at the iteration tolerance; Poiseuille order
+1.8–2.2 on all mesh types; lid-driven cavity in 2D and 3D at Re 100 and 1000
+against Ghia et al.). The Cargo version of the crates is now 0.4.0; the
+release is the Git tag `v0.4` (D46).
+
+Release 0.3 closes stage 3: all acceptance tests of the stage plan pass
+(iteration count nearly independent of the mesh size, same converged result
+as hypre, GPU time per cell compared with hypre and reported). The Cargo
+version of the crates is now 0.3.0; the release is the Git tag `v0.3` (D46).
+
+Release 0.2 closes stage 2: all acceptance tests of the stage plan pass
+(exact gradients, no new extrema, observed order 1.8–2.2 on all mesh types,
+bitwise reproducible results, GPU and CPU bitwise equal on a Tesla T4). The
+Cargo version of the crates is now 0.2.0; the release is the Git tag `v0.2`
+(D46).
+
+Release 0.1 closes stage 1: all acceptance tests of the stage plan pass
+(closed cells, exact volumes, Gmsh files from Gmsh load, VTKHDF files load
+with VTK's reader, point location on all mesh types). The Cargo version of
+the crates is now 0.1.0; the release is the Git tag `v0.1` (D46).
+
+Release 0.0 closes stage 0: both verdicts of gate G1 are in (GPU: Tesla T4,
+CPU: i9-9900K, 2026-11-14, both PASS; O13 closed). The Cargo version of the
+crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
+
+---
+
+## 0.5 (2026-11-16) – stage 5: transient laminar flow, run control and Python
+
+**Highlights.**
+
+- **Transient flow.** PISO with variable-step BDF2 and Crank–Nicolson,
+  outer correctors (Courant number 9 at time order 2), an adaptive time
+  step from the integration error with exact step rejection, output at
+  exact simulated times, potential-flow start, restart files that
+  continue a run bit for bit, control files and re-reading the case file
+  during a run, probes and force histories. Verified on the Taylor–Green
+  vortex (time order 2.0–2.4, space order 2.1) and the cylinder benchmark
+  of Schäfer & Turek (Re 20 and Re 100).
+- **GPU.** The whole flow loop runs on NVIDIA GPUs from the same kernel
+  source as the CPU, bitwise equal to the CPU on a Tesla T4.
+- **Adjoint-ready kernels.** Dual-number derivatives of every kernel,
+  transposed matrices as gathers, binomial checkpointing (D59).
+- **Run contract and health.** `--json`, `--set`, `result.json`, the run
+  record, exit codes and signals, the case schema, diagnostic codes, the
+  estimate before a run, limits, provenance; the mass and kinetic-energy
+  ledger and a divergence report with ranked causes and fixes.
+- **Numerics and boundary conditions.** The bounded central scheme, slip
+  walls, wedges, inlet profiles from tables, backflow treatment and
+  convective outlets; derived fields (vorticity, Q, λ₂, wall shear stress,
+  y⁺) with the output and from restart files.
+- **Expressions and materials.** Boundary values, body forces and the
+  viscosity as expressions of x, y, z and t; a material database with
+  sources; regions.
+- **Python.** The package `foehncraft`: cases, expression objects, runs in
+  process with callbacks, results, materials and parametric studies; all
+  scripts of the repository are Python now.
+- **Verification.** The grid convergence index of every sweep of three or
+  more meshes or time steps, and the generated verification manual.
+
+The parts in detail, newest first:
+
 **Scripts in Python (stage 5 part 6d, D61 (2)).** The shell scripts are
 ported to Python and `tools/` is split into groups that run as modules
 from the repository root: `tools/check/` (`ci_cases`, `compare_runs`,
@@ -210,45 +297,7 @@ check. The restart file can hold point coordinates and cell volumes
 `tools/balance_chart.py`, `tools/energy_budget_chart.py`. No result
 changes: the catalogue gives bitwise the fields of part 4a.
 
-## Summary
-
-| Version | Stage | Highlights |
-|---|---|---|
-| 0.4 (2026-11-15) | 4 Laminar steady flow | First flow solver: steady incompressible laminar flow with SIMPLEC (and SIMPLE) on polyhedral meshes, relaxation-independent Rhie–Chow interpolation (Majumdar 1988), CG + AMG for the pressure correction, boundary conditions of D29 (walls also moving, velocity and mass-flow inlets, static and total pressure inlets and outlets, symmetry) with a check of their combination and guidance (D30), TOML case file with "did you mean" (D39), log, CSV, wall and line output (D43). **Couette exact to the iteration tolerance on all mesh types; Poiseuille observed order 1.80–2.00; lid-driven cavity within 0.4–1.4 % of Ghia et al. at Re 100 and 1000 in 2D and within 2.5 % on 3D tetrahedra and polyhedra.** New crate `cfdcraft-flow`, command `cfdcraft flow`, thirteen case files, gallery 12–13, recipes 18–20. CPU only; the GPU flow loop follows with stage 5 |
-| 0.3 (2026-11-14) | 3 Pressure solver | Pressure linear solver: smoothed-aggregation algebraic multigrid as the preconditioner of CG (Vaněk, Mandel, Brezina 1996), symmetric V-cycle with Chebyshev or Jacobi smoothing, float32 hierarchy with float64 Krylov iteration (mixed precision, D37), one kernel source for the CPU and the NVIDIA GPU, optional hypre 3.2.1 reference (BoomerAMG-PCG, built from source). **10–13 iterations from 512 to 274 625 cells on all mesh types; same solution as hypre to 1.6e-9; on a Tesla T4 6.5 ns per cell and iteration against 10.5 for hypre at 912 673 cells, all GPU results bitwise equal to the CPU.** New command `cfdcraft poisson`, four Poisson case files, gallery 10–11, recipes 15–17 |
-| 0.2 (2026-11-14) | 2 Operators on a scalar equation | Finite-volume operators on a scalar transport equation, one source for the CPU and the NVIDIA GPU: least-squares gradients (exact for linear fields, error 6e-15 on all mesh types), linear upwind with Venkatakrishnan and Venkatakrishnan–Wang limiters (no new extrema at K = 0), over-relaxed non-orthogonal diffusion, reproducible gather-based assembly into sliced ELL, BiCGStab. Observed order 1.87–2.08 on hex, tet, poly and mixed meshes in 2D and 3D. **GPU and CPU results bitwise equal on a Tesla T4** (912 673 polyhedra, 311 ns per cell and iteration). New command `cfdcraft scalar`, seven case files, gallery 8–9, recipes 12–14 |
-| 0.1 (2026-11-14) | 1 Mesh | Polyhedral face-based mesh with exact geometry (every cell closed to 1e-15, volumes exact), Gmsh 4.1 reader, built-in test mesher (hex, tet, poly, mixed; 2D and 3D; graded, refined, perturbed), quality report, VTKHDF output for ParaView, METIS and RCB partitioning with a solver-ready halo layout and multi-field halo exchange (tested over MPI on 2–4 ranks), particle point location on all mesh types, golden-value test matrix, `cfdcraft mesh` command. G1 rerun on polyhedral and shuffled meshes: bitwise equal; quiet-machine verdict open (O15) |
-| 0.0 (2026-11-14) | 0 Foundations and gate G1 | Cargo workspace, CI on Linux, macOS and Windows with MPI runs on 4 ranks, the G1 kernel benchmark. **G1 GPU verdict passed on a Tesla T4: single-source Rust kernels within 1.0 % of hand-written CUDA C, bitwise equal results**; **CPU verdict passed on an i9-9900K: single-source bodies within 1.8 % of hand-written loops, in two runs** |
-
-Release 0.4 closes stage 4: all acceptance tests of the stage plan pass
-(Couette at round-off, that is at the iteration tolerance; Poiseuille order
-1.8–2.2 on all mesh types; lid-driven cavity in 2D and 3D at Re 100 and 1000
-against Ghia et al.). The Cargo version of the crates is now 0.4.0; the
-release is the Git tag `v0.4` (D46).
-
-Release 0.3 closes stage 3: all acceptance tests of the stage plan pass
-(iteration count nearly independent of the mesh size, same converged result
-as hypre, GPU time per cell compared with hypre and reported). The Cargo
-version of the crates is now 0.3.0; the release is the Git tag `v0.3` (D46).
-
-Release 0.2 closes stage 2: all acceptance tests of the stage plan pass
-(exact gradients, no new extrema, observed order 1.8–2.2 on all mesh types,
-bitwise reproducible results, GPU and CPU bitwise equal on a Tesla T4). The
-Cargo version of the crates is now 0.2.0; the release is the Git tag `v0.2`
-(D46).
-
-Release 0.1 closes stage 1: all acceptance tests of the stage plan pass
-(closed cells, exact volumes, Gmsh files from Gmsh load, VTKHDF files load
-with VTK's reader, point location on all mesh types). The Cargo version of
-the crates is now 0.1.0; the release is the Git tag `v0.1` (D46).
-
-Release 0.0 closes stage 0: both verdicts of gate G1 are in (GPU: Tesla T4,
-CPU: i9-9900K, 2026-11-14, both PASS; O13 closed). The Cargo version of the
-crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
-
----
-
-## Unreleased – stage 5: adjoint-ready kernels (part 3)
+### Adjoint-ready kernels (part 3)
 
 Preparation for a discrete adjoint solver (D59; the solver itself is L17).
 No result changes: all flow cases give bitwise the files of part 2.
@@ -279,7 +328,7 @@ No result changes: all flow cases give bitwise the files of part 2.
 - Gallery 17, recipe 25, `tools/checkpoint_chart.py`, report
   [stage 5, part 3](docs/verification/stage5.md#adjoint-ready-kernels-part-3).
 
-## Unreleased – stage 5: GPU flow loop (part 2)
+### GPU flow loop (part 2)
 
 - **The flow loop on the GPU:** `run.backend = "cuda"` or
   `foehn flow --backend cuda` runs every flow case, steady and transient,
@@ -307,7 +356,7 @@ No result changes: all flow cases give bitwise the files of part 2.
 - The CPU results of all flow cases are bitwise those of part 1. A missing
   NVIDIA driver now gives a message instead of a panic.
 
-## Unreleased – stage 5: transient laminar flow (part 1)
+### Transient laminar flow (part 1)
 
 Stage 5 comes in several pull requests and is released as 0.5 when it is
 complete. The first part, the transient core and its benchmarks
