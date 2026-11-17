@@ -49,7 +49,7 @@ pub struct ScalarRowInputs<'a, T> {
     pub phi: &'a [T],
     /// Density.
     pub rho: T,
-    /// Explicit source S_u per cell ([φ]/s); empty: none.
+    /// Explicit source S_u per cell (the unit of φ per second); empty: none.
     pub su: &'a [T],
     /// Implicit source coefficient S_p ≤ 0 per cell (1/s); empty: none.
     pub sp: &'a [T],

@@ -269,7 +269,7 @@ pub struct ScalarRowArgs {
     pub mass_flux: Buf,
     /// Current cell values.
     pub phi: Buf,
-    /// S_u per cell ([φ]/s), if any.
+    /// S_u per cell (the unit of φ per second), if any.
     pub su: Option<Buf>,
     /// S_p ≤ 0 per cell (1/s), if any.
     pub sp: Option<Buf>,
