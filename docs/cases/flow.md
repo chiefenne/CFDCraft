@@ -111,7 +111,8 @@ checks are tests on generated meshes (gallery 17, recipe 25).
 
 Slip walls, axisymmetric wedges, inlet profiles from tables, backflow
 treatment at pressure outlets and the convective outlet (D29, stage 5
-part 5b); the keys are on the [key page](flow-keys.md#boundary-conditions-d29).
+part 5b), periodic pairs with the heat-flux jump of the scalars (D29,
+D109 (1), stage 6 part 6p); the keys are on the [key page](flow-keys.md#boundary-conditions-d29).
 
 | Case file | Mesh | Shows | Where |
 |---|---|---|---|
@@ -121,6 +122,9 @@ part 5b); the keys are on the [key page](flow-keys.md#boundary-conditions-d29).
 | `flow/pipe_wedge.toml` | generated hex 2D revolved into a 0.5° wedge, perturbed, 256 to 4 096 cells (3 levels) | Hagen–Poiseuille flow on the axisymmetric wedge, observed order 1.8–2.2 required | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |
 | `flow/cylinder_re100_short.toml` | built-in cylinder mesh with the outlet 5.5 D behind the cylinder, 4 928 hexahedra | the Re = 100 vortex street through a static pressure outlet with backflow treatment (Linux, on main, nightly and with the label `full-ci`) | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |
 | `flow/cylinder_re100_convective.toml` | as `cylinder_re100_short.toml` | the same with a convective outlet (Linux, on main, nightly and with the label `full-ci`) | [gallery 21](../gallery/boundary-conditions.md#boundary-conditions), [recipe 29](../recipes/boundary-conditions.md#boundary-conditions) |
+| `flow/poiseuille_periodic.toml` | generated hex 2D, perturbed by 15 %, 512 to 8 192 cells (3 levels) | plane Poiseuille flow on one periodic pair driven by its mass flow 0.1 kg/s: observed order 1.8–2.2 required (1.98, 1.94), the driving force converges to 12 μU/h² = 1.2 Pa/m (+0.09 % on the finest mesh) | [gallery 67](../gallery/boundary-conditions.md#periodic), [recipe 67](../recipes/boundary-conditions.md#periodic) |
+| `flow/channel_heated_periodic.toml` | as `poiseuille_periodic.toml` | the laminar heated channel on one periodic module with the heat-flux jump: observed order of the temperature error 1.8–2.2 required, Nu = 8.2460 against 140/17 = 8.2353 on the finest mesh | [gallery 67](../gallery/boundary-conditions.md#periodic), [recipe 67](../recipes/boundary-conditions.md#periodic) |
+| `flow/pipe_heated_periodic.toml` | generated hex 2D revolved into a 0.5° wedge, perturbed, 64 to 1 024 cells (3 levels) | the short periodic heated pipe (one diameter, D111): Hagen–Poiseuille flow at a fixed mass flow and the heat-flux jump; orders 1.8–2.2 (velocity) and 1.8–2.6 (temperature) required, Nu = 4.3691 against 48/11 = 4.3636 on the finest mesh | [gallery 67](../gallery/boundary-conditions.md#periodic), [recipe 67](../recipes/boundary-conditions.md#periodic) |
 
 ## Derived fields
 

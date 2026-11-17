@@ -200,6 +200,24 @@ fn inverse3(m: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
 }
 
 impl Discretisation {
+    /// The centroid of the neighbour of interior face `f` as the face sees
+    /// it: moved by the period next to a periodic face (D29).
+    pub fn neighbour_centroid(&self, f: usize) -> [f64; 3] {
+        let n = self.neighbour[f] as usize;
+        let c = &self.cell_centroid;
+        let x = [c.x[n], c.y[n], c.z[n]];
+        if f >= self.periodic && f < self.n_interior {
+            let i = f - self.periodic;
+            [
+                x[0] + self.shift.x[i],
+                x[1] + self.shift.y[i],
+                x[2] + self.shift.z[i],
+            ]
+        } else {
+            x
+        }
+    }
+
     /// Builds the discretisation of `problem` on `mesh`. The mesh must be a
     /// single partition (no halo cells; the multi-rank operators follow with
     /// stage 7).

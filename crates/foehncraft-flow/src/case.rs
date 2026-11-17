@@ -1407,6 +1407,55 @@ pub struct Solve {
     /// The passive scalars (D51).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub scalars: Vec<crate::scalar::ScalarSummary>,
+    /// The periodic pairs (D29): mass flow and driving force.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub periodic: Vec<PeriodicSummary>,
+}
+
+/// The flow through one periodic pair at the end of a solve (D29).
+#[derive(Debug, Clone, Serialize)]
+pub struct PeriodicSummary {
+    /// The boundary the flow enters through (side `a`).
+    pub from: String,
+    /// The boundary the flow leaves through (side `b`).
+    pub to: String,
+    /// Mass flow from `from` towards `to` (kg/s).
+    pub mass_flow: f64,
+    /// The driving force per unit volume along the translation (N/m³),
+    /// the mean pressure gradient it stands for with the opposite sign
+    /// (Pa/m).
+    pub driving_force: f64,
+}
+
+/// The periodic pairs of `fl` (D29) for the report, with their log lines.
+pub(crate) fn periodic_summaries<F: FnMut(&str)>(
+    fl: &mut Flow,
+    mesh: &Mesh,
+    lg: &mut Log<F>,
+) -> Result<Vec<PeriodicSummary>> {
+    let Some(per) = &mesh.periodic else {
+        return Ok(Vec::new());
+    };
+    let q = fl.periodic_mass_flow()?;
+    let b = fl.periodic_force();
+    let out: Vec<PeriodicSummary> = per
+        .pairs
+        .iter()
+        .zip(q.iter().zip(&b))
+        .map(|(p, (&q, &b))| PeriodicSummary {
+            from: p.a.clone(),
+            to: p.b.clone(),
+            mass_flow: q,
+            driving_force: b,
+        })
+        .collect();
+    for s in &out {
+        lg.line(&format!(
+            "periodic {}–{}: mass flow {:.6e} kg/s, driving force {:.6e} N/m³",
+            s.from, s.to, s.mass_flow, s.driving_force
+        ));
+    }
+    Ok(out)
 }
 
 /// The cell-quality check and remediation of `fl` (D50) for the log and
@@ -1487,19 +1536,33 @@ pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geo
     if let (Some(l), Some(g)) = (level, sec.generate.as_mut()) {
         g.refine = l;
     }
+    // periodic pairs (D29) between the opposite sides of a generated box:
+    // the perturbation keeps their nodes translated copies
+    let pairs = bc::periodic_pairs(&case.boundary)?;
+    if let Some(g) = sec.generate.as_mut() {
+        for p in &pairs {
+            for (d, ends) in [("xmin", "xmax"), ("ymin", "ymax"), ("zmin", "zmax")]
+                .into_iter()
+                .enumerate()
+            {
+                let (a, b) = (p.spec.a.as_str(), p.spec.b.as_str());
+                if (a, b) == ends || (b, a) == ends {
+                    g.periodic[d] = true;
+                }
+            }
+        }
+    }
     if let (Some(l), Some(g)) = (level, sec.cylinder.as_mut()) {
         g.refine = l;
     }
     let (mut mesh, source, _) = build_mesh(&sec)?;
     renumber(&mut mesh, sec.renumber, sec.seed).map_err(anyhow::Error::msg)?;
     // periodic pairs (D29): the last step, after the renumbering
-    let pairs = bc::periodic_pairs(&case.boundary)?;
     let mut desc = format!("{source}: {} cells", mesh.n_cells);
     if !pairs.is_empty() {
         let specs: Vec<_> = pairs.iter().map(|p| p.spec.clone()).collect();
-        mesh = foehncraft_mesh::periodic::pair(&mesh, &specs).map_err(|e| {
-            diag::err(diag::Diagnostic::new(diag::BC_PERIODIC, e))
-        })?;
+        mesh = foehncraft_mesh::periodic::pair(&mesh, &specs)
+            .map_err(|e| diag::err(diag::Diagnostic::new(diag::BC_PERIODIC, e)))?;
         let pd = mesh.periodic.as_ref().expect("paired");
         for p in &pd.pairs {
             let t = p.translation;
@@ -2045,7 +2108,7 @@ pub fn run_steered(
                             let sol = Solution {
                                 state: fl.state()?,
                                 disc: &fl.disc,
-                                phys: fl.phys.clone(),
+                                phys: fl.physics(),
                             };
                             write_fields(
                                 &case,
@@ -2122,7 +2185,7 @@ pub fn run_steered(
                     Some(Solution {
                         state: fl.state()?,
                         disc: &fl.disc,
-                        phys: fl.phys.clone(),
+                        phys: fl.physics(),
                     })
                 } else {
                     None
@@ -2158,7 +2221,7 @@ pub fn run_steered(
                 let sol = Solution {
                     state: fl.state()?,
                     disc: &fl.disc,
-                    phys: fl.phys.clone(),
+                    phys: fl.physics(),
                 };
                 let r = balance::rates(
                     &sol,
@@ -2189,7 +2252,7 @@ pub fn run_steered(
                 let sol = Solution {
                     state: fl.state()?,
                     disc: &fl.disc,
-                    phys: fl.phys.clone(),
+                    phys: fl.physics(),
                 };
                 write_fields(
                     &case,
@@ -2282,7 +2345,7 @@ pub fn run_steered(
         let fl_host = Solution {
             state: fl.state()?,
             disc: &fl.disc,
-            phys: fl.phys.clone(),
+            phys: fl.physics(),
         };
         let sol = &fl_host;
         let errors = analytic.map(|a| error_norms(sol, &mesh, &geo, &a, dimension(&case)));
@@ -2401,6 +2464,7 @@ pub fn run_steered(
         for sm in &scalars {
             lg.line(&crate::scalar::summary_line(sm));
         }
+        let periodic = periodic_summaries(&mut fl, &mesh, &mut lg)?;
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
             let rs = steady_restart(&mut fl, &mesh, name)?;
             restart::write(&out.join("restart.h5"), &rs)?;
@@ -2427,6 +2491,7 @@ pub fn run_steered(
             balance: Some(summary),
             remediation,
             scalars,
+            periodic,
         });
         if stopped {
             rep.stopped = true;
@@ -2746,14 +2811,32 @@ pub(crate) fn error_norms(
 ) -> ErrorNorms {
     let (mut e2, mut einf, mut vol, mut pinf) = (0.0, 0.0f64, 0.0, 0.0f64);
     let (mut pmin, mut pmax) = (f64::INFINITY, f64::NEG_INFINITY);
-    // transient solutions: the pressure level is free (reference cell), so
-    // the volume means are compared
+    // periodic pairs (D29): the pressure of the solution is the periodic
+    // part; the driving force β t̂ adds the mean gradient −β t̂
+    let drive: Vec<([f64; 3], f64)> = mesh.periodic.as_ref().map_or(Vec::new(), |per| {
+        per.pairs
+            .iter()
+            .zip(&fl.periodic_force)
+            .map(|(pair, &b)| {
+                let l = norm(pair.translation);
+                (pair.translation.map(|t| t / l), b)
+            })
+            .collect()
+    });
+    let p_full = |c: usize| -> f64 {
+        let x = geo.cell_centroid[c];
+        drive.iter().fold(fl.p[c], |p, (t, b)| {
+            p - b * (t[0] * x[0] + t[1] * x[1] + t[2] * x[2])
+        })
+    };
+    // transient solutions and periodic pairs: the pressure level is free
+    // (reference cell), so the volume means are compared
     let (mut pm, mut pem) = (0.0, 0.0);
-    if a.is_transient() {
+    if a.is_transient() || mesh.periodic.is_some() {
         let mut v = 0.0;
         for c in 0..mesh.n_cells {
             let w = geo.cell_volume[c];
-            pm += fl.p[c] * w;
+            pm += p_full(c) * w;
             pem += a.pressure(geo.cell_centroid[c]) * w;
             v += w;
         }
@@ -2770,7 +2853,7 @@ pub(crate) fn error_norms(
         let pe = a.pressure(x);
         pmin = pmin.min(pe);
         pmax = pmax.max(pe);
-        pinf = pinf.max(((fl.p[c] - pm) - (pe - pem)).abs());
+        pinf = pinf.max(((p_full(c) - pm) - (pe - pem)).abs());
     }
     let n = mesh.n_cells as f64;
     let h = if dim == 2 {

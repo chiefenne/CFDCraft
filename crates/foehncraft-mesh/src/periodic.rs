@@ -88,7 +88,10 @@ pub fn pair(mesh: &Mesh, specs: &[PairSpec]) -> Result<Mesh, String> {
             used.push(n);
         }
         if sp.a == sp.b {
-            return Err(format!("boundary `{}` cannot be its own periodic partner", sp.a));
+            return Err(format!(
+                "boundary `{}` cannot be its own periodic partner",
+                sp.a
+            ));
         }
         let ba = mesh
             .boundary(&sp.a)
@@ -121,7 +124,10 @@ pub fn pair(mesh: &Mesh, specs: &[PairSpec]) -> Result<Mesh, String> {
             .map(|a| norm(*a).sqrt())
             .fold(f64::INFINITY, f64::min);
         if h <= 0.0 || !h.is_finite() {
-            return Err(format!("periodic pair `{}`–`{}`: degenerate faces", sp.a, sp.b));
+            return Err(format!(
+                "periodic pair `{}`–`{}`: degenerate faces",
+                sp.a, sp.b
+            ));
         }
         let key = |x: [f64; 3]| x.map(|v| (v / h).floor() as i64);
         let mut grid: HashMap<[i64; 3], Vec<usize>> = HashMap::new();
@@ -174,7 +180,10 @@ pub fn pair(mesh: &Mesh, specs: &[PairSpec]) -> Result<Mesh, String> {
             bmatch.push(sb.faces[j]);
         }
         if dot(t, t) == 0.0 {
-            return Err(format!("periodic pair `{}`–`{}`: zero translation", sp.a, sp.b));
+            return Err(format!(
+                "periodic pair `{}`–`{}`: zero translation",
+                sp.a, sp.b
+            ));
         }
         matched.push((sa.faces, bmatch, t));
     }
@@ -289,8 +298,22 @@ mod tests {
 
     #[test]
     fn pairs_the_box_in_x_and_z() {
-        for kind in [Kind::Hex, Kind::Poly, Kind::Tet] {
-            let m = BoxSpec::new(kind, 3, [4, 3, 5]).generate().unwrap();
+        for (kind, perturb) in [
+            (Kind::Hex, 0.0),
+            (Kind::Poly, 0.0),
+            (Kind::Tet, 0.0),
+            (Kind::Hex, 0.2),
+            (Kind::Poly, 0.2),
+            (Kind::Tet, 0.2),
+        ] {
+            // perturbed nodes: the generator keeps the periodic sides
+            // translated copies
+            let spec_box = BoxSpec {
+                perturb,
+                periodic: [true, false, true],
+                ..BoxSpec::new(kind, 3, [4, 3, 5])
+            };
+            let m = spec_box.generate().unwrap();
             let names: Vec<String> = m.boundaries.iter().map(|b| b.name.clone()).collect();
             assert!(names.contains(&"xmin".to_string()), "{names:?}");
             let p = pair(&m, &[spec("xmin", "xmax"), spec("zmin", "zmax")]).unwrap();

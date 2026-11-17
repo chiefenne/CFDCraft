@@ -42,6 +42,7 @@ FLOW = {
         "taylor_green_cn", "poiseuille_mixed", "cavity_re100_transient", "taylor_green_space",
         "cavity_re100_poly3d", "cavity_re100_tet3d", "pipe_wedge", "poiseuille_expression",
         "taylor_green_expression", "channel_ramp", "scalar_front_bdf2",
+        "poiseuille_periodic", "channel_heated_periodic", "pipe_heated_periodic",
     ],
     "long": ["cylinder_re100", "cylinder_re100_short", "cylinder_re100_convective", "cylinder_re20_gci"],
     "quick": [
@@ -49,6 +50,7 @@ FLOW = {
         "cavity_re100", "cavity_re100_poly3d", "poiseuille_hex", "poiseuille_poly",
         "taylor_green_space", "channel_slip", "poiseuille_table", "pipe_wedge", "couette_derived",
         "couette_viscosity", "poiseuille_water", "pipe_gmsh_raw", "scalar_front_bdf2",
+        "poiseuille_periodic",
     ],
 }
 LINUX = ("linux-1", "linux-2", "linux-3", "long")

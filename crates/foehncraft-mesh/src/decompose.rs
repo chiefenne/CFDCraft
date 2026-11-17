@@ -340,9 +340,11 @@ pub fn decompose(
     layers: usize,
 ) -> Result<Vec<LocalMesh>, String> {
     if global.periodic.is_some() {
-        return Err("periodic meshes run on one partition (the decomposition follows with \
+        return Err(
+            "periodic meshes run on one partition (the decomposition follows with \
                     the multi-rank stage)"
-            .into());
+                .into(),
+        );
     }
     (0..parts)
         .map(|r| extract(global, part, r, layers))

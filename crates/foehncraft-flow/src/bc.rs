@@ -1180,12 +1180,18 @@ pub fn periodic_pairs(bcs: &BTreeMap<String, BoundaryCondition>) -> Result<Vec<P
             (None, _) => {
                 return Err(err(
                     name,
-                    format!("named as partner by several boundaries: {}", named_by.join(", ")),
+                    format!(
+                        "named as partner by several boundaries: {}",
+                        named_by.join(", ")
+                    ),
                 ));
             }
         };
         if partner == name {
-            return Err(err(name, "a boundary cannot be its own periodic partner".into()));
+            return Err(err(
+                name,
+                "a boundary cannot be its own periodic partner".into(),
+            ));
         }
         let Some(o) = sides.get(partner) else {
             return Err(err(
@@ -1203,7 +1209,10 @@ pub fn periodic_pairs(bcs: &BTreeMap<String, BoundaryCondition>) -> Result<Vec<P
         if o.partner.is_some_and(|p| p != name) {
             return Err(err(
                 partner,
-                format!("its partner is `{}`, but `{name}` names it", o.partner.unwrap_or("")),
+                format!(
+                    "its partner is `{}`, but `{name}` names it",
+                    o.partner.unwrap_or("")
+                ),
             ));
         }
         if done.contains(&partner) {
@@ -1284,7 +1293,11 @@ pub fn check(
             );
         }
     }
-    let paired = |n: &str| mesh.periodic.as_ref().is_some_and(|p| p.pair_of(n).is_some());
+    let paired = |n: &str| {
+        mesh.periodic
+            .as_ref()
+            .is_some_and(|p| p.pair_of(n).is_some())
+    };
     if let Ok(pairs) = periodic_pairs(bcs)
         && !ctx.body_force
     {
@@ -1899,6 +1912,20 @@ pub struct BoundaryArrays {
     /// Convection velocity U_c (m/s) of the faces of convective outlets
     /// that give one, 0 for the default (and on all other faces).
     pub convection: Vec<f64>,
+    /// The driving of the periodic pairs (D29), one per pair of the mesh.
+    pub drives: Vec<PeriodicDrive>,
+}
+
+/// The driving of one periodic pair on the mesh.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PeriodicDrive {
+    /// The driving.
+    pub drive: Drive,
+    /// Unit vector along the translation, from side `a` to side `b`.
+    pub direction: [f64; 3],
+    /// The faces of side `b` (global face indices): the flow from `a`
+    /// towards `b` leaves the domain through them.
+    pub b_faces: std::ops::Range<usize>,
 }
 
 impl BoundaryArrays {
@@ -1933,7 +1960,24 @@ pub fn arrays(
         u_points: BTreeMap::new(),
         p_points: BTreeMap::new(),
         convection: vec![0.0; nb],
+        drives: Vec::new(),
     };
+    if let Some(per) = &mesh.periodic {
+        let cases = periodic_pairs(bcs)?;
+        for pair in &per.pairs {
+            let drive = cases
+                .iter()
+                .find(|c| c.spec.a == pair.a && c.spec.b == pair.b)
+                .map_or(Drive::None, |c| c.drive);
+            let t = pair.translation;
+            let l = norm(t);
+            a.drives.push(PeriodicDrive {
+                drive,
+                direction: [t[0] / l, t[1] / l, t[2] / l],
+                b_faces: pair.b_faces.clone(),
+            });
+        }
+    }
     use foehncraft_fv::problem::BoundaryKind as K;
     for (pi, p) in mesh.boundaries.iter().enumerate() {
         let bc = bcs
@@ -2076,4 +2120,5 @@ pub const GUIDANCE: &str = "\
 | velocity-inlet + convective-outlet (+ walls, slip walls), transient | wakes and vortices leaving a short domain without reflection: the cylinder wake | reference cell |
 | velocity-inlet + slip-wall + static-pressure-outlet | a body in a free stream with the far field as slip walls | outlet pressure |
 | wedge + wedge + velocity-inlet + static-pressure-outlet (+ walls) | axisymmetric flows on a wedge mesh: pipes, nozzles, sudden expansions | outlet pressure |
+| periodic pair (`mass_flow` or `pressure_gradient`) + walls (+ symmetry, wedges, further periodic pairs) | fully developed flow in one module: channels, pipes, ribbed passages, heat transfer with the heat-flux jump | reference cell |
 ";

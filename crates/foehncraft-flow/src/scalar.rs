@@ -30,8 +30,11 @@
 //!
 //! Boundaries without a sub-table: walls, slip walls, symmetry planes and
 //! wedges have zero flux, inlets the value 0, outlets a zero normal
-//! gradient (the backflow carries the owner value). An inlet takes `value`,
-//! a wall-like boundary `value` or `flux`, an outlet neither.
+//! gradient (the backflow carries the owner value), periodic pairs carry
+//! the scalar across unchanged. An inlet takes `value`, a wall-like
+//! boundary `value` or `flux`, an outlet neither, one boundary of a
+//! periodic pair `periodic = "heat-flux"` (the jump Δ = Q/ṁ of D109 (1))
+//! with its `bulk` value.
 //!
 //! The device work lives in [`Scalars`]: one set of buffers per scalar
 //! (value, gradient, limiter, the boundary coefficients φ_f = a φ_P + b of
@@ -95,6 +98,31 @@ pub struct ScalarBoundary {
     /// or an expression (D53). Walls, slip walls, symmetry planes, wedges.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flux: Option<Scalar>,
+    /// Periodic pairs (D109 (1)), on one boundary of the pair: `"periodic"`
+    /// (the scalar crosses the pair unchanged, the default without a
+    /// sub-table) or `"heat-flux"` (it rises by Δ = Q/ṁ from the boundary
+    /// the flow enters through to its partner: Q the scalar the walls and
+    /// sources put in per second, ρ times their flux and source integrals,
+    /// ṁ the mass flow through the pair; the linear trend of a thermally
+    /// developed flow with a given wall heat flux).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "PeriodicMode")]
+    pub periodic: Option<PeriodicMode>,
+    /// `periodic = "heat-flux"`: the bulk (mixing-cup) value of the scalar
+    /// on this boundary, which fixes its level in a steady run (default
+    /// 0; a transient run keeps the level of the start value).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bulk: Option<f64>,
+}
+
+/// How a scalar crosses a periodic pair (D109 (1), (2)).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum PeriodicMode {
+    /// Unchanged (a = 1, b = 0).
+    Periodic,
+    /// With the jump Δ = Q/ṁ of a uniform heat input (a = 1, b = ±Δ).
+    HeatFlux,
 }
 
 /// `[solver.scalar]`: the transport equations of the passive scalars.
@@ -240,6 +268,8 @@ enum Side {
     Inlet,
     /// Outlets: zero normal gradient.
     Outlet,
+    /// Periodic pairs: across the pair (D109 (1)).
+    Periodic,
 }
 
 fn side(b: &BoundaryCondition) -> Option<Side> {
@@ -253,7 +283,7 @@ fn side(b: &BoundaryCondition) -> Option<Side> {
         B::StaticPressureOutlet { .. }
         | B::TotalPressureOutlet { .. }
         | B::ConvectiveOutlet { .. } => Side::Outlet,
-        B::Periodic { .. } => return None,
+        B::Periodic { .. } => Side::Periodic,
     })
 }
 
@@ -359,12 +389,43 @@ pub fn validate(
                     .key(key),
                 ));
             }
+            let sd = side(bc);
+            if sd == Some(Side::Periodic) {
+                crate::need!(
+                    t.value.is_none() && t.flux.is_none(),
+                    SCALAR_BOUNDARY,
+                    "[{key}]: a periodic boundary takes `periodic` (\"periodic\" or \"heat-flux\"), \
+                     not a value or a flux: the scalar comes across the pair"
+                );
+                crate::need!(
+                    t.periodic.is_some(),
+                    SCALAR_BOUNDARY,
+                    "[{key}] needs `periodic` (\"periodic\" or \"heat-flux\")"
+                );
+                crate::need!(
+                    t.bulk.is_none() || t.periodic == Some(PeriodicMode::HeatFlux),
+                    SCALAR_BOUNDARY,
+                    "[{key}]: `bulk` belongs to `periodic = \"heat-flux\"`"
+                );
+                if let Some(v) = t.bulk {
+                    crate::need!(
+                        v.is_finite(),
+                        CASE_RANGE,
+                        "[{key}] bulk must be a finite number"
+                    );
+                }
+                continue;
+            }
+            crate::need!(
+                t.periodic.is_none() && t.bulk.is_none(),
+                SCALAR_BOUNDARY,
+                "[{key}]: `periodic` and `bulk` belong to periodic boundaries"
+            );
             crate::need!(
                 t.value.is_some() != t.flux.is_some(),
                 SCALAR_BOUNDARY,
                 "[{key}] needs one of `value` and `flux`"
             );
-            let sd = side(bc);
             let allowed = match sd {
                 Some(Side::WallLike) => true,
                 Some(Side::Inlet) => t.value.is_some(),
@@ -392,12 +453,43 @@ pub fn validate(
     }
     if !scalars.is_empty() {
         settings.validate(transient)?;
-        for (b, bc) in boundary {
-            crate::need!(
-                side(bc).is_some(),
-                BC_NOT_AVAILABLE,
-                "[boundary.{b}]: passive scalars on periodic boundaries come with periodic flow (stage 6)"
-            );
+        // the periodic modes (D109 (4)): one sub-table per pair; the
+        // heat-flux mode needs a temperature level that no fixed value sets
+        let pairs = crate::bc::periodic_pairs(boundary)?;
+        for name in scalars.keys() {
+            let table = |b: &str| tables.get(b).and_then(|m| m.get(name));
+            for p in &pairs {
+                let (a, b) = (&p.spec.a, &p.spec.b);
+                crate::need!(
+                    table(a).is_none() || table(b).is_none(),
+                    SCALAR_BOUNDARY,
+                    "[boundary.{a}.scalar.{name}] and [boundary.{b}.scalar.{name}]: give the \
+                     periodic mode of the pair on one of the two"
+                );
+                let heat_flux = [a, b]
+                    .iter()
+                    .any(|x| table(x).is_some_and(|t| t.periodic == Some(PeriodicMode::HeatFlux)));
+                if !heat_flux {
+                    continue;
+                }
+                for (bn, bc) in boundary {
+                    let t = table(bn);
+                    let fixed = match side(bc) {
+                        Some(Side::Inlet) => true,
+                        Some(Side::WallLike) => t.is_some_and(|t| t.value.is_some()),
+                        _ => false,
+                    };
+                    crate::need!(
+                        !fixed,
+                        SCALAR_BOUNDARY,
+                        "[boundary.{a}.scalar.{name}]: `periodic = \"heat-flux\"` with the fixed \
+                         value of `{name}` on `{bn}`: the heat-flux mode is the trend of a flow \
+                         heated by given fluxes only; with fixed values the developed field is \
+                         plain periodic (use `periodic = \"periodic\"`) or decays exponentially \
+                         (the wall-temperature mode of the energy stage)"
+                    );
+                }
+            }
         }
     }
     Ok(())
@@ -425,6 +517,8 @@ struct Field {
     bc_b: Buf,
     /// The jump per periodic face of the heat-flux mode (D109 (1)).
     jump: Option<Buf>,
+    /// The heat-flux mode, if a pair has it.
+    heat_flux: Option<HeatFlux>,
     lsq: Buf3,
     gamma: Buf,
     su: Option<Buf>,
@@ -438,6 +532,32 @@ struct Field {
     /// The source S, when it is not zero.
     source: Option<Value>,
     time_dependent: bool,
+}
+
+/// The heat-flux mode of one scalar on one periodic pair (D109 (1), (2)).
+#[derive(Debug, Clone)]
+struct HeatFlux {
+    /// The pair.
+    pair: usize,
+    /// Per periodic face: −1 on side `a`, +1 on side `b` of the pair, 0
+    /// on the faces of other pairs; jump = Δ · sign.
+    sign: Buf,
+    /// The input Q/ρ per second of the flux boundaries and the source
+    /// (the unit of the scalar times m³/s), at the time of the values.
+    q_in: f64,
+    /// Δ of the last solve.
+    delta: f64,
+    /// Bulk value and the side it is given on (−1 `a`, +1 `b`), for the
+    /// level of a steady run.
+    bulk: (f64, f64),
+    /// The faces of side `b`, their owners, the cells across (on side
+    /// `a`) and the interpolation weights, for the bulk value.
+    faces: Vec<u32>,
+    owners: Vec<u32>,
+    across: Vec<u32>,
+    /// x_f − x_P and x_f − (x_N + T) per face of side `b`, for the face
+    /// values from both sides with their gradients.
+    to_face: Vec<([f64; 3], [f64; 3])>,
 }
 
 /// Device copy of one scalar on the host (restart, output).
@@ -496,6 +616,10 @@ pub struct Scalars {
     order: Buf,
     /// Boundary face centroids (for the expressions).
     xf: Vec<[f64; 3]>,
+    /// ρ |S| per boundary face and ρ V per cell (the heat input of the
+    /// heat-flux mode).
+    rho_area: Vec<f64>,
+    rho_volume: Vec<f64>,
     /// The last boundary time the time-dependent values were set for.
     t_set: f64,
 }
@@ -668,6 +792,68 @@ impl Scalars {
             let bounds = s
                 .bounds
                 .map_or((f64::NEG_INFINITY, f64::INFINITY), |[l, h]| (l, h));
+            // the heat-flux mode of a periodic pair (D109 (1))
+            let mut heat_flux = None;
+            let mut jump = None;
+            if let Some(per) = &mesh.periodic {
+                for (k, pair) in per.pairs.iter().enumerate() {
+                    let given =
+                        [(&pair.a, -1.0), (&pair.b, 1.0)]
+                            .into_iter()
+                            .find_map(|(b, sd)| {
+                                tables
+                                    .get(b)
+                                    .and_then(|m| m.get(name))
+                                    .filter(|t| t.periodic == Some(PeriodicMode::HeatFlux))
+                                    .map(|t| (t.bulk.unwrap_or(0.0), sd))
+                            });
+                    let Some(bulk) = given else { continue };
+                    anyhow::ensure!(
+                        heat_flux.is_none(),
+                        "[scalars.{name}]: the heat-flux mode on more than one periodic pair"
+                    );
+                    let np = per.len();
+                    let mut sign = vec![0.0; np];
+                    for f in pair.a_faces.clone() {
+                        sign[f - per.start] = -1.0;
+                    }
+                    for f in pair.b_faces.clone() {
+                        sign[f - per.start] = 1.0;
+                    }
+                    let sign_b = dev.alloc(np)?;
+                    dev.upload(sign_b, &sign)?;
+                    jump = Some(dev.alloc(np)?);
+                    let faces: Vec<u32> = pair.b_faces.clone().map(|f| f as u32).collect();
+                    heat_flux = Some(HeatFlux {
+                        pair: k,
+                        sign: sign_b,
+                        q_in: 0.0,
+                        delta: 0.0,
+                        bulk,
+                        owners: faces.iter().map(|&f| mesh.owner[f as usize]).collect(),
+                        across: faces.iter().map(|&f| mesh.neighbour[f as usize]).collect(),
+                        to_face: faces
+                            .iter()
+                            .map(|&f| {
+                                let f = f as usize;
+                                let xf = geo.face_centroid[f];
+                                let xo = geo.cell_centroid[mesh.owner[f] as usize];
+                                let xn = geo.cell_centroid[mesh.neighbour[f] as usize];
+                                let t = per.shift[f - per.start];
+                                (
+                                    [xf[0] - xo[0], xf[1] - xo[1], xf[2] - xo[2]],
+                                    [
+                                        xf[0] - xn[0] - t[0],
+                                        xf[1] - xn[1] - t[1],
+                                        xf[2] - xn[2] - t[2],
+                                    ],
+                                )
+                            })
+                            .collect(),
+                        faces,
+                    });
+                }
+            }
             fields.push(Field {
                 name: name.clone(),
                 phi,
@@ -679,7 +865,8 @@ impl Scalars {
                 psi,
                 bc_a,
                 bc_b,
-                jump: None,
+                jump,
+                heat_flux,
                 lsq: lsq_b,
                 gamma,
                 su,
@@ -704,6 +891,8 @@ impl Scalars {
             diag: dev.alloc(nc)?,
             order: dev.alloc(nc)?,
             xf,
+            rho_area: (ni..nf).map(|f| rho * geo.normal_area(f).1).collect(),
+            rho_volume: geo.cell_volume[..nc].iter().map(|v| rho * v).collect(),
             t_set: f64::NAN,
         };
         let cells: Vec<[f64; 3]> = geo.cell_centroid[..nc].to_vec();
@@ -735,7 +924,7 @@ impl Scalars {
         t: f64,
         all: bool,
     ) -> Result<()> {
-        for f in &self.fields {
+        for f in &mut self.fields {
             if !all && !f.time_dependent {
                 continue;
             }
@@ -750,9 +939,24 @@ impl Scalars {
                 })
                 .collect();
             dev.upload(f.bc_b, &b)?;
+            let mut src_v = Vec::new();
             if let (Some(src), Some(su)) = (&f.source, f.su) {
-                let v: Vec<f64> = cells.iter().map(|&x| src.at(x, t)).collect();
-                dev.upload(su, &v)?;
+                src_v = cells.iter().map(|&x| src.at(x, t)).collect();
+                dev.upload(su, &src_v)?;
+            }
+            if let Some(hf) = f.heat_flux.as_mut() {
+                // Q/ρ... times ρ: the flux faces and the source, in face
+                // and cell order
+                let mut q = 0.0;
+                for ((r, &x), &ra) in f.rules.iter().zip(&self.xf).zip(&self.rho_area) {
+                    if let FaceRule::Flux(v, _) = r {
+                        q += v.at(x, t) * ra;
+                    }
+                }
+                for (s, &rv) in src_v.iter().zip(&self.rho_volume) {
+                    q += s * rv;
+                }
+                hf.q_in = q;
             }
         }
         self.t_set = t;
@@ -766,6 +970,7 @@ impl Scalars {
         &mut self,
         dev: &mut dyn FlowDevice,
         mass_flux: Buf,
+        periodic_flow: &[f64],
         step: Option<StepTime>,
         cells: &[[f64; 3]],
     ) -> Result<ScalarResiduals> {
@@ -778,6 +983,21 @@ impl Scalars {
         let tr = step.is_some();
         let alpha = s.alpha(tr);
         let mut out = ScalarResiduals::default();
+        // the jumps of the heat-flux mode: Δ = Q/ṁ with the mass flow of
+        // the current fluxes, so that the scalar balance of the module
+        // closes (D109 (1))
+        for f in &mut self.fields {
+            if let (Some(hf), Some(jump)) = (f.heat_flux.as_mut(), f.jump) {
+                let m = periodic_flow[hf.pair];
+                anyhow::ensure!(
+                    m.abs() > 0.0,
+                    "scalar `{}`: the heat-flux mode needs a mass flow through the periodic pair",
+                    f.name
+                );
+                hf.delta = hf.q_in / m;
+                dev.lincomb(jump, hf.delta, hf.sign, 0.0, hf.sign)?;
+            }
+        }
         for f in &self.fields {
             let mut res = f64::NAN;
             let mut its = 0;
@@ -862,8 +1082,38 @@ impl Scalars {
             out.residual.push(res);
             out.iterations.push(its);
             out.first_order.push(first);
+            // the level of a steady heat-flux field: its bulk value where
+            // it is given (a transient run keeps the level of its start)
+            if let (Some(hf), false) = (&f.heat_flux, tr) {
+                let (bulk_b, _) = bulk_of(dev, f.phi, f.grad, mass_flux, hf)?;
+                let at = if hf.bulk.1 < 0.0 {
+                    bulk_b - hf.delta
+                } else {
+                    bulk_b
+                };
+                dev.subtract(f.phi, at - hf.bulk.0)?;
+            }
         }
         Ok(out)
+    }
+
+    /// Per scalar with the heat-flux mode: the pair, Δ and the bulk values
+    /// on side `a` and side `b` (for the report).
+    pub fn periodic_bulk(
+        &self,
+        dev: &mut dyn FlowDevice,
+        mass_flux: Buf,
+    ) -> Result<Vec<Option<PeriodicBulk>>> {
+        self.fields
+            .iter()
+            .map(|f| match &f.heat_flux {
+                Some(hf) => {
+                    let (b, _) = bulk_of(dev, f.phi, f.grad, mass_flux, hf)?;
+                    Ok(Some((hf.pair, hf.delta, b - hf.delta, b)))
+                }
+                None => Ok(None),
+            })
+            .collect()
     }
 
     /// Start of a time step: φⁿ⁻¹ ← φⁿ (when an old level exists), φⁿ ← φ;
@@ -1010,6 +1260,42 @@ impl Scalars {
     }
 }
 
+/// A scalar on a heat-flux pair: the pair, Δ and the bulk values on side
+/// `a` and side `b`.
+pub type PeriodicBulk = (usize, f64, f64, f64);
+
+/// The bulk (mixing-cup) value Σ ṁ_f φ_f / Σ ṁ_f over the faces of side
+/// `b` of a heat-flux pair and Σ ṁ_f: φ_f the mean of the values
+/// reconstructed with the gradients from the owner and from the cell
+/// across (seen with the jump +Δ), second order also on skewed faces.
+fn bulk_of(
+    dev: &mut dyn FlowDevice,
+    phi: Buf,
+    grad: Buf3,
+    mass_flux: Buf,
+    hf: &HeatFlux,
+) -> Result<(f64, f64)> {
+    let po = dev.gather(phi, &hf.owners)?;
+    let pn = dev.gather(phi, &hf.across)?;
+    let m = dev.gather(mass_flux, &hf.faces)?;
+    let mut go = Vec::new();
+    let mut gn = Vec::new();
+    for g in grad.all() {
+        go.push(dev.gather(g, &hf.owners)?);
+        gn.push(dev.gather(g, &hf.across)?);
+    }
+    let (mut num, mut den) = (0.0, 0.0);
+    for i in 0..m.len() {
+        let (dxo, dxn) = hf.to_face[i];
+        let fo = po[i] + (0..3).map(|d| go[d][i] * dxo[d]).sum::<f64>();
+        let fnb = pn[i] + hf.delta + (0..3).map(|d| gn[d][i] * dxn[d]).sum::<f64>();
+        let pf = 0.5 * (fo + fnb);
+        num += m[i] * pf;
+        den += m[i];
+    }
+    Ok((num / den, den))
+}
+
 /// BDF coefficients of the scalars for a step: BDF2 with ω = Δt/Δt_prev
 /// when `second`, else BDF1.
 pub fn bdf(second: bool, omega: f64) -> [f64; 3] {
@@ -1105,6 +1391,8 @@ pub fn summaries(
         return Ok(Vec::new());
     };
     let data = sc.host_data(fl.dev.as_mut())?;
+    // the heat-flux pairs: Δ and the bulk values of the level fix
+    let deltas = sc.periodic_bulk(fl.dev.as_mut(), fl.f.mass_flux)?;
     let m = fl.dev.download(fl.f.mass_flux)?;
     let env = case.env()?;
     let transient = case.time.is_some();
@@ -1120,7 +1408,7 @@ pub fn summaries(
         (vol / nc as f64).cbrt()
     };
     let mut out = Vec::new();
-    for (name, phi, a, b, gamma) in data {
+    for ((name, phi, a, b, gamma), delta) in data.into_iter().zip(deltas) {
         let (mut mn, mut mx) = (f64::INFINITY, f64::NEG_INFINITY);
         for &v in &phi {
             mn = mn.min(v);
@@ -1171,6 +1459,42 @@ pub fn summaries(
                     mixed_mean: (mf > 0.0).then(|| msum / mf),
                     flux: flux / area,
                 });
+            }
+        }
+        // the two sides of each periodic pair: the face value interpolated
+        // with the cell across (with the jump of the heat-flux mode), the
+        // diffusive flux into the domain the axial conduction
+        if let Some(per) = &mesh.periodic {
+            for (k, pair) in per.pairs.iter().enumerate() {
+                let hf = delta.filter(|d| d.0 == k);
+                let dk = hf.map_or(0.0, |d| d.1);
+                for (bname, faces, sd, bulk) in [
+                    (&pair.a, pair.a_faces.clone(), -1.0, hf.map(|d| d.2)),
+                    (&pair.b, pair.b_faces.clone(), 1.0, hf.map(|d| d.3)),
+                ] {
+                    let (mut area, mut sum, mut flux, mut mf, mut msum) = (0.0, 0.0, 0.0, 0.0, 0.0);
+                    for f in faces {
+                        let o = mesh.owner[f] as usize;
+                        let n = mesh.neighbour[f] as usize;
+                        let (_, ar) = geo.normal_area(f);
+                        let pn = phi[n] + sd * dk;
+                        let w = fl.disc.weight[f];
+                        let pf = w * phi[o] + (1.0 - w) * pn;
+                        area += ar;
+                        sum += ar * pf;
+                        flux += gamma[f] / rho * fl.disc.dgeo[f] * (pn - phi[o]);
+                        mf += m[f].abs();
+                        msum += m[f].abs() * pf;
+                    }
+                    if area > 0.0 {
+                        bs.push(ScalarBoundarySummary {
+                            boundary: bname.clone(),
+                            mean: sum / area,
+                            mixed_mean: bulk.or((mf > 0.0).then(|| msum / mf)),
+                            flux: flux / area,
+                        });
+                    }
+                }
             }
         }
         out.push(ScalarSummary {

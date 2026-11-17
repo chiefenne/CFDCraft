@@ -340,6 +340,12 @@ pub trait FlowDevice {
     fn min_max(&mut self, x: Buf) -> Result<(f64, f64)>;
     /// One value.
     fn value(&mut self, b: Buf, i: usize) -> Result<f64>;
+    /// The values at the indices `idx` (a few, such as the cells next to
+    /// a periodic plane).
+    fn gather(&mut self, b: Buf, idx: &[u32]) -> Result<Vec<f64>> {
+        let v = self.download(b)?;
+        Ok(idx.iter().map(|&i| v[i as usize]).collect())
+    }
     /// b −= s.
     fn subtract(&mut self, b: Buf, s: f64) -> Result<()>;
     /// `b[i] *= s`.

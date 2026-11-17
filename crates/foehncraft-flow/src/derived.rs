@@ -659,6 +659,13 @@ fn with_restart<R>(
         },
     )?;
     let (disc, _) = crate::simplec::discretisation(&mesh, &geo, &arrays)?;
+    // the driving of the periodic pairs (D29) is part of the body force
+    let mut phys = phys;
+    for (d, b) in arrays.drives.iter().zip(&r.state.periodic_force) {
+        for (f, t) in phys.body_force.iter_mut().zip(d.direction) {
+            *f += b * t;
+        }
+    }
     let sol = Solution {
         state: r.state,
         disc: &disc,
