@@ -2,7 +2,7 @@
 
 Requirements step 19 (2026-11-17), asked for by the maintainer. This page is
 the full specification; `docs/requirements.md` carries the decisions D150 to
-D164 as short rows that point here, the open step O18 (stage order and the
+D164 as short rows that point here, the step O18 (stage order and the
 scope of milestone 1) and the changed rows of the stage plan. No code is
 written before the maintainer's go (project rule).
 
@@ -45,7 +45,7 @@ item after milestone 1, and stage 7 was multi-rank MPI with overlapped halos,
 scaling, the internal-flow validation (pipe, diffuser, U-bend, T-junction),
 rotating and non-conformal meshes, the reproducible mode and the tag `v1.0`.
 The maintainer's prompt of 2026-11-16 makes energy, buoyancy and conjugate
-heat transfer stage 7. Proposed new order (open step O18, to be confirmed):
+heat transfer stage 7. New order (O18, confirmed by the maintainer on 2026-11-17):
 
 | Stage | Content | Tag |
 |---|---|---|
@@ -898,7 +898,7 @@ Read on main at b15a488:
 
 ## 18. Points for the maintainer
 
-1. **O18, stage order and milestone 1** (§1): energy, buoyancy and CHT as
+1. **O18, stage order and milestone 1** (§1), **decided 2026-11-17: as proposed**: energy, buoyancy and CHT as
    stage 7, the old stage 7 as stage 8 with v1.0; D58 moves into stage 7.
    Alternative: v1.0 without heat transfer and energy after it.
 2. **D92 (3) replaced** by the temperature-correction form (§3.2); the
