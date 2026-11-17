@@ -72,7 +72,7 @@ Contents:
 
 | Topic | Earlier decision | Brief of 2026-11-17 | This specification |
 |---|---|---|---|
-| Near-wall model for separation and heat transfer | ζ-f (Hanjalić 2004) with the compound wall treatment, in M1 (2026-11-14); PANS on ζ-f later (P7); literature line Hanjalić, newer Basara | Elliptic-blending k-ε (Billard & Laurence 2012), optionally the lag variant; compare with ζ-f | ζ-f stays as decided. EB k-ε **joins** ζ-f, after it in stage 6 (maintainer decision 2026-11-17, D133; section 3.5 compares the two). Nothing of ζ-f is dropped. |
+| Near-wall model for separation and heat transfer | ζ-f (Hanjalić 2004) with the compound wall treatment, in M1 (2026-11-14); PANS on ζ-f (P7) dropped by the maintainer 2026-11-17 (X2); literature line Hanjalić, newer Basara | Elliptic-blending k-ε (Billard & Laurence 2012), optionally the lag variant; compare with ζ-f | ζ-f stays as decided. EB k-ε **joins** ζ-f, after it in stage 6 (maintainer decision 2026-11-17, D133; section 3.5 compares the two). Nothing of ζ-f is dropped. |
 | SST variant | SST 2003 | SST 2003 with Kato–Launder production limiter or Durbin realizability constraint | Kept. The 2003 limiter is the default; Kato–Launder and Durbin are options (D130). The ω production is written with the limited P̃_k, as corrected for the 2003 paper (section 3.1). |
 | Realizable k-ε | M1 | "fast-converging industrial baseline" | Kept, unchanged (D131). |
 | Standard k-ε | M1, for literature data | not mentioned | Kept (D12); its known stagnation-point anomaly becomes a test of the limiters (section 9). |
@@ -190,6 +190,9 @@ such operations go through one helper in `foehncraft-core::math`:
 
 ### 2.7 Software structure
 
+- The interface also admits models without a transport equation (ν_t per
+  cell from ∇u, wall distance and a filter width; D175, step 21), so that
+  the algebraic SGS models of L40 need no change of the framework.
 - The model is an `enum TurbulenceModel` chosen on the host. Kernels are
   monomorphised per model (const generic or one function per model); no
   trait objects and no runtime branch on the model inside a kernel.
@@ -308,8 +311,8 @@ Hanjalić, Popovac & Hadžiabdić (2004); constants of the paper ◇.
   become blended values (section 4.4).
 - Bounds: 0 ≤ ζ ≤ 2 (v² ≤ 2k), enforced by the source split of section
   6.2, not by clipping; a clip remains as the last guard and is counted.
-- Curvature correction for the U-bend (P8) and PANS on ζ-f (P7) stay later.
-  The later literature of Basara and co-workers (P7) builds on this form.
+- Curvature correction for the U-bend (P8) stays later. PANS on ζ-f (P7)
+  was dropped by the maintainer on 2026-11-17 (X2, step 21).
 
 ### 3.4 Elliptic-blending k-ε (D133)
 
@@ -362,7 +365,7 @@ gain is in non-equilibrium flows that are not in the stage-6 cases.
 | Bounds of the solution | none for f; f enters the ζ source with either sign | 0 ≤ α ≤ 1 by the discrete maximum principle (with an M-matrix and deferred correction limited, section 6.2) |
 | Lagging | f must follow ζ every outer iteration | α depends only on L (k, ε); it can be solved every N outer iterations (`solver.elliptic.every`) |
 | Near-wall source in the v²/k equation | through f (elliptic, global) | (1 − α³) f_w + α³ f_h: local, algebraic |
-| Literature line | Hanjalić; PANS-ζ-f of Basara and co-workers (P7) builds on it | Billard & Laurence; elliptic blending also in later Reynolds-stress and algebraic heat-flux models |
+| Literature line | Hanjalić (PANS-ζ-f of Basara and co-workers dropped 2026-11-17, X2) | Billard & Laurence; elliptic blending also in later Reynolds-stress and algebraic heat-flux models |
 
 The two matrices are equally conditioned; the difference is in the wall
 value and the right-hand side. On arbitrary polyhedral meshes with uneven
@@ -376,11 +379,11 @@ pair them.
 **Decision (maintainer, 2026-11-17): EB k-ε joins ζ-f, delivered after it in stage 6**
 (pull request 6e, section 10). It reuses the k and ε equations, the v²/k
 transport equation and the elliptic solver of ζ-f, so the extra code is one
-source kernel and its tests. ζ-f stays the decided near-wall model and the
-base of P7. After the stage-6 validation (channel, backward-facing step,
+source kernel and its tests. ζ-f stays the decided near-wall model (PANS on
+ζ-f, P7, dropped 2026-11-17: X2). After the stage-6 validation (channel, backward-facing step,
 impinging jet; section 9) the maintainer decides which of the two is the
 recommended near-wall model for heat transfer in the user documentation.
-Alternatives: EB replaces ζ-f (loses the base of P7 and the maintainer's
+Alternatives: EB replaces ζ-f (loses the maintainer's
 literature line), or EB follows later as a P item (stage 6 stays smaller).
 
 
@@ -582,7 +585,9 @@ Pr = ν/a with a the thermal diffusivity, given as the scalar's
 
 ### 5.1 Turbulent diffusivity
 
-Γ_φ = ν/Pr + ν_t/Pr_t (Sc and Sc_t for a mass-like scalar). Options per
+Γ_φ = ν/Pr + ν_t/Pr_t (Sc and Sc_t for a mass-like scalar). Pr_t is a cell
+and face field computed by the chosen closure, never a constant inside a
+kernel (D172, step 21; stage 7 adds `wall-profile`). Options per
 scalar (`turbulent_prandtl_model`):
 
 - `"constant"` (default): Pr_t = 0.85 (`turbulent_prandtl`).
