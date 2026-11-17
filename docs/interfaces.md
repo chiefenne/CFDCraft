@@ -268,7 +268,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `BC025` | error | A potential-flow start with a convective outlet and no pressure boundary. |
 | `BC026` | error | Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure). |
 | `BC027` | warning | A wall roughness k_s larger than the first-cell distance on more than 10 % of the wall's area. |
-| `BC028` | warning | A turbulence value that the selected model does not use (`zeta` with SST or k-ε, `omega` with an ε model); BC009 stays for laminar cases. |
+| `BC028` | warning | A turbulence value that the run does not use (at an outlet, whose backflow takes k and ω of the cell; later `zeta` with SST or k-ε, `omega` with an ε model); BC009 stays for laminar cases. |
 | `BC029` | error | Two incompatible turbulence specifications on one inlet (for example `turbulence_length_scale` and `viscosity_ratio`, or `k` with intensity). |
 | `BC030` | error | A periodic boundary without a periodic partner that names it back, a pair whose faces do not match, or a driving given twice. |
 | `BC031` | warning | A periodic pair with no driving (`mass_flow`, `pressure_gradient`) and no body force: the flow decays to rest. |

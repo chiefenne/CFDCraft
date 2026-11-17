@@ -1246,4 +1246,71 @@ mod tests {
         assert!((h[5] / h[0] - 5.0).abs() < 1e-12);
         assert!((h[0] - h[11]).abs() < 1e-14);
     }
+
+    /// The TMR plate mesh: x segments meet at the leading edge with the
+    /// requested end ratios, and the bottom boundary splits there.
+    #[test]
+    fn segments_and_split_build_the_plate_mesh() {
+        let spec = BoxSpec {
+            dimension: 2,
+            lower: [-1.0 / 3.0, 0.0, 0.0],
+            upper: [2.0, 1.0, 1.0],
+            cells: [32, 6, 1],
+            segments: SegmentSpec {
+                x: vec![
+                    Segment {
+                        to: 0.0,
+                        cells: 8,
+                        ratio: 0.1,
+                    },
+                    Segment {
+                        to: 2.0,
+                        cells: 24,
+                        ratio: 20.0,
+                    },
+                ],
+                ..Default::default()
+            },
+            split: vec![Split {
+                boundary: "ymin".into(),
+                axis: "x".into(),
+                at: 0.0,
+                name: "plate".into(),
+            }],
+            ..Default::default()
+        };
+        for refine in [0, 1] {
+            let mesh = BoxSpec {
+                refine,
+                ..spec.clone()
+            }
+            .generate()
+            .unwrap();
+            let geo = crate::Geometry::compute(&mesh);
+            let n = 32usize << refine;
+            assert_eq!(mesh.n_cells, n * (6 << refine));
+            let names: Vec<&str> = mesh.boundaries.iter().map(|p| p.name.as_str()).collect();
+            assert!(
+                names.contains(&"ymin") && names.contains(&"plate"),
+                "{names:?}"
+            );
+            let side = |name: &str| {
+                let p = mesh.boundaries.iter().find(|p| p.name == name).unwrap();
+                p.range()
+                    .map(|f| geo.face_centroid[f][0])
+                    .collect::<Vec<f64>>()
+            };
+            let (ahead, plate) = (side("ymin"), side("plate"));
+            assert_eq!(ahead.len(), 8 << refine);
+            assert_eq!(plate.len(), 24 << refine);
+            assert!(ahead.iter().all(|&x| x < 0.0) && plate.iter().all(|&x| x > 0.0));
+            // the plate's first and last intervals: ratio 20 (nested halving
+            // keeps the end ratio of the base mesh within one level's growth)
+            let mut xs = plate.clone();
+            xs.sort_by(f64::total_cmp);
+            let h0 = 2.0 * xs[0];
+            let h1 = 2.0 * (2.0 - xs[xs.len() - 1]);
+            assert!(h1 > h0 * 10.0, "first {h0}, last {h1}");
+        }
+    }
 }

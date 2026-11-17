@@ -183,3 +183,21 @@ pub(crate) fn check(bc: &BoundaryCondition) -> Vec<(bool, &'static str, String)>
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn intensity_with_length_scale_or_viscosity_ratio() {
+        // I = 5 %, |u| = 10 m/s: k = 1.5 (0.5)² = 0.375 m²/s²
+        let (k, w) = InletSpec::Length { i: 0.05, l: 0.1 }.at(10.0, [0.0; 3], 0.0, 1e-5, 0.09);
+        assert!((k - 0.375).abs() < 1e-15);
+        // ω = √k / (C_μ^¼ l), C_μ^¼ = 0.09^¼ = 0.5477
+        assert!((w - 0.375f64.sqrt() / (0.09f64.powf(0.25) * 0.1)).abs() < 1e-12);
+        let (k, w) = InletSpec::Ratio { i: 0.05, r: 10.0 }.at(10.0, [0.0; 3], 0.0, 1e-5, 0.09);
+        assert!((k - 0.375).abs() < 1e-15);
+        // ν_t = k/ω = r ν
+        assert!((k / w - 1e-4).abs() < 1e-18);
+    }
+}

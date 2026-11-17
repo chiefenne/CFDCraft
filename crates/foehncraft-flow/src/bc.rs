@@ -1567,8 +1567,8 @@ pub fn check(
                     diag::BC_TURBULENCE_UNUSED_VALUE,
                     Some(name),
                     format!(
-                        "{} unused: only inlets take turbulence values (outlets take k and \
-                         ω of the cell at backflow, walls their wall values)",
+                        "{} unused: backflow at an outlet takes k and ω of the cell \
+                         (backflow values at outlets are not implemented yet)",
                         t.join(", ")
                     ),
                 );
