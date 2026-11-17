@@ -633,6 +633,7 @@ struct WallDev {
     y_plus: Buf,
     omega: Buf,
     blending: Buf,
+    pk: Buf,
     weight: Buf,
 }
 
@@ -680,6 +681,7 @@ pub struct Turbulence {
     wd: Option<WallDev>,
     fix_mask: Buf,
     fix_val: Buf,
+    wall_pk: Buf,
     zero_face: Buf,
     cp: Buf,
     cn: Buf,
@@ -891,6 +893,7 @@ impl Turbulence {
                 y_plus: dev.alloc(nw)?,
                 omega: dev.alloc(nw)?,
                 blending: dev.alloc(nw)?,
+                pk: dev.alloc(nw)?,
             };
             dev.wall_setup(&walls.stat)?;
             Some(wd)
@@ -946,6 +949,7 @@ impl Turbulence {
             wd,
             fix_mask,
             fix_val: dev.alloc(nc)?,
+            wall_pk: up(dev, &vec![0.0; nc])?,
             zero_face: dev.alloc(nf)?,
             cp: dev.alloc(nf)?,
             cn: dev.alloc(nf)?,
@@ -1275,6 +1279,8 @@ impl Turbulence {
             c: self.c,
             o: self.o,
             add: if sources { self.added } else { None },
+            wall: (sources && self.treatment == kwall::AUTOMATIC && self.wd.is_some())
+                .then_some((self.fix_mask, self.wall_pk)),
             nu_t: self.nu_t,
             f1: self.f1,
             pk: self.pk,
@@ -1302,6 +1308,7 @@ impl Turbulence {
             y_plus: wd.y_plus,
             omega: wd.omega,
             blending: wd.blending,
+            pk: wd.pk,
             mu_eff: dev.face_viscosity(),
             k_b: self.k.b_wall,
             w_b: self.w.b_wall,
@@ -1310,6 +1317,8 @@ impl Turbulence {
             omega: wd.omega,
             weight: wd.weight,
             blending: wd.blending,
+            pk: wd.pk,
+            wall_pk: self.wall_pk,
             fix_val: self.fix_val,
             fix_mask: self.fix_mask,
         })

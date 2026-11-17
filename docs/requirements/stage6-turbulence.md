@@ -510,11 +510,22 @@ bitwise reproducible.
 
 | Treatment | Models | Wall shear | First-cell turbulence values | Claimed y⁺ range |
 |---|---|---|---|---|
-| `low-re` (integration to the wall) | SST, ζ-f, EB | τ_w = μ U_t/y_P | SST: ω_P = 6ν/(β₁ y_P²) fixed in the first cell (Menter 1994; the limit y⁺ → 0 of the automatic treatment); ζ-f, EB: ε_w, f_w or α_w of section 3 | y⁺ ≲ 1 |
-| `automatic` (Menter, Kuntz & Langtry 2003) | SST (default) | u_τ = (u_τ,vis⁴ + u_τ,log⁴)^{1/4}, u_τ,vis = (ν U_t/y_P)^½, u_τ,log = κ U_t/ln(E y⁺) (fixed number of Newton steps, as for Spalding's law) | ω_P = (ω_vis² + ω_log²)^½, ω_vis = 6ν/(β₁ y_P²), ω_log = u_τ/(√β* κ y_P) | any; validated 0.5 ≤ y⁺ ≤ 100 |
+| `low-re` (integration to the wall) | SST, ζ-f, EB | τ_w = μ U_t/y_P | SST: k_w = 0 and the wall-face value ω_w = 10·6ν/(β₁ d₁²) with d₁ = 2 y_P, the wall-cell height (Menter 1994), as Dirichlet values (*6b*: replaces the first-cell value ω_P = 6ν/(β₁ y_P²) of the draft, see the note below); ζ-f, EB: ε_w, f_w or α_w of section 3 | y⁺ ≲ 1 |
+| `automatic` (Menter, Kuntz & Langtry 2003) | SST (default) | u_τ = (u_τ,vis⁴ + u_τ,log⁴)^{1/4}, u_τ,vis = (ν U_t/y_P)^½, u_τ,log = κ U_t/ln(E y⁺) (fixed number of Newton steps, as for Spalding's law) | ω_P = (ω_vis² + ω_log²)^½, ω_vis = 6ν/(β₁ y_P²), ω_log = u_τ/(√β* κ y_P), imposed with the weight 1 − b, b = u_τ,vis⁴/u_τ⁴ (4.4), on top of the wall-face ω_w of `low-re`; the log law takes y⁺ ≥ 11.06 (its lower end with κ = 0.41, E = 9.793), so that u_τ,log has no spurious root in the sublayer and b → 1 there (*6b*) | any; validated 0.5 ≤ y⁺ ≤ 100 |
 | `compound` (Popovac & Hanjalić 2007) | ζ-f, EB (default), k-ε family (option) | τ_w from the blended profile: u⁺ = e^{−Γ} y⁺ + e^{−1/Γ} u⁺_log, Γ = 0.01 (y⁺)⁴/(1 + 5 y⁺) ◇ | ε_P = e^{−Γ} 2νk_P/y_P² + e^{−1/Γ} C_μ^{3/4} k_P^{3/2}/(κ y_P); P_k,P blended likewise between the integrated and the log-law value τ_w u_τ/(κ y_P); f_w (ζ-f) blended between −2νζ_P/y_P² and 0 | any; validated 0.5 ≤ y⁺ ≤ 100 |
 | `scalable` (Grotjans & Menter 1998) | k-ε family (default) | log law evaluated at ỹ* = max(y*, 11.06) | ε_P = C_μ^{3/4} k_P^{3/2}/(κ y_P) (with ỹ*), P_k,P = τ_w u_τ/(κ y_P) | y⁺ ≥ 1 without failure; accuracy claimed for y⁺ ≥ 30 |
 | `standard` (Launder & Spalding 1974) | k-ε family | log law with u_τ = C_μ^{1/4} k_P^{1/2} | as scalable, without the floor | 30 ≤ y⁺ ≤ 300 |
+
+**Wall value of ω in `low-re` (*6b*, from the flat-plate runs).** Fixing
+ω_P = 6ν/(β₁ y_P²) in the first cell, as the draft had it, made C_f(0.97)
+of the TMR plate converge at first order (p ≈ 0.9: −3.1 %, −1.2 %, −0.1 %
+on 64 × 48 to 256 × 192 cells) towards about +1.1 % of the TMR value: the
+1/y² profile of ω is not resolved by the linear flux between the first
+two cells. The wall-face value 10·6ν/(β₁ d₁²) with d₁ the wall-cell
+height, which the TMR codes and pyaeroflow use, gives −0.8 % already on
+64 × 48 cells; pyaeroflow found the same (d₁ = the centroid distance, four
+times larger ω_w, gives 2 % less). d₁ = 2 y_P is the wall-cell height of
+hexahedra and prisms.
 
 The exponentials e^{−Γ} and e^{−1/Γ} are evaluated for every face (no
 branch on the regime); Γ is floored at 10⁻³⁰⁰ before 1/Γ, and the in-house
@@ -528,11 +539,15 @@ the paper (◇).
 
 ### 4.4 Imposing first-cell values
 
-ω_P (SST) and ε_P (wall-function treatments) are fixed values in the
-near-wall cell: the matrix row of that cell is replaced by a_P = 1, b = value,
-off-diagonals 0, through a per-cell mask applied with select instructions
-in the row-assembly kernel (no branch); the neighbour rows keep their
-coupling. For P_k,P the cell's production is replaced by the area-weighted
+ω_P (SST automatic) and ε_P (wall-function treatments) are fixed values in
+the near-wall cell, with a weight m ∈ [0, 1] per cell: the row becomes
+(1 − m)·(transport row) + m a_P (φ_P − value), so the off-diagonals are
+scaled by 1 − m and b becomes (1 − m) b + m a_P·value (m = 1: the value is
+fixed; the row stays diagonally dominant for every m). m is the area mean
+of the faces' weights over the cell's wall faces (SST automatic: 1 − b of
+4.3; 1 for the fixed values of the wall functions), applied without a
+branch in the row-assembly kernel; the neighbour rows keep their
+coupling (*6b*: the draft had the hard replacement only). For P_k,P the cell's production is replaced by the area-weighted
 wall-face value. The compound treatment of ζ-f also blends the f wall
 value. These replacements are part of the assembly, so the dual-number
 Jacobian (D59) sees them.
@@ -614,7 +629,14 @@ zero flux (default). Robin conditions and conjugate interfaces are stage 7.
 
 - **Convection:** linear upwind as a deferred correction on implicit
   upwind (D25) with the Venkatakrishnan limiter on by default for the
-  turbulence variables (K = 5); first-order upwind as an option and for
+  turbulence variables, its threshold scaled with the variable:
+  ε = K (φ_max − φ_min) over the domain (Wang 2000) with K = 0 by default
+  (taken as 10⁻¹², the bounded Venkatakrishnan function). *6b:* the
+  dimensional threshold (K h)³ with K = 5 of the draft is far above the
+  differences of k (10⁻⁸ to 10⁻³ m²/s² on the TMR plate), switches the
+  limiter off at the boundary-layer edge and left k floored in about 100
+  cells with the residual stalled at 10⁻⁴; K = 10⁻³ still stalls at 10⁻⁶;
+  first-order upwind as an option and for
   the first N iterations by the ramp of D49 (2). The bounded central
   scheme is refused for turbulence variables in steady runs (TURB006) and
   allowed in transient runs with β ≥ 0.1. The deferred correction is
@@ -667,7 +689,9 @@ viscosity ratio 10⁻², where k_ref is the largest inlet k (or the initial
 k). With the splits above the floors should never act on a converging
 run. Each activation is counted per equation in the health section
 (D69) and gives TURB002 when more than 0.1 % of the cells needed it in an
-iteration. ζ, φ are bounded to [0, 2] and α to [0, 1] the same way.
+iteration of the final tenth of the run (*6b*: in the first iterations the
+inexact linear solves, relative tolerance 10⁻², can undershoot; this is
+counted, not reported). ζ, φ are bounded to [0, 2] and α to [0, 1] the same way.
 
 **Eddy-viscosity floor and bound:** ν_t ≥ 0 by construction; an optional
 maximum viscosity ratio (`turbulence.max_viscosity_ratio`, default 10⁵)

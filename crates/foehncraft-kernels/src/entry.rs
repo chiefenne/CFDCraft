@@ -1575,6 +1575,11 @@ pub struct SstCellArgs {
     pub add_k: Raw<f64>,
     /// See `add_k`.
     pub add_w: Raw<f64>,
+    /// Weight m of the wall production per cell (the automatic wall
+    /// treatment, 0 off the near-wall cells); empty: none.
+    pub wall_mask: Raw<f64>,
+    /// The wall production per cell (read where `wall_mask` is above 0).
+    pub wall_pk: Raw<f64>,
     /// Output ν_t.
     pub nu_t: Raw<f64>,
     /// Output F₁.
@@ -1633,7 +1638,15 @@ impl Entry for SstCells {
                 // an added source splits like the others: its positive
                 // part explicit, its negative part implicit
                 let (k, w) = (inp.k, inp.w);
-                *a.su_k.out().add(c) = r.su_k + ak.max(0.0);
+                // near-wall cells of the automatic treatment: the
+                // production (1 − m) P̃_k + m u_τ³/(κ y_P)
+                let su_k = if a.wall_mask.len > 0 {
+                    let m = ld(a.wall_mask.get(), c);
+                    r.su_k + m * (ld(a.wall_pk.get(), c) - r.pk)
+                } else {
+                    r.su_k
+                };
+                *a.su_k.out().add(c) = su_k + ak.max(0.0);
                 *a.sp_k.out().add(c) = r.sp_k + ak.min(0.0) / k.max(1e-300);
                 *a.su_w.out().add(c) = r.su_w + aw.max(0.0);
                 *a.sp_w.out().add(c) = r.sp_w + aw.min(0.0) / w.max(1e-300);
@@ -1745,6 +1758,8 @@ pub struct WallFaceArgs {
     pub omega: Raw<f64>,
     /// Output: the viscous weight of the blending per wall face.
     pub blending: Raw<f64>,
+    /// Output: the log-layer production u_τ³/(κ y_P) per wall face.
+    pub pk: Raw<f64>,
     /// Output (per face): μ_w on the wall faces.
     pub mu_eff: Raw<f64>,
     /// Output (per boundary face): the wall value of k (bc_b of k).
@@ -1784,6 +1799,7 @@ impl Entry for WallFaces {
             *a.y_plus.out().add(i) = r.y_plus;
             *a.omega.out().add(i) = r.omega;
             *a.blending.out().add(i) = r.blending;
+            *a.pk.out().add(i) = r.pk_wall;
             *a.mu_eff.out().add(f) = a.rho * r.nu_wall;
             *a.k_b.out().add(fb) = r.k_wall;
             *a.w_b.out().add(fb) = r.omega_wall;
@@ -1807,6 +1823,10 @@ pub struct WallCellArgs {
     pub omega: Raw<f64>,
     /// Viscous weight of the blending per wall face (1: low-Re).
     pub blending: Raw<f64>,
+    /// Log-layer production per wall face.
+    pub pk: Raw<f64>,
+    /// Output: its area mean per cell.
+    pub wall_pk: Raw<f64>,
     /// Output: the fixed value per cell.
     pub fix_val: Raw<f64>,
     /// Output: the weight of the fixed value per cell, the area mean of
@@ -1827,17 +1847,19 @@ impl Entry for WallCells {
             let c = ld(a.cells.get(), i) as usize;
             let lo = ld(a.ptr.get(), i) as usize;
             let hi = ld(a.ptr.get(), i + 1) as usize;
-            let (mut v, mut m) = (0.0, 0.0);
+            let (mut v, mut m, mut p) = (0.0, 0.0, 0.0);
             let mut j = lo;
             while j < hi {
                 let s = ld(a.slots.get(), j) as usize;
                 let w = ld(a.weight.get(), s);
                 v += w * ld(a.omega.get(), s);
                 m += w * (1.0 - ld(a.blending.get(), s));
+                p += w * ld(a.pk.get(), s);
                 j += 1;
             }
             *a.fix_val.out().add(c) = v;
             *a.fix_mask.out().add(c) = m;
+            *a.wall_pk.out().add(c) = p;
         }
     }
 }

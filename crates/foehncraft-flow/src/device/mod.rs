@@ -333,6 +333,9 @@ pub struct SstCellOps {
     pub o: foehncraft_kernels::turb::sst::SstOptions,
     /// Added sources of k and ω, if any.
     pub add: Option<(Buf, Buf)>,
+    /// The weight and the value of the wall production per cell (the
+    /// automatic wall treatment), if any.
+    pub wall: Option<(Buf, Buf)>,
     /// Output ν_t.
     pub nu_t: Buf,
     /// Output F₁.
@@ -397,6 +400,8 @@ pub struct WallFaceOps {
     pub omega: Buf,
     /// Output viscous weight per wall face.
     pub blending: Buf,
+    /// Output: the log-layer production per wall face.
+    pub pk: Buf,
     /// Output μ_w into the face viscosity.
     pub mu_eff: Buf,
     /// Output wall values of k and ω (bc_b, per boundary face).
@@ -414,6 +419,10 @@ pub struct WallCellOps {
     pub weight: Buf,
     /// Viscous weight of the blending per wall face.
     pub blending: Buf,
+    /// Log-layer production per wall face.
+    pub pk: Buf,
+    /// Output: its area mean per cell.
+    pub wall_pk: Buf,
     /// Output: the fixed value of ω per cell.
     pub fix_val: Buf,
     /// Output: its weight per cell (0 off the near-wall cells).

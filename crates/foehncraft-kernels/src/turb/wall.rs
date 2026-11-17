@@ -111,6 +111,11 @@ pub struct WallFace<T> {
     pub nu_wall: T,
     /// The weight of the viscous part, u_τ,vis⁴/u_τ⁴ (1: viscous sublayer).
     pub blending: T,
+    /// The production of k of the log layer at the near-wall cell,
+    /// u_τ³/(κ y_P) (m²/s³), which the automatic treatment blends in with
+    /// the weight 1 − `blending` (the cell's velocity gradient U_t/y_P is
+    /// far too large once y_P is in the log layer).
+    pub pk_wall: T,
 }
 
 /// k_w⁺ of Aupoix (2015), Colebrook set.
@@ -159,6 +164,7 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
             k_wall,
             nu_wall: nu + k_wall / omega,
             blending: T::ONE,
+            pk_wall: T::ZERO,
         };
     }
     if treatment == LOW_RE {
@@ -171,6 +177,7 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
             k_wall: T::ZERO,
             nu_wall: nu,
             blending: T::ONE,
+            pk_wall: T::ZERO,
         };
     }
     let u_vis2 = nu * ut / y;
@@ -196,6 +203,7 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
         k_wall: T::ZERO,
         nu_wall,
         blending: v4 / u4.max_of(tiny),
+        pk_wall: u_tau * u_tau * u_tau / (kappa * y),
     }
 }
 

@@ -17,6 +17,7 @@
 //! | `pressure-coefficient` | `pressure_coefficient` | (p − p_ref) / (½ ρ_ref U_ref²) | - |
 //! | `total-pressure` | `total_pressure` | p + ½ ρ u·u | Pa |
 //! | `wall-distance` | `wall_distance` | the exact distance of the cell centroid to the nearest no-slip wall face (D48, a BVH closest-point search, D108) | m |
+//! | `turbulence-features` | `feature_lambda1` … `feature_lambda5`, `feature_wall_reynolds`, `feature_time_ratio`, `feature_viscosity_ratio`, `feature_shielding`, `feature_q`, `feature_pressure_gradient`, `feature_curvature` | the invariant features of D166 (below); needs a turbulence model | - |
 //!
 //! Boundary face fields, on the boundary blocks of the file (zero on boundaries
 //! that are not walls), from the same wall values as `wall_<boundary>.csv`:
@@ -26,7 +27,25 @@
 //! | `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude` | the tangential viscous stress of the fluid on the wall | Pa |
 //! | `y-plus` | `y_plus` | y⁺ = d u_τ / ν with u_τ = √(τ_w / ρ) and d the wall distance of the cell centroid | - |
 //!
-//! ‖·‖ is the Frobenius norm. The eigenvalues of λ₂ come from Jacobi
+//! The features of `turbulence-features` (D166; the definitions of the
+//! export of D106), with the turbulence time scale τ = 1/(β* ω) = k/ε,
+//! the turbulence length L = √k/(β* ω), the wall distance d of the model
+//! and |S| = √(2 S:S):
+//!
+//! - λ₁ … λ₅: tr Ŝ², tr Ŵ², tr Ŝ³, tr Ŵ²Ŝ, tr Ŵ²Ŝ² of Ŝ = τS, Ŵ = τΩ
+//!   (Pope 1975);
+//! - wall Reynolds number d√k/ν (based on k, not on the cell);
+//! - time-scale ratio τ |S| (turbulent over mean time scale);
+//! - viscosity ratio ν_t/ν;
+//! - shielding f_d = 1 − tanh((8 r_d)³), r_d = (ν_t + ν)/(‖G‖ κ² d²)
+//!   (delayed DES, Spalart et al. 2006): 0 in attached boundary layers;
+//! - Q = (‖Ω‖² − ‖S‖²)/(‖Ω‖² + ‖S‖²), in [−1, 1];
+//! - pressure gradient along the flow u·∇p/(|u| |∇p|), in [−1, 1]
+//!   (velocity in the frame of the walls);
+//! - streamline curvature |u × (G u)| L/|u|³.
+//!
+//! Every quotient has its denominator floored at 10⁻³⁰⁰ (zero for a fluid at
+//! rest). ‖·‖ is the Frobenius norm. The eigenvalues of λ₂ come from Jacobi
 //! rotations, exact to round-off also where two of them are equal (as in
 //! every 2D vortex). Turbulence quantities follow with the turbulence
 //! models.
@@ -75,11 +94,13 @@ pub enum Derived {
     WallShearStress,
     /// y⁺ of the wall-adjacent cells, on the walls (-).
     YPlus,
+    /// The invariant features of D166 (-).
+    TurbulenceFeatures,
 }
 
 impl Derived {
     /// Every derived field, in the order they are written.
-    pub const ALL: [Derived; 10] = [
+    pub const ALL: [Derived; 11] = [
         Derived::Vorticity,
         Derived::QCriterion,
         Derived::Lambda2,
@@ -90,6 +111,7 @@ impl Derived {
         Derived::WallDistance,
         Derived::WallShearStress,
         Derived::YPlus,
+        Derived::TurbulenceFeatures,
     ];
 
     /// The name in the case file.
@@ -105,6 +127,7 @@ impl Derived {
             Derived::WallDistance => "wall-distance",
             Derived::WallShearStress => "wall-shear-stress",
             Derived::YPlus => "y-plus",
+            Derived::TurbulenceFeatures => "turbulence-features",
         }
     }
 
@@ -136,6 +159,20 @@ impl Derived {
                 ("wall_shear_stress_magnitude", "Pa"),
             ],
             Derived::YPlus => &[("y_plus", "-")],
+            Derived::TurbulenceFeatures => &[
+                ("feature_lambda1", "-"),
+                ("feature_lambda2", "-"),
+                ("feature_lambda3", "-"),
+                ("feature_lambda4", "-"),
+                ("feature_lambda5", "-"),
+                ("feature_wall_reynolds", "-"),
+                ("feature_time_ratio", "-"),
+                ("feature_viscosity_ratio", "-"),
+                ("feature_shielding", "-"),
+                ("feature_q", "-"),
+                ("feature_pressure_gradient", "-"),
+                ("feature_curvature", "-"),
+            ],
         }
     }
 
@@ -203,6 +240,13 @@ pub fn validate_list(case: &FlowCase, list: &[Derived]) -> Result<()> {
                 .any(|b| matches!(b, BoundaryCondition::Wall { .. })),
             CASE_INCONSISTENT,
             "derived field `wall-distance` needs at least one wall boundary"
+        );
+    }
+    if list.contains(&Derived::TurbulenceFeatures) {
+        crate::need!(
+            !case.turbulence.is_laminar(),
+            CASE_INCONSISTENT,
+            "derived field `turbulence-features` needs a turbulence model ([turbulence] model)"
         );
     }
     if list.contains(&Derived::PressureCoefficient) {
@@ -317,6 +361,60 @@ pub fn kinematics(g: [[f64; 3]; 3]) -> Kinematics {
         enstrophy: 0.5 * dot(vorticity, vorticity),
         strain_rate: (2.0 * ss).sqrt(),
     }
+}
+
+/// The features of D166 of one cell (the order of the datasets of
+/// [`Derived::TurbulenceFeatures`]): velocity gradient `g`, velocity `u`,
+/// pressure gradient `gp`, k, ω, ν_t, wall distance `d`, ν and β*.
+#[allow(clippy::too_many_arguments)]
+pub fn features(
+    g: [[f64; 3]; 3],
+    u: [f64; 3],
+    gp: [f64; 3],
+    k: f64,
+    omega: f64,
+    nu_t: f64,
+    d: f64,
+    nu: f64,
+    beta_star: f64,
+) -> [f64; 12] {
+    use foehncraft_kernels::turb::invariants as inv;
+    let tiny = 1e-300;
+    let tau = 1.0 / (beta_star * omega).max(tiny);
+    let l = inv::pope(&g, tau);
+    let (s2, w2) = inv::s2_omega2(&g);
+    let k = k.max(0.0);
+    let sk = k.sqrt();
+    let speed = norm(u);
+    let a = [
+        g[0][0] * u[0] + g[0][1] * u[1] + g[0][2] * u[2],
+        g[1][0] * u[0] + g[1][1] * u[1] + g[1][2] * u[2],
+        g[2][0] * u[0] + g[2][1] * u[1] + g[2][2] * u[2],
+    ];
+    let cross = [
+        u[1] * a[2] - u[2] * a[1],
+        u[2] * a[0] - u[0] * a[2],
+        u[0] * a[1] - u[1] * a[0],
+    ];
+    let length = sk * tau;
+    [
+        l[0],
+        l[1],
+        l[2],
+        l[3],
+        l[4],
+        if d.is_finite() { d * sk / nu } else { 1e300 },
+        tau * s2.sqrt(),
+        nu_t / nu,
+        if d.is_finite() {
+            inv::shielding(&g, nu_t, nu, d)
+        } else {
+            1.0
+        },
+        (w2 - s2) / (w2 + s2).max(tiny),
+        dot(u, gp) / (speed * norm(gp)).max(tiny),
+        norm(cross) * length / (speed * speed * speed).max(tiny),
+    ]
 }
 
 /// The eigenvalues of the symmetric matrix `a`, ascending: cyclic Jacobi
@@ -462,6 +560,35 @@ pub fn compute(
             Derived::YPlus => {
                 let w = walls.as_ref().expect("computed above");
                 out.faces.push(("y_plus", w.iter().map(|v| v.1).collect()));
+            }
+            Derived::TurbulenceFeatures => {
+                let t = fl.turbulence.as_ref().ok_or_else(|| {
+                    crate::diag::err(crate::diag::Diagnostic::new(
+                        crate::diag::CASE_INCONSISTENT,
+                        "derived field `turbulence-features` needs the turbulence fields",
+                    ))
+                })?;
+                let beta_star = case.turbulence.sst_constants()?.beta_star;
+                let nu = fl.phys.mu / fl.phys.rho;
+                let rows: Vec<[f64; 12]> = (0..nc)
+                    .map(|c| {
+                        let gp = fl.grad_p.get(c);
+                        features(
+                            gradient(fl, c),
+                            fl.u.get(c),
+                            gp,
+                            t.k[c],
+                            t.omega[c],
+                            t.nu_t[c],
+                            t.wall_distance.get(c).copied().unwrap_or(f64::INFINITY),
+                            nu,
+                            beta_star,
+                        )
+                    })
+                    .collect();
+                for (i, (n, _)) in d.datasets().iter().enumerate() {
+                    out.cells.push((n, rows.iter().map(|r| r[i]).collect()));
+                }
             }
         }
     }

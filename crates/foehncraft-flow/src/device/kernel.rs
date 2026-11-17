@@ -1064,6 +1064,10 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             ins.push(x);
             ins.push(y);
         }
+        if let Some((x, y)) = a.wall {
+            ins.push(x);
+            ins.push(y);
+        }
         let mut outs = vec![a.nu_t, a.f1, a.pk, a.dk, a.dw, a.capped];
         if let Some(s) = a.sources {
             outs.extend(s);
@@ -1083,6 +1087,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             o: a.o,
             add_k: a.add.map_or(none, |(x, _)| self.r(x)),
             add_w: a.add.map_or(none, |(_, y)| self.r(y)),
+            wall_mask: a.wall.map_or(none, |(x, _)| self.r(x)),
+            wall_pk: a.wall.map_or(none, |(_, y)| self.r(y)),
             nu_t: self.r(a.nu_t),
             f1: self.r(a.f1),
             pk: self.r(a.pk),
@@ -1148,6 +1154,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             y_plus: self.r(a.y_plus),
             omega: self.r(a.omega),
             blending: self.r(a.blending),
+            pk: self.r(a.pk),
             mu_eff: self.r(a.mu_eff),
             k_b: self.r(a.k_b),
             w_b: self.r(a.w_b),
@@ -1172,7 +1179,10 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         let Some([_, cells, ptr, slots]) = self.wall else {
             anyhow::bail!("flow device: wall_cells before wall_setup");
         };
-        check(&[a.fix_val, a.fix_mask], &[a.omega, a.weight, a.blending])?;
+        check(
+            &[a.fix_val, a.fix_mask, a.wall_pk],
+            &[a.omega, a.weight, a.blending, a.pk],
+        )?;
         let args = e::WallCellArgs {
             cells,
             ptr,
@@ -1180,6 +1190,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             weight: self.r(a.weight),
             omega: self.r(a.omega),
             blending: self.r(a.blending),
+            pk: self.r(a.pk),
+            wall_pk: self.r(a.wall_pk),
             fix_val: self.r(a.fix_val),
             fix_mask: self.r(a.fix_mask),
         };
