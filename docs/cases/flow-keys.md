@@ -395,21 +395,24 @@ realizable k-ε models with the wall functions `scalable`, `standard` and
 [recipe 73](../recipes/turbulence.md#zeta-f)): the k-ε-ζ-f model of
 Hanjalić, Popovac & Hadžiabdić (2004) with the treatments `compound` and
 `low-re`, its elliptic f equation and the multigrid of the turbulence
-equations. Specification:
+equations. Part 6d2 ([gallery 74](../gallery/turbulence.md#zeta-f0),
+[recipe 74](../recipes/turbulence.md#zeta-f0)): the k-ε-ζ-f₀ model of
+Popovac (2023) with his compound treatment of 2023, robust from y⁺ 0.3
+to 30. Specification:
 [stage 6](../requirements/stage6-turbulence.md).
 
 | Key | Default | Meaning |
 |---|---|---|
-| `turbulence.model` | `"laminar"` | `"k-omega-sst"`, `"k-epsilon"` (Launder & Spalding 1974), `"realizable-k-epsilon"` (Shih et al. 1995), `"k-epsilon-zeta-f"` (Hanjalić, Popovac & Hadžiabdić 2004) |
-| `turbulence.wall_treatment` | SST `"automatic"`, k-ε `"scalable"` | SST: `"automatic"` (Menter, Kuntz & Langtry 2003: blended viscous and log-law u_τ, ω and production in the first cell) or `"low-re"` (k = 0 and ω_w = 60ν/(β₁ d₁²) on the wall face, d₁ the wall-cell height). k-ε family: `"scalable"` (log law at max(y*, 11.06), any y⁺, accurate from y⁺ 30), `"standard"` (log law, 30 ≤ y⁺ ≤ 300), `"compound"` (blended profile of Popovac & Hanjalić; with the high-Re k-ε claimed from y⁺ 30 like the wall functions). k-ε-ζ-f: `"compound"` (default: k and ζ by zero gradient, ε and P_k of the first cell and the wall value of f blended between the viscous sublayer and the log law) or `"low-re"` (k = ζ = 0, ε_w = 2νk₁/d₁², f_w = −2νζ₁/d₁²) |
+| `turbulence.model` | `"laminar"` | `"k-omega-sst"`, `"k-epsilon"` (Launder & Spalding 1974), `"realizable-k-epsilon"` (Shih et al. 1995), `"k-epsilon-zeta-f"` (Hanjalić, Popovac & Hadžiabdić 2004), `"k-epsilon-zeta-f0"` (Popovac 2023, with the deviations of specification 3.3.1) |
+| `turbulence.wall_treatment` | SST `"automatic"`, k-ε `"scalable"` | SST: `"automatic"` (Menter, Kuntz & Langtry 2003: blended viscous and log-law u_τ, ω and production in the first cell) or `"low-re"` (k = 0 and ω_w = 60ν/(β₁ d₁²) on the wall face, d₁ the wall-cell height). k-ε family: `"scalable"` (log law at max(y*, 11.06), any y⁺, accurate from y⁺ 30), `"standard"` (log law, 30 ≤ y⁺ ≤ 300), `"compound"` (blended profile of Popovac & Hanjalić; with the high-Re k-ε claimed from y⁺ 30 like the wall functions). k-ε-ζ-f: `"compound"` (default: k and ζ by zero gradient, ε and P_k of the first cell and the wall value of f blended between the viscous sublayer and the log law) or `"low-re"` (k = ζ = 0, ε_w = 2νk₁/d₁², f_w = −2νζ₁/d₁²); also `"compound-2023"`. k-ε-ζ-f₀: `"compound-2023"` (default: the blend u⁺ = [y*^{−10/3} + u⁺_log^{−10/3}]^{−3/10} of Popovac 2023 with the non-equilibrium factor ψ from the convection and the pressure gradient, ε and P_k of the first cell from its slope; f₀,w = 0), `"compound"` or `"low-re"` |
 | `turbulence.production_limiter` | SST `"menter"`, k-ε `"durbin"` | `"menter"` (SST: P̃ = min(ν_t S², 10 β* k ω); k-ε: min(P_k, 10ε)), `"kato-launder"` (ν_t S Ω), `"durbin"` (the realisability bound with `durbin_coefficient`), `"none"`; the realizable k-ε takes `"none"` only |
 | `turbulence.ambient.k`, `turbulence.ambient.omega` or `epsilon` | none | sustaining terms of Spalart & Rumsey (2007): destruction at these free-stream values is balanced, so k and ω (or ε) do not decay ahead of a body; SST takes `omega`, the k-ε family and ζ-f `epsilon` |
 | `turbulence.max_viscosity_ratio` | 1e5 | cap of ν_t/ν; capped cells are counted (TURB008) |
 | `turbulence.smooth_limits` | false | smooth min and max in the model (specification 2.6, for the adjoint) |
 | `turbulence.wall_distance` | `"exact"` | `"exact"` (BVH, D48) or `"pde"` (Poisson distance, one solve at the start) |
-| `turbulence.constants` | literature values | overrides by name: SST `beta_star`, `a1`, `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`, `sigma_k2`, `sigma_omega1`, `sigma_omega2`; k-ε `c_mu`, `c_epsilon1`, `c_epsilon2` (realizable: C₂), `sigma_k`, `sigma_epsilon`, `a0` (realizable), `kappa`; ζ-f `c_mu`, `c_epsilon1`, `c_epsilon2`, `c_1`, `c_2`, `sigma_k`, `sigma_epsilon`, `sigma_zeta`, `c_t`, `c_l`, `c_eta`, `kappa`; a warning names each changed constant (TURB007) |
+| `turbulence.constants` | literature values | overrides by name: SST `beta_star`, `a1`, `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`, `sigma_k2`, `sigma_omega1`, `sigma_omega2`; k-ε `c_mu`, `c_epsilon1`, `c_epsilon2` (realizable: C₂), `sigma_k`, `sigma_epsilon`, `a0` (realizable), `kappa`; ζ-f `c_mu`, `c_epsilon1`, `c_epsilon2`, `c_1`, `c_2`, `sigma_k`, `sigma_epsilon`, `sigma_zeta`, `c_t`, `c_l`, `c_eta`, `kappa`, `c_epsilon1_zeta` (C″ε1 = 0.012), `a` (0.6, the realizability bound of T and L); ζ-f₀ also `n_zeta` (N_ζ = 2); a warning names each changed constant (TURB007) |
 | `initial.k`, `initial.omega` or `initial.epsilon` | from the first inlet | start values, numbers or expressions of x, y, z; ω converts to ε = C_μ k ω and back |
-| `initial.zeta` | 2/3 | start ζ = v²/k of k-ε-ζ-f, in (0, 2]; f starts at 0 |
+| `initial.zeta` | 2/3 | start ζ = v²/k of k-ε-ζ-f and ζ-f₀, in (0, 2]; f starts at 0 |
 | `initial.turbulence_intensity`, `initial.viscosity_ratio` | 0.01, 1 | start values from the intensity of `initial.velocity` and ν_t/ν |
 | `boundary.<inlet>.turbulence_intensity` | 0.05 | I, k = 1.5 (I U)² with U the inlet speed |
 | `boundary.<inlet>.turbulence_length_scale` or `viscosity_ratio` | ν_t/ν = 10 | ω = √k/(β*^¼ ℓ) or ω = k/(ν · ratio) |
@@ -431,8 +434,8 @@ The checks: TURB001 (the first-cell y⁺ does not suit the wall treatment
 on more than a tenth of a wall: above 2 with `low-re`, or in the buffer
 layer between 3 and 20 with `automatic`, where C_f of the flat plate is up
 to 16 % high; below 30 with `scalable`, outside 30 … 300 with `standard`
-and `compound` of the k-ε family; above 2 with `low-re` of ζ-f, whose
-`compound` covers every y⁺), TURB002 (the floor of k or ω acted in the final tenth of the
+and `compound` of the k-ε family; above 2 with `low-re` of ζ-f and ζ-f₀,
+whose `compound` and `compound-2023` cover every y⁺), TURB002 (the floor of k or ω acted in the final tenth of the
 solves), TURB003 and TURB009 (inlet turbulence out of the usual range, or
 defaulted), TURB005 (no wall), TURB006 (a scheme the model does not allow),
 TURB007 (changed constants), TURB008 (ν_t capped).

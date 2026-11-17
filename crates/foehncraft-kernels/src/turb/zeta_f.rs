@@ -44,6 +44,54 @@
 //! C_ε1 P_k is evaluated as 1.4 (P_k + 0.012 P_k/ζ) with P_k/ζ = C_μ k T S²
 //! (ν_t/ζ), which stays finite as ζ → 0 at the wall, where the
 //! coefficient 1 + 0.012/ζ alone does not.
+//!
+//! **The ζ-f₀ form** (`form` = [`FORM_F0`]; M. Popovac, *Robust eddy
+//! viscosity turbulence modeling with elliptic relaxation and compound
+//! wall treatment*, Energies 16, 3685 (2023), CC BY) solves
+//! f₀ = f + (N_ζ − 1) ζ/T instead of f (the idea of Lien, Kalitzin &
+//! Durbin 1998), which is zero at the wall with N_ζ = 2 (eq. (21)):
+//!
+//!   ν_t = (c_μ/ζ_eq) ζ k T, c_μ = 0.09, ζ_eq = 0.41 (eq. (4))
+//!
+//!   Dζ/Dt = f₀ − ζ [P_k/ε + (N_ζ − 1)]/T + ∇·[(ν + ν_t/σ_ζ)∇ζ] (eq. (8))
+//!
+//!   L²∇²f₀ − f₀ = (1/T)[(C_f1 + C_f2 P_k/ε)(ζ − 2/3) − (N_ζ − 1) ζ]
+//!
+//! with C_ε1 = 1.4 (1 + 0.012/√ζ) and the other constants of the 2004
+//! model (the paper's table 1: C_f1 = C₁ − 1 = 0.4, C_f2 = C₂′ = 0.65,
+//! C_T = 0.6 = a, C_τ = 6 = C_T here, C_L = 0.36, C_η = 85). The sign of
+//! the (N_ζ − 1) ζ term is the one that follows from substituting f₀
+//! into the 2004 f equation (the gradient of ζ/T neglected); eq. (7)
+//! prints + (N_ζ − 1) ζ, which would count the term twice in the ζ
+//! equation and pull the log-layer ζ from ≈ 0.4 to ≈ 0.17. The
+//! realizability bounds of T and L take the coefficient of ν_t,
+//! c_μ/ζ_eq = 0.2195 (the 0.22 of 2004), for which they are derived;
+//! eq. (9) writes c_μ.
+//!
+//! Three choices of ours (6d2) make the form the default `k-epsilon-zeta-f0`:
+//!
+//! - The (N_ζ − 1) terms take ε/k instead of 1/T. Off the wall the two
+//!   agree (T = k/ε); at the wall ε/k = 2ν/y², which is what makes
+//!   f₀_w = (N_ζ − 2) 2νζ/y² = 0 (eq. (21)) consistent, whereas the
+//!   Kolmogorov-bounded 1/T vanishes there.
+//! - The sink of k is k/T_K, T_K = max(k/ε, C_T (ν/ε)^½), instead of ε
+//!   (eq. (5)): the same off the wall, smaller where the Kolmogorov bound
+//!   acts. With −ε the laminar part of a boundary layer has no positive
+//!   steady k, the positivity floor holds it and the k residual stalls
+//!   (the 6d finding on the flat plate); with k/T_K the plate converges to
+//!   round-off. The realizability bound of T is left out of T_K: it would
+//!   raise the sink in shear layers and relaminarise them (U_b⁺ +30 % in
+//!   the channel). With this sink the published C_ε1 = 1.4 (1 + 0.012/√ζ)
+//!   gives U_b⁺ +1.3 % in the channel at y⁺ 1 and C_f +2.6 % against the
+//!   TMR value on the flat plate; with −ε it gave −11 % and +21 %.
+//! - The realizability bound of T takes a = 0.6 √2 = 0.849 instead
+//!   of 0.6, which with S = (2 S_ij S_ij)^½ is the bound of Durbin (1996)
+//!   written with (S_ij S_ij)^½. In the separated shear layer of the
+//!   backward-facing step the bound with 0.6 is active and halves ν_t:
+//!   the reattachment length came out at 7.4 to 7.7 step heights against
+//!   6.26 measured; with 0.849 it is 6.38 (the bound no longer acts there:
+//!   a = 1.2 gives the same). The channel moves by 0.1 %, C_f of the flat
+//!   plate by +1.5 % (within 3 % of White's correlation from y⁺ 1 to 30).
 
 use super::invariants::{Tensor, s2_omega2};
 use super::{smax, smin};
@@ -54,6 +102,11 @@ use foehncraft_core::Real;
 pub const ZETA_MIN: f64 = 1e-10;
 /// Upper bound of ζ = v²/k (v² ≤ 2k).
 pub const ZETA_MAX: f64 = 2.0;
+
+/// The 2004 ζ-f (Hanjalić, Popovac & Hadžiabdić).
+pub const FORM_ZETA_F: u32 = 0;
+/// The ζ-f₀ of Popovac (2023).
+pub const FORM_F0: u32 = 1;
 
 /// The constants of the model (the paper's by default; a case may change
 /// them, TURB007).
@@ -92,6 +145,10 @@ pub struct ZetaFConstants {
     pub c_mu_eq: f64,
     /// κ = 0.41 (wall treatment).
     pub kappa: f64,
+    /// N_ζ of the ζ-f₀ form (2; 1 in the 2004 model, where f₀ = f).
+    pub n_zeta: f64,
+    /// [`FORM_ZETA_F`] or [`FORM_F0`].
+    pub form: u32,
 }
 
 impl ZetaFConstants {
@@ -113,7 +170,21 @@ impl ZetaFConstants {
             c_eta: 85.0,
             c_mu_eq: 0.09,
             kappa: 0.41,
+            n_zeta: 1.0,
+            form: FORM_ZETA_F,
         }
+    }
+
+    /// The constants of the ζ-f₀ model of Popovac (2023), table 1
+    /// (C_μ = c_μ/ζ_eq = 0.09/0.41), with the realizability coefficient
+    /// a = 0.6 √2 of our default (module documentation).
+    pub const fn popovac_2023() -> Self {
+        let mut c = Self::paper();
+        c.c_mu = 0.09 / 0.41;
+        c.a = 0.6 * core::f64::consts::SQRT_2;
+        c.n_zeta = 2.0;
+        c.form = FORM_F0;
+        c
     }
 
     /// The constants the wall kernel of the k-ε family takes for ζ-f
@@ -272,13 +343,29 @@ pub fn zeta_f_cell<T: Real>(
     let m = i.wall_m;
     let keep = T::ONE - m;
     let pk = keep * nu_t * s2 + i.wall_pk;
-    let p_over_z = keep * nt_z * s2 + i.wall_pk / z.max_of(f(ZETA_MIN));
+    let f0 = c.form == FORM_F0;
+    // P_k/ζ (2004) or P_k/√ζ (2023), finite as ζ → 0
+    let p_over_z = if f0 {
+        keep * nt_z * z.sqrt_of() * s2 + i.wall_pk / z.max_of(f(ZETA_MIN)).sqrt_of()
+    } else {
+        keep * nt_z * s2 + i.wall_pk / z.max_of(f(ZETA_MIN))
+    };
     let ce1p = f(c.c_e1) * (pk + f(c.c_e1_zeta) * p_over_z);
     let inv_t = T::ONE / t;
     let k_div = k.max_of(tiny);
-    // k: S_u = P_k (+ ε_amb), S_p = −ε*/k*
+    // k: S_u = P_k (+ ε_amb), S_p = −ε*/k* (2004); for ζ-f₀ the sink
+    // k/T_K with T_K = max(k/ε, C_T (ν/ε)^½): ε where k/ε is the larger,
+    // below ε where the Kolmogorov bound acts, so that k keeps a positive
+    // steady solution in laminar regions (6d2 default; the paper's
+    // eq. (5) writes −ε; the realizability bound of T is left out, it
+    // would raise the sink in shear layers and relaminarise them)
     let su_k = pk + f(o.e_amb);
-    let sp_k = -(e / k_div);
+    let sp_k = if f0 {
+        let t_kol = f(c.c_t) * (nu / e).sqrt_of();
+        -(T::ONE / (k_div / e).max_of(t_kol))
+    } else {
+        -(e / k_div)
+    };
     // ε: (C_ε1 P_k − C_ε2 ε)/T (+ the ambient destruction)
     let amb_e = if o.k_amb > 0.0 && o.e_amb > 0.0 {
         let nu0 = i.nu.to_f64();
@@ -293,11 +380,26 @@ pub fn zeta_f_cell<T: Real>(
     } else {
         (ce1p * inv_t + amb_e, -r)
     };
-    // ζ: f − (ζ/k) P_k
+    // ζ: f − (ζ/k) P_k (2004); f₀ − ζ [P_k/ε + (N_ζ − 1)]/T (2023)
+    let n1 = f(c.n_zeta - 1.0);
     let su_z = i.f.max_of(T::ZERO);
-    let sp_z = i.f.min_of(T::ZERO) / z.max_of(f(ZETA_MIN)) - pk / k_div;
+    // the (N_ζ − 1) terms take ε/k (= 1/T off the wall): at the wall
+    // ε/k = 2ν/y², which makes f₀_w = (N_ζ − 2) 2νζ/y² (eq. (21))
+    // consistent; the Kolmogorov-bounded 1/T vanishes there and leaves ζ
+    // without its wall sink (6d2 finding: U_b⁺ −12 % in the channel)
+    let e_k = e / k_div;
+    let sink = if f0 {
+        pk / e * inv_t + n1 * e_k
+    } else {
+        pk / k_div
+    };
+    let sp_z = i.f.min_of(T::ZERO) / z.max_of(f(ZETA_MIN)) - sink;
     // f: −∇·(L²∇f) + f = (1/T)(C₁ − 1 + C₂′ P_k/ε)(2/3 − ζ)
-    let rhs_f = inv_t * (f(c.c1 - 1.0) + f(c.c2) * pk / e) * (f(2.0 / 3.0) - z);
+    // [+ (N_ζ − 1) ζ/T for f₀]
+    let mut rhs_f = inv_t * (f(c.c1 - 1.0) + f(c.c2) * pk / e) * (f(2.0 / 3.0) - z);
+    if f0 {
+        rhs_f += e_k * n1 * z;
+    }
     ZetaFCell {
         nu_t,
         t,
@@ -502,5 +604,61 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn f0_form_matches_the_2004_zeta_source() {
+        // with f = f₀ − (N_ζ − 1) ζ/T and T = k/ε the ζ equation of the
+        // f₀ form is the 2004 one; C_ε1 takes √ζ; ν_t takes 0.09/0.41
+        let c4 = ZetaFConstants::paper();
+        let c0 = ZetaFConstants::popovac_2023();
+        let o = ZetaFOptions::default();
+        let (k, e, z, s) = (0.01, 0.1, 0.4, 3.0);
+        let base = zeta_f_cell(&shear(k, e, z, 0.0, s), &c0, &o);
+        assert!((base.t - k / e).abs() < 1e-15, "T = k/ε here: {}", base.t);
+        let t = base.t;
+        for f0 in [-3.0, 0.0, 0.7, 5.0] {
+            let r0 = zeta_f_cell(&shear(k, e, z, f0, s), &c0, &o);
+            let f = f0 - z / t;
+            let mut c4b = c4;
+            c4b.c_mu = c0.c_mu;
+            let r4 = zeta_f_cell(&shear(k, e, z, f, s), &c4b, &o);
+            let net = |r: &ZetaFCell<f64>| r.su_z + r.sp_z * z;
+            assert!(
+                (net(&r0) - net(&r4)).abs() < 1e-12,
+                "{f0}: {} {}",
+                net(&r0),
+                net(&r4)
+            );
+            // f₀ = f + ζ/T in the right-hand side too
+            assert!((r0.rhs_f - (r4.rhs_f + z / t)).abs() < 1e-12);
+        }
+        let nu_t = 0.09 / 0.41 * z * k * t;
+        assert!((base.nu_t - nu_t).abs() < 1e-15 * nu_t);
+        // the sink of k: k/T_K, ε where T_K = k/ε
+        assert!((base.sp_k + e / k).abs() < 1e-12 * e / k);
+        // and below ε where the Kolmogorov bound acts (k → 0)
+        let (k1, e1) = (1e-8, 1.0);
+        let r = zeta_f_cell(&shear(k1, e1, z, 0.0, s), &c0, &o);
+        let tk = 6.0 * (1.5e-5f64 / e1).sqrt();
+        assert!(
+            (r.sp_k + 1.0 / tk).abs() < 1e-12 / tk,
+            "{} {}",
+            r.sp_k,
+            -1.0 / tk
+        );
+        assert!(-r.sp_k * k1 < e1);
+        let ce1 = 1.4 * (1.0 + 0.012 / z.sqrt());
+        assert!((base.su_e - ce1 * base.pk / t).abs() < 1e-12 * base.su_e);
+        // homogeneous decay: the net ζ source is (0.4/T)(2/3 − ζ)
+        for z in [0.2, 1.2] {
+            let r = zeta_f_cell(&shear(1.0, 1.0, z, 0.0, 0.0), &c0, &o);
+            let rf = r.rhs_f;
+            let net = rf.max(0.0) + (rf.min(0.0) / z - 1.0) * z;
+            assert!((net - 0.4 * (2.0 / 3.0 - z)).abs() < 1e-14, "{z}: {net}");
+        }
+        // finite at ζ = 0 with signs kept
+        let r = zeta_f_cell(&shear(1e-3, 1e-2, 0.0, -2.0, 100.0), &c0, &o);
+        assert!(r.su_e.is_finite() && r.sp_z.is_finite() && r.sp_z <= 0.0 && r.su_z == 0.0);
     }
 }

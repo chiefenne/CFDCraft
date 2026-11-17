@@ -44,6 +44,7 @@ Every key is optional; a case needs either `mesh.file` or a
 | `mesh.generate.refine` | 0 | halve every interval this many times (nested meshes for grid-convergence tests) |
 | `mesh.generate.perturb` | 0 | random node displacement as a fraction of the local interval, 0 to 0.3; boundary nodes stay on their faces |
 | `mesh.generate.wedge` | none | revolve the 2D mesh (`dimension = 2`, `lower[1] ≥ 0`) into an axisymmetric wedge of this angle (degrees, up to 90) about the x axis; `zmin` and `zmax` become the wedge planes, `ymin` disappears on the axis |
+| `mesh.generate.remove` | none | boxes cut out of the hex, tet or mixed mesh, `[{ lower = [...], upper = [...], name = "step" }]`: the cells inside are removed and the exposed faces form the boundary `name` (z ignored in 2D; a backward-facing step, gallery 74); not with `poly` |
 | `mesh.generate.seed` | 2026 | seed of the perturbation (counter-based, the same on every machine) |
 | `partition.parts` | 1 | number of parts (1: no decomposition) |
 | `partition.method` | `"metis"` | `metis` or `rcb` (recursive coordinate bisection) |

@@ -96,6 +96,9 @@ pub enum TurbulenceModel {
     RealizableKEpsilon,
     /// k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004).
     KEpsilonZetaF,
+    /// k-ε-ζ-f₀ (Popovac 2023): ζ-f with f₀ = 0 at the wall, and the
+    /// compound wall treatment of the same paper by default.
+    KEpsilonZetaF0,
 }
 
 impl TurbulenceModel {
@@ -103,7 +106,7 @@ impl TurbulenceModel {
     pub fn is_epsilon(self) -> bool {
         matches!(
             self,
-            Self::KEpsilon | Self::RealizableKEpsilon | Self::KEpsilonZetaF
+            Self::KEpsilon | Self::RealizableKEpsilon | Self::KEpsilonZetaF | Self::KEpsilonZetaF0
         )
     }
 
@@ -113,9 +116,9 @@ impl TurbulenceModel {
         matches!(self, Self::KEpsilon | Self::RealizableKEpsilon)
     }
 
-    /// The model solves ζ = v²/k and the elliptic f (k-ε-ζ-f).
+    /// The model solves ζ = v²/k and the elliptic f (k-ε-ζ-f, ζ-f₀).
     pub fn has_zeta(self) -> bool {
-        self == Self::KEpsilonZetaF
+        matches!(self, Self::KEpsilonZetaF | Self::KEpsilonZetaF0)
     }
 
     /// The name in the case file.
@@ -126,6 +129,7 @@ impl TurbulenceModel {
             Self::KEpsilon => "k-epsilon",
             Self::RealizableKEpsilon => "realizable-k-epsilon",
             Self::KEpsilonZetaF => "k-epsilon-zeta-f",
+            Self::KEpsilonZetaF0 => "k-epsilon-zeta-f0",
         }
     }
 }
@@ -151,6 +155,12 @@ pub enum WallTreatment {
     /// k-ε-ζ-f (any first-cell y⁺), an option of the k-ε family (claimed
     /// for 30 ≤ y⁺ ≤ 300 there).
     Compound,
+    /// The compound treatment of Popovac (2023): the harmonic blend of the
+    /// viscous and the log layer (n = 10/3) with the non-equilibrium
+    /// factor ψ; the default of k-ε-ζ-f₀ (any first-cell y⁺), an option
+    /// of k-ε-ζ-f.
+    #[serde(rename = "compound-2023")]
+    Compound2023,
 }
 
 impl WallTreatment {
@@ -162,6 +172,7 @@ impl WallTreatment {
             Self::Scalable => "scalable",
             Self::Standard => "standard",
             Self::Compound => "compound",
+            Self::Compound2023 => "compound-2023",
         }
     }
 
@@ -173,6 +184,7 @@ impl WallTreatment {
             Self::Scalable => kwall::SCALABLE,
             Self::Standard => kwall::STANDARD,
             Self::Compound => kwall::COMPOUND,
+            Self::Compound2023 => kwall::COMPOUND_2023,
         }
     }
 }
@@ -316,16 +328,19 @@ pub const KEPS_CONSTANTS: &[&str] = &[
 pub const ZETA_F_CONSTANTS: &[&str] = &[
     "c_mu",
     "c_epsilon1",
+    "c_epsilon1_zeta",
     "c_epsilon2",
     "c_1",
     "c_2",
     "sigma_k",
     "sigma_epsilon",
     "sigma_zeta",
+    "a",
     "c_t",
     "c_l",
     "c_eta",
     "kappa",
+    "n_zeta",
 ];
 
 /// Relative width of the smooth switches with `smooth_limits = true`.
@@ -430,21 +445,29 @@ impl TurbulenceSection {
 
     /// The constants of k-ε-ζ-f with the overrides.
     pub fn zeta_f_constants(&self) -> Result<ZetaFConstants> {
-        let mut c = ZetaFConstants::paper();
+        let f0 = self.model == TurbulenceModel::KEpsilonZetaF0;
+        let mut c = if f0 {
+            ZetaFConstants::popovac_2023()
+        } else {
+            ZetaFConstants::paper()
+        };
         for (name, &v) in &self.constants {
             let slot = match name.as_str() {
                 "c_mu" => &mut c.c_mu,
                 "c_epsilon1" => &mut c.c_e1,
+                "c_epsilon1_zeta" => &mut c.c_e1_zeta,
                 "c_epsilon2" => &mut c.c_e2,
                 "c_1" => &mut c.c1,
                 "c_2" => &mut c.c2,
                 "sigma_k" => &mut c.sigma_k,
                 "sigma_epsilon" => &mut c.sigma_e,
                 "sigma_zeta" => &mut c.sigma_z,
+                "a" => &mut c.a,
                 "c_t" => &mut c.c_t,
                 "c_l" => &mut c.c_l,
                 "c_eta" => &mut c.c_eta,
                 "kappa" => &mut c.kappa,
+                "n_zeta" if f0 => &mut c.n_zeta,
                 _ => {
                     let hint = crate::bc::did_you_mean(name, ZETA_F_CONSTANTS.iter().copied())
                         .map(|h| format!(" (did you mean `{h}`?)"))
@@ -564,13 +587,16 @@ impl TurbulenceSection {
 
     /// The wall treatment (the model's default when not set).
     pub fn treatment(&self) -> WallTreatment {
-        self.wall_treatment.unwrap_or(if self.model.has_zeta() {
-            WallTreatment::Compound
-        } else if self.model.is_epsilon() {
-            WallTreatment::Scalable
-        } else {
-            WallTreatment::Automatic
-        })
+        self.wall_treatment
+            .unwrap_or(if self.model == TurbulenceModel::KEpsilonZetaF0 {
+                WallTreatment::Compound2023
+            } else if self.model.has_zeta() {
+                WallTreatment::Compound
+            } else if self.model.is_epsilon() {
+                WallTreatment::Scalable
+            } else {
+                WallTreatment::Automatic
+            })
     }
 
     /// Checks the ranges.
@@ -582,10 +608,13 @@ impl TurbulenceSection {
         if self.model.has_zeta() {
             self.zeta_f_constants()?;
             crate::need!(
-                matches!(t, WallTreatment::Compound | WallTreatment::LowRe),
+                matches!(
+                    t,
+                    WallTreatment::Compound | WallTreatment::Compound2023 | WallTreatment::LowRe
+                ),
                 CASE_INCONSISTENT,
                 "turbulence.wall_treatment = \"{}\" is not a treatment of k-ε-ζ-f; use \
-                 \"compound\" (any y⁺) or \"low-re\" (y⁺ ≲ 1)",
+                 \"compound-2023\" or \"compound\" (any y⁺) or \"low-re\" (y⁺ ≲ 1)",
                 t.name()
             );
             crate::need!(
@@ -2053,7 +2082,13 @@ impl Turbulence {
 
     /// The wall treatment: u_τ, y⁺, μ_w, the wall values of rough walls and
     /// the ω of the near-wall cells.
-    fn walls(&self, dev: &mut dyn FlowDevice, u: Buf3, ub: Buf3) -> Result<()> {
+    fn walls(
+        &self,
+        dev: &mut dyn FlowDevice,
+        u: Buf3,
+        ub: Buf3,
+        grad_p: Option<Buf3>,
+    ) -> Result<()> {
         let Some(wd) = self.wd else { return Ok(()) };
         dev.wall_faces(&WallFaceOps {
             normal: wd.normal,
@@ -2077,6 +2112,12 @@ impl Turbulence {
             k_b: self.k.b_wall,
             w_b: self.w.b_wall,
             zeta_f: self.zf.map(|z| (z.z.phi, z.f.b_wall)),
+            n_zeta: self.zf.map_or(1.0, |z| z.c.n_zeta),
+            // C_U of the 2023 treatment (none at the start: ψ = 1 there)
+            non_eq: (self.treatment == kwall::COMPOUND_2023)
+                .then_some(grad_p)
+                .flatten()
+                .map(|gp| (self.gu, gp)),
         })?;
         dev.wall_cells(&WallCellOps {
             omega: wd.omega,
@@ -2126,7 +2167,7 @@ impl Turbulence {
     ) -> Result<()> {
         self.set_inlets(dev, ub, 0.0, true)?;
         self.velocity_gradient(dev, u, ub)?;
-        self.walls(dev, u, ub)?;
+        self.walls(dev, u, ub, None)?;
         self.boundary_values(dev)?;
         self.gradients(dev)?;
         self.cells(dev, false)?;
@@ -2158,6 +2199,7 @@ impl Turbulence {
         u: Buf3,
         ub: Buf3,
         mass_flux: Buf,
+        grad_p: Buf3,
         bc: &BoundaryArrays,
         step: Option<StepTime>,
     ) -> Result<TurbResiduals> {
@@ -2171,7 +2213,7 @@ impl Turbulence {
         // 1. velocity gradient of the corrected velocity, the wall
         // treatment, gradients of k and ω
         self.velocity_gradient(dev, u, ub)?;
-        self.walls(dev, u, ub)?;
+        self.walls(dev, u, ub, Some(grad_p))?;
         self.boundary_values(dev)?;
         self.gradients(dev)?;
         // 2. the sources and the diffusivities from the fields at the start
@@ -2736,7 +2778,7 @@ impl Turbulence {
                 kwall::LOW_RE => yp[i] > 2.0,
                 // ζ-f with the compound treatment: any y⁺ (validated from
                 // 0.5 to 100 on the flat plate)
-                kwall::COMPOUND if self.zf.is_some() => false,
+                kwall::COMPOUND | kwall::COMPOUND_2023 if self.zf.is_some() => false,
                 kwall::AUTOMATIC => yp[i] > 3.0 && yp[i] < 20.0,
                 kwall::SCALABLE => yp[i] < 30.0,
                 kwall::STANDARD => !(30.0..=300.0).contains(&yp[i]),
@@ -2766,11 +2808,12 @@ impl Turbulence {
     pub fn label(&self) -> String {
         if self.zf.is_some() {
             return format!(
-                "k-epsilon-zeta-f, {} wall treatment",
-                if self.treatment == kwall::LOW_RE {
-                    "low-Re"
-                } else {
-                    "compound"
+                "{}, {} wall treatment",
+                self.model.name(),
+                match self.treatment {
+                    kwall::LOW_RE => "low-Re",
+                    kwall::COMPOUND_2023 => "compound (2023)",
+                    _ => "compound",
                 }
             );
         }
@@ -2922,7 +2965,7 @@ pub fn summary(
                      treatment (it needs y⁺ ≲ 1; the {} treatment takes any y⁺)",
                     100.0 * out,
                     if t.zf.is_some() {
-                        "compound"
+                        "compound-2023 or compound"
                     } else {
                         "automatic"
                     }

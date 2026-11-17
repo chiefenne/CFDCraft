@@ -7,6 +7,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | 68 | [k-ω SST on the TMR flat plate and in a channel](#sst) | 6 | `[turbulence] model = "k-omega-sst"`, `wall_treatment`, inlet turbulence values, `roughness`, derived field `turbulence-features` |
 | 71 | [k-ε family with wall functions: flat plate, channel, Moody chart](#k-epsilon) | 6 | `model = "k-epsilon"`, `"realizable-k-epsilon"`, `wall_treatment = "scalable"`, `"standard"`, `"compound"`, `epsilon` at inlets, `roughness_constant` |
 | 73 | [k-ε-ζ-f to the wall: channel and flat plate](#zeta-f) | 6 | `model = "k-epsilon-zeta-f"`, `wall_treatment = "compound"`, `"low-re"`, `zeta` at inlets and in `[initial]`, `[solver.elliptic]`, `solver.turbulence.preconditioner = "amg"` |
+| 74 | [k-ε-ζ-f₀ at any y⁺: channel, flat plate, backward-facing step](#zeta-f0) | 6 | `model = "k-epsilon-zeta-f0"`, `wall_treatment = "compound-2023"`, `constants.n_zeta`, `a`, `mesh.generate.remove` |
 
 ---
 
@@ -278,6 +279,83 @@ into the restart file, so a continued run is bit-identical.
 ```
 target/release/foehn flow examples/cases/flow/channel_zeta_f.toml
 target/release/foehn flow examples/cases/flow/tmr_plate_zeta_f.toml
+```
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="zeta-f0"></a>
+## 74. k-ε-ζ-f₀ at any y⁺: channel, flat plate, backward-facing step
+
+**The model.** Popovac (2023) solves f₀ = f + (N_ζ − 1)ζ/T in place of
+the f of k-ε-ζ-f (gallery 73). With N_ζ = 2 its wall value is zero, so
+the stiff wall value −2νζ/y² of f is gone, and with the compound wall
+treatment of the same paper the model is meant to run on any near-wall
+mesh. No code of the author is available, so Foehncraft takes its own
+default, which keeps the constants of the paper (ν_t = (0.09/0.41) ζ k T,
+C_ε1 = 1.4(1 + 0.012/√ζ)) and deviates where the validation asked for it
+(specification 3.3.1): the sign of the (N_ζ − 1) term of the f₀
+equation, which the paper prints the other way round; ε/k in the
+(N_ζ − 1) terms; the k sink k/T_K with the Kolmogorov-bounded k/ε, which
+keeps k positive in laminar regions; and the realizability coefficient
+of T, a = 0.6 √2 instead of 0.6.
+
+```toml
+[turbulence]
+model = "k-epsilon-zeta-f0"
+wall_treatment = "compound-2023"   # default; "compound", "low-re"
+```
+
+**The wall treatment.** `compound-2023` blends the viscous sublayer and
+the log law in one profile, u⁺ = [y*^(−10/3) + u⁺_log^(−10/3)]^(−3/10)
+with u* = C_μ^¼ k^½, and corrects the log law by ψ for the convection and
+the pressure gradient next to the wall (non-equilibrium). ε and P_k of
+the first cell follow from the slope of the blend; k and ζ have zero
+flux through the wall and f₀,w = 0.
+
+**The channel** (`channel_zeta_f0.toml`, Re_τ = 395). U_b⁺ = 17.79, +1.4 %
+from the DNS at first-cell y⁺ 1 (band ±3 %). The same channel at y⁺ 0.3,
+10 and 30: +2.7, −4.2 and −1.5 %; ζ-f with its 2007 treatment gives
++1.9, −7.1 and +4.8 %. Every run converges.
+
+**The flat plate** (`tmr_plate_zeta_f0.toml`). The run starts from the
+free stream of the TMR (ν_t/ν = 0.009), and the boundary layer turns
+turbulent on its own, which ζ-f does not do. C_f(0.97) = 2.802·10⁻³,
+−2.5 % from White's correlation (+4.1 % from the TMR value of SST); at
+y⁺ 10 and 30 +0.9 and −2.0 %. Every field converges to 10⁻⁷ without a
+positivity floor, at all three y⁺; ζ-f converges at none of them.
+
+**The backward-facing step** (`backstep_zeta_f0.toml`). Driver &
+Seegmiller (1985), Re_H = 36 000, the step cut out of the box by the
+built-in mesher (`mesh.generate.remove`), the wall from x = −85 H so
+that the boundary layer is about 1.5 H thick at x = −4 H. The
+reattachment length x_r/H is 6.38, +2 % from the experiment's 6.26
+(band ±10 %). With a = 0.6 the realizability bound of T is active in the
+separated shear layer, halves ν_t there and the bubble grows to 7.4 H;
+ζ-f of 2004 has the same bound and gives 7.82 (+25 %), and 6.80 with `constants = { a = 0.849 }`.
+
+| Check | Result |
+|---|---|
+| Channel Re_τ 395, U_b⁺ at first-cell y⁺ 0.3 / 1 / 10 / 30 | +2.7 / +1.4 / −4.2 / −1.5 % (band ±3 % at y⁺ 1) |
+| Plate C_f(0.97) from White at y⁺ 1 / 10 / 30 | −2.5 / +0.9 / −2.0 %, all converged without a floor (band ±3 %) |
+| Plate from the TMR free stream | turbulent on its own, the same C_f |
+| Step x_r/H, 8 200 / 32 800 cells | 6.38 (+2 %) / 6.38: mesh-independent (band ±10 %) |
+| Step x_r/H with a = 0.6 / ζ-f / SST | 7.44 / 7.82 (6.80 with a = 0.849) / 5.79 |
+| 1 against 4 threads (plate, 20 480 cells) | bit-identical |
+| Bad input (wall functions of the k-ε family, `compound-2023` with k-ε, `n_zeta` with ζ-f) | CASE005, CASE005, CASE002 |
+
+| | |
+|---|---|
+| Code | kernels `turb::zeta_f` (`FORM_F0`, `ZetaFConstants::popovac_2023`), `turb::wall` (`compound_2023`, `COMPOUND_2023`), `entry` (C_U of `WallFaces`); `foehncraft_flow::turbulence` (model and treatment, the non-equilibrium inputs); `foehncraft_mesh::generate` (`RemoveBox`) |
+| Tests | `tests/zeta_f0.rs`, kernel tests of `turb::zeta_f` and `turb::wall`, `removed_box_builds_a_step` |
+| Case files | `flow/channel_zeta_f0.toml`, `flow/tmr_plate_zeta_f0.toml`, `flow/backstep_zeta_f0.toml` |
+| Recipe | [74](../recipes/turbulence.md#zeta-f0) |
+
+```
+target/release/foehn flow examples/cases/flow/channel_zeta_f0.toml
+target/release/foehn flow examples/cases/flow/tmr_plate_zeta_f0.toml
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0.toml
 ```
 
 [↑ back to top](#turbulence-models)

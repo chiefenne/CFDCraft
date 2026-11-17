@@ -2103,7 +2103,15 @@ impl Flow {
         };
         let tm = Instant::now();
         let f = self.f;
-        res.turbulence = t.solve(self.dev.as_mut(), f.u, f.ub, f.mass_flux, &self.bc, step)?;
+        res.turbulence = t.solve(
+            self.dev.as_mut(),
+            f.u,
+            f.ub,
+            f.mass_flux,
+            f.grad_p,
+            &self.bc,
+            step,
+        )?;
         self.dev.sync()?;
         self.timings.turbulence += tm.elapsed().as_secs_f64();
         if !res.finite() {

@@ -1262,6 +1262,12 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             ins.push(z);
             outs.push(fb);
         }
+        if let Some((gu, gp)) = &a.non_eq {
+            for g in gu {
+                ins.extend(g.all());
+            }
+            ins.extend(gp.all());
+        }
         check(&outs, &ins)?;
         let args = e::WallFaceArgs {
             m: self.m,
@@ -1290,6 +1296,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             w_b: self.r(a.w_b),
             zeta: a.zeta_f.map_or(Raw::EMPTY, |(z, _)| self.r(z)),
             f_b: a.zeta_f.map_or(Raw::EMPTY, |(_, f)| self.r(f)),
+            n_zeta: a.n_zeta,
+            grad_u: a.non_eq.map_or(Default::default(), |(gu, _)| self.rg(&gu)),
+            grad_p: a.non_eq.map_or(Default::default(), |(_, gp)| self.r3(gp)),
         };
         self.go::<e::WallFaces>(faces.len as usize, &args)
     }
