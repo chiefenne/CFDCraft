@@ -1,0 +1,100 @@
+# Laminar heated channel: a passive temperature in plane Poiseuille flow
+# with a uniform heat flux into both walls (stage 6 part 6a, D51, D116).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_heated.toml
+#
+# The flow of poiseuille_hex.toml (channel 0 < y < h, h = 1 m, mean
+# velocity U = 1 m/s, Re = 10) carries a temperature theta (the name T is kept for the energy equation) with the diffusivity
+# Γ = 1e-3 m²/s (Péclet number U h / Γ = 1000). Both walls take the
+# diffusive flux q = Γ ∂T/∂n = 1e-3 K m/s into the fluid. The thermally
+# developed solution is
+#
+#   T = G x + h (2 η³ − η⁴ − η),   η = y / h,   G = 2 q / (U h),
+#
+# (the axial gradient G carries the heat of both walls downstream; the
+# profile is in K for q h / Γ = 1 K). The inlet gets the exact profile, the
+# outlet the zero gradient of an outflow; its missing axial diffusion,
+# Γ G, changes T by about Γ G / U = 2e-6 K in the last cell, far below the
+# discretisation error. The Nusselt number with the hydraulic diameter
+# 2 h,
+#
+#   Nu = 2 h q / (Γ (T̄_w − T_b)) = 140/17 = 8.2353,
+#
+# compares the mean wall temperature with the bulk temperature at the same
+# station; the report gives the area mean of T on the walls and the mixed
+# mean at the inlet, so T_b(L/2) = T_b(0) + G L/2 (docs/recipes, the
+# heated-channel recipe). Three nested meshes: the L2 error of T against
+# the exact solution must fall at second order (1.8 to 2.2).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [32, 16, 1]
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.1
+
+[constants]
+h = 1.0
+q = 1e-3          # wall heat flux over ρ c_p (K m/s)
+u_mean = 1.0
+G = "2 * q / (u_mean * h)"
+
+[scalars.theta]
+diffusivity = 1e-3
+initial = 0.0
+exact = "G * x + h * (2 * (y / h)^3 - (y / h)^4 - y / h)"
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.xmin.scalar.theta]
+value = "h * (2 * (y / h)^3 - (y / h)^4 - y / h)"
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.scalar.theta]
+flux = "q"
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.scalar.theta]
+flux = "q"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 5000
+
+[solver.momentum]
+relaxation = 0.9
+
+[solver.scalar]
+scheme = "linear-upwind"
+
+[analytic]
+type = "poiseuille"
+mean_velocity = 1.0
+x_outlet = 2.0
+
+[verification]
+levels = [0, 1, 2]
+expected_order = [1.8, 2.2]
+scalar_order = [1.8, 2.2]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

@@ -791,7 +791,7 @@ pub fn analyse(
             time: ctx.time,
             time_step: ctx.dt,
             first_variable,
-            residuals: ctx.residuals,
+            residuals: ctx.residuals.clone(),
             failing_cells: failing.len(),
             failing_criterion: criterion,
             cells,

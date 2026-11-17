@@ -1,0 +1,77 @@
+# A front of a bounded scalar entering a uniform flow: the bounded BDF2
+# (stage 6 part 6a, D28 (1), D51).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/scalar_front_bdf2.toml
+#
+# A channel of length 2 m with slip walls carries the uniform flow 1 m/s
+# (Courant number 0.8). The scalar c, a mixture fraction with the bounds
+# [0, 1], is 0 at the start and 1 at the inlet; first-order upwind in
+# space keeps the spatial operator bounded, so the time integration
+# decides. Plain BDF2 is not bounded: at the head of the front, where c
+# still grows, its old value φ* = (4 cⁿ − cⁿ⁻¹)/3 exceeds 1 and the
+# solution overshoots (run it with `--set 'scalars.c.bounds=[-1e9, 1e9]'`).
+# With `bounds = [0, 1]` the cells where φ* leaves the bounds take a
+# backward-Euler step instead; `history.csv` counts them per step
+# (`first_order_c`), and the log line of the scalar compares its extremes
+# with the bounds. The smooth part of the
+# front keeps second order in time.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 0.1, 0.1]
+cells = [40, 1, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+
+[flow]
+convection = true
+
+[scalars.c]
+diffusivity = 1e-6
+initial = 0.0
+bounds = [0.0, 1.0]
+
+[boundary.xmin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.xmin.scalar.c]
+value = 1.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "slip-wall"
+[boundary.ymax]
+type = "slip-wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver.scalar]
+scheme = "upwind"
+
+[analytic]
+type = "uniform"
+velocity = [1.0, 0.0, 0.0]
+length = 1.0
+
+[time]
+scheme = "bdf2"
+time_step = 0.04
+steps = 25
+
+[[output.lines]]
+name = "axis"
+from = [0.025, 0.05, 0.05]
+to = [1.975, 0.05, 0.05]
+points = 40
+
+[output]
+vtkhdf = false
+wall_csv = false

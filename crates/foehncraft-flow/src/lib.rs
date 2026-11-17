@@ -51,6 +51,7 @@ pub mod materials;
 pub mod monitor;
 pub mod plot;
 pub mod restart;
+pub mod scalar;
 pub mod schedule;
 pub mod schema;
 pub mod simplec;

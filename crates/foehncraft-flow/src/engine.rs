@@ -529,6 +529,11 @@ pub fn case_hash(case: &FlowCase) -> String {
             text.push_str(&format!("\n# table of {name}: {}", t.sha256));
         }
     }
+    // the scalar sub-tables of the boundaries (not serialised with the
+    // boundary conditions)
+    if !case.boundary_scalar.is_empty() {
+        text.push_str(&format!("\n# boundary scalars: {:?}", case.boundary_scalar));
+    }
     for (name, t) in &case.tables {
         if let Some(h) = t.sha256() {
             text.push_str(&format!("\n# table {name}: {h}"));
@@ -1350,6 +1355,10 @@ pub struct ResultSummary {
     pub orders: Vec<f64>,
     /// Observed orders in time.
     pub time_orders: Vec<f64>,
+    /// Observed orders of the passive scalars with an exact solution (D51):
+    /// name and orders; `<name> (time)` for a time-step sweep.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub scalar_orders: Vec<(String, Vec<f64>)>,
     /// Discretisation uncertainty of a sweep (D67): per monitored quantity
     /// the observed order, the extrapolated value and the GCI.
     pub uncertainty: Vec<crate::uncertainty::Estimate>,
@@ -1415,6 +1424,7 @@ pub fn error_summary(
         solves: Vec::new(),
         orders: Vec::new(),
         time_orders: Vec::new(),
+        scalar_orders: Vec::new(),
         uncertainty: Vec::new(),
         files: Vec::new(),
     }
@@ -1627,6 +1637,7 @@ pub fn summary_of(
         solves,
         orders: rep.orders.clone(),
         time_orders: rep.time_orders.clone(),
+        scalar_orders: rep.scalar_orders.clone(),
         uncertainty: rep.uncertainty.clone(),
         files: file_hashes(dir)?,
     })

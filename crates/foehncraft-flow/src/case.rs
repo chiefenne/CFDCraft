@@ -481,6 +481,11 @@ pub struct VerificationSection {
     /// Start of the evaluation window of a periodic benchmark (s; default:
     /// the second half of the run).
     pub evaluation_start: Option<f64>,
+    /// Accepted range of the observed order of the scalar errors on the
+    /// finest pair of a mesh sweep (scalars with `exact`, D51).
+    pub scalar_order: Option<[f64; 2]>,
+    /// Largest accepted L2 error of every scalar with `exact` (absolute).
+    pub scalar_max_error: Option<f64>,
 }
 
 /// A line along which velocity and pressure are sampled.
@@ -609,6 +614,14 @@ pub struct FlowCase {
     pub pressure: PressureSection,
     /// Boundary conditions per boundary.
     pub boundary: BTreeMap<String, BoundaryCondition>,
+    /// Passive scalars (D51), transported by the flow: `[scalars.<name>]`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub scalars: BTreeMap<String, crate::scalar::ScalarSection>,
+    /// The scalar sub-tables of the boundaries (D116),
+    /// `[boundary.<boundary>.scalar.<scalar>]`, per boundary: moved here
+    /// from the boundary tables by the reader (part of the case hash).
+    #[serde(skip)]
+    pub boundary_scalar: BTreeMap<String, BTreeMap<String, crate::scalar::ScalarBoundary>>,
     /// Solver settings.
     pub solver: Settings,
     /// Exact solution.
@@ -832,7 +845,9 @@ impl FlowCase {
         let notes = foehncraft_mesh::case_format::migrate(&mut v).map_err(|m| {
             diag::err(diag::Diagnostic::new(diag::CASE_BAD_VALUE, m).key("case_format"))
         })?;
-        let mut c: Self = if sets.is_empty() && notes.is_empty() {
+        // the per-physics sub-tables of the boundaries (D116)
+        let boundary_scalar = crate::scalar::extract_boundary_tables(&mut v)?;
+        let mut c: Self = if sets.is_empty() && notes.is_empty() && boundary_scalar.is_empty() {
             toml::from_str(text).map_err(|e| diag::err(toml_diagnostic(text, &e)))?
         } else {
             Self::deserialize(toml::Value::Table(v)).map_err(|e| {
@@ -844,6 +859,7 @@ impl FlowCase {
             })?
         };
         c.case_format = Some(foehncraft_mesh::case_format::CURRENT.into());
+        c.boundary_scalar = boundary_scalar;
         c.notes = notes;
         c.overrides = sets.to_vec();
         if let Some(f) = &c.mesh.file {
@@ -989,6 +1005,14 @@ impl FlowCase {
         for (name, b) in &self.boundary {
             b.compile(name, &env, transient)?;
         }
+        crate::scalar::validate(
+            &self.scalars,
+            &self.boundary_scalar,
+            &self.boundary,
+            &self.solver.scalar,
+            &env,
+            transient,
+        )?;
         let p = self.properties()?;
         let rho = p.density();
         crate::need!(
@@ -1020,7 +1044,21 @@ impl FlowCase {
         {
             c.fluid.viscosity = Some(Scalar::Number(mu));
         }
-        let mut text = toml::to_string_pretty(&c)?;
+        let mut text = if c.boundary_scalar.is_empty() {
+            toml::to_string_pretty(&c)?
+        } else {
+            // the scalar sub-tables live outside the flow conditions: put
+            // them back into their `[boundary.<name>]` tables
+            let mut v = toml::Table::try_from(&c)?;
+            if let Some(toml::Value::Table(bs)) = v.get_mut("boundary") {
+                for (b, t) in &c.boundary_scalar {
+                    if let Some(toml::Value::Table(bt)) = bs.get_mut(b) {
+                        bt.insert("scalar".into(), toml::Value::try_from(t)?);
+                    }
+                }
+            }
+            toml::to_string_pretty(&v)?
+        };
         text.push('\n');
         text.push_str(&p.text());
         Ok(text)
@@ -1365,6 +1403,9 @@ pub struct Solve {
     /// Cell-quality check and remediation (D50), on a mesh with poor faces.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remediation: Option<crate::simplec::RemediationReport>,
+    /// The passive scalars (D51).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub scalars: Vec<crate::scalar::ScalarSummary>,
 }
 
 /// The cell-quality check and remediation of `fl` (D50) for the log and
@@ -1420,6 +1461,9 @@ pub struct FlowReport {
     pub orders: Vec<f64>,
     /// Observed time orders of a time-step sweep.
     pub time_orders: Vec<f64>,
+    /// Observed orders of the scalar errors of a mesh sweep, per scalar
+    /// with `exact` (D51).
+    pub scalar_orders: Vec<(String, Vec<f64>)>,
     /// Discretisation uncertainty of the monitored quantities of a sweep
     /// over three or more meshes or time steps (D67).
     pub uncertainty: Vec<crate::uncertainty::Estimate>,
@@ -1738,6 +1782,7 @@ pub fn run_steered(
         solves: Vec::new(),
         orders: Vec::new(),
         time_orders: Vec::new(),
+        scalar_orders: Vec::new(),
         uncertainty: Vec::new(),
         uncertainty_of: "",
         stopped: false,
@@ -1863,6 +1908,7 @@ pub fn run_steered(
         if let Some(src) = momentum_source(&case, &geo, nc, 0.0)? {
             fl.set_momentum_source(src)?;
         }
+        crate::scalar::attach(&mut fl, &case, &mesh, &geo)?;
         if let Some(path) = case.run.restart.clone() {
             let r = restart::read(&path)?;
             let (r, same) =
@@ -1898,16 +1944,23 @@ pub fn run_steered(
             ));
         }
         let first = fl.iteration();
-        let mut csv = csv_preamble(
-            "residuals",
-            name,
-            None,
+        let mut units = String::from(
             "iteration -, momentum_x -, momentum_y -, momentum_z -, continuity - (scaled residuals), \
              bicgstab_x -, bicgstab_y -, bicgstab_z -, cg - (iterations)",
         );
-        csv.push_str(
-            "iteration,momentum_x,momentum_y,momentum_z,continuity,bicgstab_x,bicgstab_y,bicgstab_z,cg\n",
+        let mut head = String::from(
+            "iteration,momentum_x,momentum_y,momentum_z,continuity,bicgstab_x,bicgstab_y,bicgstab_z,cg",
         );
+        for s in case.scalars.keys() {
+            let _ = write!(
+                units,
+                ", scalar_{s} - (scaled residual), bicgstab_{s} - (iterations)"
+            );
+            let _ = write!(head, ",scalar_{s},bicgstab_{s}");
+        }
+        let mut csv = csv_preamble("residuals", name, None, &units);
+        csv.push_str(&head);
+        csv.push('\n');
         let (bunits, bhead) = balance::csv_head(false);
         let mut bcsv = csv_preamble("balance", name, None, &bunits);
         bcsv.push_str(&bhead);
@@ -1957,8 +2010,8 @@ pub fn run_steered(
                         done: at.saturating_sub(first + 1),
                         time: None,
                         dt: None,
-                        residuals: fl.diverged.unwrap_or_default(),
-                        last_residuals: (at > first + 1).then_some(previous),
+                        residuals: fl.diverged.clone().unwrap_or_default(),
+                        last_residuals: (at > first + 1).then_some(previous.clone()),
                         first_courant: None,
                     };
                     let prepared = (|| -> Result<(simplec::State, Vec<&'static str>)> {
@@ -2009,7 +2062,7 @@ pub fn run_steered(
             let it = fl.iteration();
             let done = res.max() < case.solver.tolerance;
             if it % case.output.history_every == 0 || done {
-                let _ = writeln!(
+                let _ = write!(
                     csv,
                     "{},{:e},{:e},{:e},{:e},{},{},{},{}",
                     it,
@@ -2022,6 +2075,10 @@ pub fn run_steered(
                     res.momentum_iterations[2],
                     res.pressure_iterations
                 );
+                for (r, n) in res.scalars.residual.iter().zip(&res.scalars.iterations) {
+                    let _ = write!(csv, ",{r:e},{n}");
+                }
+                csv.push('\n');
                 hist.push((it as f64, res.max()));
                 if steer.record.on() {
                     steer.record.row(&serde_json::json!({
@@ -2031,6 +2088,7 @@ pub fn run_steered(
                         "continuity": res.continuity,
                         "bicgstab": res.momentum_iterations,
                         "cg": res.pressure_iterations,
+                        "scalars": res.scalars.residual,
                     }));
                 }
             }
@@ -2316,6 +2374,10 @@ pub fn run_steered(
             }
         }
         drop(fl_host);
+        let scalars = crate::scalar::summaries(&mut fl, &case, &mesh, &geo, dimension(&case), 0.0)?;
+        for sm in &scalars {
+            lg.line(&crate::scalar::summary_line(sm));
+        }
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
             let rs = steady_restart(&mut fl, &mesh, name)?;
             restart::write(&out.join("restart.h5"), &rs)?;
@@ -2341,6 +2403,7 @@ pub fn run_steered(
             benchmark,
             balance: Some(summary),
             remediation,
+            scalars,
         });
         if stopped {
             rep.stopped = true;
@@ -2362,6 +2425,7 @@ pub fn run_steered(
             ));
         }
     }
+    crate::scalar::check_sweep(&mut rep, v, levels.len(), &mut |l| lg.line(l));
     if levels.len() >= 2 && rep.solves.iter().all(|s| s.errors.is_some()) {
         let e: Vec<&ErrorNorms> = rep
             .solves
@@ -2929,13 +2993,15 @@ pub(crate) fn write_outputs(
         }
     }
     for l in &case.output.lines {
-        let mut csv = csv_preamble(
-            "line",
-            &name,
-            at,
-            "s m (distance from `from`), x y z m, u v w m/s, p Pa",
-        );
-        csv.push_str("s,x,y,z,u,v,w,p\n");
+        let mut units = String::from("s m (distance from `from`), x y z m, u v w m/s, p Pa");
+        let mut head = String::from("s,x,y,z,u,v,w,p");
+        for st in &fl.state.scalars {
+            let _ = write!(units, ", {} (cell value)", st.name);
+            let _ = write!(head, ",{}", st.name);
+        }
+        let mut csv = csv_preamble("line", &name, at, &units);
+        csv.push_str(&head);
+        csv.push('\n');
         let d = sub(l.to, l.from);
         let len = norm(d);
         for i in 0..l.points {
@@ -2943,7 +3009,7 @@ pub(crate) fn write_outputs(
             let x = std::array::from_fn(|k| l.from[k] + t * d[k]);
             let c = locate(loc, geo, x);
             let (u, p) = value_at(fl, geo, c, x);
-            let _ = writeln!(
+            let _ = write!(
                 csv,
                 "{:e},{:e},{:e},{:e},{:e},{:e},{:e},{:e}",
                 t * len,
@@ -2955,6 +3021,10 @@ pub(crate) fn write_outputs(
                 u[2],
                 p
             );
+            for st in &fl.state.scalars {
+                let _ = write!(csv, ",{:e}", st.phi[c]);
+            }
+            csv.push('\n');
         }
         std::fs::write(out.join(format!("line_{}.csv", l.name)), csv)?;
     }
@@ -3049,6 +3119,17 @@ pub(crate) fn write_fields(
             name: "velocity_error",
             values: &err,
         });
+    }
+    // passive scalars (D51) and, with an exact solution, their error
+    let scalar_err: Vec<(String, Vec<f64>)> = crate::scalar::field_errors(case, mesh, geo, fl, at)?;
+    for st in &fl.state.scalars {
+        fields.push(CellField {
+            name: &st.name,
+            values: &st.phi,
+        });
+    }
+    for (name, values) in &scalar_err {
+        fields.push(CellField { name, values });
     }
     for (name, values) in &derived.cells {
         fields.push(CellField { name, values });

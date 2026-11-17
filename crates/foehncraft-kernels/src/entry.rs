@@ -1317,6 +1317,209 @@ impl Entry for DeltaFlux {
     }
 }
 
+/// Arguments of [`ScalarFaces`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ScalarFaceArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// Boundary coefficient a of the scalar per boundary face.
+    pub bc_a: Raw<f64>,
+    /// Boundary constant b.
+    pub bc_b: Raw<f64>,
+    /// Convecting face mass flux.
+    pub mass_flux: Raw<f64>,
+    /// ρΓ per face.
+    pub gamma: Raw<f64>,
+    /// Cell values.
+    pub phi: Raw<f64>,
+    /// Cell gradient.
+    pub grad: Raw3,
+    /// Limiter per cell.
+    pub psi: Raw<f64>,
+    /// 1 linear upwind, 0 upwind.
+    pub blend: f64,
+    /// Fraction of the bounded central scheme.
+    pub central: f64,
+    /// β of its bounding.
+    pub beta: f64,
+    /// 1 with the non-orthogonal correction.
+    pub nonorth: f64,
+    /// Limit of the non-orthogonal correction (< 0: none).
+    pub nonorth_limit: f64,
+    /// Output c_P.
+    pub cp: Raw<f64>,
+    /// Output c_N.
+    pub cn: Raw<f64>,
+    /// Output b_f.
+    pub bf: Raw<f64>,
+}
+
+/// Face coefficients of a scalar ([`fv::face_coefficients`]).
+pub struct ScalarFaces;
+impl Entry for ScalarFaces {
+    type Args = ScalarFaceArgs;
+    const NAME: &'static str = "scalar_faces";
+    #[inline(always)]
+    unsafe fn run(f: usize, a: &ScalarFaceArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let inp = fv::FaceInputs {
+                topo: a.m.topo(),
+                bc: Boundary {
+                    a: a.bc_a.get(),
+                    b: a.bc_b.get(),
+                },
+                mass_flux: a.mass_flux.get(),
+                gamma: a.gamma.get(),
+                dgeo: a.m.dgeo.get(),
+                k: a.m.k.v(),
+                weight: a.m.weight.get(),
+                face_centroid: a.m.face_centroid.v(),
+                cell_centroid: a.m.cell_centroid.v(),
+                phi: a.phi.get(),
+                grad: a.grad.v(),
+                psi: a.psi.get(),
+                blend: a.blend,
+                central: a.central,
+                beta: a.beta,
+                nonorth: a.nonorth,
+                nonorth_limit: a.nonorth_limit,
+            };
+            let (cp, cn, b) = fv::face_coefficients(f, &inp);
+            *a.cp.out().add(f) = cp;
+            *a.cn.out().add(f) = cn;
+            *a.bf.out().add(f) = b;
+        }
+    }
+}
+
+/// Arguments of [`ScalarRows`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ScalarRowArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// Face coefficients.
+    pub cp: Raw<f64>,
+    /// See `cp`.
+    pub cn: Raw<f64>,
+    /// Deferred parts.
+    pub bf: Raw<f64>,
+    /// Convecting face mass flux (bounded form).
+    pub mass_flux: Raw<f64>,
+    /// Current cell values.
+    pub phi: Raw<f64>,
+    /// Density.
+    pub rho: f64,
+    /// S_u per cell (empty: none).
+    pub su: Raw<f64>,
+    /// S_p per cell (empty: none).
+    pub sp: Raw<f64>,
+    /// α.
+    pub alpha: f64,
+    /// 1 in a time step.
+    pub transient: u64,
+    /// 1/Δt.
+    pub inv_dt: f64,
+    /// a₀, a₁, a₂.
+    pub a: [f64; 3],
+    /// φⁿ.
+    pub old: Raw<f64>,
+    /// φⁿ⁻¹.
+    pub old2: Raw<f64>,
+    /// Lower bound of the bounded BDF2.
+    pub lo: f64,
+    /// Upper bound.
+    pub hi: f64,
+    /// Output: matrix values.
+    pub val: Raw<f64>,
+    /// Output: right-hand side.
+    pub rhs: Raw<f64>,
+    /// Output: relaxed diagonal.
+    pub diag: Raw<f64>,
+    /// Output: 1 where the bounded BDF2 fell back to first order.
+    pub order: Raw<f64>,
+}
+
+/// Row of a scalar ([`crate::scalar::scalar_row`]).
+pub struct ScalarRows;
+impl Entry for ScalarRows {
+    type Args = ScalarRowArgs;
+    const NAME: &'static str = "scalar_rows";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &ScalarRowArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let inp = crate::scalar::ScalarRowInputs {
+                topo: a.m.topo(),
+                cp: a.cp.get(),
+                cn: a.cn.get(),
+                bf: a.bf.get(),
+                mass_flux: a.mass_flux.get(),
+                volume: a.m.volume.get(),
+                phi: a.phi.get(),
+                rho: a.rho,
+                su: a.su.get(),
+                sp: a.sp.get(),
+                alpha: a.alpha,
+                layout: a.m.layout(),
+                transient: a.transient != 0,
+                inv_dt: a.inv_dt,
+                a: a.a,
+                old: a.old.get(),
+                old2: a.old2.get(),
+                lo: a.lo,
+                hi: a.hi,
+            };
+            let r = crate::scalar::scalar_row(c, &inp, a.val.out());
+            *a.rhs.out().add(c) = r.rhs;
+            *a.diag.out().add(c) = r.diag;
+            *a.order.out().add(c) = r.first_order;
+        }
+    }
+}
+
+/// Arguments of [`ScalarScale`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ScalarScaleArgs {
+    /// Cell values.
+    pub phi: Raw<f64>,
+    /// Right-hand side.
+    pub rhs: Raw<f64>,
+    /// Relaxed diagonal.
+    pub diag: Raw<f64>,
+    /// α.
+    pub alpha: f64,
+    /// Output a φ.
+    pub v: Raw<f64>,
+    /// Output b − (a/α − a) φ.
+    pub w: Raw<f64>,
+}
+
+/// Parts of the residual scale of a scalar
+/// ([`crate::scalar::residual_parts`]).
+pub struct ScalarScale;
+impl Entry for ScalarScale {
+    type Args = ScalarScaleArgs;
+    const NAME: &'static str = "scalar_scale";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &ScalarScaleArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let (v, w) = crate::scalar::residual_parts(
+                ld(a.phi.get(), c),
+                ld(a.rhs.get(), c),
+                ld(a.diag.get(), c),
+                a.alpha,
+            );
+            *a.v.out().add(c) = v;
+            *a.w.out().add(c) = w;
+        }
+    }
+}
+
 send_sync!(
     LinArgs,
     BlockArgs,
@@ -1337,11 +1540,14 @@ send_sync!(
     CorrectVelocityArgs,
     NeighbourArgs,
     DeltaFluxArgs,
-    ProductArgs
+    ProductArgs,
+    ScalarFaceArgs,
+    ScalarRowArgs,
+    ScalarScaleArgs
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 32] = [
+pub const NAMES: [&str; 35] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     Fill::NAME,
@@ -1374,6 +1580,9 @@ pub const NAMES: [&str; 32] = [
     Transpose::NAME,
     MatrixProduct::NAME,
     TransposedProduct::NAME,
+    ScalarFaces::NAME,
+    ScalarRows::NAME,
+    ScalarScale::NAME,
 ];
 
 #[cfg(test)]
@@ -1407,6 +1616,9 @@ mod tests {
             size_of::<NeighbourArgs>(),
             size_of::<DeltaFluxArgs>(),
             size_of::<ProductArgs>(),
+            size_of::<ScalarFaceArgs>(),
+            size_of::<ScalarRowArgs>(),
+            size_of::<ScalarScaleArgs>(),
         ];
         for s in sizes {
             assert!(s + 8 <= 4096, "argument block of {s} bytes");
@@ -1461,6 +1673,6 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 32);
+        assert_eq!(NAMES.len(), 35);
     }
 }

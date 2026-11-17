@@ -96,7 +96,7 @@ pub struct Clock {
 }
 
 /// Report of one time step.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct StepReport {
     /// Step number (from 1).
     pub step: usize,
@@ -432,6 +432,9 @@ impl Transient {
                 fl.dev.copy(a, b)?;
             }
             fl.dev.copy(l.m_old2, l.m_old)?;
+            if let Some(sc) = fl.scalars.as_mut() {
+                sc.rewind_levels(fl.dev.as_mut())?;
+            }
         }
         // uⁿ⁻² is gone
         self.clock.dt_prev2 = 0.0;
@@ -474,6 +477,9 @@ impl Transient {
         }
         fl.dev.copy(l.x_old, l.x_cur)?;
         fl.dev.copy(e.x_old, l.x_old)?;
+        if let Some(sc) = fl.scalars.as_mut() {
+            sc.step_back(fl.dev.as_mut())?;
+        }
         set_explicit_buffers(&mut fl.f, e.ids);
         self.l.g_old = e.old_ids;
         for (&a, &b) in e.g_old.iter().zip(&e.old_ids) {
@@ -604,6 +610,24 @@ impl Transient {
             fl.dev.copy(a, b)?;
         }
         fl.dev.copy(f.mass_flux, l.m_old)?;
+        // the passive scalars: φⁿ⁻¹ ← φⁿ ← φ; BDF2 (also under
+        // Crank–Nicolson, which does not keep them bounded) from the second
+        // step, BDF1 in the first and with `bdf1`
+        let scalar_step = if let Some(sc) = fl.scalars.as_mut() {
+            let bdf2 = self.scheme != TimeScheme::Bdf1 && self.clock.levels >= 1;
+            sc.step_start(
+                fl.dev.as_mut(),
+                self.clock.levels >= 1,
+                bdf2.then(|| dt / self.clock.dt_prev),
+            )?;
+            Some(crate::scalar::StepTime {
+                time: self.clock.time + dt,
+                dt,
+                a: crate::scalar::bdf(second, omega),
+            })
+        } else {
+            None
+        };
         // the convective outlets: u_bⁿ⁻¹ ← u_bⁿ ← u_b, then c and β of the
         // backward difference of this step
         if let Some((ub1, ub2)) = l.ub_old {
@@ -758,8 +782,11 @@ impl Transient {
                 fl.dev.sync()?;
                 fl.timings.pressure_assembly += t.elapsed().as_secs_f64();
             }
+            if res.finite() {
+                fl.solve_scalars(scalar_step, &mut res)?;
+            }
             if !res.finite() {
-                fl.diverged = Some(res);
+                fl.diverged = Some(res.clone());
                 return Err(crate::diag::err(crate::diag::Diagnostic::new(
                     crate::diag::RUN_DIVERGED,
                     format!(
@@ -773,12 +800,12 @@ impl Transient {
                 )));
             }
             if k == 1 {
-                first = res;
+                first = res.clone();
             } else {
                 first.pressure_iterations += res.pressure_iterations;
             }
-            last = res;
-            self.outer_log.push(res);
+            last = res.clone();
+            self.outer_log.push(res.clone());
             if k > 1 && res.max() < s.outer_tolerance {
                 break;
             }

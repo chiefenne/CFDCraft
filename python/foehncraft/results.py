@@ -71,6 +71,12 @@ class Result:
         return self.summary.get("time_orders", [])
 
     @property
+    def scalar_orders(self) -> dict[str, list[float]]:
+        """Observed orders of the passive scalars with an exact solution,
+        by name (`<name> (time)` for a time-step sweep)."""
+        return {name: orders for name, orders in self.summary.get("scalar_orders", [])}
+
+    @property
     def uncertainty(self) -> dict[str, dict]:
         """Discretisation uncertainty of a sweep of three or more meshes or
         time steps (D67), by quantity: `values` (finest first), `order`,

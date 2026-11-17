@@ -5,6 +5,8 @@
 //!   limiter, face flux coefficients, row assembly;
 //! - [`flow`]: the incompressible flow solver (stage 4): momentum faces and
 //!   rows, Rhie–Chow mass flux, pressure correction, boundary values;
+//! - [`scalar`]: the rows of the generic scalar transport equation
+//!   (stage 6, D116): bounded form, point-implicit sources, bounded BDF2;
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
 //! - [`expr`]: the stack machine of the compiled case-file expressions (D53);
@@ -40,6 +42,7 @@ pub mod expr;
 pub mod face;
 pub mod flow;
 pub mod fv;
+pub mod scalar;
 pub mod spmv;
 
 use foehncraft_core::index::FLAG_BIT;

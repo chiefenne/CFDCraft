@@ -202,6 +202,8 @@ pub struct Settings {
     pub momentum: MomentumSettings,
     /// The pressure (correction) equation (`[solver.pressure]`).
     pub pressure: PressureSettings,
+    /// The passive scalars (`[solver.scalar]`, D51).
+    pub scalar: crate::scalar::ScalarSettings,
     /// Gradient of the pressure (D24, D50): `least-squares`, or `gauss`,
     /// the face sum of the face pressures (robust on tetrahedra with skewed
     /// faces).
@@ -320,6 +322,7 @@ impl Default for Settings {
             algorithm: None,
             momentum: MomentumSettings::default(),
             pressure: PressureSettings::default(),
+            scalar: crate::scalar::ScalarSettings::default(),
             pressure_gradient: PressureGradient::LeastSquares,
             remediation: Remediation::Auto,
             skewness_limit: 0.9,
@@ -559,7 +562,7 @@ impl Physics {
 }
 
 /// Residuals of one outer iteration.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Residuals {
     /// Outer iteration (from 1).
     pub iteration: usize,
@@ -571,19 +574,29 @@ pub struct Residuals {
     pub momentum_iterations: [usize; 3],
     /// CG iterations of the pressure solve (all correctors).
     pub pressure_iterations: usize,
+    /// The passive scalars (D51): residuals and iterations per scalar, in
+    /// name order.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::scalar::ScalarResiduals::is_empty"
+    )]
+    pub scalars: crate::scalar::ScalarResiduals,
 }
 
 impl Residuals {
     /// Every residual is finite (a NaN does not hide behind
     /// [`max`](Self::max), which skips it).
     pub fn finite(&self) -> bool {
-        self.continuity.is_finite() && self.momentum.iter().all(|r| r.is_finite())
+        self.continuity.is_finite()
+            && self.momentum.iter().all(|r| r.is_finite())
+            && self.scalars.residual.iter().all(|r| r.is_finite())
     }
 
     /// The largest residual.
     pub fn max(&self) -> f64 {
         self.momentum
             .iter()
+            .chain(&self.scalars.residual)
             .copied()
             .fold(self.continuity, f64::max)
     }
@@ -604,6 +617,8 @@ pub struct Timings {
     pub pressure_solve: f64,
     /// Multigrid setups.
     pub amg_setup: f64,
+    /// Passive scalars (all their phases).
+    pub scalars: f64,
 }
 
 impl Timings {
@@ -615,6 +630,7 @@ impl Timings {
             + self.pressure_assembly
             + self.pressure_solve
             + self.amg_setup
+            + self.scalars
     }
 }
 
@@ -637,6 +653,8 @@ pub struct State {
     pub grad_p: Soa3,
     /// Limiters of the velocity components.
     pub psi: Soa3,
+    /// The passive scalars (D51), in name order.
+    pub scalars: Vec<crate::scalar::ScalarState>,
 }
 
 /// A host copy of the fields with the discretisation and the physics, for
@@ -741,6 +759,9 @@ pub struct Flow {
     pub(crate) source: Option<Buf3>,
     /// The cell-quality remediation (D50): the mesh check and the changes.
     pub remediation: RemediationReport,
+    /// The passive scalars (D51), solved after the pressure correction of
+    /// every outer iteration ([`Flow::add_scalars`]).
+    pub(crate) scalars: Option<crate::scalar::Scalars>,
 }
 
 /// The convective outlets of a transient run (D29): the device buffers of
@@ -793,7 +814,7 @@ impl Convective {
     }
 }
 
-fn disc_with(
+pub(crate) fn disc_with(
     mesh: &Mesh,
     geo: &Geometry,
     points: &std::collections::BTreeMap<String, BoundaryKind>,
@@ -1123,6 +1144,7 @@ impl Flow {
             conv,
             source: None,
             remediation,
+            scalars: None,
         })
     }
 
@@ -1176,6 +1198,9 @@ impl Flow {
         self.dev.copy(self.f.p, v.1)?;
         self.dev.copy(self.f.mass_flux, v.2)?;
         self.valid = Some((v.0, v.1, v.2, self.iteration));
+        if let Some(sc) = self.scalars.as_mut() {
+            sc.keep_valid(self.dev.as_mut())?;
+        }
         Ok(())
     }
 
@@ -1190,6 +1215,9 @@ impl Flow {
         }
         self.dev.copy(p, self.f.p)?;
         self.dev.copy(m, self.f.mass_flux)?;
+        if let Some(sc) = self.scalars.as_mut() {
+            sc.rewind(self.dev.as_mut())?;
+        }
         self.iteration = it;
         self.update_boundaries()?;
         self.gradients()?;
@@ -1342,6 +1370,10 @@ impl Flow {
             p: self.dev.download(f.p)?,
             mass_flux: self.dev.download(f.mass_flux)?,
             pb: self.dev.download(f.pb)?,
+            scalars: match &self.scalars {
+                Some(sc) => sc.states(self.dev.as_mut())?,
+                None => Vec::new(),
+            },
         })
     }
 
@@ -1363,6 +1395,9 @@ impl Flow {
         self.dev.upload(f.p, &s.p)?;
         self.dev.upload(f.mass_flux, &s.mass_flux)?;
         self.dev.upload(f.pb, &s.pb)?;
+        if let Some(sc) = self.scalars.as_mut() {
+            sc.load(self.dev.as_mut(), &s.scalars)?;
+        }
         self.hold_convective(f.ub)
     }
 
@@ -1773,7 +1808,7 @@ impl Flow {
         self.dev.sync()?;
         self.timings.pressure_assembly += t.elapsed().as_secs_f64();
         if !res.finite() {
-            self.diverged = Some(res);
+            self.diverged = Some(res.clone());
             return Err(crate::diag::err(crate::diag::Diagnostic::new(
                 crate::diag::RUN_DIVERGED,
                 format!(
@@ -1783,7 +1818,54 @@ impl Flow {
             )));
         }
         std::mem::swap(&mut self.f.mass_flux, &mut self.w.mc);
+        self.solve_scalars(None, &mut res)?;
         Ok(res)
+    }
+
+    /// Adds the passive scalars (D51); they are solved from the next outer
+    /// iteration on.
+    pub fn add_scalars(&mut self, s: crate::scalar::Scalars) {
+        self.scalars = Some(s);
+    }
+
+    /// The passive scalars, if the case has any.
+    pub fn scalars(&self) -> Option<&crate::scalar::Scalars> {
+        self.scalars.as_ref()
+    }
+
+    /// The scalar solves of an outer iteration, with the current fluxes
+    /// (after the pressure correction), into `res`.
+    pub(crate) fn solve_scalars(
+        &mut self,
+        step: Option<crate::scalar::StepTime>,
+        res: &mut Residuals,
+    ) -> Result<()> {
+        let Some(sc) = self.scalars.as_mut() else {
+            return Ok(());
+        };
+        let t = Instant::now();
+        let cells = &self.disc.cell_centroid;
+        let xs: Vec<[f64; 3]> = if step.is_some() {
+            (0..self.disc.n_cells)
+                .map(|c| [cells.x[c], cells.y[c], cells.z[c]])
+                .collect()
+        } else {
+            Vec::new()
+        };
+        res.scalars = sc.solve(self.dev.as_mut(), self.f.mass_flux, step, &xs)?;
+        self.dev.sync()?;
+        self.timings.scalars += t.elapsed().as_secs_f64();
+        if !res.finite() {
+            self.diverged = Some(res.clone());
+            return Err(crate::diag::err(crate::diag::Diagnostic::new(
+                crate::diag::RUN_DIVERGED,
+                format!(
+                    "the solution diverged in outer iteration {}: scalar residuals {:?}",
+                    self.iteration, res.scalars.residual
+                ),
+            )));
+        }
+        Ok(())
     }
 }
 

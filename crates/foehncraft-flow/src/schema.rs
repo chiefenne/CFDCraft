@@ -38,7 +38,8 @@ pub fn json_schema() -> Value {
         );
         m.insert("title".into(), json!("Foehncraft flow case"));
     }
-    let defs = v.get("$defs").cloned().unwrap_or(Value::Null);
+    let mut defs = v.get("$defs").cloned().unwrap_or(Value::Null);
+    add_boundary_scalars(&mut defs);
     let defs = annotate_defs(&v, &defs);
     if let Some(props) = v.get_mut("properties").and_then(Value::as_object_mut) {
         for (k, p) in props.iter_mut() {
@@ -51,6 +52,48 @@ pub fn json_schema() -> Value {
         m.insert("$defs".into(), defs);
     }
     v
+}
+
+/// The description of the `scalar` sub-table of the boundary conditions.
+const BOUNDARY_SCALAR: &str = "Conditions of the passive scalars on this boundary \
+     (D116, D51), one table `[boundary.<name>.scalar.<scalar>]` per scalar; a scalar \
+     without one keeps the default of the boundary kind (zero flux on walls, slip walls, \
+     symmetry planes and wedges; value 0 at inlets; zero gradient at outlets).";
+
+/// The `[boundary.<name>.scalar.<scalar>]` sub-tables (D116): the reader
+/// moves them out of the flow conditions, the schema shows them in every
+/// boundary kind.
+fn add_boundary_scalars(defs: &mut Value) {
+    let Some(m) = defs.as_object_mut() else {
+        return;
+    };
+    let sb = schemars::schema_for!(crate::scalar::ScalarBoundary).to_value();
+    let mut sb = sb.as_object().cloned().unwrap_or_default();
+    sb.remove("$schema");
+    sb.remove("title");
+    // the nested definitions (Scalar) are in the case schema already
+    sb.remove("$defs");
+    m.insert("ScalarBoundary".into(), Value::Object(sb));
+    let Some(a) = m
+        .get_mut("BoundaryCondition")
+        .and_then(|b| b.get_mut("oneOf"))
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for x in a {
+        if let Some(p) = x.get_mut("properties").and_then(Value::as_object_mut) {
+            p.insert(
+                "scalar".into(),
+                json!({
+                    "type": "object",
+                    "description": BOUNDARY_SCALAR,
+                    "additionalProperties": {"$ref": "#/$defs/ScalarBoundary"},
+                    "default": {},
+                }),
+            );
+        }
+    }
 }
 
 /// The schema with the format envelope of `foehn schema --json`.
@@ -269,6 +312,17 @@ pub fn keys() -> Vec<KeyRow> {
     let defs = s.get("$defs").cloned().unwrap_or(Value::Null);
     let mut out = Vec::new();
     walk(&s, &defs, "", &mut out, 0);
+    // the scalar sub-tables once, after the boundary kinds (the walk
+    // leaves them out of every kind)
+    if let Some(o) = defs.get("ScalarBoundary") {
+        let mut rows = Vec::new();
+        walk(o, &defs, "boundary.<name>.scalar.<name>", &mut rows, 1);
+        let at = out
+            .iter()
+            .rposition(|r| r.path.starts_with("boundary."))
+            .map_or(out.len(), |i| i + 1);
+        out.splice(at..at, rows);
+    }
     out
 }
 
@@ -342,6 +396,9 @@ fn walk(s: &Value, defs: &Value, path: &str, out: &mut Vec<KeyRow>, depth: usize
             } else {
                 format!("{path}.{k}")
             };
+            if k == "scalar" && path.contains("(type =") {
+                continue;
+            }
             let desc = p
                 .get("description")
                 .or_else(|| resolve(p, defs).get("description"))

@@ -16,6 +16,7 @@
 //! | `strain-rate` | `strain_rate` | √(2 S:S), the shear rate | 1/s |
 //! | `pressure-coefficient` | `pressure_coefficient` | (p − p_ref) / (½ ρ_ref U_ref²) | - |
 //! | `total-pressure` | `total_pressure` | p + ½ ρ u·u | Pa |
+//! | `wall-distance` | `wall_distance` | the exact distance of the cell centroid to the nearest no-slip wall face (D48, a BVH closest-point search, D108) | m |
 //!
 //! Boundary face fields, on the boundary blocks of the file (zero on boundaries
 //! that are not walls), from the same wall values as `wall_<boundary>.csv`:
@@ -68,6 +69,8 @@ pub enum Derived {
     PressureCoefficient,
     /// p + ½ ρ u·u (Pa).
     TotalPressure,
+    /// Exact distance of the cell centroid to the nearest wall (m).
+    WallDistance,
     /// Wall shear stress on the walls, components and magnitude (Pa).
     WallShearStress,
     /// y⁺ of the wall-adjacent cells, on the walls (-).
@@ -76,7 +79,7 @@ pub enum Derived {
 
 impl Derived {
     /// Every derived field, in the order they are written.
-    pub const ALL: [Derived; 9] = [
+    pub const ALL: [Derived; 10] = [
         Derived::Vorticity,
         Derived::QCriterion,
         Derived::Lambda2,
@@ -84,6 +87,7 @@ impl Derived {
         Derived::StrainRate,
         Derived::PressureCoefficient,
         Derived::TotalPressure,
+        Derived::WallDistance,
         Derived::WallShearStress,
         Derived::YPlus,
     ];
@@ -98,6 +102,7 @@ impl Derived {
             Derived::StrainRate => "strain-rate",
             Derived::PressureCoefficient => "pressure-coefficient",
             Derived::TotalPressure => "total-pressure",
+            Derived::WallDistance => "wall-distance",
             Derived::WallShearStress => "wall-shear-stress",
             Derived::YPlus => "y-plus",
         }
@@ -123,6 +128,7 @@ impl Derived {
             Derived::StrainRate => &[("strain_rate", "1/s")],
             Derived::PressureCoefficient => &[("pressure_coefficient", "-")],
             Derived::TotalPressure => &[("total_pressure", "Pa")],
+            Derived::WallDistance => &[("wall_distance", "m")],
             Derived::WallShearStress => &[
                 ("wall_shear_stress_x", "Pa"),
                 ("wall_shear_stress_y", "Pa"),
@@ -190,6 +196,15 @@ pub fn validate(case: &FlowCase) -> Result<()> {
 /// Checks a list of derived fields against `case` (also for
 /// `foehn post derive --fields`).
 pub fn validate_list(case: &FlowCase, list: &[Derived]) -> Result<()> {
+    if list.contains(&Derived::WallDistance) {
+        crate::need!(
+            case.boundary
+                .values()
+                .any(|b| matches!(b, BoundaryCondition::Wall { .. })),
+            CASE_INCONSISTENT,
+            "derived field `wall-distance` needs at least one wall boundary"
+        );
+    }
     if list.contains(&Derived::PressureCoefficient) {
         crate::need!(
             reference(case).is_some(),
@@ -424,6 +439,9 @@ pub fn compute(
                     })
                     .collect(),
             )),
+            Derived::WallDistance => out
+                .cells
+                .push(("wall_distance", wall_distance(case, mesh, geo)?)),
             Derived::WallShearStress => {
                 let w = walls.as_ref().expect("computed above");
                 for (i, n) in [
@@ -449,6 +467,31 @@ pub fn compute(
     }
     debug_assert!(out.faces.iter().all(|(_, v)| v.len() == nb));
     Ok(out)
+}
+
+/// The exact wall distance of every cell centroid (D48): the closest point
+/// on the faces of the wall boundaries of `case`, by the BVH search of
+/// D108.
+pub fn wall_distance(case: &FlowCase, mesh: &Mesh, geo: &Geometry) -> Result<Vec<f64>> {
+    let walls: Vec<usize> = mesh
+        .boundaries
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| {
+            matches!(
+                case.boundary.get(&p.name),
+                Some(BoundaryCondition::Wall { .. })
+            )
+        })
+        .map(|(i, _)| i)
+        .collect();
+    let d = foehncraft_mesh::query::wall_distance(mesh, geo, &walls).ok_or_else(|| {
+        crate::diag::err(crate::diag::Diagnostic::new(
+            crate::diag::CASE_INCONSISTENT,
+            "derived field `wall-distance` needs at least one wall face in the mesh",
+        ))
+    })?;
+    Ok(d.into_iter().map(|c| c.distance).collect())
 }
 
 /// What [`from_restart`] wrote.
@@ -784,6 +827,55 @@ mod tests {
             let got = symmetric_eigenvalues(a);
             for i in 0..3 {
                 assert!((got[i] - e[i]).abs() < 1e-14 * 8.0, "{got:?} {e:?}");
+            }
+        }
+    }
+
+    /// The wall distance in a channel between walls at y = 0 and y = 1
+    /// (the ends are an inlet and an outlet, which do not count): min(y,
+    /// 1 − y) at every centroid, exactly on hex cells; the polyhedral mesh
+    /// gives the distance to its (plane) wall faces, the same function.
+    #[test]
+    fn wall_distance_of_a_channel() {
+        for mesh in ["hex", "poly", "tet"] {
+            let case = FlowCase::from_toml(
+                &format!(
+                    r#"
+[mesh.generate]
+type = "{mesh}"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [8, 6, 1]
+[fluid]
+viscosity = 0.1
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[output]
+derived = ["wall-distance"]
+"#
+                ),
+                std::path::Path::new("."),
+            )
+            .unwrap();
+            validate(&case).unwrap();
+            let (m, g, _) = crate::case::mesh_for(&case, None).unwrap();
+            let d = wall_distance(&case, &m, &g).unwrap();
+            assert_eq!(d.len(), m.n_cells);
+            for (c, &dc) in d.iter().enumerate() {
+                let y = g.cell_centroid[c][1];
+                let e = y.min(1.0 - y);
+                assert!((dc - e).abs() < 1e-12, "{mesh}: cell {c}, {dc} vs {e}");
             }
         }
     }

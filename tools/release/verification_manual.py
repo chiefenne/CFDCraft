@@ -88,6 +88,20 @@ def flow_checks(case: dict, rep: dict) -> list[dict]:
         lo, hi = v["expected_time_order"]
         o = rep["time_orders"][-1]
         out.append(check("observed order in time (finest pair)", band(lo, hi), o, lo <= o <= hi))
+    if v.get("scalar_order"):
+        lo, hi = v["scalar_order"]
+        for name, orders in rep.get("scalar_orders", []):
+            if orders:
+                o = orders[-1]
+                what = "in time" if name.endswith(" (time)") else "in space"
+                out.append(check(f"observed order of scalar {name.removesuffix(' (time)')} {what} (finest pair)",
+                                 band(lo, hi), o, lo <= o <= hi))
+    if v.get("scalar_max_error") is not None:
+        for name in {sc["name"] for s in solves[-1:] for sc in s.get("scalars", [])}:
+            l2 = [sc["l2"] for sc in solves[-1].get("scalars", []) if sc["name"] == name and sc.get("l2") is not None]
+            if l2:
+                out.append(check(f"L2 error of scalar {name} (finest mesh)", f"≤ {v['scalar_max_error']:g}",
+                                 l2[0], l2[0] <= v["scalar_max_error"]))
     if v.get("max_error") is not None:
         errs = [s["errors"]["l2"] for s in solves if s.get("errors")]
         if errs:
@@ -254,7 +268,7 @@ def markdown(data: dict) -> str:
         "bands and the result of its run. The cases check themselves (a run outside "
         "its band exits with code 1, R5); this page collects the bands and the values. "
         "The explanations stay on the stage pages ([stage 2](stage2.md), "
-        "[stage 3](stage3.md), [stage 4](stage4.md), [stage 5](stage5.md)). "
+        "[stage 3](stage3.md), [stage 4](stage4.md), [stage 5](stage5.md), [stage 6](stage6.md)). "
         "The same data as JSON: [results.json](results.json).",
         "",
         f"Runs of Foehncraft {runs}: {len(passed)} of {len(ran)} cases passed, "

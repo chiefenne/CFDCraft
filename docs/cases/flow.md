@@ -11,6 +11,7 @@ On this page:
 - [Boundary conditions](#boundary-conditions)
 - [Derived fields](#derived-fields)
 - [Expressions and materials](#expressions-and-materials)
+- [Passive scalars](#passive-scalars)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -148,3 +149,14 @@ material database and regions (D102, D112), walls with a mass flux
 | `flow/taylor_green_expression.toml` | generated hex 2D, 4 096 cells | the decaying vortex prescribed on the sides as expressions of x, y and t, error ≤ 2e-3 at t = 0.4 s required | [gallery 23](../gallery/properties.md#expressions-materials), [recipe 31](../recipes/properties.md#expressions) |
 | `flow/channel_ramp.toml` | generated hex 2D, 512 cells | start-up of a channel with the inflow ramped by a table in t, BDF2 with an adaptive step; steady Poiseuille flow at t = 4 s (error ≤ 2e-3) | [gallery 23](../gallery/properties.md#expressions-materials), [recipe 31](../recipes/properties.md#expressions) |
 
+## Passive scalars
+
+Scalars carried by the flow (D51) with the generic scalar transport
+equation of stage 6 (D116), the bounded BDF2 (D28 (1)) and the exact wall
+distance (D48), stage 6 part 6a; the keys are on the
+[key page](flow-keys.md#passive-scalars-d51-d116).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/channel_heated.toml` | generated hex 2D, perturbed by 15 %, 512 to 8 192 cells (3 levels) | laminar heated channel: a passive temperature with uniform wall flux in Poiseuille flow, Pe = 1000; observed order of the temperature error 1.8–2.2 required, Nu = 8.2398 against 140/17 = 8.2353 on the finest mesh | [gallery 63](../gallery/scalars.md#passive-scalars), [recipe 63](../recipes/scalars.md#passive-scalars) |
+| `flow/scalar_front_bdf2.toml` | generated hex 2D, 40 cells | a front of a scalar bounded by [0, 1] in a uniform flow, upwind, BDF2 at Courant number 0.8: the bounded BDF2 keeps it inside the bounds (plain BDF2 overshoots to 1.00033) | [gallery 63](../gallery/scalars.md#passive-scalars), [recipe 63](../recipes/scalars.md#passive-scalars) |

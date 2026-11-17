@@ -816,7 +816,7 @@ its cell and the wall y⁺ min, mean and max per wall boundary.
 | Sustaining terms | k, ω constant in time at the ambient values | exact | to round-off |
 | Wall distance (D48) | d on planes, cylinders, spheres, and the PDE form | exact | exact (BVH) to round-off; PDE form within 1 % at the first cell layer |
 | Wall functions as functions | u⁺(y⁺) of Spalding and the blended profile, T⁺ of Kader for Pr 0.01, 0.71, 7, 100, P-function | published formulas evaluated in high precision | relative error below 10⁻¹² (Newton steps converge) |
-| Laminar heated channel, periodic, passive scalar with the heat-flux jump of D109 (1) | Nu | 140/17 = 8.235 | p in [1.8, 2.2], Nu within 0.5 % (D111) |
+| Laminar heated channel, passive scalar: in 6a open (developed profile at the inlet, zero-gradient outlet), periodic with the heat-flux jump of D109 (1) once 6p is in | Nu | 140/17 = 8.235 | p in [1.8, 2.2], Nu within 0.5 % (D111) |
 
 ### 9.3 Zero-pressure-gradient flat plate
 
@@ -910,17 +910,19 @@ only on the maintainer's go. Branch names from the task (project rule).
 
 | PR | Content | Main files | Acceptance |
 |---|---|---|---|
-| 6a | Generic scalar transport (D116), passive scalars and their boundary sub-tables (D51), bounded BDF2 (D28 (1)), AMG preconditioner for scalars (D36), smooth-limit helpers (2.6), exact wall distance with the BVH (D48, D108 (1)) | `foehncraft-kernels/src/scalar.rs`, `foehncraft-mesh/src/query/bvh.rs`, `foehncraft-flow/src/scalar.rs`, `foehncraft-core/src/math.rs` | 9.2 laminar heated channel, wall distance, scalar MMS |
-| 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂; the invariant features of D166 as named expression variables (same definitions as the D106 export) | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 MMS and decay (SST), 9.3 flat plate, 9.4 channel (SST) |
+| 6a | Generic scalar transport (D116), passive scalars and their boundary sub-tables (D51), bounded BDF2 (D28 (1)), smooth-limit helpers (2.6), exact wall distance with the BVH (D48, D108 (1)) and the derived field `wall-distance` (done, PR #63) | `foehncraft-kernels/src/scalar.rs`, `foehncraft-mesh/src/query/bvh.rs`, `foehncraft-flow/src/scalar.rs`, `foehncraft-core/src/math.rs` | 9.2 laminar heated channel (developed profile at the inlet, uniform wall flux, zero-gradient outlet; Nu within 0.5 %), wall distance, scalar MMS on hex, poly and tet cells, scalar time order |
+| 6p | Periodic boundaries for the flow and the scalars (translational pairs; the affine temperature map of D109–D111 with the energy stage) | `foehncraft-mesh` periodic pairing, `foehncraft-flow/src/bc.rs` | periodic Poiseuille and heated channel equal to the open ones; needed by the 9.4 channel at Re_τ 180/395/590 |
+| 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂; the optional PDE wall distance with the key `turbulence.wall_distance` (the exact distance of 6a is the default); the invariant features of D166 as named expression variables (same definitions as the D106 export) | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 MMS and decay (SST), 9.3 flat plate, 9.4 channel (SST) |
 | 6c | Standard and realizable k-ε, scalable and standard wall functions, compound treatment for the k-ε family, Cebeci–Bradshaw roughness | `turb/keps.rs` | 9.2, 9.3, 9.4 for the k-ε family, rough pipe and Moody study |
-| 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
+| 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG), the AMG preconditioner for the scalar equations (D36; 6a solves them with Jacobi-preconditioned BiCGStab, enough for the laminar cases) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
 | 6e | EB k-ε (D133) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
 | 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports | cases, gallery, `tools/notebooks/stage6_colab.ipynb` | 9.5, 9.6, 9.7, 6.6 |
 | release | v0.6: version bump, changelog summary, README, verification manual, Release workflow (dry run first) | | all of section 9 green or findings recorded |
 
 Order rationale: 6a gives every later model its transport, wall distance
-and solver path; SST first because it is the general-purpose default and
+and solver path; 6p brings the periodic boundaries that the channel cases
+of 9.4 need, so it comes before the first model is verified there; SST first because it is the general-purpose default and
 the flat plate and channel can be checked against the TMR at once; ζ-f
 before EB because EB reuses its elliptic path; the thermal wall function
 after the models because it needs u* from each of them.
