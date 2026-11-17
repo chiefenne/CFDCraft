@@ -324,7 +324,7 @@ impl Report {
 /// Courant number of each cell for a step `dt`: Δt Σ|ṁ_f| / (2 ρ V).
 fn courant(mesh: &Mesh, geo: &Geometry, mass_flux: &[f64], rho: f64, dt: f64) -> Vec<f64> {
     let nc = mesh.n_cells;
-    let ni = mesh.n_interior_faces();
+    let ni = mesh.periodic_start();
     let mut s = vec![0.0; nc];
     for (f, &m) in mass_flux.iter().enumerate().take(mesh.n_faces()) {
         let a = m.abs();

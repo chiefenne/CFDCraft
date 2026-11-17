@@ -19,6 +19,8 @@
 //!   (D29) the boundary velocity of the level before, `ub_old_<i>`;
 //! - the passive scalars (D51): attribute `scalars` (the names), per cell
 //!   `scalar_<name>` and, transient, `scalar_old_<name>` (the level before);
+//! - the periodic pairs (D29): `periodic_force`, the driving force per
+//!   pair;
 //! - `amg_matrix`: the pressure matrix of the last multigrid setup (the
 //!   hierarchy is rebuilt from it, so the preconditioner is the same);
 //! - optional, for meshes that move (D91, L22): `point_id`,
@@ -187,6 +189,9 @@ mod io {
                     }
                 }
             }
+            if !s.periodic_force.is_empty() {
+                ds(&g, "periodic_force", &s.periodic_force)?;
+            }
             if let Some(m) = &r.amg_matrix {
                 ds(&g, "amg_matrix", m)?;
             }
@@ -309,6 +314,11 @@ mod io {
             grad_p: get3(&g, "grad_p_")?,
             psi: get3(&g, "psi_")?,
             scalars: read_scalars(&g, transient)?,
+            periodic_force: if g.link_exists("periodic_force") {
+                rd(&g, "periodic_force")?
+            } else {
+                Vec::new()
+            },
         };
         let amg_matrix = if g.link_exists("amg_matrix") {
             Some(rd(&g, "amg_matrix")?)
@@ -520,6 +530,7 @@ impl Restart {
                         old: x.old.as_ref().map(|o| remap(o, &mc)),
                     })
                     .collect(),
+                periodic_force: s.periodic_force.clone(),
             };
             if let Some((o, ..)) = &mut self.transient {
                 *o = OldLevels {

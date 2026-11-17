@@ -114,6 +114,7 @@ impl<E: Exec> KernelFlow<E> {
         let face_centroid = soa(&d.face_centroid)?;
         let cell_centroid = soa(&d.cell_centroid)?;
         let kk = soa(&d.k)?;
+        let shift = soa(&d.shift)?;
         let lsq_u = soa(&d.lsq)?;
         let lsq_p = soa(s.lsq_p)?;
         let mut f64s = |v: &[f64]| -> Result<Raw<f64>> {
@@ -174,6 +175,8 @@ impl<E: Exec> KernelFlow<E> {
                 z: x.raw(conv.z),
             },
             beta: x.raw(beta),
+            periodic: d.periodic as u64,
+            shift,
         };
         let pca: Vec<f64> =
             s.bc.flux_kind
@@ -543,6 +546,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             phi: self.r(phi),
             bc_a: self.r(self.mask(mask)),
             bc_b: self.r(self.scratch),
+            jump: Raw::EMPTY,
             out: self.r3(out),
         };
         self.go::<e::Gradient>(self.nc, &args)
@@ -559,6 +563,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             phi: self.r(phi),
             bc_a: self.r(self.mask(Mask::Velocity)),
             bc_b: self.r(self.scratch),
+            jump: Raw::EMPTY,
             grad: self.r3(grad),
             eps2: e2,
             out: self.r(out),
@@ -566,8 +571,17 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.go::<e::Limiter>(self.nc, &args)
     }
 
-    fn gradient_with(&mut self, w: Buf3, phi: Buf, bc_a: Buf, bc_b: Buf, out: Buf3) -> Result<()> {
+    fn gradient_with(
+        &mut self,
+        w: Buf3,
+        phi: Buf,
+        bc_a: Buf,
+        bc_b: Buf,
+        jump: Option<Buf>,
+        out: Buf3,
+    ) -> Result<()> {
         let mut ins = vec![phi, bc_a, bc_b];
+        ins.extend(jump);
         ins.extend(w.all());
         check(&out.all(), &ins)?;
         let args = e::GradientArgs {
@@ -576,6 +590,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             phi: self.r(phi),
             bc_a: self.r(bc_a),
             bc_b: self.r(bc_b),
+            jump: jump.map_or(Raw::EMPTY, |b| self.r(b)),
             out: self.r3(out),
         };
         self.go::<e::Gradient>(self.nc, &args)
@@ -586,11 +601,13 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         phi: Buf,
         bc_a: Buf,
         bc_b: Buf,
+        jump: Option<Buf>,
         grad: Buf3,
         eps2: Eps2,
         out: Buf,
     ) -> Result<()> {
         let mut ins = vec![phi, bc_a, bc_b];
+        ins.extend(jump);
         ins.extend(grad.all());
         check(&[out], &ins)?;
         let e2 = self.eps2_raw(eps2)?;
@@ -599,6 +616,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             phi: self.r(phi),
             bc_a: self.r(bc_a),
             bc_b: self.r(bc_b),
+            jump: jump.map_or(Raw::EMPTY, |b| self.r(b)),
             grad: self.r3(grad),
             eps2: e2,
             out: self.r(out),
@@ -614,6 +632,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             m: self.m,
             bc_a: self.r(a.bc_a),
             bc_b: self.r(a.bc_b),
+            jump: a.jump.map_or(Raw::EMPTY, |b| self.r(b)),
             mass_flux: self.r(a.mass_flux),
             gamma: self.r(a.gamma),
             phi: self.r(a.phi),

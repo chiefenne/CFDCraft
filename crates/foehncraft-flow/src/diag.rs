@@ -103,8 +103,10 @@ codes! {
     BC_WEDGE_ANGLE = "BC024", Warning, "A wedge wider than 10° (the axisymmetric error grows with the angle).";
     BC_POTENTIAL_CONVECTIVE = "BC025", Error, "A potential-flow start with a convective outlet and no pressure boundary.";
     BC_WALL_MASS_CLOSED = "BC026", Error, "Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure).";
+    BC_PERIODIC = "BC030", Error, "A periodic boundary without a periodic partner that names it back, a pair whose faces do not match, or a driving given twice.";
+    BC_PERIODIC_UNDRIVEN = "BC031", Warning, "A periodic pair with no driving (`mass_flow`, `pressure_gradient`) and no body force: the flow decays to rest.";
     // passive scalars (D51, D116)
-    SCALAR_BOUNDARY = "SCAL001", Error, "A `[boundary.<name>.scalar.<scalar>]` table for an unknown scalar or boundary, without exactly one of `value` and `flux`, or with a condition its boundary does not take (a flux at an inlet, anything at an outlet).";
+    SCALAR_BOUNDARY = "SCAL001", Error, "A `[boundary.<name>.scalar.<scalar>]` table for an unknown scalar or boundary, without exactly one of `value` and `flux`, or with a condition its boundary does not take (a flux at an inlet, anything at an outlet, `periodic` away from a periodic pair, the heat-flux mode with fixed values).";
     // expressions (D53)
     EXPR_SYNTAX = "EXPR001", Error, "An expression that cannot be parsed.";
     EXPR_NAME = "EXPR002", Error, "An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint).";

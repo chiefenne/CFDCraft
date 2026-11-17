@@ -249,7 +249,7 @@ pub fn rates(
         let (up, un) = (sol.u.get(p), sol.u.get(n));
         let w = d.weight[fc];
         let xf = d.face_centroid.get(fc);
-        let (xp, xn) = (d.cell_centroid.get(p), d.cell_centroid.get(n));
+        let (xp, xn) = (d.cell_centroid.get(p), d.neighbour_centroid(fc));
         let rp = [xf[0] - xp[0], xf[1] - xp[1], xf[2] - xp[2]];
         let rm = [
             xf[0] - 0.5 * (xn[0] + xf[0] - rp[0]),
@@ -271,7 +271,8 @@ pub fn rates(
             let flux = dd * (un[i] - up[i]) + on * (mu * dot(k, gf) + dd * skew);
             e += flux * (un[i] - up[i]);
         }
-        *ph = e;
+        // a periodic pair carries the face twice, once from each side
+        *ph = if fc >= d.periodic { 0.5 * e } else { e };
     }
     let mut boundaries = Vec::with_capacity(mesh.boundaries.len());
     let mut scale = 0.0f64;

@@ -20,7 +20,7 @@
 //! - **inverted** faces: S_f · d ≤ 0, so the neighbour centroid lies behind
 //!   the face; and non-positive cell volumes. Both are errors.
 
-use crate::geometry::{Geometry, dot, norm, scale, sub};
+use crate::geometry::{Geometry, add, dot, norm, scale, sub};
 use crate::mesh::{CellShape, Mesh};
 use rayon::prelude::*;
 use serde::Serialize;
@@ -140,6 +140,13 @@ impl QualityReport {
         let ni = mesh.n_interior_faces();
         let nc = mesh.n_cells;
         let n_owned_face = |f: usize| f < ni && (mesh.neighbour[f] as usize) < nc + mesh.n_halo;
+        // periodic faces: the neighbour centroid moved next to the face
+        let periodic_shift = |f: usize| {
+            mesh.periodic
+                .as_ref()
+                .filter(|p| f >= p.start && f < ni)
+                .map(|p| p.shift[f - p.start])
+        };
 
         // per-face metrics
         let face: Vec<(f64, f64, f64, f64, bool)> = (0..nf)
@@ -149,7 +156,9 @@ impl QualityReport {
                 let xp = geo.cell_centroid[p];
                 let s = geo.face_area[f];
                 let fc = geo.face_centroid[f];
-                let d = if n_owned_face(f) {
+                let d = if let Some(s) = periodic_shift(f) {
+                    sub(add(geo.cell_centroid[mesh.neighbour[f] as usize], s), xp)
+                } else if n_owned_face(f) {
                     sub(geo.cell_centroid[mesh.neighbour[f] as usize], xp)
                 } else {
                     sub(fc, xp)

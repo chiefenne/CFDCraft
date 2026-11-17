@@ -241,7 +241,7 @@ impl<'a> Locator<'a> {
                 0 => {
                     // through the mesh face
                     let f = pos.face;
-                    if f >= mesh.n_interior_faces() {
+                    if f >= mesh.n_interior_faces() || mesh.is_periodic(f) {
                         return Track {
                             position: pos,
                             end: TrackEnd::Boundary { face: f },

@@ -1040,7 +1040,7 @@ fn run_one<F: FnMut(&str)>(
         let sol = Solution {
             state: fl.state()?,
             disc: &fl.disc,
-            phys: fl.phys.clone(),
+            phys: fl.physics(),
         };
         let r = balance::rates(
             &sol,
@@ -1202,7 +1202,7 @@ fn run_one<F: FnMut(&str)>(
                         let sol = Solution {
                             state: fl.state()?,
                             disc: &fl.disc,
-                            phys: fl.phys.clone(),
+                            phys: fl.physics(),
                         };
                         write_fields(
                             &case,
@@ -1293,7 +1293,7 @@ fn run_one<F: FnMut(&str)>(
             let sol = Solution {
                 state: fl.state()?,
                 disc: &fl.disc,
-                phys: fl.phys.clone(),
+                phys: fl.physics(),
             };
             let r = balance::rates(
                 &sol,
@@ -1334,7 +1334,7 @@ fn run_one<F: FnMut(&str)>(
                 Some(Solution {
                     state: fl.state()?,
                     disc: &fl.disc,
-                    phys: fl.phys.clone(),
+                    phys: fl.physics(),
                 })
             } else {
                 None
@@ -1468,7 +1468,7 @@ fn run_one<F: FnMut(&str)>(
             let sol = Solution {
                 state: fl.state()?,
                 disc: &fl.disc,
-                phys: fl.phys.clone(),
+                phys: fl.physics(),
             };
             if at_monitor {
                 let boundaries = boundary_summaries(&sol, mesh, geo, &case);
@@ -1637,10 +1637,11 @@ fn run_one<F: FnMut(&str)>(
         crate::case::dimension(&case),
         tr.clock.time,
     )?;
+    let periodic = crate::case::periodic_summaries(&mut fl, mesh, lg)?;
     let sol = Solution {
         state: fl.state()?,
         disc: &fl.disc,
-        phys: fl.phys.clone(),
+        phys: fl.physics(),
     };
     let analytic_end = case.analytic_at(tr.clock.time);
     let errors = analytic_end.map(|a| error_norms(&sol, mesh, geo, &a, dimension(&case)));
@@ -1817,6 +1818,7 @@ fn run_one<F: FnMut(&str)>(
     let scalar_fields: Vec<Vec<f64>> = sol.state.scalars.iter().map(|x| x.phi.clone()).collect();
     let solve = Solve {
         scalars,
+        periodic,
         remediation,
         balance: Some(balance_summary),
         mesh: desc.into(),

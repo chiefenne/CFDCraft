@@ -71,8 +71,13 @@ fn add_boundary_scalars(defs: &mut Value) {
     let mut sb = sb.as_object().cloned().unwrap_or_default();
     sb.remove("$schema");
     sb.remove("title");
-    // the nested definitions (Scalar) are in the case schema already
-    sb.remove("$defs");
+    // the nested definitions: Scalar is in the case schema already, the
+    // others (PeriodicMode) join it
+    if let Some(Value::Object(defs)) = sb.remove("$defs") {
+        for (k, v) in defs {
+            m.entry(k).or_insert(v);
+        }
+    }
     m.insert("ScalarBoundary".into(), Value::Object(sb));
     let Some(a) = m
         .get_mut("BoundaryCondition")

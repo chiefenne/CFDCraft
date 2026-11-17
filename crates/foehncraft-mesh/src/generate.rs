@@ -167,6 +167,13 @@ pub struct BoxSpec {
     /// wedge planes, see [`crate::wedge`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wedge: Option<f64>,
+    /// Directions whose two boundaries form a periodic pair (set by the
+    /// flow case from its periodic boundaries, D29): the perturbation of
+    /// the nodes on the two boundaries is then the same, so their faces
+    /// are translated copies.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub periodic: [bool; 3],
 }
 
 /// Grading of the three directions.
@@ -213,6 +220,7 @@ impl Default for BoxSpec {
             perturb: 0.0,
             seed: default_seed(),
             wedge: None,
+            periodic: [false; 3],
         }
     }
 }
@@ -355,8 +363,18 @@ impl BoxSpec {
                     let mut p = [coords[0][i], coords[1][j], coords[2][k]];
                     if self.perturb > 0.0 {
                         // key: node position in the 2D or 3D grid, so both
-                        // layers of a 2D mesh move alike
-                        let key_k = if dims == 2 { 0 } else { k as u64 };
+                        // layers of a 2D mesh move alike; in a periodic
+                        // direction the last node layer takes the numbers
+                        // of the first
+                        let wrap = |e: usize, m: usize| {
+                            if self.periodic[e] && m == n[e] {
+                                0
+                            } else {
+                                m as u64
+                            }
+                        };
+                        let kk = if dims == 2 { 0 } else { wrap(2, k) };
+                        let (ki, kj) = (wrap(0, i), wrap(1, j));
                         for d in 0..dims {
                             let m = idx[d];
                             if m == 0 || m == n[d] {
@@ -367,7 +385,7 @@ impl BoxSpec {
                             let u = rng::uniform_keyed([
                                 foehncraft_core::rng::stream::MESH,
                                 self.seed,
-                                (i as u64) | ((j as u64) << 21) | (key_k << 42),
+                                ki | (kj << 21) | (kk << 42),
                                 d as u64,
                             ]);
                             p[d] += self.perturb * h * (2.0 * u - 1.0);

@@ -353,6 +353,7 @@ impl Backend for CpuBackend {
             weight: &d.weight,
             face_centroid: d.face_centroid.view(),
             cell_centroid: d.cell_centroid.view(),
+            shift: d.shift.view(),
             phi: self.v(V::Phi),
             grad: self.grad_view(),
             psi: self.v(V::Psi),

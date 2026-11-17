@@ -26,6 +26,17 @@
 //! Inner faces are sorted by owner, then neighbour (upper-triangular order),
 //! which gives the matrix rows the order of a well-numbered mesh.
 //!
+//! **Periodic faces** (D29, D109 (1); [`crate::periodic`]). On a single
+//! partition the faces of translational periodic boundary pairs take the
+//! place of the processor faces: `n_inner_faces..n_interior_faces()`. Each
+//! side keeps its own face (its nodes, area and centroid stay those of the
+//! boundary face), owned by its cell and listed only in that cell's face
+//! list, with the cell of the partner face as neighbour; [`Periodic`]
+//! holds the shift that moves the neighbour's centroid next to the face.
+//! So every flux of a pair is computed from both sides with the same
+//! formula, the matrix rows couple the two cells, and the geometry of the
+//! cells stays that of the mesh as read.
+//!
 //! **Global identities.** Every cell, face and node carries a 64-bit
 //! identity, its position in the input mesh (as read or generated, before
 //! any renumbering or decomposition). Output and restart files are written
@@ -50,6 +61,66 @@ impl Boundary {
     /// Face range of the boundary.
     pub fn range(&self) -> std::ops::Range<usize> {
         self.start..self.start + self.len
+    }
+}
+
+/// One translational periodic pair: the faces of boundary `a` meet those
+/// of boundary `b` when moved by `translation` (x_b = x_a + T).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PeriodicPair {
+    /// Name of the first boundary.
+    pub a: String,
+    /// Name of the partner boundary.
+    pub b: String,
+    /// Translation T from `a` to `b` (m).
+    pub translation: [f64; 3],
+    /// The faces of side `a` (consecutive periodic faces).
+    pub a_faces: std::ops::Range<usize>,
+    /// The faces of side `b`, in the order of their partners on side `a`.
+    pub b_faces: std::ops::Range<usize>,
+}
+
+/// The periodic faces of a mesh (see the module docs).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Periodic {
+    /// The pairs.
+    pub pairs: Vec<PeriodicPair>,
+    /// First periodic face (`n_inner_faces`); the periodic faces end at
+    /// `n_interior_faces()`.
+    pub start: usize,
+    /// Per periodic face (index `f − start`): the shift s that places the
+    /// neighbour cell next to the face, x_N + s (−T on side `a`, +T on
+    /// side `b`).
+    pub shift: Vec<[f64; 3]>,
+    /// Per periodic face: the partner face (absolute index).
+    pub partner: Vec<u32>,
+    /// Per periodic face: its pair.
+    pub pair: Vec<u32>,
+}
+
+impl Periodic {
+    /// Number of periodic faces.
+    pub fn len(&self) -> usize {
+        self.shift.len()
+    }
+
+    /// True without periodic faces.
+    pub fn is_empty(&self) -> bool {
+        self.shift.is_empty()
+    }
+
+    /// −1 for a face on side `a` of its pair, +1 on side `b`: the sign of
+    /// its shift along the translation, so that a variable with the trend
+    /// φ(x + T) = φ(x) + Δ seen across face `f` is φ_N + side(f) Δ.
+    pub fn side(&self, f: usize) -> f64 {
+        let i = f - self.start;
+        let pr = &self.pairs[self.pair[i] as usize];
+        if pr.a_faces.contains(&f) { -1.0 } else { 1.0 }
+    }
+
+    /// The pair of boundary `name`, if it is one of the sides.
+    pub fn pair_of(&self, name: &str) -> Option<&PeriodicPair> {
+        self.pairs.iter().find(|p| p.a == name || p.b == name)
     }
 }
 
@@ -93,6 +164,8 @@ pub struct Mesh {
     pub face_id: Vec<GlobalIndex>,
     /// Global identity of each node (input order).
     pub point_id: Vec<GlobalIndex>,
+    /// Translational periodic faces (`None`: none; see the module docs).
+    pub periodic: Option<Periodic>,
 }
 
 impl Mesh {
@@ -134,11 +207,26 @@ impl Mesh {
         self.cell(c).iter().map(|&e| unpack_face(e))
     }
 
+    /// First periodic face: `n_interior_faces()` without periodic faces.
+    #[inline]
+    pub fn periodic_start(&self) -> usize {
+        self.periodic
+            .as_ref()
+            .map_or(self.n_interior_faces(), |p| p.start)
+    }
+
+    /// True for a periodic face.
+    #[inline]
+    pub fn is_periodic(&self, f: usize) -> bool {
+        f >= self.periodic_start() && f < self.n_interior_faces()
+    }
+
     /// The cell on the other side of face `f` seen from cell `c`, or `None`
-    /// for a boundary face.
+    /// for a boundary face and a periodic face (geometrically a boundary:
+    /// its neighbour lies at the other end of the domain).
     #[inline]
     pub fn across(&self, f: usize, c: usize) -> Option<usize> {
-        if f >= self.n_interior_faces() {
+        if f >= self.n_interior_faces() || self.is_periodic(f) {
             return None;
         }
         let (p, n) = (self.owner[f] as usize, self.neighbour[f] as usize);
@@ -232,7 +320,7 @@ impl Mesh {
                 if f < self.n_inner_faces && (n >= nc || n <= p) {
                     return Err(format!("inner face {f}: cells {p}, {n} not ordered"));
                 }
-                if f >= self.n_inner_faces && (n < nc || n >= nt) {
+                if f >= self.n_inner_faces && f < self.periodic_start() && (n < nc || n >= nt) {
                     return Err(format!(
                         "processor face {f}: neighbour {n} is not a halo cell"
                     ));
@@ -286,7 +374,26 @@ impl Mesh {
         if self.n_inner_cells > nc {
             return Err("more inner cells than local cells".into());
         }
-        for f in self.n_inner_faces..ni {
+        if let Some(pd) = &self.periodic {
+            if pd.start != self.n_inner_faces || self.n_halo != 0 {
+                return Err("periodic faces need a single partition after the inner faces".into());
+            }
+            let np = ni - pd.start;
+            if pd.shift.len() != np || pd.partner.len() != np || pd.pair.len() != np {
+                return Err("periodic arrays have the wrong length".into());
+            }
+            for f in pd.start..ni {
+                let i = f - pd.start;
+                let q = pd.partner[i] as usize;
+                if q < pd.start || q >= ni || pd.partner[q - pd.start] as usize != f {
+                    return Err(format!("periodic face {f}: partner {q} is not paired back"));
+                }
+                if self.neighbour[f] != self.owner[q] || self.owner[f] == self.neighbour[f] {
+                    return Err(format!("periodic face {f}: wrong neighbour"));
+                }
+            }
+        }
+        for f in self.n_inner_faces..self.periodic_start() {
             if (self.owner[f] as usize) < self.n_inner_cells {
                 return Err(format!(
                     "processor face {f} belongs to inner cell {}",

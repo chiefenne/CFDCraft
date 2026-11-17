@@ -177,7 +177,7 @@ the list. `output.derived` and `output.reference` may change during a run.
 | `convective-outlet` | `convection_velocity` U_c (default: the mean outflow speed) | ∂u/∂t + U_c ∂u/∂n = 0 (transient cases) | extrapolated | ρ u_b·S, balanced with the inflow |
 | `symmetry` | none | no shear stress, zero normal component | extrapolated | 0 |
 | `wedge` | none | as `symmetry`: the two side planes of an axisymmetric wedge mesh ([`mesh.generate.wedge`](meshes.md)) | extrapolated | 0 |
-| `periodic` | `partner` | comes with stage 6 (the face pairing); an error until then | | |
+| `periodic` | `partner`, one of `mass_flow` (kg/s) and `pressure_gradient` (Pa/m) on one side of the pair, `translation` (m) | across the pair: the partner's cells are the neighbours, translated by the period | periodic, with the driving as a uniform body force along the translation | through the pair |
 
 **Backflow at pressure outlets** (`backflow`). Where the flow enters
 through an outlet face (a vortex crossing the outlet, a recirculation
@@ -198,6 +198,29 @@ every iteration; without a pressure boundary the reference cell fixes the
 pressure level. U_c defaults to the mean outflow speed (the prescribed
 inflow over the outlet area); give `convection_velocity` when nothing
 prescribes an inflow.
+
+**Periodic pairs** (stage 6 part 6p, D29, D109 (1); [gallery 67](../gallery/boundary-conditions.md#periodic),
+[recipe 67](../recipes/boundary-conditions.md#periodic)). Two boundaries of
+`type = "periodic"` that name each other as `partner` (one of them may
+leave it out) form a translational pair: the faces of one are translated
+copies of the faces of the other, matched by their centroids (within 1e-6
+of the face size), with the translation from the area-weighted centroids
+or from `translation` (from this boundary to its partner). Each side keeps
+its own faces; the neighbour of a face is the cell behind its partner,
+seen shifted by the period, in every face loop, gradient and limiter. The
+pressure is periodic and its level fixed in the reference cell; the flow
+is driven by a uniform body force β along the translation, either fixed
+(`pressure_gradient = G`: the mean pressure falls by G per metre from the
+boundary that gives it towards its partner, β = G) or adjusted after every
+pressure correction so that the mass flow through the pair is `mass_flow`
+(kg/s, from the boundary that gives it towards its partner). The log, the
+report (`periodic`: `mass_flow`, `driving_force`) and the restart file
+carry β. Without a driving and without a body force the check warns
+(BC031): the flow decays. The mesh needs at least two cells across the
+periodic direction, is renumbered before the pairing and runs on one
+partition for now; generated boxes keep the perturbed nodes of
+`xmin`–`xmax` (and of y, z) translated copies when the case pairs them.
+Errors: BC030.
 
 **Inlet profile from a table** (`profile = "table"`). `table` is a file
 (relative to the case file) of rows of a coordinate and either the normal
@@ -251,6 +274,7 @@ wedge).
 | velocity-inlet + convective-outlet (transient) | wakes and vortex streets with the outlet close behind the body | reference cell |
 | velocity-inlet + static-pressure-outlet + slip walls | external flow in a finite box: the slip walls stand for the far field | outlet pressure |
 | velocity-inlet + static-pressure-outlet + wedges (+ walls) | axisymmetric flow: pipes, nozzles, jets | outlet pressure |
+| periodic pair (`mass_flow` or `pressure_gradient`) + walls (+ symmetry, wedges, further periodic pairs) | fully developed flow in one module: channels, pipes, ribbed passages, heat transfer with the heat-flux jump | reference cell |
 
 # Expressions, materials and regions (D53, D102, D112)
 
@@ -335,6 +359,8 @@ while continuity is not converged.
 | `scalars.<name>.exact` | none | exact solution: L2 and largest error, observed order of a sweep |
 | `boundary.<boundary>.scalar.<name>.value` | per kind | fixed value at inlets and walls (x, y, z, t) |
 | `boundary.<boundary>.scalar.<name>.flux` | per kind | diffusive flux Γ ∂φ/∂n into the fluid at walls, slip walls, symmetry planes and wedges (x, y, z, t) |
+| `boundary.<boundary>.scalar.<name>.periodic` | `"periodic"` | on one boundary of a periodic pair: `"periodic"` (unchanged across the pair) or `"heat-flux"` (the jump Δ = Q/ṁ of D109 (1): Q = ρ times the flux and source integrals, ṁ the mass flow through the pair; refused with fixed values on walls or inlets) |
+| `boundary.<boundary>.scalar.<name>.bulk` | 0 | `"heat-flux"`: the bulk (mixing-cup) value on this boundary, the level of a steady run |
 | `solver.scalar.scheme` | `linear-upwind` | `upwind`, `linear-upwind`, `central` (bounded, with `central_blending` and `central_bounding`) |
 | `solver.scalar.limiter`, `limiter_k` | `venkatakrishnan`, 5 | limiter of the scalar gradients |
 | `solver.scalar.relaxation` | 0.9 steady, 1 transient | under-relaxation |
@@ -345,7 +371,8 @@ while continuity is not converged.
 
 The defaults per boundary kind: zero flux on walls, slip walls, symmetry
 planes and wedges; the value 0 at inlets; zero gradient at outlets.
-Periodic boundaries follow in stage 6 part 6p. Scalar names may not be
+Periodic boundaries carry the scalar across the pair, plainly or with
+the heat-flux jump. Scalar names may not be
 those of output fields, derived fields or the expression language
 (`T`, `k`, `omega`, `Y`, ... are reserved for the energy equation, the
 turbulence models and the species). Errors in these tables are `SCAL001`.

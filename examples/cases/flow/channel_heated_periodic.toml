@@ -1,0 +1,101 @@
+# Laminar heated channel, periodic: a passive temperature in plane
+# Poiseuille flow with a uniform heat flux into both walls, on one periodic
+# module with the heat-flux jump of D109 (1) (stage 6 part 6p, D111).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_heated_periodic.toml
+#
+# The case of channel_heated.toml (channel 0 < y < h, h = 1 m, length
+# 2 m, depth 0.1 m, U = 1 m/s, Re = 10, Γ = 1e-3 m²/s, wall flux
+# q = 1e-3 K m/s on both walls) with its inlet and outlet as one periodic
+# pair: the flow is driven by the mass flow 0.1 kg/s, the temperature
+# crosses the pair with the jump Δ = Q/ṁ = 4e-3 K (Q = ρ q times the wall
+# area 0.4 m²), the linear trend G L of the thermally developed flow. The
+# periodic solution is the exact one of the open channel,
+#
+#   T = G x + h (2 η³ − η⁴ − η),   η = y / h,   G = 2 q / (U h),
+#
+# with its level fixed by the bulk value at xmin, −17/70 h. The Nusselt
+# number with the hydraulic diameter 2 h is
+#
+#   Nu = 2 h q / (Γ (T̄_w − T_b)) = 140/17 = 8.2353,
+#
+# with T_b the bulk value at xmin and T̄_w the mean wall temperature at
+# the same station, G L / 2 below the area mean over the walls (the
+# heated-channel recipe). Unlike the open channel it needs no inlet profile
+# and no outlet: both the flow and the temperature are fully developed by
+# construction. Three nested meshes: the velocity and the temperature error
+# fall at second order (1.8 to 2.2).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [32, 16, 1]
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.1
+
+[constants]
+h = 1.0
+q = 1e-3          # wall heat flux over ρ c_p (K m/s)
+u_mean = 1.0
+G = "2 * q / (u_mean * h)"
+
+[scalars.theta]
+diffusivity = 1e-3
+initial = 0.0
+exact = "G * x + h * (2 * (y / h)^3 - (y / h)^4 - y / h)"
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 0.1                    # kg/s from xmin towards xmax
+[boundary.xmin.scalar.theta]
+periodic = "heat-flux"
+bulk = -0.24285714285714285        # −17/70 h, the bulk value at x = 0
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.scalar.theta]
+flux = "q"
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.scalar.theta]
+flux = "q"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 5000
+
+[solver.momentum]
+relaxation = 0.9
+
+[solver.scalar]
+scheme = "linear-upwind"
+
+[analytic]
+type = "poiseuille"
+mean_velocity = 1.0
+x_outlet = 2.0
+
+[verification]
+levels = [0, 1, 2]
+expected_order = [1.8, 2.2]
+scalar_order = [1.8, 2.2]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

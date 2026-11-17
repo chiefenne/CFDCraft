@@ -1,10 +1,11 @@
 # Boundary conditions of the flow solver
 
-Part of the [Example gallery](../gallery.md): slip walls, axisymmetric wedges, inlet profiles from tables, backflow treatment at pressure outlets and the convective outlet (D29).
+Part of the [Example gallery](../gallery.md): slip walls, axisymmetric wedges, inlet profiles from tables, backflow treatment at pressure outlets and the convective outlet (D29), periodic pairs with the heat-flux jump of the scalars (D29, D109 (1)).
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 21 | [Boundary conditions: slip walls, wedges, tables, backflow, convective outlets](#boundary-conditions) | 5 | slip wall, axisymmetric wedge mesh, inlet profile from a table, backflow treatment at pressure outlets, convective outlet |
+| 67 | [Periodic modules: a channel and a short heated pipe](#periodic) | 6 | `type = "periodic"`, `mass_flow`, `pressure_gradient`, `[boundary.<name>.scalar.<scalar>] periodic = "heat-flux"`, `bulk` |
 
 ---
 
@@ -68,6 +69,105 @@ target/release/foehn flow examples/cases/flow/cylinder_re100.toml
 target/release/foehn flow examples/cases/flow/cylinder_re100_short.toml
 target/release/foehn flow examples/cases/flow/cylinder_re100_convective.toml
 python3 -m tools.plot.outlet_chart cylinder_outlets.svg
+```
+
+[↑ back to top](#boundary-conditions-of-the-flow-solver)
+
+---
+
+<a id="periodic"></a>
+## 67. Periodic modules: a channel and a short heated pipe
+
+![Left: the temperature across the short periodic heated pipe at x = 0.5 m, 16 x 16 cells against the exact profile. Middle: the Nusselt numbers of the periodic heated channel and pipe on three meshes approaching 140/17 and 48/11. Right: the driving force that holds the mass flow of the periodic channel and pipe, converging to the exact pressure gradients](../figures/gallery/periodic.svg)
+
+**One module instead of a long duct.** A fully developed flow repeats
+itself along the duct, so one module with its inlet and outlet as a
+periodic pair replaces the entry length. `poiseuille_periodic.toml` is
+the channel of `poiseuille_hex.toml` with `xmin` and `xmax` as the pair,
+driven by its mass flow:
+
+```toml
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 0.1          # kg/s from xmin towards xmax
+[boundary.xmax]
+type = "periodic"
+```
+
+The faces of the two boundaries are matched by their centroids; each side
+keeps its own faces, and the neighbour of a face is the cell behind its
+partner, seen shifted by the period, in every face loop, gradient and
+limiter. A uniform body force β along the translation drives the flow; the
+solver adjusts it after every pressure correction so that the mass flow
+through the pair is the prescribed one (or holds it fixed with
+`pressure_gradient`). The velocity error falls at order 1.98 and 1.94 on
+three perturbed hex meshes (the open channel: 1.98 and 1.89), and β
+converges to the exact gradient 12 μU/h² = 1.2 Pa/m, +0.09 % on the
+finest mesh. Driven by that gradient instead, the mass flow converges to
+0.1 kg/s at second order (0.78 %, 0.20 %, 0.05 % on uniform meshes).
+
+**The heat-flux jump** (D109 (1)). A temperature heated through the walls
+is not periodic: it rises by Δ = Q/ṁ from one end of the module to the
+other, Q the heat the walls put in. With `periodic = "heat-flux"` on one
+side of the pair the scalar crosses it with that jump, computed from the
+wall fluxes and the current mass flow in every iteration, and `bulk` fixes
+its level (the mixing-cup value on that boundary):
+
+```toml
+[boundary.xmin.scalar.theta]
+periodic = "heat-flux"
+bulk = -0.24285714285714285   # −17/70 h at x = 0
+```
+
+`channel_heated_periodic.toml` is the heated channel of gallery 63 on one
+module; the periodic solution is the exact one of the open channel:
+
+| Case | Cells | L2 error of θ (K) | Nu | exact | Nu − exact |
+|---|---|---|---|---|---|
+| channel | 512 | 3.61e-3 | 8.4647 | 140/17 = 8.2353 | +2.79 % |
+| | 2 048 | 6.87e-4 | 8.2793 | | +0.53 % |
+| | 8 192 | 1.69e-4 | 8.2460 | | +0.13 % |
+| pipe | 64 | 4.61e-3 | 4.5094 | 48/11 = 4.3636 | +3.34 % |
+| | 256 | 9.38e-4 | 4.3919 | | +0.65 % |
+| | 1 024 | 1.93e-4 | 4.3691 | | +0.13 % |
+
+**The short heated pipe** (D111). `pipe_heated_periodic.toml` is a module
+one diameter long on the axisymmetric wedge of `pipe_wedge.toml`: the
+laminar pipe with a uniform wall heat flux, whose Nusselt number 48/11
+otherwise needs a pipe of 50 diameters and more for the thermal entry
+length. The observed orders of the temperature error are 2.40 and 2.02
+(channel) and 2.30 and 2.28 (pipe). The pipe runs without a limiter on the
+scalar: the limiter clips the smooth minimum of the temperature on the
+axis and costs the order on the perturbed meshes (1.4 on the fourth
+mesh). The driving force of the pipe converges to 8 μU/R² = 3.2 Pa/m.
+
+| Check | Result |
+|---|---|
+| Pairing of perturbed hex, poly and tet boxes in x and z | every face matched, geometry unchanged to round-off |
+| Periodic Poiseuille flow against the open channel, same meshes | velocity errors within a factor of two, order 1.98, 1.94 |
+| Driving force at a fixed mass flow | 1.2011 Pa/m against 1.2 (+0.09 %) |
+| Mass flow at a fixed pressure gradient, uniform meshes | errors 0.78 %, 0.20 %, 0.05 % (order 2.0) |
+| Heat-flux jump and level | Δ = Q/ṁ = 4e-3 K and the bulk value to 1e-12 |
+| Transient run with the heat-flux mode, restart after 6 of 12 steps | bit-identical, β in the restart file |
+| Cases without periodic boundaries | results unchanged bit for bit |
+
+| | |
+|---|---|
+| Code | `foehncraft_mesh::periodic` (`pair`), `Mesh::periodic`, kernels `fv::neighbour_centroid`, `fv::Boundary::across`, `foehncraft_flow::bc` (`BoundaryCondition::Periodic`, `periodic_pairs`, `Drive`), `simplec::Flow` (`body_force`, the mass-flow driving), `scalar` (`PeriodicMode`, the heat-flux jump and the level) |
+| Tests | `tests/periodic.rs`, `periodic.rs` (`pairs_the_box_in_x_and_z`, `refuses_bad_pairs`) |
+| Case files | `flow/poiseuille_periodic.toml`, `channel_heated_periodic.toml`, `pipe_heated_periodic.toml` |
+| Recipe | [67](../recipes/boundary-conditions.md#periodic) |
+
+```
+target/release/foehn flow examples/cases/flow/poiseuille_periodic.toml --out output/pois_periodic
+target/release/foehn flow examples/cases/flow/channel_heated_periodic.toml --out output/heated_periodic
+target/release/foehn flow examples/cases/flow/pipe_heated_periodic.toml --out output/pipe_periodic
+target/release/foehn flow examples/cases/flow/pipe_heated_periodic.toml --out output/pipe_mid \
+    --set 'verification.levels=[1]' \
+    --set 'output.lines=[{name="radius",from=[0.5,0.0078125,0.0],to=[0.5,0.4921875,0.0],points=32}]'
+python3 -m tools.plot.periodic_chart docs/figures/gallery/periodic.svg \
+    output/pois_periodic output/heated_periodic output/pipe_periodic output/pipe_mid
 ```
 
 [↑ back to top](#boundary-conditions-of-the-flow-solver)

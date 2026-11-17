@@ -140,6 +140,9 @@ pub fn apply(mesh: &Mesh, perm: &[u32]) -> Result<Mesh, String> {
     if mesh.n_halo != 0 {
         return Err("renumber the global mesh before the decomposition".into());
     }
+    if mesh.periodic.is_some() {
+        return Err("renumber the mesh before pairing its periodic boundaries".into());
+    }
     let n = mesh.n_cells;
     let mut b = MeshBuilder::new(mesh.points.clone(), n);
     let mut zone = vec![0u32; n];

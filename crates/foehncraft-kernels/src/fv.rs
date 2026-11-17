@@ -80,19 +80,76 @@ pub struct Topology<'a> {
     /// Number of interior (inner and processor) faces; boundary faces
     /// follow.
     pub n_interior: usize,
+    /// First periodic face (D29, D109 (1)): the interior faces
+    /// `periodic..n_interior` are periodic, seen from their owner only,
+    /// with the partner face's cell as neighbour; `n_interior` without
+    /// periodic faces.
+    pub periodic: usize,
+}
+
+#[inline(always)]
+fn add<T: Real>(a: [T; 3], b: [T; 3]) -> [T; 3] {
+    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+}
+
+/// The centroid of the neighbour `n` of interior face `f` as seen from the
+/// face: moved by the shift of a periodic face (`shift` has one entry per
+/// periodic face), unchanged otherwise.
+///
+/// # Safety
+/// `n` is inside `cell_centroid`, and for a periodic face `f − periodic`
+/// inside `shift`.
+#[inline(always)]
+pub unsafe fn neighbour_centroid<T: Real>(
+    f: usize,
+    n: usize,
+    topo: &Topology,
+    cell_centroid: &Vec3<T>,
+    shift: &Vec3<T>,
+) -> [T; 3] {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let x = cell_centroid.at(n);
+        if f >= topo.periodic {
+            add(x, shift.at(f - topo.periodic))
+        } else {
+            x
+        }
+    }
 }
 
 /// Boundary coefficients of the face values, φ_f = a φ_P + b, one entry per
-/// boundary face (index `f − n_interior`).
+/// boundary face (index `f − n_interior`), and the jump of the periodic
+/// faces.
 #[derive(Clone, Copy)]
 pub struct Boundary<'a, T> {
     /// Coefficient of the owner value.
     pub a: &'a [T],
     /// Constant part.
     pub b: &'a [T],
+    /// Jump b of the affine map of the periodic faces (D109 (1), a = 1):
+    /// the neighbour value seen across periodic face `f` is
+    /// φ_N + jump\[f − periodic\]; empty: no jump (plain periodic).
+    pub jump: &'a [T],
 }
 
 impl<T: Real> Boundary<'_, T> {
+    /// The neighbour value `phi_n` of interior face `f` as seen from its
+    /// owner: with the jump on a periodic face.
+    ///
+    /// # Safety
+    /// For a periodic face with a jump, `f − topo.periodic` is inside
+    /// `jump`.
+    #[inline(always)]
+    pub unsafe fn across(&self, f: usize, topo: &Topology, phi_n: T) -> T {
+        if f >= topo.periodic && !self.jump.is_empty() {
+            // SAFETY: guaranteed by the caller.
+            phi_n + unsafe { ld(self.jump, f - topo.periodic) }
+        } else {
+            phi_n
+        }
+    }
+
     /// Face value of boundary face `fb` for owner value `phi_p`.
     ///
     /// # Safety
@@ -136,7 +193,7 @@ pub unsafe fn lsq_gradient<T: Real>(
                 } else {
                     ld(topo.neighbour, f)
                 };
-                ld(phi, other as usize) - pc
+                bc.across(f, topo, ld(phi, other as usize)) - pc
             } else {
                 bc.value(f - topo.n_interior, pc) - pc
             };
@@ -204,7 +261,7 @@ pub unsafe fn venkat_limiter<T: Real>(
                 } else {
                     ld(topo.neighbour, f)
                 };
-                ld(phi, other as usize)
+                bc.across(f, topo, ld(phi, other as usize))
             } else {
                 bc.value(f - topo.n_interior, pc)
             };
@@ -261,6 +318,9 @@ pub struct FaceInputs<'a, T> {
     pub face_centroid: Vec3<'a, T>,
     /// Cell centroids (local and halo cells).
     pub cell_centroid: Vec3<'a, T>,
+    /// Shift of the neighbour centroid per periodic face
+    /// ([`neighbour_centroid`]).
+    pub shift: Vec3<'a, T>,
     /// Cell values.
     pub phi: &'a [T],
     /// Cell gradients.
@@ -354,11 +414,13 @@ pub unsafe fn face_coefficients<T: Real>(f: usize, inp: &FaceInputs<T>) -> (T, T
         if f < t.n_interior {
             let n = ld(t.neighbour, f) as usize;
             let gn = inp.grad.at(n);
+            let xn = neighbour_centroid(f, n, t, &inp.cell_centroid, &inp.shift);
+            let phi_n = inp.bc.across(f, t, ld(inp.phi, n));
             // linear-upwind deferred correction ṁ (φ_f − φ_U)
             let ho = if m >= T::ZERO {
                 ld(inp.psi, p) * dot(gp, sub(xf, inp.cell_centroid.at(p)))
             } else {
-                ld(inp.psi, n) * dot(gn, sub(xf, inp.cell_centroid.at(n)))
+                ld(inp.psi, n) * dot(gn, sub(xf, xn))
             };
             let w = ld(inp.weight, f);
             let wn = T::ONE - w;
@@ -371,8 +433,7 @@ pub unsafe fn face_coefficients<T: Real>(f: usize, inp: &FaceInputs<T>) -> (T, T
                 // bounded central: the linear interpolation to x_w on the
                 // line P–N, corrected along the face with the
                 // interpolated gradient
-                let (xp, xn) = (inp.cell_centroid.at(p), inp.cell_centroid.at(n));
-                let phi_n = ld(inp.phi, n);
+                let xp = inp.cell_centroid.at(p);
                 let xw = [
                     w * xp[0] + wn * xn[0],
                     w * xp[1] + wn * xn[1],
@@ -394,8 +455,12 @@ pub unsafe fn face_coefficients<T: Real>(f: usize, inp: &FaceInputs<T>) -> (T, T
             };
             // non-orthogonal correction −Γ k·∇φ_f, ∇φ_f interpolated
             let corr = gam * dot(kf, gf);
-            let orth = dd * (ld(inp.phi, n) - phi_p);
+            let orth = dd * (phi_n - phi_p);
             b -= inp.nonorth * limit_corr(corr, orth, inp.nonorth_limit);
+            if f >= t.periodic && !inp.bc.jump.is_empty() {
+                // the jump of the neighbour value in the implicit part
+                b += (mm - dd) * ld(inp.bc.jump, f - t.periodic);
+            }
             (mp + dd, mm - dd, b)
         } else {
             let fb = f - t.n_interior;

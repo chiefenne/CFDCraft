@@ -226,6 +226,10 @@ pub struct Mesh {
     pub conv: Raw3,
     /// β of the convective outlets per boundary face, set per time step.
     pub beta: Raw<f64>,
+    /// First periodic face (`n_interior` without periodic faces; D29).
+    pub periodic: u64,
+    /// Shift of the neighbour centroid per periodic face.
+    pub shift: Raw3,
 }
 
 impl Mesh {
@@ -243,6 +247,7 @@ impl Mesh {
                 cell_ptr: self.cell_ptr.get(),
                 cell_faces: self.cell_faces.get(),
                 n_interior: self.n_interior as usize,
+                periodic: self.periodic as usize,
             }
         }
     }
@@ -262,6 +267,7 @@ impl Mesh {
                 dgeo: self.dgeo.get(),
                 k: self.k.v(),
                 weight: self.weight.get(),
+                shift: self.shift.v(),
             }
         }
     }
@@ -563,6 +569,8 @@ pub struct GradientArgs {
     pub bc_a: Raw<f64>,
     /// Boundary constant b.
     pub bc_b: Raw<f64>,
+    /// Jump per periodic face (empty: plain periodic).
+    pub jump: Raw<f64>,
     /// Output gradient.
     pub out: Raw3,
 }
@@ -579,6 +587,7 @@ impl Entry for Gradient {
             let bc = Boundary {
                 a: a.bc_a.get(),
                 b: a.bc_b.get(),
+                jump: a.jump.get(),
             };
             let g = fv::lsq_gradient(c, &a.m.topo(), &a.w.v(), a.phi.get(), &bc);
             *a.out.x.out().add(c) = g[0];
@@ -600,6 +609,8 @@ pub struct LimiterArgs {
     pub bc_a: Raw<f64>,
     /// Boundary constant b.
     pub bc_b: Raw<f64>,
+    /// Jump per periodic face (empty: plain periodic).
+    pub jump: Raw<f64>,
     /// Gradient.
     pub grad: Raw3,
     /// ε² per cell or one value.
@@ -620,6 +631,7 @@ impl Entry for Limiter {
             let bc = Boundary {
                 a: a.bc_a.get(),
                 b: a.bc_b.get(),
+                jump: a.jump.get(),
             };
             *a.out.out().add(c) = fv::venkat_limiter(
                 c,
@@ -1327,6 +1339,8 @@ pub struct ScalarFaceArgs {
     pub bc_a: Raw<f64>,
     /// Boundary constant b.
     pub bc_b: Raw<f64>,
+    /// Jump per periodic face (empty: plain periodic).
+    pub jump: Raw<f64>,
     /// Convecting face mass flux.
     pub mass_flux: Raw<f64>,
     /// ρΓ per face.
@@ -1369,6 +1383,7 @@ impl Entry for ScalarFaces {
                 bc: Boundary {
                     a: a.bc_a.get(),
                     b: a.bc_b.get(),
+                    jump: a.jump.get(),
                 },
                 mass_flux: a.mass_flux.get(),
                 gamma: a.gamma.get(),
@@ -1377,6 +1392,7 @@ impl Entry for ScalarFaces {
                 weight: a.m.weight.get(),
                 face_centroid: a.m.face_centroid.v(),
                 cell_centroid: a.m.cell_centroid.v(),
+                shift: a.m.shift.v(),
                 phi: a.phi.get(),
                 grad: a.grad.v(),
                 psi: a.psi.get(),
@@ -1651,6 +1667,8 @@ mod tests {
                 + 16
                 + 48
                 + 16
+                + 8
+                + 48
         );
     }
 

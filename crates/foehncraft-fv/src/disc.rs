@@ -159,6 +159,13 @@ pub struct Discretisation {
     pub sell: SellStructure,
     /// Largest non-orthogonality angle in degrees (for the report).
     pub max_nonorth_deg: f64,
+    /// First periodic face (`n_interior` without periodic faces; D29).
+    pub periodic: usize,
+    /// Shift of the neighbour centroid per periodic face
+    /// (`foehncraft_mesh::Periodic::shift`).
+    pub shift: Soa3,
+    /// Partner face per periodic face.
+    pub partner: Vec<u32>,
 }
 
 /// Inverse of a symmetric 3×3 matrix by the adjugate, `None` when it is
@@ -193,6 +200,24 @@ fn inverse3(m: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
 }
 
 impl Discretisation {
+    /// The centroid of the neighbour of interior face `f` as the face sees
+    /// it: moved by the period next to a periodic face (D29).
+    pub fn neighbour_centroid(&self, f: usize) -> [f64; 3] {
+        let n = self.neighbour[f] as usize;
+        let c = &self.cell_centroid;
+        let x = [c.x[n], c.y[n], c.z[n]];
+        if f >= self.periodic && f < self.n_interior {
+            let i = f - self.periodic;
+            [
+                x[0] + self.shift.x[i],
+                x[1] + self.shift.y[i],
+                x[2] + self.shift.z[i],
+            ]
+        } else {
+            x
+        }
+    }
+
     /// Builds the discretisation of `problem` on `mesh`. The mesh must be a
     /// single partition (no halo cells; the multi-rank operators follow with
     /// stage 7).
@@ -236,6 +261,22 @@ impl Discretisation {
         }
 
         let xc = &geo.cell_centroid;
+        let periodic = mesh.periodic_start();
+        let pshift: Vec<[f64; 3]> = mesh
+            .periodic
+            .as_ref()
+            .map(|p| p.shift.clone())
+            .unwrap_or_default();
+        // the neighbour centroid seen from interior face f (moved next to a
+        // periodic face)
+        let xn = |f: usize| {
+            let x = xc[mesh.neighbour[f] as usize];
+            if f >= periodic {
+                foehncraft_mesh::geometry::add(x, pshift[f - periodic])
+            } else {
+                x
+            }
+        };
         let mut dgeo = vec![0.0; nf];
         let mut k = Soa3::zeros(nf);
         let mut weight = vec![1.0; nf];
@@ -246,7 +287,7 @@ impl Discretisation {
             let s = geo.face_area[f];
             let p = mesh.owner[f] as usize;
             let d = if f < ni {
-                sub(xc[mesh.neighbour[f] as usize], xc[p])
+                sub(xn(f), xc[p])
             } else {
                 sub(geo.face_centroid[f], xc[p])
             };
@@ -263,7 +304,7 @@ impl Discretisation {
             if f < ni {
                 let n = scale(s, 1.0 / ss.sqrt());
                 let dpf = dot(sub(geo.face_centroid[f], xc[p]), n);
-                let dfn = dot(sub(xc[mesh.neighbour[f] as usize], geo.face_centroid[f]), n);
+                let dfn = dot(sub(xn(f), geo.face_centroid[f]), n);
                 weight[f] = dfn / (dpf + dfn);
             } else {
                 let fb = f - ni;
@@ -292,12 +333,11 @@ impl Discretisation {
             for &e in &mesh.cell_faces[lo..hi] {
                 let (f, is_nb) = unpack_face(e);
                 let d = if f < ni {
-                    let other = if is_nb {
-                        mesh.owner[f]
+                    if is_nb {
+                        sub(xc[mesh.owner[f] as usize], xc[c])
                     } else {
-                        mesh.neighbour[f]
-                    } as usize;
-                    sub(xc[other], xc[c])
+                        sub(xn(f), xc[c])
+                    }
                 } else {
                     let d = sub(geo.face_centroid[f], xc[c]);
                     match kind[f - ni] {
@@ -364,6 +404,13 @@ impl Discretisation {
             source,
             sell,
             max_nonorth_deg: max_nonorth,
+            periodic,
+            shift: Soa3::from_aos(&pshift),
+            partner: mesh
+                .periodic
+                .as_ref()
+                .map(|p| p.partner.clone())
+                .unwrap_or_default(),
         })
     }
 
@@ -375,6 +422,7 @@ impl Discretisation {
             cell_ptr: &self.cell_ptr,
             cell_faces: &self.cell_faces,
             n_interior: self.n_interior,
+            periodic: self.periodic,
         }
     }
 
@@ -421,6 +469,12 @@ impl Discretisation {
                 }
             }
         }
+        // a periodic face has its slot in the owner row only; its mirror is
+        // the slot of the partner face in the partner's owner row
+        for f in self.periodic..self.n_interior {
+            let q = self.partner[f - self.periodic] as usize;
+            slot[f][1] = slot[q][0];
+        }
         for [a, b] in slot {
             debug_assert!(a != u32::MAX && b != u32::MAX);
             map[a as usize] = b;
@@ -434,6 +488,7 @@ impl Discretisation {
         foehncraft_kernels::fv::Boundary {
             a: &self.bc_a,
             b: &self.bc_b,
+            jump: &[],
         }
     }
 

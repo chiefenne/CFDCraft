@@ -143,9 +143,10 @@ pub fn face_skewness(d: &Discretisation) -> Vec<f64> {
     let a = &d.face_area;
     (0..d.n_interior)
         .map(|f| {
-            let (p, n) = (d.owner[f] as usize, d.neighbour[f] as usize);
+            let p = d.owner[f] as usize;
             let xp = [c.x[p], c.y[p], c.z[p]];
-            let dd = [c.x[n] - xp[0], c.y[n] - xp[1], c.z[n] - xp[2]];
+            let xn = d.neighbour_centroid(f);
+            let dd = [xn[0] - xp[0], xn[1] - xp[1], xn[2] - xp[2]];
             let r = [fc.x[f] - xp[0], fc.y[f] - xp[1], fc.z[f] - xp[2]];
             let s = [a.x[f], a.y[f], a.z[f]];
             let t = (r[0] * s[0] + r[1] * s[1] + r[2] * s[2])
@@ -655,6 +656,9 @@ pub struct State {
     pub psi: Soa3,
     /// The passive scalars (D51), in name order.
     pub scalars: Vec<crate::scalar::ScalarState>,
+    /// The driving force β (N/m³) of each periodic pair (D29), along its
+    /// translation; empty without periodic pairs.
+    pub periodic_force: Vec<f64>,
 }
 
 /// A host copy of the fields with the discretisation and the physics, for
@@ -762,6 +766,25 @@ pub struct Flow {
     /// The passive scalars (D51), solved after the pressure correction of
     /// every outer iteration ([`Flow::add_scalars`]).
     pub(crate) scalars: Option<crate::scalar::Scalars>,
+    /// The driving of the periodic pairs (D29), one per pair.
+    pub(crate) periodic: Vec<PeriodicDriving>,
+    /// Work face buffer of the mass-flow driving (the flux of a unit
+    /// increment of the driving force).
+    unit_flux: Option<Buf>,
+}
+
+/// The driving of one periodic pair: a uniform body force β t̂ along the
+/// translation, fixed (`pressure_gradient`) or adjusted after every
+/// pressure correction so that the mass flow through side `b` is the
+/// prescribed one (`mass_flow`).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PeriodicDriving {
+    pub drive: crate::bc::Drive,
+    pub direction: [f64; 3],
+    /// 1 on the faces of side `b`, 0 elsewhere (a face field).
+    pub plane: Buf,
+    /// β (N/m³).
+    pub beta: f64,
 }
 
 /// The convective outlets of a transient run (D29): the device buffers of
@@ -1123,6 +1146,30 @@ impl Flow {
         } else {
             None
         };
+        let mut periodic = Vec::new();
+        for d in &bc.drives {
+            let mut v = vec![0.0; nf];
+            v[d.b_faces.clone()].iter_mut().for_each(|x| *x = 1.0);
+            let plane = dev.alloc(nf)?;
+            dev.upload(plane, &v)?;
+            periodic.push(PeriodicDriving {
+                drive: d.drive,
+                direction: d.direction,
+                plane,
+                beta: match d.drive {
+                    crate::bc::Drive::PressureGradient(g) => g,
+                    _ => 0.0,
+                },
+            });
+        }
+        let unit_flux = if periodic
+            .iter()
+            .any(|d| matches!(d.drive, crate::bc::Drive::MassFlow(_)))
+        {
+            Some(dev.alloc(nf)?)
+        } else {
+            None
+        };
         Ok(Self {
             disc,
             bc,
@@ -1145,7 +1192,80 @@ impl Flow {
             source: None,
             remediation,
             scalars: None,
+            periodic,
+            unit_flux,
         })
+    }
+
+    /// The uniform body force (N/m³): the one of the case plus the driving
+    /// of the periodic pairs (D29).
+    pub fn body_force(&self) -> [f64; 3] {
+        let mut b = self.phys.body_force;
+        for d in &self.periodic {
+            for (bi, ti) in b.iter_mut().zip(d.direction) {
+                *bi += d.beta * ti;
+            }
+        }
+        b
+    }
+
+    /// The physics with the driving of the periodic pairs in the body
+    /// force (for the output and the balances).
+    pub fn physics(&self) -> Physics {
+        Physics {
+            body_force: self.body_force(),
+            ..self.phys.clone()
+        }
+    }
+
+    /// The driving force β (N/m³) of each periodic pair, along its
+    /// translation.
+    pub fn periodic_force(&self) -> Vec<f64> {
+        self.periodic.iter().map(|d| d.beta).collect()
+    }
+
+    /// The mass flow (kg/s) through side `b` of each periodic pair, from
+    /// the current fluxes.
+    pub fn periodic_mass_flow(&mut self) -> Result<Vec<f64>> {
+        let m = self.f.mass_flux;
+        let planes: Vec<Buf> = self.periodic.iter().map(|d| d.plane).collect();
+        planes.into_iter().map(|p| self.dev.dot(m, p)).collect()
+    }
+
+    /// The mass-flow driving of the periodic pairs (D29), after the
+    /// corrections of the fluxes `w.mc` and the velocity: β changes by δβ
+    /// so that the flux through side `b` is the prescribed one. The
+    /// velocity follows a uniform force increment by δβ D^C t̂ (the
+    /// response of the SIMPLEC rows), the fluxes by the flux of that
+    /// increment.
+    fn drive_mass_flow(&mut self) -> Result<()> {
+        let Some(unit) = self.unit_flux else {
+            return Ok(());
+        };
+        let (f, w) = (self.f, self.w);
+        for i in 0..self.periodic.len() {
+            let d = self.periodic[i];
+            let crate::bc::Drive::MassFlow(target) = d.drive else {
+                continue;
+            };
+            for (g, t) in w.gpc.all().into_iter().zip(d.direction) {
+                self.dev.lincomb(g, t, w.dc, 0.0, w.dc)?;
+            }
+            self.dev.delta_flux(w.gpc, unit)?;
+            let k = self.dev.dot(unit, d.plane)?;
+            let q = self.dev.dot(w.mc, d.plane)?;
+            anyhow::ensure!(
+                k > 0.0,
+                "the periodic pair cannot be driven: no flux follows a force along its translation"
+            );
+            let db = (target - q) / k;
+            self.dev.lincomb(w.mc, 1.0, w.mc, db, unit)?;
+            for (u, g) in f.u.all().into_iter().zip(w.gpc.all()) {
+                self.dev.lincomb(u, 1.0, u, db, g)?;
+            }
+            self.periodic[i].beta += db;
+        }
+        Ok(())
     }
 
     /// Sets the momentum source of a body force given by expressions
@@ -1227,6 +1347,17 @@ impl Flow {
     /// Sets velocity and pressure and starts from the fluxes of the
     /// interpolated velocity (no pressure terms).
     pub fn initialise(&mut self, u: &Soa3, p: &[f64]) -> Result<()> {
+        let started;
+        let u = if self
+            .periodic
+            .iter()
+            .any(|d| matches!(d.drive, crate::bc::Drive::MassFlow(_)))
+        {
+            started = self.with_mass_flow(u);
+            &started
+        } else {
+            u
+        };
         self.dev.upload(self.f.u.x, &u.x)?;
         self.dev.upload(self.f.u.y, &u.y)?;
         self.dev.upload(self.f.u.z, &u.z)?;
@@ -1256,6 +1387,37 @@ impl Flow {
         self.gradients()?;
         let a = self.flux_args(None, self.w.zero_face, None);
         self.dev.mass_flux(&a, self.f.mass_flux)
+    }
+
+    /// The start velocity `u` with a uniform velocity along the
+    /// translation of each periodic pair driven by its mass flow (D29)
+    /// added, so that the flow through side `b` (from the owner
+    /// velocities) is the prescribed one.
+    fn with_mass_flow(&self, u: &Soa3) -> Soa3 {
+        let mut u = u.clone();
+        let d = &self.disc;
+        for (pd, bd) in self.periodic.iter().zip(&self.bc.drives) {
+            let crate::bc::Drive::MassFlow(target) = pd.drive else {
+                continue;
+            };
+            let (mut q, mut q_unit) = (0.0, 0.0);
+            for f in bd.b_faces.clone() {
+                let o = d.owner[f] as usize;
+                let s = [d.face_area.x[f], d.face_area.y[f], d.face_area.z[f]];
+                q += self.phys.rho * (u.x[o] * s[0] + u.y[o] * s[1] + u.z[o] * s[2]);
+                q_unit += self.phys.rho
+                    * (pd.direction[0] * s[0] + pd.direction[1] * s[1] + pd.direction[2] * s[2]);
+            }
+            if q_unit > 0.0 {
+                let du = (target - q) / q_unit;
+                for c in 0..d.n_cells {
+                    u.x[c] += du * pd.direction[0];
+                    u.y[c] += du * pd.direction[1];
+                    u.z[c] += du * pd.direction[2];
+                }
+            }
+        }
+        u
     }
 
     /// Potential-flow start (D52): the velocity of the potential φ that
@@ -1374,6 +1536,7 @@ impl Flow {
                 Some(sc) => sc.states(self.dev.as_mut())?,
                 None => Vec::new(),
             },
+            periodic_force: self.periodic_force(),
         })
     }
 
@@ -1397,6 +1560,11 @@ impl Flow {
         self.dev.upload(f.pb, &s.pb)?;
         if let Some(sc) = self.scalars.as_mut() {
             sc.load(self.dev.as_mut(), &s.scalars)?;
+        }
+        if s.periodic_force.len() == self.periodic.len() {
+            for (d, &b) in self.periodic.iter_mut().zip(&s.periodic_force) {
+                d.beta = b;
+            }
         }
         self.hold_convective(f.ub)
     }
@@ -1572,7 +1740,7 @@ impl Flow {
             cn: w.cn,
             bf: w.bf,
             grad_p: f.grad_p,
-            body_force: self.phys.body_force,
+            body_force: self.body_force(),
             u: f.u,
             alpha,
             theta,
@@ -1739,6 +1907,7 @@ impl Flow {
             w.gpc,
         )?;
         self.dev.correct_velocity(w.dc, w.gpc, f.u)?;
+        self.drive_mass_flow()?;
         self.dev.lincomb(f.p, 1.0, f.p, alpha_p, w.pc)
     }
 
@@ -1840,9 +2009,9 @@ impl Flow {
         step: Option<crate::scalar::StepTime>,
         res: &mut Residuals,
     ) -> Result<()> {
-        let Some(sc) = self.scalars.as_mut() else {
+        if self.scalars.is_none() {
             return Ok(());
-        };
+        }
         let t = Instant::now();
         let cells = &self.disc.cell_centroid;
         let xs: Vec<[f64; 3]> = if step.is_some() {
@@ -1852,7 +2021,11 @@ impl Flow {
         } else {
             Vec::new()
         };
-        res.scalars = sc.solve(self.dev.as_mut(), self.f.mass_flux, step, &xs)?;
+        let flows = self.periodic_mass_flow()?;
+        let Some(sc) = self.scalars.as_mut() else {
+            return Ok(());
+        };
+        res.scalars = sc.solve(self.dev.as_mut(), self.f.mass_flux, &flows, step, &xs)?;
         self.dev.sync()?;
         self.timings.scalars += t.elapsed().as_secs_f64();
         if !res.finite() {
@@ -1891,7 +2064,9 @@ fn fixed_outflow(disc: &Discretisation, bc: &BoundaryArrays, ub: &[Vec<f64>; 3],
 /// exact for a uniform velocity, since Σ_f (x_f − x_P) S_fᵀ = V_P I for a
 /// closed cell (the start of D52).
 fn velocity_of_fluxes(mesh: &Mesh, geo: &Geometry, m: &[f64], rho: f64, nc: usize) -> Soa3 {
-    let ni = mesh.n_interior_faces();
+    // a periodic face counts for its owner only: its partner closes the
+    // cell across (D29)
+    let ni = mesh.periodic_start();
     let mut u = Soa3::zeros(nc);
     for (fi, &mf) in m.iter().enumerate() {
         let xf = geo.face_centroid[fi];

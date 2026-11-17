@@ -17,7 +17,18 @@
 //! | `convective-outlet` | ∂u/∂t + U_c ∂u/∂n = 0 (transient runs; `convection_velocity` U_c) | extrapolated | ρ u_b·S, balanced with the inflow |
 //! | `symmetry` | no shear stress, zero normal component (implicit per component) | extrapolated | 0 |
 //! | `wedge` | as `symmetry`: the two side planes of an axisymmetric wedge mesh | extrapolated | 0 |
-//! | `periodic` | not available before stage 6 (needs the periodic face pairing) | | |
+//! | `periodic` | across the pair (`partner`): the partner's cell is the neighbour, translated by the period | periodic, with a mean gradient as body force | through the pair |
+//!
+//! **Periodic pairs** (D29, D109 (1), stage 6 part 6p): two boundaries of
+//! `type = "periodic"` that name each other as `partner` and carry
+//! conformal, translated copies of the same faces (the translation from the
+//! face centroids, or `translation`). The flow through the pair is driven
+//! by `mass_flow` (kg/s, held by adjusting a uniform body force) or by
+//! `pressure_gradient` (Pa/m, the mean pressure falling from this boundary
+//! towards its partner), given on one of the two; the pressure itself is
+//! periodic and its level fixed in the reference cell. Scalars cross the
+//! pair unchanged or, with `periodic = "heat-flux"` in their boundary
+//! sub-table, with the jump of the heat-flux mode of D109.
 //!
 //! **Backflow at pressure outlets** (`backflow`): with `"total-pressure"`
 //! (the default) a face where the flow enters takes the prescribed pressure
@@ -439,11 +450,25 @@ pub enum BoundaryCondition {
     Symmetry,
     /// One of the two side planes of an axisymmetric wedge mesh (D3).
     Wedge,
-    /// Periodic pair (stage 6).
+    /// Translational periodic pair (D29, D109 (1)).
     Periodic {
         /// The partner boundary.
         #[serde(default)]
         partner: Option<String>,
+        /// Mass flow through the pair (kg/s), from this boundary towards
+        /// its partner (into the domain here); held by a uniform body
+        /// force along the translation that the solver adjusts.
+        #[serde(default)]
+        mass_flow: Option<f64>,
+        /// Mean pressure gradient (Pa/m) that drives the flow: the mean
+        /// pressure falls by this much per metre from this boundary towards
+        /// its partner (a uniform body force along the translation).
+        #[serde(default)]
+        pressure_gradient: Option<f64>,
+        /// Translation from this boundary to its partner (m); by default
+        /// the difference of the area-weighted face centroids.
+        #[serde(default)]
+        translation: Option<[f64; 3]>,
     },
 }
 
@@ -1053,6 +1078,179 @@ pub struct CheckContext {
     pub transient: bool,
     /// The potential-flow start (D52).
     pub potential_flow: bool,
+    /// A body force acts (`flow.body_force` not zero).
+    pub body_force: bool,
+}
+
+/// How the flow through a periodic pair is driven (D29).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Drive {
+    /// Not driven (a body force of the case, or a decaying flow).
+    None,
+    /// The mass flow (kg/s) from side `a` towards side `b`.
+    MassFlow(f64),
+    /// The mean pressure gradient (Pa/m), the pressure falling from side
+    /// `a` towards side `b`.
+    PressureGradient(f64),
+}
+
+/// A periodic pair of a case: the boundaries (side `a` carries the driving,
+/// so that the flow goes along the translation from `a` to `b`) and the
+/// driving.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PeriodicCase {
+    /// The pair for the mesh.
+    pub spec: foehncraft_mesh::periodic::PairSpec,
+    /// The driving.
+    pub drive: Drive,
+}
+
+/// The periodic pairs of the conditions `bcs`: every periodic boundary
+/// names a periodic partner that names it back (one of the two may leave
+/// `partner` out), the driving and the translation are given on at most
+/// one side. Errors carry the code BC030.
+pub fn periodic_pairs(bcs: &BTreeMap<String, BoundaryCondition>) -> Result<Vec<PeriodicCase>> {
+    let err = |name: &str, msg: String| {
+        diag::err(
+            diag::Diagnostic::new(diag::BC_PERIODIC, format!("[boundary.{name}]: {msg}"))
+                .key(format!("boundary.{name}")),
+        )
+    };
+    struct Side<'a> {
+        partner: Option<&'a str>,
+        drive: Drive,
+        translation: Option<[f64; 3]>,
+    }
+    let mut sides: BTreeMap<&str, Side> = BTreeMap::new();
+    for (name, bc) in bcs {
+        if let BoundaryCondition::Periodic {
+            partner,
+            mass_flow,
+            pressure_gradient,
+            translation,
+        } = bc
+        {
+            let drive = match (mass_flow, pressure_gradient) {
+                (Some(_), Some(_)) => {
+                    return Err(err(
+                        name,
+                        "give either `mass_flow` or `pressure_gradient`, not both".into(),
+                    ));
+                }
+                (Some(m), None) => Drive::MassFlow(*m),
+                (None, Some(g)) => Drive::PressureGradient(*g),
+                (None, None) => Drive::None,
+            };
+            for v in [mass_flow, pressure_gradient].into_iter().flatten() {
+                if !v.is_finite() {
+                    return Err(err(name, "the driving must be a finite number".into()));
+                }
+            }
+            sides.insert(
+                name,
+                Side {
+                    partner: partner.as_deref(),
+                    drive,
+                    translation: *translation,
+                },
+            );
+        }
+    }
+    let mut out = Vec::new();
+    let mut done: Vec<&str> = Vec::new();
+    for (&name, s) in &sides {
+        if done.contains(&name) {
+            continue;
+        }
+        // the partner: named here, or the periodic boundary that names this one
+        let named_by: Vec<&str> = sides
+            .iter()
+            .filter(|(n, o)| **n != name && o.partner == Some(name))
+            .map(|(n, _)| *n)
+            .collect();
+        let partner = match (s.partner, named_by.as_slice()) {
+            (Some(p), _) => p,
+            (None, [p]) => *p,
+            (None, []) => {
+                return Err(err(
+                    name,
+                    "a periodic boundary needs a `partner` (the boundary it repeats on)".into(),
+                ));
+            }
+            (None, _) => {
+                return Err(err(
+                    name,
+                    format!(
+                        "named as partner by several boundaries: {}",
+                        named_by.join(", ")
+                    ),
+                ));
+            }
+        };
+        if partner == name {
+            return Err(err(
+                name,
+                "a boundary cannot be its own periodic partner".into(),
+            ));
+        }
+        let Some(o) = sides.get(partner) else {
+            return Err(err(
+                name,
+                format!(
+                    "the partner `{partner}` {}",
+                    if bcs.contains_key(partner) {
+                        "is not of type periodic"
+                    } else {
+                        "has no boundary condition"
+                    }
+                ),
+            ));
+        };
+        if o.partner.is_some_and(|p| p != name) {
+            return Err(err(
+                partner,
+                format!(
+                    "its partner is `{}`, but `{name}` names it",
+                    o.partner.unwrap_or("")
+                ),
+            ));
+        }
+        if done.contains(&partner) {
+            return Err(err(name, format!("`{partner}` is in another pair already")));
+        }
+        if s.drive != Drive::None && o.drive != Drive::None {
+            return Err(err(
+                name,
+                format!("the driving is given on both `{name}` and `{partner}`: give it on one"),
+            ));
+        }
+        if s.translation.is_some() && o.translation.is_some() {
+            return Err(err(
+                name,
+                format!("`translation` is given on both `{name}` and `{partner}`: give it on one"),
+            ));
+        }
+        // side a: the one with the driving (else with the translation,
+        // else this one, the first in name order)
+        let swap = o.drive != Drive::None || (s.drive == Drive::None && o.translation.is_some());
+        let (a, b, sa, sb) = if swap {
+            (partner, name, o, s)
+        } else {
+            (name, partner, s, o)
+        };
+        let translation = sa.translation.or(sb.translation.map(|t| t.map(|v| -v)));
+        out.push(PeriodicCase {
+            spec: foehncraft_mesh::periodic::PairSpec {
+                a: a.to_string(),
+                b: b.to_string(),
+                translation,
+            },
+            drive: sa.drive,
+        });
+        done.push(name);
+        done.push(partner);
+    }
+    Ok(out)
 }
 
 /// Checks the combination of boundary conditions on the whole domain (D30)
@@ -1095,8 +1293,30 @@ pub fn check(
             );
         }
     }
+    let paired = |n: &str| {
+        mesh.periodic
+            .as_ref()
+            .is_some_and(|p| p.pair_of(n).is_some())
+    };
+    if let Ok(pairs) = periodic_pairs(bcs)
+        && !ctx.body_force
+    {
+        for pc in pairs.iter().filter(|p| p.drive == Drive::None) {
+            push(
+                Level::Warning,
+                diag::BC_PERIODIC_UNDRIVEN,
+                Some(&pc.spec.a),
+                format!(
+                    "nothing drives the flow through the periodic pair `{}`–`{}`: give \
+                     `mass_flow` (kg/s) or `pressure_gradient` (Pa/m) on one of them, or a \
+                     body force, or the flow decays to rest",
+                    pc.spec.a, pc.spec.b
+                ),
+            );
+        }
+    }
     for name in bcs.keys() {
-        if mesh.boundary(name).is_none() {
+        if mesh.boundary(name).is_none() && !paired(name) {
             push(
                 Level::Error,
                 diag::BC_NO_BOUNDARY,
@@ -1119,11 +1339,10 @@ pub fn check(
         match bc {
             BoundaryCondition::Periodic { .. } => push(
                 Level::Error,
-                diag::BC_NOT_AVAILABLE,
+                diag::BC_PERIODIC,
                 Some(name),
-                "periodic boundaries come with stage 6 (they need the periodic face \
-                 pairing of the mesh); use a velocity-inlet with `profile = \"analytic\"` and a \
-                 static-pressure-outlet for a developed flow until then"
+                "this periodic boundary was not paired: give it a `partner` of type periodic \
+                 that names it back"
                     .into(),
             ),
             BoundaryCondition::VelocityInlet {
@@ -1693,6 +1912,20 @@ pub struct BoundaryArrays {
     /// Convection velocity U_c (m/s) of the faces of convective outlets
     /// that give one, 0 for the default (and on all other faces).
     pub convection: Vec<f64>,
+    /// The driving of the periodic pairs (D29), one per pair of the mesh.
+    pub drives: Vec<PeriodicDrive>,
+}
+
+/// The driving of one periodic pair on the mesh.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PeriodicDrive {
+    /// The driving.
+    pub drive: Drive,
+    /// Unit vector along the translation, from side `a` to side `b`.
+    pub direction: [f64; 3],
+    /// The faces of side `b` (global face indices): the flow from `a`
+    /// towards `b` leaves the domain through them.
+    pub b_faces: std::ops::Range<usize>,
 }
 
 impl BoundaryArrays {
@@ -1727,7 +1960,24 @@ pub fn arrays(
         u_points: BTreeMap::new(),
         p_points: BTreeMap::new(),
         convection: vec![0.0; nb],
+        drives: Vec::new(),
     };
+    if let Some(per) = &mesh.periodic {
+        let cases = periodic_pairs(bcs)?;
+        for pair in &per.pairs {
+            let drive = cases
+                .iter()
+                .find(|c| c.spec.a == pair.a && c.spec.b == pair.b)
+                .map_or(Drive::None, |c| c.drive);
+            let t = pair.translation;
+            let l = norm(t);
+            a.drives.push(PeriodicDrive {
+                drive,
+                direction: [t[0] / l, t[1] / l, t[2] / l],
+                b_faces: pair.b_faces.clone(),
+            });
+        }
+    }
     use foehncraft_fv::problem::BoundaryKind as K;
     for (pi, p) in mesh.boundaries.iter().enumerate() {
         let bc = bcs
@@ -1847,7 +2097,7 @@ pub fn arrays(
                     a.ub_rule[fb] = UB_SYMMETRY;
                 }
                 BoundaryCondition::Periodic { .. } => {
-                    anyhow::bail!("periodic boundaries come with stage 6 (`{}`)", p.name)
+                    anyhow::bail!("periodic boundary `{}` was not paired", p.name)
                 }
             }
         }
@@ -1870,4 +2120,5 @@ pub const GUIDANCE: &str = "\
 | velocity-inlet + convective-outlet (+ walls, slip walls), transient | wakes and vortices leaving a short domain without reflection: the cylinder wake | reference cell |
 | velocity-inlet + slip-wall + static-pressure-outlet | a body in a free stream with the far field as slip walls | outlet pressure |
 | wedge + wedge + velocity-inlet + static-pressure-outlet (+ walls) | axisymmetric flows on a wedge mesh: pipes, nozzles, sudden expansions | outlet pressure |
+| periodic pair (`mass_flow` or `pressure_gradient`) + walls (+ symmetry, wedges, further periodic pairs) | fully developed flow in one module: channels, pipes, ribbed passages, heat transfer with the heat-flux jump | reference cell |
 ";

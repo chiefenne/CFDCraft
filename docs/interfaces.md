@@ -267,7 +267,9 @@ A code keeps its meaning; a retired code stays in the table.
 | `BC024` | warning | A wedge wider than 10° (the axisymmetric error grows with the angle). |
 | `BC025` | error | A potential-flow start with a convective outlet and no pressure boundary. |
 | `BC026` | error | Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure). |
-| `SCAL001` | error | A `[boundary.<name>.scalar.<scalar>]` table for an unknown scalar or boundary, without exactly one of `value` and `flux`, or with a condition its boundary does not take (a flux at an inlet, anything at an outlet). |
+| `BC030` | error | A periodic boundary without a periodic partner that names it back, a pair whose faces do not match, or a driving given twice. |
+| `BC031` | warning | A periodic pair with no driving (`mass_flow`, `pressure_gradient`) and no body force: the flow decays to rest. |
+| `SCAL001` | error | A `[boundary.<name>.scalar.<scalar>]` table for an unknown scalar or boundary, without exactly one of `value` and `flux`, or with a condition its boundary does not take (a flux at an inlet, anything at an outlet, `periodic` away from a periodic pair, the heat-flux mode with fixed values). |
 | `EXPR001` | error | An expression that cannot be parsed. |
 | `EXPR002` | error | An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint). |
 | `EXPR003` | error | An expression that uses a variable its key does not take (`t` in a steady case or in a property, x, y, z in a value for a whole boundary). |

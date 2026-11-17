@@ -104,6 +104,11 @@ impl<T: Real> Lifted<T> {
             dgeo: self.s("dgeo"),
             k: self.v3("k"),
             weight: self.s("weight"),
+            shift: Vec3 {
+                x: &[],
+                y: &[],
+                z: &[],
+            },
         }
     }
 }
@@ -342,6 +347,7 @@ fn gradient<T: Real>(fx: &Fixture, l: &Lifted<T>, c: usize) -> Vec<T> {
     let bc = fv::Boundary {
         a: l.s("bca"),
         b: l.s("bcb"),
+        jump: &[],
     };
     // SAFETY: c is a cell of the mesh; all arrays have their full length.
     unsafe { fv::lsq_gradient(c, &fx.topo(), &l.v3("lsq"), l.s("phi"), &bc).to_vec() }
@@ -351,6 +357,7 @@ fn limiter<T: Real>(fx: &Fixture, l: &Lifted<T>, c: usize) -> Vec<T> {
     let bc = fv::Boundary {
         a: l.s("bca"),
         b: l.s("bcb"),
+        jump: &[],
     };
     // SAFETY: as above.
     unsafe {
@@ -373,6 +380,7 @@ fn scalar_face<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
         bc: fv::Boundary {
             a: l.s("bca"),
             b: l.s("bcb"),
+            jump: &[],
         },
         mass_flux: l.s("m"),
         gamma: l.s("gamma"),
@@ -381,6 +389,11 @@ fn scalar_face<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
         weight: l.s("weight"),
         face_centroid: l.v3("fc"),
         cell_centroid: l.v3("cc"),
+        shift: Vec3 {
+            x: &[],
+            y: &[],
+            z: &[],
+        },
         phi: l.s("phi"),
         grad: l.v3("gp"),
         psi: l.s("psis"),

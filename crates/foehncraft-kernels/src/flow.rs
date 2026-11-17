@@ -149,6 +149,9 @@ pub struct FaceGeometry<'a, T> {
     pub k: Vec3<'a, T>,
     /// Owner weight of the face interpolation.
     pub weight: &'a [T],
+    /// Shift of the neighbour centroid per periodic face
+    /// ([`crate::fv::neighbour_centroid`]).
+    pub shift: Vec3<'a, T>,
 }
 
 /// Inputs of [`momentum_face`].
@@ -233,13 +236,13 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
         if f < t.n_interior {
             let n = ld(t.neighbour, f) as usize;
             let gn = inp.grad.at(n);
-            let rn = sub(xf, g.cell_centroid.at(n));
+            let xc_n = crate::fv::neighbour_centroid(f, n, t, &g.cell_centroid, &g.shift);
+            let rn = sub(xf, xc_n);
             let psi_n = inp.psi.at(n);
             let w = ld(g.weight, f);
             let wn = T::ONE - w;
             // skewness: x_f − x_m, x_m the midpoint of P–N, where the
             // difference u_N − u_P gives the exact derivative of a quadratic
-            let xc_n = g.cell_centroid.at(n);
             let half = T::from_f64(0.5);
             let rm = [
                 xf[0] - half * (xc_n[0] + xf[0] - rp[0]),
@@ -629,7 +632,7 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
         let dgeo = ld(g.dgeo, f);
         if f < t.n_interior {
             let n = ld(t.neighbour, f) as usize;
-            let xn = g.cell_centroid.at(n);
+            let xn = crate::fv::neighbour_centroid(f, n, t, &g.cell_centroid, &g.shift);
             let un = inp.u.at(n);
             let gn = inp.grad.at(n);
             let w = ld(g.weight, f);
