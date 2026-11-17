@@ -4,7 +4,7 @@ Requirements step 20 (2026-11-17), asked for by the maintainer: "what could
 we do with the latest data-driven models at the end of 2026". This page is an
 **assessment with proposals only**. Nothing on it is decided; the proposed
 items (D165–D169, L37–L38, P13–P15) become decisions only when the maintainer
-says so, and no code is written before the maintainer's go (project rule).
+says so (see section 8 for the decisions of 2026-11-17), and no code is written before the maintainer's go (project rule).
 
 It extends, and does not repeat, the physics-based learning assessment of
 2026-11-16 that gave D104 (model-correction fields), D105 (stepping API),
@@ -254,7 +254,13 @@ bands fixed **before** the runs, as D139 does:
 
 ## 8. Proposed items and their stages
 
-Nothing below is decided. Proposals:
+**Decisions of the maintainer (2026-11-17):** D165 and D168 adopted (Q1);
+D166 adopted for stage 6, pull request 6b (Q2); D167 adopted (Q3); L37
+adopted with both targets (diffuser and U-bend) and both models (SST 2003 and
+ζ-f) (Q4); P13 kept as a watch item with the 30 % threshold (Q5). D169, L38,
+P14 and P15 remain proposals. The adopted rows are in `docs/requirements.md`.
+
+Items as proposed:
 
 | ID | Proposed | Content | Stage |
 |---|---|---|---|
