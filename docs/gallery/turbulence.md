@@ -6,6 +6,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 |---|---|---|---|
 | 68 | [k-ω SST on the TMR flat plate and in a channel](#sst) | 6 | `[turbulence] model = "k-omega-sst"`, `wall_treatment`, inlet turbulence values, `roughness`, derived field `turbulence-features` |
 | 71 | [k-ε family with wall functions: flat plate, channel, Moody chart](#k-epsilon) | 6 | `model = "k-epsilon"`, `"realizable-k-epsilon"`, `wall_treatment = "scalable"`, `"standard"`, `"compound"`, `epsilon` at inlets, `roughness_constant` |
+| 73 | [k-ε-ζ-f to the wall: channel and flat plate](#zeta-f) | 6 | `model = "k-epsilon-zeta-f"`, `wall_treatment = "compound"`, `"low-re"`, `zeta` at inlets and in `[initial]`, `[solver.elliptic]`, `solver.turbulence.preconditioner = "amg"` |
 
 ---
 
@@ -194,6 +195,89 @@ target/release/foehn flow examples/cases/flow/tmr_plate_keps.toml
 target/release/foehn flow examples/cases/flow/channel_keps.toml
 target/release/foehn flow examples/cases/flow/pipe_rough_keps.toml
 python3 examples/studies/moody_study.py output/moody --jobs 4 --chart output/moody.svg
+```
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="zeta-f"></a>
+## 73. k-ε-ζ-f to the wall: channel and flat plate
+
+**The model.** The k-ε-ζ-f model of Hanjalić, Popovac & Hadžiabdić
+(2004) adds ζ = v²/k, the wall-normal share of the turbulence, and the
+elliptic relaxation f of its pressure-strain term to k and ε:
+ν_t = C_μ ζ k T with C_μ = 0.22, the time scale
+T = max[min(k/ε, 0.6/(√6 C_μ S ζ)), C_T (ν/ε)^½] and the length scale L
+of the elliptic equation −∇·(L²∇f) + f = (C₁ − 1 + C₂′ P/ε)(2/3 − ζ)/T
+bounded by realizability above and by the Kolmogorov scales below. ζ
+falls to zero towards a wall by itself, so the model needs no damping
+functions. One outer iteration solves k and ε, then f (CG with its own
+multigrid hierarchy), then ζ with the new f. A solve may lower k, ε or ζ
+by at most a factor 10 per iteration: an unconverged iterate that drops
+ε to its floor would otherwise blow up T, L and P/ε in the source of f.
+
+```toml
+[turbulence]
+model = "k-epsilon-zeta-f"
+wall_treatment = "compound"    # or "low-re"
+```
+
+**The wall treatments.** `low-re` sets k = ζ = 0, ε_w = 2νk₁/d₁² and
+f_w = −2νζ₁/d₁² on the wall faces and needs y⁺ ≲ 2 (TURB001).
+`compound` (the default) takes k and ζ by zero gradient, which is exact
+at the wall, fixes ε and P_k of the first cell and the wall value of f by
+the blend of viscous sublayer and log law of Popovac & Hanjalić (2007),
+and covers every y⁺.
+
+**The channel** (`channel_zeta_f.toml`). Re_τ = 395 on 96 cells across
+(first-cell y⁺ 0.27): U_b⁺ = 17.89, +1.9 % from the DNS of Moser, Kim &
+Mansour with `compound`, +1.4 % with `low-re` (band ±3 %). The k⁺ peak
+and U⁺ up to y⁺ ≈ 25 follow the DNS.
+
+**The flat plate** (`tmr_plate_zeta_f.toml`). The TMR plate on 64 × 48
+cells at first-cell y⁺ 1: C_f(0.97) = 3.023·10⁻³, +5.1 % from White's
+correlation, +4.7 % on 96 cells across (finding: outside the ±3 % band,
+mesh-independent). Two more findings: from the free stream of the TMR
+(ν_t/ν = 0.009) the model keeps the boundary layer laminar over the
+whole plate, because the length scale of the weak free stream exceeds the
+layer and f drives ζ to zero across it, so the case starts from a
+turbulent field; and in the laminar part near the leading edge the
+published k sink −ε has no positive steady solution while T sits at its
+Kolmogorov bound, so the floor holds k there (TURB002) and the k residual
+stays at 7·10⁻⁶ while every other field converges to round-off.
+
+**The scalar multigrid.** The f equation is symmetric positive definite
+and runs CG with the aggregation multigrid by default
+(`[solver.elliptic]`). The transport equations take it with
+`solver.turbulence.preconditioner = "amg"`: one hierarchy per equation,
+built from the symmetric part ½(A + Aᵀ) of the convection matrix. All
+hierarchies are rebuilt on the schedule of the pressure
+(`solver.amg_rebuild`), which halved the run time of the channel
+(56 s → 26 s) against a rebuild in every solve, and their matrices go
+into the restart file, so a continued run is bit-identical.
+
+| Check | Result |
+|---|---|
+| Channel Re_τ 395, y⁺ 0.27: U_b⁺, `compound` / `low-re` | 17.89 (+1.9 %) / 17.79 (+1.4 %) (band ±3 %) |
+| Plate, `compound`, y⁺ 1: C_f(0.97) against White, 48 / 96 cells across | +5.1 % / +4.7 % (finding, band ±3 %) |
+| Plate from the TMR free-stream values | laminar, C_f = 3.0·10⁻⁴ (finding; turbulent start) |
+| Homogeneous decay: k, ε (C_ε2 = 1.9) and the return of ζ to 2/3, BDF2 | second order (asserted 1.8 to 2.2) |
+| Sustaining terms: k, ε held, ζ = 2/3 and f = 0 a fixed point | to 10⁻¹⁰ |
+| Restart (multigrid of all four equations), 1 against 4 threads | bit-identical |
+| k-ε restart continued with ζ-f | ζ = 2/3, f = 0 at the start |
+| Bad input (wall functions of the k-ε family, a production limiter, ω ambient, ζ outside (0, 2]) | CASE005, CASE002, CASE004 |
+
+| | |
+|---|---|
+| Code | kernels `turb::zeta_f` (scales, ν_t, source split, right-hand side of f), `turb::wall` (`zeta_f_wall_values`), `entry` (`ZetaFCells`, the ζ-f branches of `TurbFaces` and `WallFaces`, the relative bound of `Floor`); `foehncraft_fv` (hierarchy slots, `Csr::symmetric_part`, `setup_amg_with`); `foehncraft_flow::turbulence` (solve order, the elliptic solve, the multigrid schedule and its restart matrices) |
+| Tests | `tests/zeta_f.rs`, kernel tests of `turb::zeta_f`, `amg_slots_keep_the_pressure_hierarchy` (fv `tests/stage3.rs`), `symmetric_part_of_a_convection_matrix` |
+| Case files | `flow/channel_zeta_f.toml`, `flow/tmr_plate_zeta_f.toml` |
+| Recipe | [73](../recipes/turbulence.md#zeta-f) |
+
+```
+target/release/foehn flow examples/cases/flow/channel_zeta_f.toml
+target/release/foehn flow examples/cases/flow/tmr_plate_zeta_f.toml
 ```
 
 [↑ back to top](#turbulence-models)

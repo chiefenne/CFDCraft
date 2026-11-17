@@ -2675,12 +2675,9 @@ impl Turbulence {
                     for &(fb, _, _) in &self.inlets.faces {
                         zin[fb as usize] = zs.zeta_b[fb as usize];
                     }
-                    let mut fw = vec![0.0; self.nb];
-                    for fb in 0..self.nb {
-                        if self.walls.mask_b[fb] > 0.0 {
-                            fw[fb] = zs.f_b[fb];
-                        }
-                    }
+                    let fw: Vec<f64> = (self.walls.mask_b.iter().zip(&zs.f_b))
+                        .map(|(&m, &f)| if m > 0.0 { f } else { 0.0 })
+                        .collect();
                     dev.upload(z.z.b_in, &zin)?;
                     dev.upload(z.f.b_wall, &fw)?;
                 }

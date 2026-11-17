@@ -96,8 +96,9 @@ stage 7). ν = μ/ρ, ν_t = μ_t/ρ. Velocity gradient ∇u with components
 - Strain rate S_ij = ½(∂u_i/∂x_j + ∂u_j/∂x_i), rotation
   W_ij = ½(∂u_i/∂x_j − ∂u_j/∂x_i).
 - Invariants: S = (2 S_ij S_ij)^½, Ω = (2 W_ij W_ij)^½, and
-  |S| = (S_ij S_ij)^½ = S/√2 where a paper uses that form (ζ-f, EB,
-  realizable k-ε). Each model section states which one it uses.
+  |S| = (S_ij S_ij)^½ = S/√2 where a paper uses that form (EB,
+  realizable k-ε). Each model section states which one it uses. *6d:*
+  ζ-f takes |S| = S in the bounds of T and L (section 3.3).
 - Production P_k = ν_t S² per unit mass (incompressible, Boussinesq),
   with the model's limiter where it has one.
 - y: wall distance from D48 (exact closest-point distance by default).
@@ -337,6 +338,21 @@ Hanjalić, Popovac & Hadžiabdić (2004); constants of the paper ◇.
   6.2, not by clipping; a clip remains as the last guard and is counted.
 - Curvature correction for the U-bend (P8) stays later. PANS on ζ-f (P7)
   was dropped by the maintainer on 2026-11-17 (X2, step 21).
+- *6d (PR #73), as implemented:* the constants ◇ are confirmed against the
+  page of the turbulence modelling benchmark working group (TMBWG). |S| in
+  the bounds of T and L is the strain magnitude S = (2 S_ij S_ij)^½, as in
+  the authors' implementation and on the TMBWG page (the draft took
+  S/√2, which gave U_b⁺ +2.9 % in the channel against +1.9 %). C_ε1 P_k
+  is evaluated as 1.4(P_k + 0.012 P_k/ζ) with P_k/ζ = C_μ k T S², finite
+  as ζ → 0. ζ is floored at 10⁻¹⁰ and capped at 2 after its solve. A
+  transport solve may lower k, ε or ζ of a cell by at most a factor 10
+  per outer iteration (`ZETA_F_DROP`): without it an unconverged
+  iterate drove ε to the absolute floor and the source of f blew up (the
+  plate at y⁺ 0.5 diverged). Inlet and initial ζ default to 2/3 (keys
+  `zeta`, in (0, 2]); f starts at 0; a two-equation restart continues
+  with ζ = 2/3, f = 0. Findings of the flat plate (section 9.3): +5 %
+  C_f, laminar from the TMR free stream, the k floor near the leading
+  edge.
 
 ### 3.4 Elliptic-blending k-ε (D133)
 
@@ -571,7 +587,13 @@ treatment is the SST paper's own.
 
 Popovac (2023) is cited for the later refinements of the compound treatment;
 which of them enter is decided with the ζ-f pull request (6d) after reading
-the paper (◇).
+the paper (◇). *6d:* the maintainer decided (2026-11-17) to add the ζ-f₀
+model of Popovac (2023) with its own compound treatment as the next
+part, 6d2, for robustness in y⁺: f₀ = f + (N_ζ − 1)ζ/T is zero at the
+wall, which removes the stiff wall value −2νζ/y² of f. 6d implements the
+2007 treatment: k and ζ by zero gradient (dk/dy = dζ/dy = 0 at the wall),
+ε and P_k of the first cell fixed by the blend with C_μ = 0.09 in the
+log-law values, f_w = e^{−Γ}(−2νζ_P/y_P²).
 
 ### 4.4 Imposing first-cell values
 
@@ -757,6 +779,17 @@ caps ν_t/ν, counted in health.
   symmetric positive definite, which the stage-3 AMG requires); Jacobi-CG
   as option. The hierarchy is rebuilt with `solver.amg_rebuild` like the
   pressure, and L² from the lagged k, ε.
+- *6d:* the backends hold the hierarchies in slots (0 pressure, 1 f,
+  2 k, 3 ε or ω, 4 ζ). The AMG of a transport equation is built from the
+  symmetric part ½(A + Aᵀ) of its matrix (the stage-3 AMG needs a
+  symmetric matrix; as a preconditioner of BiCGStab the symmetric part
+  suffices). The keys: `solver.turbulence.preconditioner` (default
+  `jacobi`) and `[solver.elliptic]` with `preconditioner` (default `amg`),
+  `tolerance`, `max_iter`; the multigrid settings are those of
+  `[solver.pressure.amg]`. Every hierarchy is rebuilt on the schedule of
+  the pressure, and the matrix of its last setup goes into the restart
+  file (`turb_amg_matrix_<slot>`), so a continued run builds the same
+  hierarchies (D42).
 - Tolerances per outer iteration: 10⁻² steady, 10⁻⁸ transient (as
   momentum), maximum iterations 50 (BiCGStab) and 100 (CG).
 
@@ -1173,7 +1206,8 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6p | Periodic boundaries for the flow and the scalars (translational pairs, mass-flow or pressure-gradient driving, the heat-flux jump of D109 (1) for passive scalars; the wall-temperature map of D109–D111 with the energy stage) (done, PR #67) | `foehncraft-mesh` periodic pairing, `foehncraft-flow/src/bc.rs` | periodic Poiseuille and heated channel equal to the open ones; needed by the 9.4 channel at Re_τ 180/395/590 |
 | 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂; the optional PDE wall distance with the key `turbulence.wall_distance` (the exact distance of 6a is the default); the invariant features of D166 as named expression variables (same definitions as the D106 export) (done, PR #68: the features as the derived field `turbulence-features`; their names in the expression language come with the first consumer, D104; the SST MMS moves to 6g; turbulence values of the backflow at outlets later, BC028) | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 decay (SST), 9.3 flat plate, 9.4 channel (SST) |
 | 6c | Standard and realizable k-ε, scalable and standard wall functions, compound treatment for the k-ε family, Cebeci–Bradshaw roughness (done, PR #71: compound claimed from y⁺ 30 for the k-ε family, owner decision; Durbin bound and Picard ε destruction as defaults; findings: realizable 3–7 % low friction, rough pipe against Colebrook in 4.5 and 9.7) | `turb/keps.rs`, `turb/wall.rs` | 9.2, 9.3, 9.4 for the k-ε family, rough pipe and Moody study |
-| 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG), the AMG preconditioner for the scalar equations (D36; 6a solves them with Jacobi-preconditioned BiCGStab, enough for the laminar cases) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
+| 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG), the AMG preconditioner for the scalar equations (D36; 6a solves them with Jacobi-preconditioned BiCGStab, enough for the laminar cases) (done, PR #73: channel +1.9 % / +1.4 %; findings on the plate: +5 % C_f, laminar from the TMR free stream, the k floor near the leading edge; the elliptic solve lives in `turbulence/mod.rs`) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
+| 6d2 | ζ-f₀ of Popovac (2023) with its compound treatment (maintainer decision 2026-11-17: robustness in y⁺ for industrial use); Popovac's OpenFOAM implementation as a reference for understanding | `turb/zeta_f.rs`, `turb/wall.rs` | 9.3 and 9.4 over first-cell y⁺ 0.5 to 100, same or similar results as ζ-f |
 | 6e | EB k-ε (D133) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
 | 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports | cases, gallery, `tools/notebooks/stage6_colab.ipynb` | 9.5, 9.6, 9.7, 6.6 |

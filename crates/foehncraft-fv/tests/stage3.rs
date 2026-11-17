@@ -255,7 +255,7 @@ fn amg_slots_keep_the_pressure_hierarchy() {
     let x: Vec<f64> = (0..n)
         .map(|i| foehncraft_core::rng::uniform([i as u64, 5, 6]) - 0.5)
         .collect();
-    let mut apply = |be: &mut CpuBackend| {
+    let apply = |be: &mut CpuBackend| {
         be.upload(V::R, &x).unwrap();
         precondition(be, Preconditioner::Amg, V::R, V::Z).unwrap();
         be.download(V::Z).unwrap()

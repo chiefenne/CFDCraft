@@ -9,15 +9,19 @@ transport equation, its wall distance and its solver path
 periodic boundaries that the channel cases need
 ([below](#periodic-boundaries-part-6p)), part 6b the k-ω SST model
 ([below](#k-ω-sst-part-6b)), part 6c the k-ε family with its wall
-functions ([below](#k-ε-family-part-6c)). The commands are in
+functions ([below](#k-ε-family-part-6c)), part 6d the k-ε-ζ-f model and
+the multigrid of the turbulence equations
+([below](#k-ε-ζ-f-and-the-scalar-multigrid-part-6d)). The commands are in
 [recipe 63](../recipes/scalars.md#passive-scalars),
 [recipe 67](../recipes/boundary-conditions.md#periodic),
-[recipe 68](../recipes/turbulence.md#sst) and
-[recipe 71](../recipes/turbulence.md#k-epsilon), the pictures in
+[recipe 68](../recipes/turbulence.md#sst),
+[recipe 71](../recipes/turbulence.md#k-epsilon) and
+[recipe 73](../recipes/turbulence.md#zeta-f), the pictures in
 [gallery 63](../gallery/scalars.md#passive-scalars),
 [gallery 67](../gallery/boundary-conditions.md#periodic),
-[gallery 68](../gallery/turbulence.md#sst) and
-[gallery 71](../gallery/turbulence.md#k-epsilon), the generated
+[gallery 68](../gallery/turbulence.md#sst),
+[gallery 71](../gallery/turbulence.md#k-epsilon) and
+[gallery 73](../gallery/turbulence.md#zeta-f), the generated
 tables of every case in the [verification manual](manual.md).
 
 ## Passive scalars and the wall distance (part 6a)
@@ -316,3 +320,76 @@ treatment and a sweep of the SST wall value of ω, both left open by 6b,
 move to 6g with the model comparison; the GCI of the k-ε plate and
 channel also follows there.
 
+## k-ε-ζ-f and the scalar multigrid (part 6d)
+
+**The model** (D132). Hanjalić, Popovac & Hadžiabdić (2004):
+ν_t = C_μ ζ k T, C_μ = 0.22, C_ε1 = 1.4(1 + 0.012/ζ), C_ε2 = 1.9,
+C₁ = 1.4, C₂′ = 0.65, σ_k 1, σ_ε 1.3, σ_ζ 1.2, C_T 6, C_L 0.36, C_η 85,
+the realizability coefficient 0.6 (constants checked against the page of
+the turbulence modelling benchmark working group, TMBWG). The bounds of T
+and L take the strain magnitude S = (2 S_ij S_ij)^½, as the authors'
+implementation does (6d amendment of specification 2.1, which read
+(S_ij S_ij)^½: that form gave U_b⁺ +2.9 % in the channel against +1.9 %).
+C_ε1 P is evaluated as 1.4(P + 0.012 P/ζ) with P/ζ = C_μ k T S², finite
+as ζ → 0. One kernel (`turb::zeta_f`) gives T, L², ν_t, the source split
+of k, ε, ζ and the right-hand side of f, generic over the number type
+(dual-number test). Solve order per outer iteration: k and ε; the cell
+values again with the new k and ε, then f (CG); the cell values again,
+then ζ with the new f, bounded to [10⁻¹⁰, 2]; ν_t at the end. A transport
+solve may lower k, ε or ζ by at most a factor 10 (`ZETA_F_DROP`; 6d
+amendment): an unconverged BiCGStab iterate of the loose steady tolerance
+can go negative where the solution is small, and the absolute floor
+alone put ε near zero, which blew up T, L and P/ε in the source of f
+(the plate at y⁺ 0.5 diverged in iteration 36).
+
+**The walls** (D134). `low-re`: k = ζ = 0 (Dirichlet), ε_w = 2νk₁/d₁²
+and f_w = −2νζ₁/d₁² on the wall faces. `compound` (default): k and ζ by
+zero gradient (dk/dy = dζ/dy = 0 at the wall), ε and P_k of the first
+cell fixed by the blend of Popovac & Hanjalić (2007) with C_μ = 0.09 in
+the log-law values, f_w = e^(−Γ)(−2νζ₁/d₁²). Roughness with `low-re` is
+refused.
+
+**The multigrid** (D139). The backends hold hierarchies in slots
+(0 pressure, 1 f, 2 k, 3 ε or ω, 4 ζ). The symmetric positive definite f
+equation runs CG with its own hierarchy by default; the transport
+equations take one with `solver.turbulence.preconditioner = "amg"`,
+built from the symmetric part ½(A + Aᵀ) and preconditioning BiCGStab.
+All rebuild on the schedule of the pressure (`solver.amg_rebuild`), and
+the matrices of their last setups go into the restart file
+(`turb_amg_matrix_<slot>`), so a continued run builds the same
+hierarchies. A rebuild in every solve (the first version) cost 21 s of
+the 56 s of the channel: on a small mesh the coarsest level holds all
+cells and its dense inverse dominates.
+
+### Results
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| Channel at Re_τ = 395 (`channel_zeta_f.toml`), 96 cells graded 60, first-cell y⁺ 0.27, `compound` | U_b⁺ against the DNS (17.55) | ±3 % | 17.89 (+1.9 %), 3 700 iterations |
+| The channel, `low-re` | U_b⁺ | ±3 % | 17.79 (+1.4 %) |
+| TMR flat plate (`tmr_plate_zeta_f.toml`), `compound`, 64 × 48 cells, first-cell y⁺ 1, turbulent start | C_f(0.97) against White, 2.875e-3 | ±3 % | 3.023e-3 (+5.1 %): **finding** |
+| The plate on 64 × 96 cells (y⁺ 1) | C_f(0.97) | ±3 % | +4.7 %: mesh-independent, **finding** |
+| The plate with an inlet of Tu 0.8 % (k = 10⁻⁴, ν_t/ν = 10), 48 cells | C_f(0.97) | – | +5.0 % |
+| The plate from the TMR free-stream values (ν_t/ν = 0.009) | transition | – | laminar over the whole plate, C_f = 3.0e-4: **finding** |
+| The plate at y⁺ 0.5 | stability | – | diverged without the relative bound; converges with it |
+| Run time of the channel (192 cells, 3 000 iterations) | multigrid rebuild per solve against the pressure schedule | – | 56 s against 26 s (SST: 16 s) |
+| Homogeneous decay, k₀ = ε₀ = 1, ζ₀ = 0.3, t = 0.5, 10 / 20 / 40 steps | BDF2 order of k, ε and of the return of ζ to 2/3 | 1.8 – 2.2 | asserted in `tests/zeta_f.rs` |
+| Sustaining terms in a box at rest | k, ε constant, ζ = 2/3, f = 0 | 10⁻¹⁰ | asserted |
+| Transient restart with the multigrid of all four equations | fields at the end | bit-identical | asserted |
+| The plate on 1 and 4 threads (20 480 cells, multigrid of all equations) | residuals, wall shear after 8 iterations | bit-identical | asserted |
+| A second hierarchy slot | the V-cycle of the pressure slot | bit-identical | asserted (`tests/stage3.rs`) |
+| Kernels | T, L and ν_t in simple shear, the decay and sustaining limits, the source signs, the low-Re wall values, dual-number derivatives | – | kernel tests of `turb::zeta_f` |
+
+**Findings.** (1) On the TMR plate the model gives C_f 5 % above White's
+correlation, independent of the mesh (48 or 96 cells across), outside
+the ±3 % band; in the channel it lies within 2 %. (2) From the TMR free
+stream (ν_t/ν = 0.009) the boundary layer stays laminar over the whole
+plate: the length scale of f in the weak free stream,
+C_L C_η (ν³/ε)^¼ ≈ 7 mm, exceeds the laminar layer, and f drives ζ, and
+with it ν_t, to zero across it; the case starts from a turbulent field.
+(3) In the laminar part near the leading edge the published sink −ε of
+the k equation has no positive steady solution once T sits at its
+Kolmogorov bound (ε then no longer falls with k): the floor holds k in
+about 120 cells and its residual stays at 7·10⁻⁶ while every other field
+converges to round-off (TURB002). The ζ-f₀ variant of Popovac (2023),
+with f₀ = 0 at the wall, follows as the next part for robustness in y⁺.
