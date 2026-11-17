@@ -39,6 +39,8 @@ _H = (VIEW[1] - VIEW[0]) * PANEL[1] / PANEL[0]
 VIEW = (VIEW[0], VIEW[1], Y0 - 0.5 * (_H - (Y1 - Y0)) - 0.2, Y1 + 0.5 * (_H - (Y1 - Y0)) - 0.2)
 Z_CUT, Z_MASK, Z_AXES, Z_MARK = 0.05, 0.06, 0.08, 0.1   # the layers, bottom to top
 U_RANGE = (-0.3, 1.1)
+X_TICKS = [float(x) for x in range(-2, 15, 2)]
+Y_TICKS = [0.0, 1.0, 2.0, 3.0]
 
 
 def opt(obj, name, value):
@@ -143,6 +145,7 @@ def seeded(src, p1, p2, n, length):
     opt(st, "SurfaceStreamlines", 1)
     st.IntegrationDirection = "BOTH"
     st.MaximumStreamlineLength = length
+    opt(st, "MaximumSteps", 100000)     # the wall cells are small
     st.SeedType.Point1 = p1
     st.SeedType.Point2 = p2
     st.SeedType.Resolution = n
@@ -193,21 +196,43 @@ def view():
     opt(v, "InteractionMode", "2D")
     g = getattr(v, "AxesGrid", None)
     if g is not None:
-        for name, value in (("Visibility", 1), ("XTitle", "x/H"), ("YTitle", "y/H"),
+        # the frame and the ticks only: which numbers and titles the axes grid
+        # shows differs between ParaView versions, so axes() writes them
+        for name, value in (("Visibility", 1), ("XTitle", ""), ("YTitle", ""),
                             ("ZTitle", ""), ("ShowEdges", 1), ("ShowTicks", 1),
-                            ("ShowGrid", 0), ("AxesToLabel", 3), ("UseCustomBounds", 1),
+                            ("ShowGrid", 0), ("AxesToLabel", 0), ("UseCustomBounds", 1),
                             ("CustomBounds", [X0, X1, Y0, Y1, Z_AXES, Z_AXES]),
-                            ("XAxisUseCustomLabels", 1),
-                            ("XAxisLabels", [float(x) for x in range(-2, 15, 2)]),
-                            ("YAxisUseCustomLabels", 1),
-                            ("YAxisLabels", [0.0, 1.0, 2.0, 3.0]),
-                            ("XTitleFontSize", 14), ("YTitleFontSize", 14),
-                            ("XLabelFontSize", 13), ("YLabelFontSize", 13)):
+                            ("XAxisUseCustomLabels", 1), ("XAxisLabels", X_TICKS),
+                            ("YAxisUseCustomLabels", 1), ("YAxisLabels", Y_TICKS),
+                            ("GridColor", [0.0, 0.0, 0.0])):
             opt(g, name, value)
-        for a in ("XTitleColor", "YTitleColor", "XLabelColor", "YLabelColor",
-                  "GridColor"):
-            opt(g, a, [0.0, 0.0, 0.0])
     return v
+
+
+def write(v, s, x, y, dx=0.0, dy=0.0, size=13, align=0.5):
+    """The text s at the point (x, y) of the field, shifted by (dx, dy) pixels;
+    align 0 starts it there, 0.5 centres it, 1 ends it there."""
+    t = Text()
+    t.Text = s
+    td = Show(t, v)
+    width = 0.58 * size * len(s)            # a sans-serif font, roughly
+    px = (x - VIEW[0]) / (VIEW[1] - VIEW[0]) * PANEL[0] + dx - align * width
+    py = (y - VIEW[2]) / (VIEW[3] - VIEW[2]) * PANEL[1] + dy
+    opt(td, "Color", [0.0, 0.0, 0.0])
+    opt(td, "FontSize", size)
+    opt(td, "Bold", 0)
+    opt(td, "WindowLocation", "Any Location")
+    opt(td, "Position", [px / PANEL[0], py / PANEL[1]])
+
+
+def axes(v):
+    """The numbers at the ticks and the axis titles."""
+    for x in X_TICKS:
+        write(v, f"{x:g}", x, Y0, dy=-24)
+    for y in Y_TICKS:
+        write(v, f"{y:g}", X0, y, dx=-12, dy=-8, align=1.0)
+    write(v, "x/H", 0.5 * (X0 + X1), Y0, dy=-46, size=14)
+    write(v, "y/H", X0, 0.5 * (Y0 + Y1), dx=-34, dy=-8, size=14, align=1.0)
 
 
 def frame(v):
@@ -299,6 +324,7 @@ def panel(v, data, label, xr, field, preset, rng, streamlines):
     safely("the U = 0 line", bubble_edge)
     safely("the reattachment markers", points)
     safely("the title", heading)
+    safely("the axis numbers", lambda: axes(v))
     # ParaView resets the camera at the first render of a session: render,
     # then place the camera
     Render(v)
