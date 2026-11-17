@@ -91,3 +91,9 @@ profile at the inlet and a zero-gradient outlet, whose missing axial
 diffusion changes the temperature by about Γ G / U = 2e-6 K in the last
 cell. The periodic variant with the heat-flux jump of D109 follows with
 the periodic boundaries (part 6p).
+
+## Periodic boundaries (part 6p)
+
+Work in progress (pull request of part 6p): translational periodic pairs
+for the flow and the passive scalars, driven by a mass flow or a mean
+pressure gradient, with the heat-flux jump of D109 (1) for the scalars.
