@@ -6,7 +6,10 @@ drafted on 2026-11-17 from the maintainer's stage-6 brief, before any code
 [`docs/requirements.md`](../requirements.md#2-decisions) and builds on the
 earlier stage-6 decisions D12, D13, D28 (1), D29, D36, D48, D49, D51, D55,
 D104, D108, D109 (1), D111, D116 and D124 (W4). Where this page and a D row
-differ, the D row wins until this page is amended.
+differ, the D row wins until this page is amended. *Amended 2026-11-17:*
+the optional curvature and rotation correction and the quadratic
+constitutive relation of SST (**D170**, section 3.6) and the explicit
+algebraic stress model as a later item (**D171**, section 3.7).
 
 Rules that hold for every item below:
 
@@ -381,6 +384,84 @@ Alternatives: EB replaces ζ-f (loses the base of P7 and the maintainer's
 literature line), or EB follows later as a P item (stage 6 stays smaller).
 
 
+### 3.6 Optional corrections of SST: curvature and rotation, QCR (D170)
+
+Two options of the SST model of 3.1, both off by default, so the published
+SST 2003 stays the reference path. Both work on the velocity gradient that
+the solver already has, so they add no transport equation.
+
+**Curvature and rotation correction** (`turbulence.curvature_correction`):
+the correction of Spalart & Shur (1997) applied to SST by Smirnov & Menter
+(2009). The production P̃_k in the k and the ω equation is multiplied by
+
+  f_r1 = max[0, min(f_rotation, 1.25)] ◇,
+
+  f_rotation = (1 + c_r1) · 2 r*/(1 + r*) · [1 − c_r3 atan(c_r2 r̃)] − c_r1,
+
+  r* = S/Ω,  r̃ = 2 Ω_ik S_jk [DS_ij/Dt + (ε_imn S_jn + ε_jmn S_in) Ω_m^rot] / (Ω D³),
+
+  D² = max(S², 0.09 ω²),  c_r1 = 1.0, c_r2 = 2.0, c_r3 = 1.0 ◇,
+
+with S and Ω the strain-rate and vorticity invariants of 3.1, Ω_ik the
+rotation tensor in the frame of the zone and Ω^rot the angular velocity of
+a rotating zone (D55; zero elsewhere). In a pure shear flow r* = 1 and
+r̃ = 0, so f_r1 = 1 and the model is SST exactly; this is the first check.
+DS_ij/Dt is the material derivative of the strain-rate tensor: its
+convective part u·∇S_ij from the least-squares gradient of the six
+components (one extra gradient of a symmetric tensor per outer iteration),
+its time part from the BDF levels in a transient run. The upper limit 1.25
+and the clip at 0 are those of the paper; the smooth limits of 2.6 replace
+them in `smooth_limits` runs. A note (TURB code) says when the correction
+is combined with Kato–Launder production, since both act on stagnation
+and swirl regions.
+
+**Quadratic constitutive relation** (`turbulence.qcr`): the Boussinesq
+stress τ_ij = 2 μ_t S*_ij − (2/3) ρ k δ_ij (S* trace-free) is extended by
+the QCR of Spalart (2000),
+
+  τ_ij,QCR = τ_ij − C_cr1 (O_ik τ_jk + O_jk τ_ik),
+  O_ik = 2 W_ik / √(∂u_m/∂x_n ∂u_m/∂x_n),  C_cr1 = 0.3 ◇,
+
+with W_ik the rotation tensor, and, for `"qcr2013"`, the isotropic term of
+Mani, Babcock, Winkler & Spalart (2013),
+
+  − C_cr2 μ_t √(2 S*_mn S*_mn) δ_ij,  C_cr2 = 2.5 ◇.
+
+For a model that carries k, the TMR page on QCR records how the 2013 term
+relates to the (2/3) ρ k δ_ij term; which form is used is decided at
+implementation against the paper and the TMR page (◇). The non-linear part
+enters the momentum equation as the divergence of an explicit stress, a
+deferred correction in the stored face order (D26, D31); the implicit
+diffusion stays μ + μ_t. Its effect is the anisotropy of the normal
+stresses that drives the secondary flow in non-circular ducts and corners,
+which a linear model cannot produce. The production P_k of the turbulence
+equations keeps the linear form (as the papers do).
+
+### 3.7 Explicit algebraic Reynolds-stress model, later item (D171)
+
+The explicit algebraic Reynolds-stress model (EARSM) of Wallin & Johansson
+(2000) on the k-ω platform recalibrated for it by Hellsten (2005) is
+planned after stage 6 (not in v0.6): the Reynolds-stress anisotropy is an
+explicit tensor polynomial in the normalised strain and rotation tensors,
+
+  a_ij = β₁ S_ij + β₃ (Ω_ik Ω_kj − II_Ω δ_ij/3) + β₄ (S_ik Ω_kj − Ω_ik S_kj)
+         + β₆ (…) + β₉ (…)  (the full basis of the paper; in two dimensions
+         β₁, β₃, β₄ remain) ◇,
+
+with the β coefficients from the self-consistent solution of the paper
+(a cubic for the production-to-dissipation ratio, solved in closed form, so
+the model stays explicit and has no iteration). The k-ω equations are those
+of Hellsten (2005) with its constants and cross diffusion (not SST's) ◇.
+It reuses the explicit-stress path of the QCR (3.6) and the invariant
+features of D166, and gives the stress anisotropy that the internal flows
+of the validation (U-bend, square-duct secondary flow, swirl) need beyond
+QCR. Its pull request, constants check and verification (rotating channel,
+square duct, U-bend) are planned with the stage after v0.6; until then
+D171 fixes only the model and the interfaces it needs, which stage 6 keeps
+open: an explicit stress term in the momentum assembly (used first by the
+QCR) and the strain and rotation tensors of the invariants module.
+
+
 ## 4. Momentum wall treatment (D134)
 
 ### 4.1 Wall-face interface
@@ -746,6 +827,8 @@ code; the table below is the target.
 | `turbulence.production_limiter` | "menter" \| "kato-launder" \| "durbin" \| "none" | SST `menter`, k-ε `none` | | | Production form of SST and standard k-ε (3.1, 3.2). |
 | `turbulence.durbin_coefficient` | number | `1.0` | | | C_lim of the Durbin bound. |
 | `turbulence.ambient` | { k, omega \| epsilon } | none | SI | | Sustaining terms (Spalart & Rumsey 2007). |
+| `turbulence.curvature_correction` | boolean | `false` | | | SST: the curvature and rotation correction of Smirnov & Menter (2009) (3.6, D170); constants `c_r1`, `c_r2`, `c_r3`. |
+| `turbulence.qcr` | "none" \| "qcr2000" \| "qcr2013" | `"none"` | | | Quadratic constitutive relation (3.6, D170); constants `c_cr1`, `c_cr2`. |
 | `turbulence.max_viscosity_ratio` | number | `1e5` | | yes | Cap of ν_t/ν. |
 | `turbulence.smooth_limits` | boolean | `false` | | | Smooth min and max in the primal solution (2.6). |
 | `turbulence.wall_distance` | "exact" \| "pde" | `"exact"` | | | D48. |
@@ -901,6 +984,18 @@ solution, the turbulent heated pipe as a passive scalar against Gnielinski
 (1976) (±10 %, 10⁴ ≤ Re ≤ 10⁶, D111) with each model and both Pr_t
 options, and the CPU–GPU and thread-count parity of section 6.6.
 
+### 9.8 The SST options of 3.6 (D170)
+
+Bands fixed before the runs, as everywhere in this section; the ◇ bands
+are proposals to be confirmed with the papers.
+
+| Case | Quantity | Reference | Band |
+|---|---|---|---|
+| Flat plate and channel at Re_τ = 395 with `curvature_correction` | C_f, u⁺ profile | SST without the option (pure shear: f_r1 = 1) | relative difference ≤ 1e-6 |
+| Channel in spanwise system rotation, Re_τ = 194 (rotating zone, D55; periodic, 6p) | wall shear stress on the unstable and the stable side, mean-velocity profile | DNS of Kristoffersen & Andersson (1993) ◇ | ratio of the two wall shear stresses within ±15 % ◇ |
+| Fully developed square duct, Re_b ≈ 3 500 (periodic, 6p) with `qcr = "qcr2013"` | largest secondary velocity, its position | DNS of Pinelli, Uhlmann, Sekimoto & Kawahara (2010) ◇ | within ±30 % and the corner vortex pair present; linear SST gives none (a check that the option acts) |
+| Manufactured solution with the corrections switched on | observed order | — | 1.8 – 2.2 (the corrections must not lower the order) |
+
 
 ## 10. Implementation plan
 
@@ -918,6 +1013,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6e | EB k-ε (D133) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
 | 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports | cases, gallery, `tools/notebooks/stage6_colab.ipynb` | 9.5, 9.6, 9.7, 6.6 |
+| 6h | SST options of D170: curvature and rotation correction (Smirnov & Menter 2009), QCR2000 and QCR2013 with the explicit-stress path in the momentum assembly that D171 reuses | `turb/sst.rs`, `turb/invariants.rs`, `foehncraft-flow/src/turbulence/stress.rs` | 9.8 |
 | release | v0.6: version bump, changelog summary, README, verification manual, Release workflow (dry run first) | | all of section 9 green or findings recorded |
 
 Order rationale: 6a gives every later model its transport, wall distance
@@ -925,7 +1021,9 @@ and solver path; 6p brings the periodic boundaries that the channel cases
 of 9.4 need, so it comes before the first model is verified there; SST first because it is the general-purpose default and
 the flat plate and channel can be checked against the TMR at once; ζ-f
 before EB because EB reuses its elliptic path; the thermal wall function
-after the models because it needs u* from each of them.
+after the models because it needs u* from each of them; the SST options
+(6h) after the validation cases, because their checks need the rotating
+zone and the periodic duct. The EARSM of D171 is not in v0.6.
 
 
 ## 11. Questions for the maintainer
@@ -935,6 +1033,10 @@ after the models because it needs u* from each of them.
   verification (recommended), or in stage 6?
 - **Q3:** The model bands of section 9 are a proposal; change any before
   the first run (they are fixed once a run has been made).
+- **Q4 (open, not confirmed):** Add the k-ω model of Wilcox (2006) as a
+  cheap variant on the SST code path (its stress limiter and cross
+  diffusion; one more closure of the same kernels)? Not part of the plan
+  until the maintainer confirms it.
 
 
 ## 12. References
@@ -972,6 +1074,8 @@ after the models because it needs u* from each of them.
 - K. Hanjalić, M. Popovac, M. Hadžiabdić, *A robust near-wall
   elliptic-relaxation eddy-viscosity turbulence model for CFD*, Int. J. Heat
   Fluid Flow 25, 1047–1051 (2004)
+- A. Hellsten, *New advanced k-ω turbulence model for high-lift
+  aerodynamics*, AIAA J. 43, 1857–1869 (2005)
 - C. L. V. Jayatilleke, *The influence of Prandtl number and surface
   roughness on the resistance of the laminar sub-layer to momentum and
   heat transfer*, Prog. Heat Mass Transfer 1, 193–329 (1969)
@@ -990,10 +1094,14 @@ after the models because it needs u* from each of them.
   116, 284–295 (1994)
 - W. M. Kays, M. E. Crawford, B. Weigand, *Convective heat and mass
   transfer*, 4th ed., McGraw-Hill (2005)
+- R. Kristoffersen, H. I. Andersson, *Direct simulations of low-Reynolds-number
+  turbulent flow in a rotating channel*, J. Fluid Mech. 256, 163–197 (1993)
 - S. Lardeau, F. Billard, *Development of an elliptic-blending lag model
   for industrial applications*, AIAA 2016-1600 (2016)
 - B. E. Launder, D. B. Spalding, *The numerical computation of turbulent
   flows*, Comput. Methods Appl. Mech. Eng. 3, 269–289 (1974)
+- M. Mani, D. A. Babcock, C. M. Winkler, P. R. Spalart, *Predictions of a
+  supersonic turbulent flow in a square duct*, AIAA 2013-0860 (2013) ◇
 - F. R. Menter, *Two-equation eddy-viscosity turbulence models for
   engineering applications*, AIAA J. 32, 1598–1605 (1994)
 - F. R. Menter, M. Kuntz, R. Langtry, *Ten years of industrial experience
@@ -1005,6 +1113,9 @@ after the models because it needs u* from each of them.
   2D zero-pressure-gradient flat plate and 2D backward-facing step cases
   (values retrieved at implementation, retrieval date stored with the data)
 - S. V. Patankar, *Numerical heat transfer and fluid flow*, Hemisphere (1980)
+- A. Pinelli, M. Uhlmann, A. Sekimoto, G. Kawahara, *Reynolds number
+  dependence of mean flow structure in square duct turbulence*, J. Fluid
+  Mech. 644, 107–122 (2010)
 - M. Popovac, K. Hanjalić, *Compound wall treatment for RANS computation of
   complex turbulent flows and heat transfer*, Flow Turbul. Combust. 78,
   177–202 (2007)
@@ -1013,8 +1124,20 @@ after the models because it needs u* from each of them.
 - T.-H. Shih, W. W. Liou, A. Shabbir, Z. Yang, J. Zhu, *A new k-ε eddy
   viscosity model for high Reynolds number turbulent flows*, Comput. Fluids
   24, 227–238 (1995)
+- P. E. Smirnov, F. R. Menter, *Sensitization of the SST turbulence model
+  to rotation and curvature by applying the Spalart–Shur correction term*,
+  J. Turbomach. 131, 041010 (2009)
+- P. R. Spalart, *Strategies for turbulence modelling and simulations*,
+  Int. J. Heat Fluid Flow 21, 252–263 (2000)
 - P. R. Spalart, C. L. Rumsey, *Effective inflow conditions for turbulence
   models in aerodynamic calculations*, AIAA J. 45, 2544–2553 (2007)
+- P. R. Spalart, M. Shur, *On the sensitization of turbulence models to
+  rotation and curvature*, Aerosp. Sci. Technol. 1, 297–302 (1997)
 - D. B. Spalding, *A single formula for the "law of the wall"*, J. Appl.
   Mech. 28, 455–458 (1961)
+- S. Wallin, A. V. Johansson, *An explicit algebraic Reynolds stress model
+  for incompressible and compressible turbulent flows*, J. Fluid Mech. 403,
+  89–132 (2000)
 - F. M. White, *Viscous fluid flow*, 3rd ed., McGraw-Hill (2006)
+- D. C. Wilcox, *Turbulence modeling for CFD*, 3rd ed., DCW Industries
+  (2006) (Q4 only)
