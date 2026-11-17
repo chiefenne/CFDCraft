@@ -1131,9 +1131,13 @@ pub fn summaries(
                 &format!("scalars.{name}.exact"),
             )?;
             let (mut e2, mut ei) = (0.0, 0.0f64);
-            for c in 0..nc {
-                let d = phi[c] - ex.at(geo.cell_centroid[c], t);
-                e2 += d * d * geo.cell_volume[c];
+            for ((&v, &x), &vc) in phi[..nc]
+                .iter()
+                .zip(&geo.cell_centroid[..nc])
+                .zip(&geo.cell_volume[..nc])
+            {
+                let d = v - ex.at(x, t);
+                e2 += d * d * vc;
                 ei = ei.max(d.abs());
             }
             l2 = Some((e2 / vol).sqrt());
@@ -1259,7 +1263,11 @@ pub fn check_sweep(
             .collect();
         if let Some(tol) = v.scalar_max_error
             && let Some(&(_, l2)) = e.last()
-            && !(l2 <= tol)
+            // a NaN error fails too
+            && !matches!(
+                l2.partial_cmp(&tol),
+                Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
+            )
         {
             rep.failures.push(format!(
                 "scalar {name}: L2 error {l2:.4e} on the finest mesh above {tol}"

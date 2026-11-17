@@ -20,6 +20,9 @@
 //! boxes at exactly the best distance are still visited, so the answer does
 //! not depend on the traversal order (D93).
 
+// coordinates indexed by axis read more clearly than zipped iterators
+#![allow(clippy::needless_range_loop)]
+
 use crate::geometry::{cross, dot, node_average, norm, scale, sub};
 use crate::{Geometry, Mesh};
 use rayon::prelude::*;

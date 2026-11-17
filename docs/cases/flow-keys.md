@@ -156,6 +156,7 @@ least-squares gradient of the solver), S = ½ (G + Gᵀ), Ω = ½ (G − Gᵀ),
 | `pressure-coefficient` | `pressure_coefficient` | (p − p_ref)/(½ ρ_ref U_ref²); needs a reference velocity | - |
 | `total-pressure` | `total_pressure` | p + ½ ρ u·u | Pa |
 | `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude`, on the boundary blocks | tangential viscous stress of the fluid on the wall (as `wall_<boundary>.csv`), zero off walls | Pa |
+| `wall-distance` | `wall_distance` | exact distance of the cell centroid to the nearest face of the `wall` boundaries (BVH closest-point search, D48, D108); needs a wall | m |
 | `y-plus` | `y_plus`, on the boundary blocks | d √(τ_w/ρ)/ν, d the wall distance of the cell centroid, zero off walls | - |
 
 The datasets are written in the order of this table, whatever the order of
@@ -316,3 +317,35 @@ every output file (`properties_hash`, `materials_database`).
 Regions with different viscosities give a viscosity per face, the harmonic
 mean across a zone boundary.
 
+# Passive scalars (D51, D116)
+
+Stage 6 part 6a ([gallery 63](../gallery/scalars.md#passive-scalars),
+[recipe 63](../recipes/scalars.md#passive-scalars)). Each
+`[scalars.<name>]` table adds the equation
+ρ ∂φ/∂t + ∇·(ṁ φ) − φ ∇·ṁ − ∇·(ρΓ ∇φ) = ρ S with the current mass fluxes;
+the bounded form (the term −φ ∇·ṁ) keeps the upwind operator an M-matrix
+while continuity is not converged.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `scalars.<name>.diffusivity` | required | Γ (m²/s), a number or an expression of x, y, z (per face) |
+| `scalars.<name>.initial` | 0 | start value, a number or an expression of x, y, z |
+| `scalars.<name>.source` | 0 | source per unit mass S, expression of x, y, z and t; explicit |
+| `scalars.<name>.bounds` | none | [lower, upper]: the bounded BDF2 (D28 (1)) and the extremes against them in the log |
+| `scalars.<name>.exact` | none | exact solution: L2 and largest error, observed order of a sweep |
+| `boundary.<boundary>.scalar.<name>.value` | per kind | fixed value at inlets and walls (x, y, z, t) |
+| `boundary.<boundary>.scalar.<name>.flux` | per kind | diffusive flux Γ ∂φ/∂n into the fluid at walls, slip walls, symmetry planes and wedges (x, y, z, t) |
+| `solver.scalar.scheme` | `linear-upwind` | `upwind`, `linear-upwind`, `central` (bounded, with `central_blending` and `central_bounding`) |
+| `solver.scalar.limiter`, `limiter_k` | `venkatakrishnan`, 5 | limiter of the scalar gradients |
+| `solver.scalar.relaxation` | 0.9 steady, 1 transient | under-relaxation |
+| `solver.scalar.tolerance`, `max_iter` | 1e-3 steady, 1e-8 transient; 50 | relative tolerance and iterations of each BiCGStab solve |
+| `solver.scalar.sweeps` | 1 | solves per outer iteration, each with new deferred corrections |
+| `verification.scalar_order` | none | accepted observed order of the scalar errors (mesh sweep) or of the differences of successive solutions (time-step sweep) |
+| `verification.scalar_max_error` | none | largest accepted L2 error on the finest mesh |
+
+The defaults per boundary kind: zero flux on walls, slip walls, symmetry
+planes and wedges; the value 0 at inlets; zero gradient at outlets.
+Periodic boundaries follow in stage 6 part 6p. Scalar names may not be
+those of output fields, derived fields or the expression language
+(`T`, `k`, `omega`, `Y`, ... are reserved for the energy equation, the
+turbulence models and the species). Errors in these tables are `SCAL001`.
