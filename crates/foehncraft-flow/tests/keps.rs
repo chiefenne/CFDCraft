@@ -57,6 +57,7 @@ fn small_channel(extra: &str) -> String {
 
 /// The box at rest of the decay tests, with `model` and the initial
 /// values of `initial`.
+#[cfg(feature = "hdf5")]
 fn decay_box(model: &str, initial: &str, dt: f64, n: usize) -> String {
     format!(
         r#"
