@@ -36,6 +36,23 @@ PANEL = (2000, 420)          # pixels of one model panel
 U_RANGE = (-0.3, 1.1)
 
 
+def opt(obj, name, value):
+    """Set a display property that may not exist in every ParaView version."""
+    try:
+        setattr(obj, name, value)
+    except (AttributeError, ValueError, TypeError):
+        pass
+
+
+def opt_fails(obj, name, value):
+    """Like opt, but say whether the value was refused."""
+    try:
+        setattr(obj, name, value)
+        return False
+    except (AttributeError, ValueError, TypeError):
+        return True
+
+
 def reattachment(d):
     with open(os.path.join(d, "wall_ymin.csv")) as f:
         rows = [r for r in f if not r.startswith("#")]
@@ -72,7 +89,7 @@ def load(d):
 def seeded(src, p1, p2, n):
     st = StreamTracer(Input=src, SeedType="Line")
     st.Vectors = ["POINTS", "U"]
-    st.SurfaceStreamlines = 1
+    opt(st, "SurfaceStreamlines", 1)
     st.IntegrationDirection = "BOTH"
     st.MaximumStreamlineLength = 60.0
     st.SeedType.Point1 = p1
@@ -86,10 +103,7 @@ def view():
     v.ViewSize = list(PANEL)
     v.OrientationAxesVisibility = 0
     v.Background = [1.0, 1.0, 1.0]
-    try:
-        v.UseColorPaletteForBackground = 0
-    except AttributeError:
-        pass
+    opt(v, "UseColorPaletteForBackground", 0)
     v.CameraParallelProjection = 1
     # x from X0 to X1 plus room for the colour bar on the right
     xc, yc = 0.5 * (X0 + X1) + 1.2, 0.5 * (Y0 + Y1)
@@ -97,15 +111,16 @@ def view():
     v.CameraFocalPoint = [xc, yc, 0.0]
     v.CameraViewUp = [0.0, 1.0, 0.0]
     v.CameraParallelScale = 0.5 * (Y1 - Y0) * 1.18
-    v.AxesGrid.Visibility = 1
-    v.AxesGrid.XTitle = "x/H"
-    v.AxesGrid.YTitle = "y/H"
-    v.AxesGrid.ZAxisVisibility = 0
-    for a in ("XTitleColor", "YTitleColor", "XLabelColor", "YLabelColor", "GridColor"):
-        setattr(v.AxesGrid, a, [0.0, 0.0, 0.0])
-    v.AxesGrid.DataBoundsInflateFactor = 0.0
-    v.AxesGrid.UseCustomBounds = 1
-    v.AxesGrid.CustomBounds = [X0, X1, Y0, Y1, 0.0, 0.0]
+    g = getattr(v, "AxesGrid", None)
+    if g is not None:
+        for name, value in (("Visibility", 1), ("XTitle", "x/H"), ("YTitle", "y/H"),
+                            ("ZTitle", ""), ("ShowEdges", 1), ("ShowTicks", 1),
+                            ("DataBoundsInflateFactor", 0.0), ("UseCustomBounds", 1),
+                            ("CustomBounds", [X0, X1, Y0, Y1, 0.0, 0.0])):
+            opt(g, name, value)
+        for a in ("XTitleColor", "YTitleColor", "XLabelColor", "YLabelColor",
+                  "GridColor"):
+            opt(g, a, [0.0, 0.0, 0.0])
     return v
 
 
@@ -123,18 +138,13 @@ def panel(v, data, label, xr, field, lut_name, rng, streamlines):
     lut = GetColorTransferFunction(field)
     lut.ApplyPreset(lut_name, True)
     lut.RescaleTransferFunction(*rng)
-    try:
-        lut.AutomaticRescaleRangeMode = "Never"
-    except AttributeError:
-        pass
+    opt(lut, "AutomaticRescaleRangeMode", "Never")
     bar = GetScalarBar(lut, v)
-    bar.Title = "U/U_ref" if field == "velocity_x" else "k/U_ref²"
-    bar.ComponentTitle = ""
-    bar.TitleColor = [0.0, 0.0, 0.0]
-    bar.LabelColor = [0.0, 0.0, 0.0]
-    bar.WindowLocation = "Any Location"
-    bar.Position = [0.93, 0.12]
-    bar.ScalarBarLength = 0.76
+    for name, value in (("Title", "U/U_ref" if field == "velocity_x" else "k/U_ref²"),
+                        ("ComponentTitle", ""), ("TitleColor", [0.0, 0.0, 0.0]),
+                        ("LabelColor", [0.0, 0.0, 0.0]), ("WindowLocation", "Any Location"),
+                        ("Position", [0.93, 0.12]), ("ScalarBarLength", 0.76)):
+        opt(bar, name, value)
     d.SetScalarBarVisibility(v, True)
 
     # the step itself
@@ -152,7 +162,7 @@ def panel(v, data, label, xr, field, lut_name, rng, streamlines):
             sl = Show(st, v)
             ColorBy(sl, None)
             sl.AmbientColor = sl.DiffuseColor = [0.0, 0.0, 0.0]
-            sl.LineWidth = 1.2
+            opt(sl, "LineWidth", 1.2)
 
     edge = Contour(Input=data)
     edge.ContourBy = ["POINTS", "velocity_x"]
@@ -160,7 +170,7 @@ def panel(v, data, label, xr, field, lut_name, rng, streamlines):
     ed = Show(edge, v)
     ColorBy(ed, None)
     ed.AmbientColor = ed.DiffuseColor = [1.0, 1.0, 1.0] if streamlines else [0.0, 0.8, 0.9]
-    ed.LineWidth = 2.0
+    opt(ed, "LineWidth", 2.0)
 
     marker(v, X_EXP, [0.0, 0.0, 0.0])
     if xr:
@@ -169,9 +179,10 @@ def panel(v, data, label, xr, field, lut_name, rng, streamlines):
     xt = f"x_r/H = {xr:.2f}" if xr else "no reattachment"
     title.Text = f"{label}:  {xt}  (experiment {X_EXP})" if streamlines else label
     td = Show(title, v)
-    td.Color = [0.0, 0.0, 0.0]
-    td.FontSize = 18
-    td.WindowLocation = "Upper Left Corner"
+    opt(td, "Color", [0.0, 0.0, 0.0])
+    opt(td, "FontSize", 18)
+    if opt_fails(td, "WindowLocation", "Upper Left Corner"):
+        opt(td, "WindowLocation", "UpperLeftCorner")
     Render(v)
 
 
