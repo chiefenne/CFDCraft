@@ -16,7 +16,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28 |
 | [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | 63 |
-| [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks | 68, 71, 73 |
+| [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks | 68, 71, 73, 74 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 29, 67 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
@@ -72,6 +72,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="sst"></a>68 | [Run a case with the k-ω SST model](recipes/turbulence.md#sst) | [Turbulence models](recipes/turbulence.md) |
 | <a id="k-epsilon"></a>71 | [Run a case with the k-ε family and wall functions](recipes/turbulence.md#k-epsilon) | [Turbulence models](recipes/turbulence.md) |
 | <a id="zeta-f"></a>73 | [Run a case with k-ε-ζ-f and resolved walls](recipes/turbulence.md#zeta-f) | [Turbulence models](recipes/turbulence.md) |
+| <a id="zeta-f0"></a>74 | [Run a case with k-ε-ζ-f₀ at any first-cell y⁺](recipes/turbulence.md#zeta-f0) | [Turbulence models](recipes/turbulence.md) |
 
 ## Adding a feature
 
