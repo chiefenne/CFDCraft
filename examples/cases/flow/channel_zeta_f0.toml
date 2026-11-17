@@ -1,0 +1,66 @@
+# Fully developed turbulent channel flow at Re_τ ≈ 395, k-ε-ζ-f₀
+# (Popovac 2023) with the compound wall treatment of the same paper
+# (stage 6 part 6d2, D132, D134, specification 9.4).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_zeta_f0.toml
+#
+# The channel of channel_zeta_f.toml on 48 cells across (ratio 27.32
+# between the centre and the wall cell): the first-cell y⁺ is 1. U_b⁺ =
+# 17.55/√F follows from the driving force F in the log (u_τ = √(F h/ρ)).
+#
+# ζ-f₀ solves f₀ = f + ζ/T, which is zero at the wall, instead of the f of
+# 2004, whose wall value −2νζ/y² is stiff. The default of Foehncraft keeps
+# the published constants and takes the sink k/T_K of k, T_K the time
+# scale with the Kolmogorov bound (docs/requirements/stage6-turbulence.md
+# 3.3.1).
+#
+# Result: U_b⁺ = 17.79, +1.4 % from the DNS of Moser, Kim & Mansour (band
+# ±3 %), in about 2 100 iterations. With the first cell at y⁺ 0.3 / 10 /
+# 30: +2.7 % / −4.2 % / −1.5 % (ζ-f with its 2007 treatment: +1.9 % /
+# −7.1 % / +4.8 %).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 2.0, 0.1]
+cells = [2, 48, 1]
+grading = { y = { ratio = 27.32, symmetric = true } }
+
+[fluid]
+density = 1.0
+viscosity = 0.0025316455696202532   # 1/395
+
+[turbulence]
+model = "k-epsilon-zeta-f0"
+wall_treatment = "compound-2023"
+
+[initial]
+velocity = [15.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 3.51
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 5000
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.0, 0.05], to = [0.05, 1.0, 0.05], points = 200 } ]

@@ -354,6 +354,61 @@ Hanjalić, Popovac & Hadžiabdić (2004); constants of the paper ◇.
   C_f, laminar from the TMR free stream, the k floor near the leading
   edge.
 
+#### 3.3.1 k-ε-ζ-f₀ (Popovac 2023), part 6d2
+
+Popovac (2023) solves f₀ = f + (N_ζ − 1)ζ/T in place of f, so that the
+wall value f₀,w = (N_ζ − 2)·2νζ_P/y_P² is zero for N_ζ = 2: the stiff wall
+value −2νζ/y² of f is gone. Constants of the paper's Table 1: C_μ = 0.09
+with ν_t = (C_μ/ζ_eq) ζ k T, ζ_eq = 0.41 (so that C_μ/ζ_eq = 0.2195 takes
+the place of 0.22), C_ε1 = 1.4(1 + 0.012/√ζ), N_ζ = 2; the others as in
+3.3. Model `k-epsilon-zeta-f0`, default wall treatment `compound-2023`
+(4.3).
+
+  L²∇²f₀ − f₀ = (1/T)(c₁ − 1 + C₂′ P_k/ε)(ζ − 2/3) − (N_ζ − 1) ζ ε/k
+
+  Dζ/Dt = f₀ − ζ P_k/(ε T) − (N_ζ − 1) ζ ε/k + ∇·[(ν + ν_t/σ_ζ)∇ζ]
+
+*6d2, as implemented (maintainer instruction 2026-11-17: no code of the
+author is available; take a default that may deviate from the paper but
+fits the validation).* The deviations from the paper:
+
+1. *Sign of the (N_ζ − 1) term in the f₀ equation.* The paper prints
+   +(N_ζ − 1)ζ/T on the right of its eq. 7; the substitution of f₀ into
+   the ζ-f equations gives −. With + the equilibrium ζ of the log layer
+   falls to about 0.17 instead of ζ_eq = 0.41.
+2. *ε/k in place of 1/T in the (N_ζ − 1) terms.* The two agree away from
+   the wall; with ε/k the wall value f₀,w = 0 is consistent with the
+   balance of ζ at the wall, where ε/k = 2ν/y²; the Kolmogorov-bounded 1/T
+   is small there and leaves ζ without its wall sink.
+3. *Sink of k: k/T_K with T_K = max(k/ε, C_T (ν/ε)^½)*, in place of −ε.
+   With −ε the laminar leading edge of the flat plate holds k at its
+   floor (the finding of 6d) and the k residual stalls; with k/T_K every
+   field of the plate converges to 10⁻⁷ without a floor. The
+   realizability bound of T is left out of T_K: with it the plate
+   relaminarizes and the channel gives U_b⁺ +30 %.
+4. *Realizability bounds of T and L* take C_μ/ζ_eq = 0.2195, consistent
+   with ν_t, not C_μ = 0.09.
+5. *Realizability coefficient of T: a = 0.6 √2 = 0.849* (key `a`), in
+   place of 0.6. With S = (2 S_ij S_ij)^½ this is the bound of Durbin
+   (1996) written with (S_ij S_ij)^½. With 0.6 the bound is active in
+   the separated shear layer of the backward-facing step and halves ν_t
+   there: x_r/H came out at 7.4 to 7.7 against 6.26 (ζ-f: 7.8). With
+   0.849 the bound no longer acts in the shear layer (a = 1.2 gives the
+   same x_r) and x_r/H is 6.38; the channel moves by 0.1 %, C_f of the
+   plate by +1.5 %.
+
+The model as printed (deviations 1 and 4 only) gave U_b⁺ −11 % in the
+channel; the cause is C_ε1 with √ζ, which the paper keeps (the 1/ζ form
+of 2004 gave +8.5 % and did not converge). Results of the default
+(sections 9.3 to 9.5): channel U_b⁺ +2.7 / +1.4 / −4.2 / −1.5 % at
+first-cell y⁺ 0.3 / 1 / 10 / 30; flat plate C_f(0.97) −2.5 / +0.9 /
+−2.0 % from White's correlation at y⁺ 1 / 10 / 30 (+4.1 / +7.8 / +4.7 %
+from the TMR value of SST), all converged without a floor, and the
+boundary layer turns turbulent from the TMR free stream on its own (ζ-f
+stays laminar); backward-facing step x_r/H = 6.38 (+2 %). Keys: `constants.n_zeta` and
+`constants.c_epsilon1_zeta` (C''ε1); both ζ-f models take
+`c_epsilon1_zeta`.
+
 ### 3.4 Elliptic-blending k-ε (D133)
 
 Billard & Laurence (2012), the "BL-v²/k" model. Variables k, ε, φ = v²/k and
@@ -556,6 +611,7 @@ bitwise reproducible.
 | `low-re` (integration to the wall) | SST, ζ-f, EB | τ_w = μ U_t/y_P | SST: k_w = 0 and the wall-face value ω_w = 10·6ν/(β₁ d₁²) with d₁ = 2 y_P, the wall-cell height (Menter 1994), as Dirichlet values (*6b*: replaces the first-cell value ω_P = 6ν/(β₁ y_P²) of the draft, see the note below); ζ-f, EB: ε_w, f_w or α_w of section 3 | y⁺ ≲ 1 |
 | `automatic` (Menter, Kuntz & Langtry 2003) | SST (default) | u_τ = (u_τ,vis⁴ + u_τ,log⁴)^{1/4}, u_τ,vis = (ν U_t/y_P)^½, u_τ,log = κ U_t/ln(E y⁺) (fixed number of Newton steps, as for Spalding's law) | ω_P = (ω_vis² + ω_log²)^½, ω_vis = 6ν/(β₁ y_P²), ω_log = u_τ/(√β* κ y_P), imposed with the weight 1 − b, b = u_τ,vis⁴/u_τ⁴ (4.4), on top of the wall-face ω_w of `low-re`; the log law takes y⁺ ≥ 11.06 (its lower end with κ = 0.41, E = 9.793), so that u_τ,log has no spurious root in the sublayer and b → 1 there (*6b*) | any; validated 0.5 ≤ y⁺ ≤ 100 |
 | `compound` (Popovac & Hanjalić 2007) | ζ-f, EB (default), k-ε family (option) | τ_w from the blended profile: u⁺ = e^{−Γ} y⁺ + e^{−1/Γ} u⁺_log, Γ = 0.01 (y⁺)⁴/(1 + 5 y⁺) ◇ | ε_P = e^{−Γ} 2νk_P/y_P² + e^{−1/Γ} C_μ^{3/4} k_P^{3/2}/(κ y_P); P_k,P blended likewise between the integrated and the log-law value τ_w u_τ/(κ y_P); f_w (ζ-f) blended between −2νζ_P/y_P² and 0 | any; validated 0.5 ≤ y⁺ ≤ 100 |
+| `compound-2023` (Popovac 2023) | ζ-f₀ (default), ζ-f (option) | u⁺ = [y*^{−n} + u⁺_log^{−n}]^{−1/n}, n = 10/3, u⁺_log = ln(8.9 y*)/(κψ) with u* = C_μ^{1/4} k_P^{1/2}; ψ = 1 − C_U (y_P − y_v/2)/(U_t κ u*), y_v = 11ν/u*, C_U = t·[(U·∇)U + ∇p/ρ], ψ in [0.5, 2] (the paper gives no bounds) | Γ = du⁺/dy*, from the blend; ε_P = Γ 2νk_P/y_P² + (1 − Γ) u*³/(κ y_P), P_k,P = u*² (τ_w/ρν) Γ, both fixed in the cell; k and ζ: zero flux at the wall; f₀,w = 0 | any; validated 0.3 ≤ y⁺ ≤ 30 (6d2: channel, plate, step) |
 | `scalable` (Grotjans & Menter 1998) | k-ε family (default) | log law evaluated at ỹ* = max(y*, 11.06) | ε_P = C_μ^{3/4} k_P^{3/2}/(κ y_P) (with ỹ*), P_k,P = τ_w u_τ/(κ y_P) | y⁺ ≥ 1 without failure; accuracy claimed for y⁺ ≥ 30 (*6c*: the flat plate stays within 3 % of White's correlation from y⁺ 1 to 100) |
 | `standard` (Launder & Spalding 1974) | k-ε family | log law with u_τ = C_μ^{1/4} k_P^{1/2} | as scalable, without the floor; below y* = 11.06 the viscous sublayer (τ_w = μU_t/y_P, P_k,P = 0) | 30 ≤ y⁺ ≤ 300 |
 
@@ -1128,6 +1184,16 @@ the experiment.
 | C_p and C_f along the lower wall at the experiment's stations | all | – | reported against the experiment; RMS difference of C_p ≤ 0.02 for SST, ζ-f, EB |
 | Velocity profiles at x/H = 1, 4, 6, 10 | all | – | reported (plots in the gallery) |
 
+**Results of 6d2 (PR #74).** Built-in mesh with the step cut out
+(`mesh.generate.remove`), wall from x = −85 H (boundary layer about 1.5 H
+thick at x = −4 H), slip top at 9 H, outlet at 40 H, Re_H = 36 000;
+x_r/H from the sign change of the wall shear, one mesh each (no GCI yet):
+ζ-f₀ 6.38 (+2 %) on 8 200 cells, 6.38 on 32 800; with the published
+realizability coefficient 0.6 7.44 / 7.67; ζ-f (2004, `compound`)
+7.82 (+25 %; 6.80 with `a = 0.849`); SST (`automatic`) 5.79 (−7 %, on a Gmsh mesh of the same
+layout). C_p, C_f and the profiles against the experiment follow with the
+stage 6 validation.
+
 ### 9.6 Axisymmetric impinging jet, H/D = 2
 
 Fully developed pipe jet (profile from a periodic pipe run, D111, fed in as a
@@ -1207,7 +1273,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂; the optional PDE wall distance with the key `turbulence.wall_distance` (the exact distance of 6a is the default); the invariant features of D166 as named expression variables (same definitions as the D106 export) (done, PR #68: the features as the derived field `turbulence-features`; their names in the expression language come with the first consumer, D104; the SST MMS moves to 6g; turbulence values of the backflow at outlets later, BC028) | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 decay (SST), 9.3 flat plate, 9.4 channel (SST) |
 | 6c | Standard and realizable k-ε, scalable and standard wall functions, compound treatment for the k-ε family, Cebeci–Bradshaw roughness (done, PR #71: compound claimed from y⁺ 30 for the k-ε family, owner decision; Durbin bound and Picard ε destruction as defaults; findings: realizable 3–7 % low friction, rough pipe against Colebrook in 4.5 and 9.7) | `turb/keps.rs`, `turb/wall.rs` | 9.2, 9.3, 9.4 for the k-ε family, rough pipe and Moody study |
 | 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG), the AMG preconditioner for the scalar equations (D36; 6a solves them with Jacobi-preconditioned BiCGStab, enough for the laminar cases) (done, PR #73: channel +1.9 % / +1.4 %; findings on the plate: +5 % C_f, laminar from the TMR free stream, the k floor near the leading edge; the elliptic solve lives in `turbulence/mod.rs`) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
-| 6d2 | ζ-f₀ of Popovac (2023) with its compound treatment (maintainer decision 2026-11-17: robustness in y⁺ for industrial use); Popovac's OpenFOAM implementation as a reference for understanding | `turb/zeta_f.rs`, `turb/wall.rs` | 9.3 and 9.4 over first-cell y⁺ 0.5 to 100, same or similar results as ζ-f |
+| 6d2 | ζ-f₀ of Popovac (2023) with its compound treatment (maintainer decision 2026-11-17: robustness in y⁺ for industrial use) (done, PR #74: no code of the author available, own default of 3.3.1; channel +2.7 to −4.2 % and plate within 2.5 % of White over y⁺ 0.3 to 30, all converged; backward-facing step x_r/H 6.38 (+2 %; ζ-f +25 %, SST −7 %); the built-in mesher removes boxes, `mesh.generate.remove`) | `turb/zeta_f.rs`, `turb/wall.rs` | 9.3 and 9.4 over first-cell y⁺ 0.5 to 100, same or similar results as ζ-f |
 | 6e | EB k-ε (D133) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
 | 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports | cases, gallery, `tools/notebooks/stage6_colab.ipynb` | 9.5, 9.6, 9.7, 6.6 |
@@ -1323,8 +1389,10 @@ zone and the periodic duct. The EARSM of D171 is not in v0.6.
 - M. Popovac, K. Hanjalić, *Compound wall treatment for RANS computation of
   complex turbulent flows and heat transfer*, Flow Turbul. Combust. 78,
   177–202 (2007)
-- M. Popovac, Energies 16, 3685 (2023) (refinements of the compound wall
-  treatment; read before PR 6d)
+- M. Popovac, *Robust eddy viscosity turbulence modeling with elliptic
+  relaxation and compound wall treatment*, Energies 16, 3685 (2023),
+  doi:10.3390/en16093685 (CC BY; the ζ-f₀ model and the 2023 compound
+  treatment of 6d2)
 - T.-H. Shih, W. W. Liou, A. Shabbir, Z. Yang, J. Zhu, *A new k-ε eddy
   viscosity model for high Reynolds number turbulent flows*, Comput. Fluids
   24, 227–238 (1995)

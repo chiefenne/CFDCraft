@@ -43,6 +43,12 @@
 //! faces whose centroid lies above `at` along `axis` form the boundary
 //! `name` (the plate after its symmetry stretch).
 //!
+//! **Removed boxes.** `remove` takes the cells whose centroid lies inside
+//! a box out of the mesh (hexahedra, tetrahedra and mixed meshes): a
+//! backward-facing step is the box lower corner to the step corner. The
+//! faces that the removal exposes form the boundary `name`; nodes that no
+//! cell uses are dropped.
+//!
 //! **Perturbation.** Each node moves by up to `perturb` times the smaller
 //! adjacent interval in each direction, from a counter-based random number
 //! keyed by the seed and the node position (D47), so it is reproducible.
@@ -190,6 +196,38 @@ pub struct BoxSpec {
     /// Boundaries cut at a coordinate.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub split: Vec<Split>,
+    /// Boxes of cells taken out of the mesh.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub remove: Vec<RemoveBox>,
+}
+
+/// A box of cells taken out of a generated mesh.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RemoveBox {
+    /// Lower corner (m; z is ignored in 2D).
+    pub lower: [f64; 3],
+    /// Upper corner (m; z is ignored in 2D).
+    pub upper: [f64; 3],
+    /// Name of the boundary that the removal exposes.
+    pub name: String,
+}
+
+impl RemoveBox {
+    /// The box in the dimension `dim` (2D: the whole z range).
+    fn range(&self, dim: u8) -> ([f64; 3], [f64; 3]) {
+        let (mut lo, mut hi) = (self.lower, self.upper);
+        if dim == 2 {
+            lo[2] = f64::NEG_INFINITY;
+            hi[2] = f64::INFINITY;
+        }
+        (lo, hi)
+    }
+
+    fn contains(&self, dim: u8, p: [f64; 3]) -> bool {
+        let (lo, hi) = self.range(dim);
+        (0..3).all(|d| p[d] > lo[d] && p[d] < hi[d])
+    }
 }
 
 /// One graded segment of a direction.
@@ -309,6 +347,7 @@ impl Default for BoxSpec {
             periodic: [false; 3],
             segments: SegmentSpec::default(),
             split: Vec::new(),
+            remove: Vec::new(),
         }
     }
 }
@@ -432,6 +471,25 @@ impl BoxSpec {
                     "split of `{}`: `at` must lie inside the box",
                     s.boundary
                 ));
+            }
+        }
+        for r in &self.remove {
+            if self.kind == Kind::Poly {
+                return Err("remove: not with polyhedral meshes (hex, tet or mixed)".into());
+            }
+            let dims = if self.dimension == 2 { 2 } else { 3 };
+            if (0..dims)
+                .any(|d| r.upper[d].partial_cmp(&r.lower[d]) != Some(std::cmp::Ordering::Greater))
+            {
+                return Err(format!(
+                    "remove `{}`: upper must be larger than lower",
+                    r.name
+                ));
+            }
+            if BOX_BOUNDARIES.contains(&r.name.as_str())
+                || self.split.iter().any(|t| t.name == r.name)
+            {
+                return Err(format!("remove: the name `{}` is taken", r.name));
             }
         }
         if let Some(a) = self.wedge {
@@ -574,6 +632,7 @@ impl BoxSpec {
             .iter()
             .map(|s| s.to_string())
             .chain(self.split.iter().map(|s| s.name.clone()))
+            .chain(self.remove.iter().map(|r| r.name.clone()))
             .collect()
     }
 
@@ -584,11 +643,35 @@ impl BoxSpec {
             .iter()
             .filter_map(|s| Some((s.boundary.clone(), s.axis_index()?, s.at, s.name.clone())))
             .collect();
+        let dim = self.dimension;
+        let remove: Vec<([f64; 3], [f64; 3], String)> = self
+            .remove
+            .iter()
+            .map(|r| {
+                let (a, b) = r.range(dim);
+                (a, b, r.name.clone())
+            })
+            .collect();
         move |b: BoundaryFace| {
             let d = (0..3)
                 .max_by(|&a, &c| b.normal[a].abs().total_cmp(&b.normal[c].abs()))
                 .unwrap();
             let tol = 1e-9 * (hi[d] - lo[d]);
+            // a face that a removed box exposes: on one of its sides,
+            // inside the box (not on the outer boundary)
+            let outer = (b.centroid[d] - lo[d]).abs() < tol || (b.centroid[d] - hi[d]).abs() < tol;
+            if !outer {
+                for (rl, rh, name) in &remove {
+                    let on =
+                        (b.centroid[d] - rl[d]).abs() < tol || (b.centroid[d] - rh[d]).abs() < tol;
+                    let inside = (0..3)
+                        .filter(|&e| e != d)
+                        .all(|e| b.centroid[e] > rl[e] - tol && b.centroid[e] < rh[e] + tol);
+                    if on && inside {
+                        return name.clone();
+                    }
+                }
+            }
             let s = if b.normal[d] < 0.0 { 0 } else { 1 };
             debug_assert!(
                 (b.centroid[d] - if s == 0 { lo[d] } else { hi[d] }).abs() < tol,
@@ -611,7 +694,62 @@ impl BoxSpec {
     fn structured(&self) -> Result<Mesh, String> {
         let (pts, n1) = self.grid();
         let n = self.intervals();
-        let node = |i: usize, j: usize, k: usize| (i + n1[0] * (j + n1[1] * k)) as u32;
+        let raw = |i: usize, j: usize, k: usize| i + n1[0] * (j + n1[1] * k);
+        // the cells of the removed boxes (by the centroid of the
+        // hexahedron) and the nodes that the kept cells use
+        let cell = |i: usize, j: usize, k: usize| i + n[0] * (j + n[1] * k);
+        let mask: Vec<bool> = if self.remove.is_empty() {
+            Vec::new()
+        } else {
+            let mut m = vec![true; n[0] * n[1] * n[2]];
+            for k in 0..n[2] {
+                for j in 0..n[1] {
+                    for i in 0..n[0] {
+                        let (p, q) = (pts[raw(i, j, k)], pts[raw(i + 1, j + 1, k + 1)]);
+                        let c = [
+                            0.5 * (p[0] + q[0]),
+                            0.5 * (p[1] + q[1]),
+                            0.5 * (p[2] + q[2]),
+                        ];
+                        m[cell(i, j, k)] =
+                            !self.remove.iter().any(|r| r.contains(self.dimension, c));
+                    }
+                }
+            }
+            m
+        };
+        let keep = |i: usize, j: usize, k: usize| mask.is_empty() || mask[cell(i, j, k)];
+        let mut map: Vec<u32> = (0..pts.len() as u32).collect();
+        let pts = if self.remove.is_empty() {
+            pts
+        } else {
+            let mut used = vec![false; pts.len()];
+            for k in 0..n[2] {
+                for j in 0..n[1] {
+                    for i in 0..n[0] {
+                        if keep(i, j, k) {
+                            for (a, b, e) in (0..8).map(|m| (m & 1, (m >> 1) & 1, m >> 2)) {
+                                used[raw(i + a, j + b, k + e)] = true;
+                            }
+                        }
+                    }
+                }
+            }
+            let mut kept = Vec::new();
+            for (q, p) in pts.iter().enumerate() {
+                if used[q] {
+                    map[q] = kept.len() as u32;
+                    kept.push(*p);
+                } else {
+                    map[q] = u32::MAX;
+                }
+            }
+            if kept.is_empty() {
+                return Err("remove: the boxes take out every cell".into());
+            }
+            kept
+        };
+        let node = |i: usize, j: usize, k: usize| map[raw(i, j, k)];
         let mut soup = CellSoup::new(pts);
         let x_band = |i: usize| -> Kind {
             match self.kind {
@@ -638,6 +776,9 @@ impl BoxSpec {
         for k in 0..n[2] {
             for j in 0..n[1] {
                 for i in 0..n[0] {
+                    if !keep(i, j, k) {
+                        continue;
+                    }
                     let v = |a: usize, b: usize, c: usize| node(i + a, j + b, k + c);
                     match x_band(i) {
                         Kind::Hex => {
@@ -1312,5 +1453,66 @@ mod tests {
             let h1 = 2.0 * (2.0 - xs[xs.len() - 1]);
             assert!(h1 > h0 * 10.0, "first {h0}, last {h1}");
         }
+    }
+
+    /// A removed box makes a backward-facing step: the cells under the
+    /// step corner go, their exposed faces form the boundary `step`, the
+    /// unused nodes are dropped and the volume is that of the L shape.
+    #[test]
+    fn removed_box_builds_a_step() {
+        for (kind, per_hex) in [(Kind::Hex, 1), (Kind::Tet, 2), (Kind::Mixed, 0)] {
+            let spec = BoxSpec {
+                kind,
+                dimension: 2,
+                lower: [-2.0, 0.0, 0.0],
+                upper: [4.0, 3.0, 0.5],
+                cells: [6, 3, 1],
+                remove: vec![RemoveBox {
+                    lower: [-2.0, 0.0, 0.0],
+                    upper: [0.0, 1.0, 0.5],
+                    name: "step".into(),
+                }],
+                ..Default::default()
+            };
+            let mesh = spec.generate().unwrap();
+            mesh.validate().unwrap();
+            if per_hex > 0 {
+                assert_eq!(mesh.n_cells, per_hex * (18 - 2));
+            }
+            let geo = crate::Geometry::compute(&mesh);
+            let vol: f64 = geo.cell_volume.iter().sum();
+            assert!((vol - (18.0 - 2.0) * 0.5).abs() < 1e-12, "{kind:?}: {vol}");
+            let p = mesh.boundaries.iter().find(|p| p.name == "step").unwrap();
+            // the top of the step (2 faces, y = 1) and its face (1, x = 0)
+            let area: f64 = p
+                .range()
+                .map(|f| dot(geo.face_area[f], geo.face_area[f]).sqrt())
+                .sum();
+            assert!((area - 3.0 * 0.5).abs() < 1e-12, "{kind:?}: {area}");
+            for f in p.range() {
+                let c = geo.face_centroid[f];
+                assert!(
+                    (c[1] - 1.0).abs() < 1e-12 && c[0] < 0.0 || c[0].abs() < 1e-12 && c[1] < 1.0,
+                    "{c:?}"
+                );
+            }
+            let ymin = mesh.boundaries.iter().find(|p| p.name == "ymin").unwrap();
+            assert!(ymin.range().all(|f| geo.face_centroid[f][0] > 0.0));
+            // every node is used
+            let mut used = vec![false; mesh.points.len()];
+            for &n in &mesh.face_nodes {
+                used[n as usize] = true;
+            }
+            assert!(used.iter().all(|&u| u), "{kind:?}: unused nodes");
+        }
+        let bad = BoxSpec {
+            remove: vec![RemoveBox {
+                lower: [0.0; 3],
+                upper: [0.5; 3],
+                name: "xmin".into(),
+            }],
+            ..Default::default()
+        };
+        assert!(bad.validate().unwrap_err().contains("taken"));
     }
 }

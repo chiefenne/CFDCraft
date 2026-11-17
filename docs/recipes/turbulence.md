@@ -7,6 +7,7 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 | 68 | [Run a case with the k-ω SST model](#sst) |
 | 71 | [Run a case with the k-ε family and wall functions](#k-epsilon) |
 | 73 | [Run a case with k-ε-ζ-f and resolved walls](#zeta-f) |
+| 74 | [Run a case with k-ε-ζ-f₀ at any first-cell y⁺](#zeta-f0) |
 
 ---
 
@@ -223,5 +224,58 @@ is in the wall probe line. The profile line of the channel
 (`line_profile.csv`) has ζ and f next to k, ε and ν_t; the fields add
 `zeta`, `f`, `turbulent_time_scale` and v² = ζk. A k-ε restart file
 continues with ζ = 2/3 and f = 0.
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="zeta-f0"></a>
+## 74. Run a case with k-ε-ζ-f₀ at any first-cell y⁺
+
+k-ε-ζ-f₀ (`k-epsilon-zeta-f0`, Popovac 2023) for meshes whose first-cell
+y⁺ is not controlled, from resolved walls to the log layer.
+`compound-2023` is its default treatment; `compound` and `low-re` (y⁺ ≲ 2)
+are also accepted, and ζ-f takes `compound-2023` too:
+
+```toml
+[turbulence]
+model = "k-epsilon-zeta-f0"
+wall_treatment = "compound-2023"   # default; "compound", "low-re"
+# constants = { n_zeta = 2.0, c_epsilon1_zeta = 0.012 }   # the defaults
+```
+
+Inlets and `[initial]` take k, ε (or ω) and ζ as for ζ-f (recipe 73).
+Unlike ζ-f, a weak free stream is fine: the TMR plate starts from
+ν_t/ν = 0.009 and turns turbulent on its own.
+
+A step or another geometry with a cut-out corner can come from the
+built-in mesher: `remove` cuts boxes out of the mesh and names the new
+faces:
+
+```toml
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-85.0, 0.0, 0.0]
+upper = [40.0, 9.0, 0.1]
+cells = [250, 160, 1]
+remove = [ { lower = [-85.0, 0.0, 0.0], upper = [0.0, 1.0, 0.1], name = "step" } ]
+
+[boundary.step]
+type = "wall"
+```
+
+Run the channel, the plate and the step of the gallery:
+
+```
+target/release/foehn flow examples/cases/flow/channel_zeta_f0.toml
+target/release/foehn flow examples/cases/flow/tmr_plate_zeta_f0.toml
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0.toml
+grep -E "wall probe|periodic xmin|first-cell|floors" output/*_zeta_f0/flow.log
+```
+
+The reattachment length of the step is where the wall shear of `ymin`
+in `wall_ymin.csv` (behind the step, x > 0) changes sign from negative
+to positive.
 
 [↑ back to top](#turbulence-models)

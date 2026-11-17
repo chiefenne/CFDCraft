@@ -67,6 +67,31 @@
 //! realizability bounds of T and L take the coefficient of ν_t,
 //! c_μ/ζ_eq = 0.2195 (the 0.22 of 2004), for which they are derived;
 //! eq. (9) writes c_μ.
+//!
+//! Three choices of ours (6d2) make the form the default `k-epsilon-zeta-f0`:
+//!
+//! - The (N_ζ − 1) terms take ε/k instead of 1/T. Off the wall the two
+//!   agree (T = k/ε); at the wall ε/k = 2ν/y², which is what makes
+//!   f₀_w = (N_ζ − 2) 2νζ/y² = 0 (eq. (21)) consistent, whereas the
+//!   Kolmogorov-bounded 1/T vanishes there.
+//! - The sink of k is k/T_K, T_K = max(k/ε, C_T (ν/ε)^½), instead of ε
+//!   (eq. (5)): the same off the wall, smaller where the Kolmogorov bound
+//!   acts. With −ε the laminar part of a boundary layer has no positive
+//!   steady k, the positivity floor holds it and the k residual stalls
+//!   (the 6d finding on the flat plate); with k/T_K the plate converges to
+//!   round-off. The realizability bound of T is left out of T_K: it would
+//!   raise the sink in shear layers and relaminarise them (U_b⁺ +30 % in
+//!   the channel). With this sink the published C_ε1 = 1.4 (1 + 0.012/√ζ)
+//!   gives U_b⁺ +1.3 % in the channel at y⁺ 1 and C_f +2.6 % against the
+//!   TMR value on the flat plate; with −ε it gave −11 % and +21 %.
+//! - The realizability bound of T takes a = 0.6 √2 = 0.849 instead
+//!   of 0.6, which with S = (2 S_ij S_ij)^½ is the bound of Durbin (1996)
+//!   written with (S_ij S_ij)^½. In the separated shear layer of the
+//!   backward-facing step the bound with 0.6 is active and halves ν_t:
+//!   the reattachment length came out at 7.4 to 7.7 step heights against
+//!   6.26 measured; with 0.849 it is 6.38 (the bound no longer acts there:
+//!   a = 1.2 gives the same). The channel moves by 0.1 %, C_f of the flat
+//!   plate by +1.5 % (within 3 % of White's correlation from y⁺ 1 to 30).
 
 use super::invariants::{Tensor, s2_omega2};
 use super::{smax, smin};
@@ -151,10 +176,12 @@ impl ZetaFConstants {
     }
 
     /// The constants of the ζ-f₀ model of Popovac (2023), table 1
-    /// (C_μ = c_μ/ζ_eq = 0.09/0.41).
+    /// (C_μ = c_μ/ζ_eq = 0.09/0.41), with the realizability coefficient
+    /// a = 0.6 √2 of our default (module documentation).
     pub const fn popovac_2023() -> Self {
         let mut c = Self::paper();
         c.c_mu = 0.09 / 0.41;
+        c.a = 0.6 * core::f64::consts::SQRT_2;
         c.n_zeta = 2.0;
         c.form = FORM_F0;
         c
@@ -326,9 +353,19 @@ pub fn zeta_f_cell<T: Real>(
     let ce1p = f(c.c_e1) * (pk + f(c.c_e1_zeta) * p_over_z);
     let inv_t = T::ONE / t;
     let k_div = k.max_of(tiny);
-    // k: S_u = P_k (+ ε_amb), S_p = −ε*/k*
+    // k: S_u = P_k (+ ε_amb), S_p = −ε*/k* (2004); for ζ-f₀ the sink
+    // k/T_K with T_K = max(k/ε, C_T (ν/ε)^½): ε where k/ε is the larger,
+    // below ε where the Kolmogorov bound acts, so that k keeps a positive
+    // steady solution in laminar regions (6d2 default; the paper's
+    // eq. (5) writes −ε; the realizability bound of T is left out, it
+    // would raise the sink in shear layers and relaminarise them)
     let su_k = pk + f(o.e_amb);
-    let sp_k = -(e / k_div);
+    let sp_k = if f0 {
+        let t_kol = f(c.c_t) * (nu / e).sqrt_of();
+        -(T::ONE / (k_div / e).max_of(t_kol))
+    } else {
+        -(e / k_div)
+    };
     // ε: (C_ε1 P_k − C_ε2 ε)/T (+ the ambient destruction)
     let amb_e = if o.k_amb > 0.0 && o.e_amb > 0.0 {
         let nu0 = i.nu.to_f64();
@@ -598,6 +635,19 @@ mod tests {
         }
         let nu_t = 0.09 / 0.41 * z * k * t;
         assert!((base.nu_t - nu_t).abs() < 1e-15 * nu_t);
+        // the sink of k: k/T_K, ε where T_K = k/ε
+        assert!((base.sp_k + e / k).abs() < 1e-12 * e / k);
+        // and below ε where the Kolmogorov bound acts (k → 0)
+        let (k1, e1) = (1e-8, 1.0);
+        let r = zeta_f_cell(&shear(k1, e1, z, 0.0, s), &c0, &o);
+        let tk = 6.0 * (1.5e-5f64 / e1).sqrt();
+        assert!(
+            (r.sp_k + 1.0 / tk).abs() < 1e-12 / tk,
+            "{} {}",
+            r.sp_k,
+            -1.0 / tk
+        );
+        assert!(-r.sp_k * k1 < e1);
         let ce1 = 1.4 * (1.0 + 0.012 / z.sqrt());
         assert!((base.su_e - ce1 * base.pk / t).abs() < 1e-12 * base.su_e);
         // homogeneous decay: the net ζ source is (0.4/T)(2/3 − ζ)

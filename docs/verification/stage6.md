@@ -11,17 +11,21 @@ periodic boundaries that the channel cases need
 ([below](#k-ω-sst-part-6b)), part 6c the k-ε family with its wall
 functions ([below](#k-ε-family-part-6c)), part 6d the k-ε-ζ-f model and
 the multigrid of the turbulence equations
-([below](#k-ε-ζ-f-and-the-scalar-multigrid-part-6d)). The commands are in
+([below](#k-ε-ζ-f-and-the-scalar-multigrid-part-6d)), part 6d2 the
+k-ε-ζ-f₀ model of Popovac (2023) with its wall treatment
+([below](#k-ε-ζ-f₀-and-the-compound-treatment-of-2023-part-6d2)). The commands are in
 [recipe 63](../recipes/scalars.md#passive-scalars),
 [recipe 67](../recipes/boundary-conditions.md#periodic),
 [recipe 68](../recipes/turbulence.md#sst),
-[recipe 71](../recipes/turbulence.md#k-epsilon) and
-[recipe 73](../recipes/turbulence.md#zeta-f), the pictures in
+[recipe 71](../recipes/turbulence.md#k-epsilon),
+[recipe 73](../recipes/turbulence.md#zeta-f) and
+[recipe 74](../recipes/turbulence.md#zeta-f0), the pictures in
 [gallery 63](../gallery/scalars.md#passive-scalars),
 [gallery 67](../gallery/boundary-conditions.md#periodic),
 [gallery 68](../gallery/turbulence.md#sst),
-[gallery 71](../gallery/turbulence.md#k-epsilon) and
-[gallery 73](../gallery/turbulence.md#zeta-f), the generated
+[gallery 71](../gallery/turbulence.md#k-epsilon),
+[gallery 73](../gallery/turbulence.md#zeta-f) and
+[gallery 74](../gallery/turbulence.md#zeta-f0), the generated
 tables of every case in the [verification manual](manual.md).
 
 ## Passive scalars and the wall distance (part 6a)
@@ -393,3 +397,57 @@ Kolmogorov bound (ε then no longer falls with k): the floor holds k in
 about 120 cells and its residual stays at 7·10⁻⁶ while every other field
 converges to round-off (TURB002). The ζ-f₀ variant of Popovac (2023),
 with f₀ = 0 at the wall, follows as the next part for robustness in y⁺.
+
+## k-ε-ζ-f₀ and the compound treatment of 2023 (part 6d2)
+
+**The model** (D132, specification 3.3.1). Popovac (2023): f₀ = f +
+(N_ζ − 1)ζ/T in place of f, N_ζ = 2, so f₀,w = 0;
+ν_t = (C_μ/ζ_eq) ζ k T with C_μ = 0.09, ζ_eq = 0.41;
+C_ε1 = 1.4(1 + 0.012/√ζ); the other constants of 2004. The same kernel
+as ζ-f (`turb::zeta_f`, `FORM_F0`). The author's code is not available
+(maintainer, 2026-11-17), so the default was chosen on the validation:
+
+| Variant | Channel U_b⁺, y⁺ 1 | Plate C_f, y⁺ 1 | Step x_r/H |
+|---|---|---|---|
+| As printed (sign of (N_ζ − 1) in eq. 7 corrected, k sink −ε) | −11 % | +21 % (TMR), floor holds k | 7.34 (Gmsh mesh) |
+| C_ε1 with 1/ζ (2004) | +8.5 %, not converged | – | – |
+| k sink k/T with the realizability bound | +30 % (relaminarizes) | – | – |
+| k sink k/T_K, a = 0.6 | +1.3 % | −4.0 % (White) | 7.67 |
+| **Default: k sink k/T_K, a = 0.6 √2** | **+1.4 %** | **−2.5 % (White)** | **6.38** |
+
+**The wall treatment** (D134, `compound-2023`). u* = C_μ^¼ k_P^½,
+y* = u* y_P/ν; u⁺ = [y*^(−n) + u⁺_log^(−n)]^(−1/n), n = 10/3,
+u⁺_log = ln(8.9 max(y*, 1))/(κψ); ψ = 1 − C_U max(y_P − y_v/2, 0)/(U_t κ u*)
+with y_v = 11ν/u* and C_U = t·[(U·∇)U + ∇p/ρ] of the wall cell (steady
+part), bounded to [0.5, 2] (the paper gives no bounds); ν_w = ν y*/u⁺.
+Γ = du⁺/dy* from the blend, ε_P = Γ 2νk_P/y_P² + (1 − Γ) u*³/(κ y_P)
+and P_k,P = u*² (τ_w/ρν) Γ, fixed in the cell; k and ζ by zero flux.
+It also serves ζ-f (option).
+
+**The mesher.** `mesh.generate.remove` takes the cells whose centroid lies
+in a box out of a hexahedral, tetrahedral or mixed mesh and names the
+exposed faces; the step case uses it.
+
+### Results
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| Channel at Re_τ = 395 (`channel_zeta_f0.toml`), 48 cells, first-cell y⁺ 1 | U_b⁺ against the DNS (17.55) | ±3 % | 17.79 (+1.4 %), converged |
+| The channel at y⁺ 0.3 / 10 / 30 | U_b⁺ | – | +2.7 / −4.2 / −1.5 % (ζ-f, 2007 treatment: +1.9 / −7.1 / +4.8 %) |
+| TMR plate (`tmr_plate_zeta_f0.toml`) from the TMR free stream, y⁺ 1 | C_f(0.97) against White, 2.875e-3; convergence | ±3 % | 2.802e-3 (−2.5 %), converged to 10⁻⁷, no floor |
+| The plate at y⁺ 10 / 30 | C_f(0.97) against White | ±3 % | +0.9 / −2.0 %, converged (ζ-f: not converged) |
+| Backward-facing step (`backstep_zeta_f0.toml`), 8 200 cells | x_r/H against 6.26 | ±10 % | 6.38 (+2 %) |
+| The step on 32 800 cells | x_r/H | ±10 % | 6.38 (+2 %), the same to 0.1 % |
+| The step with ζ-f (2004, `compound`) / SST (`automatic`, Gmsh mesh) | x_r/H | ±10 % | 7.82 (+25 %; 6.80 with `a = 0.849`) / 5.79 (−7 %) |
+| The plate on 1 and 4 threads (20 480 cells) | residuals, wall shear after 8 iterations | bit-identical | asserted |
+| Kernels | f₀ form against the 2004 source, the limits of the blend (y⁺ 30 to 300), Γ as the derivative of the blend, ψ, dual numbers | – | kernel tests of `turb::zeta_f` and `turb::wall` |
+| Mesher | step volume, exposed area, unused nodes, taken names | exact | `removed_box_builds_a_step` |
+
+**Findings.** (1) The realizability bound of T with a = 0.6 and
+S = (2 S_ij S_ij)^½ is active in the separated shear layer of the step
+and halves ν_t there; the bubble then grows to 7.4 to 7.7 H with both
+ζ-f models. (2) The published k sink −ε has no positive steady k in the
+laminar part of a boundary layer (the 6d finding); k/T_K removes it.
+(3) The step and the SST run are single meshes; C_p, C_f and the
+profiles against the experiment and a GCI follow with the stage 6
+validation.
