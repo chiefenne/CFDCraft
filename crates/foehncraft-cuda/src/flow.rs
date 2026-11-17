@@ -287,10 +287,14 @@ impl Exec for CudaExec {
         Ok((it, r0))
     }
 
-    fn amg_setup(&mut self, val: Buf, s: &AmgSettings) -> Result<()> {
+    fn amg_setup(&mut self, val: Buf, s: &AmgSettings, symmetric_part: bool) -> Result<()> {
         let host = self.download(val)?;
         self.be.set_matrix(&host)?;
-        linear::setup_amg(&mut self.be, s).map(|_| ())
+        linear::setup_amg_with(&mut self.be, s, symmetric_part).map(|_| ())
+    }
+
+    fn amg_slot(&mut self, slot: usize) -> Result<()> {
+        self.be.amg_slot(slot)
     }
 
     fn sync(&mut self) -> Result<()> {

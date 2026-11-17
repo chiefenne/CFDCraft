@@ -271,6 +271,22 @@ pub fn roughness_shift<T: Real>(ks_plus: T, cs: T, kappa: T) -> T {
     v / kappa
 }
 
+/// The wall values of the k-ε-ζ-f model (Hanjalić, Popovac & Hadžiabdić
+/// 2004) at a wall face from its near-wall cell: ε_w = 2ν k_P/y_P² and
+/// f_w = −2ν ζ_P/y_P² (the limits for y → 0 with the first-cell values,
+/// k ~ y² and ζ ~ y² near the wall). With the compound treatment
+/// (Popovac & Hanjalić 2007) f_w is blended towards 0 with the viscous
+/// weight e^{−Γ} (`viscous`, 1 for the integration to the wall). Returns
+/// (ε_w, f_w).
+#[inline(always)]
+pub fn zeta_f_wall_values<T: Real>(k: T, zeta: T, y: T, nu: T, viscous: T) -> (T, T) {
+    let two_nu_y2 = T::from_f64(2.0) * nu / (y * y);
+    (
+        two_nu_y2 * k.max_of(T::ZERO),
+        -(viscous * two_nu_y2 * zeta.max_of(T::ZERO)),
+    )
+}
+
 /// Γ = 0.01 y⁴/(1 + 5 y) of the compound blending (Kader 1981, Pr = 1).
 #[inline(always)]
 pub fn compound_gamma<T: Real>(y: T) -> T {

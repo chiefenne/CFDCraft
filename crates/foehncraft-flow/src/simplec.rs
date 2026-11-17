@@ -207,6 +207,9 @@ pub struct Settings {
     pub scalar: crate::scalar::ScalarSettings,
     /// The turbulence equations (`[solver.turbulence]`, stage 6).
     pub turbulence: crate::turbulence::TurbulenceSettings,
+    /// The elliptic equations of the turbulence models (`[solver.elliptic]`:
+    /// f of k-ε-ζ-f, stage 6 PR 6d).
+    pub elliptic: crate::turbulence::EllipticSettings,
     /// Gradient of the pressure (D24, D50): `least-squares`, or `gauss`,
     /// the face sum of the face pressures (robust on tetrahedra with skewed
     /// faces).
@@ -327,6 +330,7 @@ impl Default for Settings {
             pressure: PressureSettings::default(),
             scalar: crate::scalar::ScalarSettings::default(),
             turbulence: crate::turbulence::TurbulenceSettings::default(),
+            elliptic: crate::turbulence::EllipticSettings::default(),
             pressure_gradient: PressureGradient::LeastSquares,
             remediation: Remediation::Auto,
             skewness_limit: 0.9,
@@ -2055,6 +2059,9 @@ impl Flow {
             )));
         }
         std::mem::swap(&mut self.f.mass_flux, &mut self.w.mc);
+        if let Some(t) = self.turbulence.as_mut() {
+            t.amg_rebuild = rebuild;
+        }
         self.solve_scalars(None, &mut res)?;
         Ok(res)
     }

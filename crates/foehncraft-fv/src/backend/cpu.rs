@@ -25,6 +25,9 @@ pub struct CpuBackend {
     val: Vec<f64>,
     eps2: Option<(f64, Vec<f64>)>,
     amg: Option<Amg>,
+    /// The hierarchies of the inactive slots, and the active slot.
+    parked: Vec<Option<Amg>>,
+    slot: usize,
 }
 
 /// One level of the hierarchy in precision `T`, with its cycle vectors.
@@ -198,6 +201,8 @@ impl CpuBackend {
             val,
             eps2: None,
             amg: None,
+            parked: Vec::new(),
+            slot: 0,
         })
     }
 
@@ -522,6 +527,19 @@ impl Backend for CpuBackend {
 
     fn discretisation(&self) -> Option<&Discretisation> {
         Some(&self.d)
+    }
+
+    fn amg_slot(&mut self, slot: usize) -> anyhow::Result<()> {
+        if slot != self.slot {
+            let n = slot.max(self.slot) + 1;
+            if self.parked.len() < n {
+                self.parked.resize_with(n, || None);
+            }
+            self.parked[self.slot] = self.amg.take();
+            self.amg = self.parked[slot].take();
+            self.slot = slot;
+        }
+        Ok(())
     }
 
     fn amg_load(&mut self, h: &Hierarchy) -> anyhow::Result<()> {

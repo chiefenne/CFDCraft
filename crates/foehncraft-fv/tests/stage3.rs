@@ -240,3 +240,40 @@ fn same_converged_result_as_hypre() {
         );
     }
 }
+
+/// A second hierarchy slot (the turbulence and elliptic solves of stage 6,
+/// D139) leaves the pressure hierarchy of slot 0 untouched: the V-cycle
+/// of slot 0 gives the same bits before and after a hierarchy of another
+/// matrix (built from its symmetric part) was set up in slot 1.
+#[test]
+fn amg_slots_keep_the_pressure_hierarchy() {
+    use foehncraft_fv::solver::setup_amg_with;
+    let mut be = system(Kind::Mixed, 4, 1, None);
+    let s = AmgSettings::default();
+    setup_amg(&mut be, &s).unwrap();
+    let n = be.n_cells();
+    let x: Vec<f64> = (0..n)
+        .map(|i| foehncraft_core::rng::uniform([i as u64, 5, 6]) - 0.5)
+        .collect();
+    let mut apply = |be: &mut CpuBackend| {
+        be.upload(V::R, &x).unwrap();
+        precondition(be, Preconditioner::Amg, V::R, V::Z).unwrap();
+        be.download(V::Z).unwrap()
+    };
+    let z0 = apply(&mut be);
+    let val = be.matrix_values().unwrap();
+    let scaled: Vec<f64> = val.iter().map(|v| 3.0 * v).collect();
+    be.set_matrix(&scaled).unwrap();
+    be.amg_slot(1).unwrap();
+    setup_amg_with(&mut be, &s, true).unwrap();
+    let z1 = apply(&mut be);
+    assert_ne!(z0, z1, "slot 1 holds the hierarchy of 3 A");
+    be.set_matrix(&val).unwrap();
+    be.amg_slot(0).unwrap();
+    let z2 = apply(&mut be);
+    let bits = |v: &[f64]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    assert_eq!(bits(&z0), bits(&z2), "slot 0 changed");
+    // back to slot 1: its hierarchy is still there
+    be.amg_slot(1).unwrap();
+    assert_eq!(bits(&apply(&mut be)), bits(&z1));
+}

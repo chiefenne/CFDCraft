@@ -388,6 +388,51 @@ pub struct KepsCellOps {
     pub capped: Buf,
 }
 
+/// Inputs and outputs of [`FlowDevice::zeta_f_cells`].
+#[derive(Debug, Clone, Copy)]
+pub struct ZetaFCellOps {
+    /// Velocity gradient.
+    pub grad_u: [Buf3; 3],
+    /// k.
+    pub k: Buf,
+    /// ε.
+    pub e: Buf,
+    /// ζ.
+    pub zeta: Buf,
+    /// f.
+    pub f: Buf,
+    /// ν.
+    pub nu: f64,
+    /// Constants.
+    pub c: foehncraft_kernels::turb::zeta_f::ZetaFConstants,
+    /// Options.
+    pub o: foehncraft_kernels::turb::zeta_f::ZetaFOptions,
+    /// Added sources of k, ε and ζ, if any.
+    pub add: Option<[Buf; 3]>,
+    /// The weight and the weighted value of the wall production per cell,
+    /// if any.
+    pub wall: Option<(Buf, Buf)>,
+    /// Output ν_t.
+    pub nu_t: Buf,
+    /// Output T.
+    pub t: Buf,
+    /// Output L².
+    pub l2: Buf,
+    /// Output P_k.
+    pub pk: Buf,
+    /// Outputs S_u, S_p of k, of ε and of ζ, and the right-hand side of f
+    /// (None: ν_t, T, L², P_k only).
+    pub sources: Option<[Buf; 7]>,
+    /// Output ν_t/σ_k.
+    pub dk: Buf,
+    /// Output ν_t/σ_ε.
+    pub de: Buf,
+    /// Output ν_t/σ_ζ.
+    pub dz: Buf,
+    /// Output: 1 where the ν_t cap acted.
+    pub capped: Buf,
+}
+
 /// Inputs and outputs of [`FlowDevice::turb_faces`].
 #[derive(Debug, Clone, Copy)]
 pub struct TurbFaceOps {
@@ -407,6 +452,9 @@ pub struct TurbFaceOps {
     pub gamma_k: Buf,
     /// Output ρ(ν + σ_ω ν_t) per face.
     pub gamma_w: Buf,
+    /// k-ε-ζ-f: ν_t/σ_ζ and L² per cell, and the outputs ρ(ν + ν_t/σ_ζ)
+    /// and ρ L² per face.
+    pub zeta_f: Option<[Buf; 4]>,
 }
 
 /// Inputs and outputs of [`FlowDevice::wall_faces`].
@@ -452,6 +500,9 @@ pub struct WallFaceOps {
     pub k_b: Buf,
     /// See `k_b`.
     pub w_b: Buf,
+    /// k-ε-ζ-f: ζ per cell and the output wall value of f per boundary
+    /// face.
+    pub zeta_f: Option<(Buf, Buf)>,
 }
 
 /// Inputs and outputs of [`FlowDevice::wall_cells`].
@@ -649,8 +700,24 @@ pub trait FlowDevice {
         tol: f64,
         max_iter: usize,
     ) -> Result<(usize, f64)>;
-    /// Multigrid setup on the matrix `val`.
+    /// Multigrid setup on the matrix `val` (the pressure: slot 0, which
+    /// must be the active slot).
     fn amg_setup(&mut self, val: Buf, s: &AmgSettings) -> Result<()>;
+    /// Multigrid setup on the matrix `val` in slot `slot`, which becomes the
+    /// active one (the turbulence equations, stage 6 PR 6d: slot 1, so that
+    /// the pressure hierarchy of slot 0 is kept); with `symmetric_part` the
+    /// hierarchy is built from ½(A + Aᵀ) (a transport matrix with
+    /// convection, preconditioning BiCGStab).
+    fn amg_setup_slot(
+        &mut self,
+        slot: usize,
+        val: Buf,
+        s: &AmgSettings,
+        symmetric_part: bool,
+    ) -> Result<()>;
+    /// Makes multigrid slot `slot` the active one (back to 0 after a
+    /// turbulence solve).
+    fn amg_select(&mut self, slot: usize) -> Result<()>;
     /// The face viscosity of the momentum equation (a face buffer that a
     /// turbulence model overwrites with μ + ρ ν_t, stage 6).
     fn face_viscosity(&self) -> Buf;
@@ -660,6 +727,8 @@ pub trait FlowDevice {
     fn sst_cells(&mut self, a: &SstCellOps) -> Result<()>;
     /// The standard or realizable k-ε model per cell.
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()>;
+    /// The k-ε-ζ-f model per cell.
+    fn zeta_f_cells(&mut self, a: &ZetaFCellOps) -> Result<()>;
     /// Face viscosities of a turbulent flow.
     fn turb_faces(&mut self, a: &TurbFaceOps) -> Result<()>;
     /// The wall treatment per wall face (after [`wall_setup`](Self::wall_setup)).
@@ -667,9 +736,17 @@ pub trait FlowDevice {
     /// The area-weighted wall-face values `omega` of the near-wall cells
     /// into `fix_val`.
     fn wall_cells(&mut self, a: &WallCellOps) -> Result<()>;
-    /// x ← min(max(x, lo), hi); returns the number of entries a bound
-    /// changed (`work` is a scratch buffer of the length of x).
-    fn floor(&mut self, x: Buf, lo: f64, hi: f64, work: Buf) -> Result<usize>;
+    /// x ← min(max(x, lo, rel · old), hi) with `rel_old` = (old, rel)
+    /// (else without the relative bound); returns the number of entries a
+    /// bound changed (`work` is a scratch buffer of the length of x).
+    fn floor(
+        &mut self,
+        x: Buf,
+        lo: f64,
+        hi: f64,
+        rel_old: Option<(Buf, f64)>,
+        work: Buf,
+    ) -> Result<usize>;
     /// Waits for queued work (timers).
     fn sync(&mut self) -> Result<()>;
 }

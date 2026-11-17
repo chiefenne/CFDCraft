@@ -798,6 +798,9 @@ impl Transient {
                 fl.timings.pressure_assembly += t.elapsed().as_secs_f64();
             }
             if res.finite() {
+                if let Some(t) = fl.turbulence.as_mut() {
+                    t.amg_rebuild = rebuild_step && k == 1;
+                }
                 fl.solve_scalars(scalar_step, &mut res)?;
             }
             if !res.finite() {

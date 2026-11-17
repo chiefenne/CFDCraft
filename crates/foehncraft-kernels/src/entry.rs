@@ -1751,6 +1751,127 @@ impl Entry for KepsCells {
     }
 }
 
+/// Arguments of [`ZetaFCells`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ZetaFCellArgs {
+    /// Velocity gradient.
+    pub grad_u: RawGrad,
+    /// k.
+    pub k: Raw<f64>,
+    /// ε.
+    pub e: Raw<f64>,
+    /// ζ.
+    pub zeta: Raw<f64>,
+    /// f.
+    pub f: Raw<f64>,
+    /// ν.
+    pub nu: f64,
+    /// Constants.
+    pub c: crate::turb::zeta_f::ZetaFConstants,
+    /// Options.
+    pub o: crate::turb::zeta_f::ZetaFOptions,
+    /// Additional explicit sources of k, ε and ζ per cell (MMS, D104);
+    /// empty: none.
+    pub add_k: Raw<f64>,
+    /// See `add_k`.
+    pub add_e: Raw<f64>,
+    /// See `add_k`.
+    pub add_z: Raw<f64>,
+    /// Weight m_p of the wall production per cell (0 off the near-wall
+    /// cells); empty: none.
+    pub wall_mask: Raw<f64>,
+    /// The weighted wall production per cell, added to (1 − m_p) P_k.
+    pub wall_pk: Raw<f64>,
+    /// Output ν_t.
+    pub nu_t: Raw<f64>,
+    /// Output T.
+    pub t: Raw<f64>,
+    /// Output L².
+    pub l2: Raw<f64>,
+    /// Output P_k.
+    pub pk: Raw<f64>,
+    /// Output S_u of k (empty: ν_t, T, L², P_k only).
+    pub su_k: Raw<f64>,
+    /// Output S_p of k.
+    pub sp_k: Raw<f64>,
+    /// Output S_u of ε.
+    pub su_e: Raw<f64>,
+    /// Output S_p of ε.
+    pub sp_e: Raw<f64>,
+    /// Output S_u of ζ.
+    pub su_z: Raw<f64>,
+    /// Output S_p of ζ.
+    pub sp_z: Raw<f64>,
+    /// Output: the right-hand side of the f equation.
+    pub rhs_f: Raw<f64>,
+    /// Output ν_t/σ_k.
+    pub dk: Raw<f64>,
+    /// Output ν_t/σ_ε.
+    pub de: Raw<f64>,
+    /// Output ν_t/σ_ζ.
+    pub dz: Raw<f64>,
+    /// Output 1 where the cap of ν_t/ν acted.
+    pub capped: Raw<f64>,
+}
+
+/// The k-ε-ζ-f model per cell ([`crate::turb::zeta_f::zeta_f_cell`]).
+pub struct ZetaFCells;
+impl Entry for ZetaFCells {
+    type Args = ZetaFCellArgs;
+    const NAME: &'static str = "zeta_f_cells";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &ZetaFCellArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let g = a.grad_u.v();
+            let (wm, wp) = if a.wall_mask.len > 0 {
+                (ld(a.wall_mask.get(), c), ld(a.wall_pk.get(), c))
+            } else {
+                (0.0, 0.0)
+            };
+            let inp = crate::turb::zeta_f::ZetaFCellInputs {
+                k: ld(a.k.get(), c),
+                e: ld(a.e.get(), c),
+                zeta: ld(a.zeta.get(), c),
+                f: ld(a.f.get(), c),
+                grad_u: [g.x.at(c), g.y.at(c), g.z.at(c)],
+                nu: a.nu,
+                wall_m: wm,
+                wall_pk: wp,
+            };
+            let r = crate::turb::zeta_f::zeta_f_cell(&inp, &a.c, &a.o);
+            *a.nu_t.out().add(c) = r.nu_t;
+            *a.t.out().add(c) = r.t;
+            *a.l2.out().add(c) = r.l2;
+            *a.pk.out().add(c) = r.pk;
+            *a.dk.out().add(c) = r.dk;
+            *a.de.out().add(c) = r.de;
+            *a.dz.out().add(c) = r.dz;
+            *a.capped.out().add(c) = r.capped;
+            if a.su_k.len > 0 {
+                let (ak, ae, az) = if a.add_k.len > 0 {
+                    (
+                        ld(a.add_k.get(), c),
+                        ld(a.add_e.get(), c),
+                        ld(a.add_z.get(), c),
+                    )
+                } else {
+                    (0.0, 0.0, 0.0)
+                };
+                let lo = crate::turb::zeta_f::ZETA_MIN;
+                *a.su_k.out().add(c) = r.su_k + ak.max(0.0);
+                *a.sp_k.out().add(c) = r.sp_k + ak.min(0.0) / inp.k.max(1e-300);
+                *a.su_e.out().add(c) = r.su_e + ae.max(0.0);
+                *a.sp_e.out().add(c) = r.sp_e + ae.min(0.0) / inp.e.max(1e-300);
+                *a.su_z.out().add(c) = r.su_z + az.max(0.0);
+                *a.sp_z.out().add(c) = r.sp_z + az.min(0.0) / inp.zeta.max(lo);
+                *a.rhs_f.out().add(c) = r.rhs_f;
+            }
+        }
+    }
+}
+
 /// Arguments of [`TurbFaces`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -1776,6 +1897,15 @@ pub struct TurbFaceArgs {
     pub gamma_k: Raw<f64>,
     /// Output ρ(ν + σ_ω ν_t) per face.
     pub gamma_w: Raw<f64>,
+    /// ν_t/σ_ζ per cell (k-ε-ζ-f), or [`Raw::EMPTY`].
+    pub dz: Raw<f64>,
+    /// L² per cell (k-ε-ζ-f), or [`Raw::EMPTY`].
+    pub l2: Raw<f64>,
+    /// Output ρ(ν + ν_t/σ_ζ) per face (with `dz`).
+    pub gamma_z: Raw<f64>,
+    /// Output ρ L² per face (with `l2`): interpolated inside, the owner
+    /// value on every boundary face (walls included, where f is fixed).
+    pub gamma_f: Raw<f64>,
 }
 
 /// Face viscosities of the turbulent flow: linear interpolation of the
@@ -1813,6 +1943,22 @@ impl Entry for TurbFaces {
             }
             *a.gamma_k.out().add(f) = mu + a.rho * gk;
             *a.gamma_w.out().add(f) = mu + a.rho * gw;
+            if a.dz.len > 0 {
+                let (gz, gf) = if f < ni {
+                    let n = ld(a.m.neighbour.get(), f) as usize;
+                    let w = ld(a.m.weight.get(), f);
+                    let wn = 1.0 - w;
+                    (
+                        w * ld(a.dz.get(), p) + wn * ld(a.dz.get(), n),
+                        w * ld(a.l2.get(), p) + wn * ld(a.l2.get(), n),
+                    )
+                } else {
+                    let s = 1.0 - ld(a.wall.get(), f - ni);
+                    (s * ld(a.dz.get(), p), ld(a.l2.get(), p))
+                };
+                *a.gamma_z.out().add(f) = mu + a.rho * gz;
+                *a.gamma_f.out().add(f) = a.rho * gf;
+            }
         }
     }
 }
@@ -1873,6 +2019,11 @@ pub struct WallFaceArgs {
     pub k_b: Raw<f64>,
     /// Output (per boundary face): the wall value of ω (bc_b of ω).
     pub w_b: Raw<f64>,
+    /// ζ per cell (k-ε-ζ-f), or [`Raw::EMPTY`]: with it, `LOW_RE` is the
+    /// integration to the wall of ζ-f and `COMPOUND` also writes f_w.
+    pub zeta: Raw<f64>,
+    /// Output (per boundary face, with `zeta`): the wall value of f.
+    pub f_b: Raw<f64>,
 }
 
 /// The wall treatment per wall face ([`crate::turb::wall::wall_face`]).
@@ -1894,6 +2045,31 @@ impl Entry for WallFaces {
             let dn = du[0] * n[0] + du[1] * n[1] + du[2] * n[2];
             let t = [du[0] - dn * n[0], du[1] - dn * n[1], du[2] - dn * n[2]];
             let ut = foehncraft_core::math::sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+            let zf = a.zeta.len > 0;
+            if zf && a.treatment == crate::turb::wall::LOW_RE {
+                // k-ε-ζ-f integrated to the wall: k_w = 0, ζ_w = 0, ε_w
+                // and f_w of the first cell (Dirichlet values)
+                let (y, nu) = (ld(a.y.get(), i), a.nu);
+                let (e_w, f_w) = crate::turb::wall::zeta_f_wall_values(
+                    ld(a.k.get(), p),
+                    ld(a.zeta.get(), p),
+                    y,
+                    nu,
+                    1.0,
+                );
+                let u_tau = foehncraft_core::math::sqrt(nu * ut / y);
+                *a.u_tau.out().add(i) = u_tau;
+                *a.y_plus.out().add(i) = u_tau * y / nu;
+                *a.omega.out().add(i) = 0.0;
+                *a.blending.out().add(i) = 1.0;
+                *a.pk.out().add(i) = 0.0;
+                *a.prod_w.out().add(i) = 0.0;
+                *a.mu_eff.out().add(f) = a.rho * nu;
+                *a.k_b.out().add(fb) = 0.0;
+                *a.w_b.out().add(fb) = e_w;
+                *a.f_b.out().add(fb) = f_w;
+                return;
+            }
             if a.treatment >= crate::turb::wall::SCALABLE {
                 // the k-ε family: ε fixed in the cell (weight 1), k and ε
                 // with zero gradient at the wall
@@ -1915,6 +2091,17 @@ impl Entry for WallFaces {
                 *a.mu_eff.out().add(f) = a.rho * r.nu_wall;
                 *a.k_b.out().add(fb) = 0.0;
                 *a.w_b.out().add(fb) = 0.0;
+                if zf {
+                    // the compound f_w: e^{−Γ} (−2ν ζ_P/y_P²)
+                    let (_, f_w) = crate::turb::wall::zeta_f_wall_values(
+                        inp.k,
+                        ld(a.zeta.get(), p),
+                        inp.y,
+                        a.nu,
+                        r.viscous,
+                    );
+                    *a.f_b.out().add(fb) = f_w;
+                }
                 return;
             }
             let inp = crate::turb::wall::WallInputs {
@@ -2021,11 +2208,16 @@ pub struct FloorArgs {
     pub lo: f64,
     /// Upper bound.
     pub hi: f64,
+    /// Relative lower bound: x ≥ rel · old where rel > 0 (k-ε-ζ-f: a
+    /// solve may lower a value by at most this factor; 0: unused).
+    pub rel: f64,
+    /// The values before the solve (read only where rel > 0).
+    pub old: Raw<f64>,
     /// Output: 1 where a bound acted, else 0.
     pub hit: Raw<f64>,
 }
 
-/// x ← min(max(x, lo), hi), and where a bound acted (the positivity floors
+/// x ← min(max(x, lo, rel · old), hi), and where a bound acted (the positivity floors
 /// of the turbulence variables, stage 6 specification 6.2; counted in the
 /// health section).
 pub struct Floor;
@@ -2037,7 +2229,12 @@ impl Entry for Floor {
         // SAFETY: guaranteed by the caller; x is read before it is written.
         unsafe {
             let v = a.x.read(i);
-            let r = v.max(a.lo).min(a.hi);
+            let lo = if a.rel > 0.0 {
+                a.lo.max(a.rel * a.old.read(i))
+            } else {
+                a.lo
+            };
+            let r = v.max(lo).min(a.hi);
             *a.hit.out().add(i) = if r != v { 1.0 } else { 0.0 };
             *a.x.out().add(i) = r;
         }
@@ -2070,6 +2267,7 @@ send_sync!(
     ScalarScaleArgs,
     SstCellArgs,
     KepsCellArgs,
+    ZetaFCellArgs,
     TurbFaceArgs,
     WallFaceArgs,
     WallCellArgs,
@@ -2077,7 +2275,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 41] = [
+pub const NAMES: [&str; 42] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     Fill::NAME,
@@ -2115,6 +2313,7 @@ pub const NAMES: [&str; 41] = [
     ScalarScale::NAME,
     SstCells::NAME,
     KepsCells::NAME,
+    ZetaFCells::NAME,
     TurbFaces::NAME,
     WallFaces::NAME,
     WallCells::NAME,
@@ -2157,6 +2356,7 @@ mod tests {
             size_of::<ScalarScaleArgs>(),
             size_of::<SstCellArgs>(),
             size_of::<KepsCellArgs>(),
+            size_of::<ZetaFCellArgs>(),
             size_of::<TurbFaceArgs>(),
             size_of::<WallFaceArgs>(),
             size_of::<WallCellArgs>(),
@@ -2217,6 +2417,6 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 41);
+        assert_eq!(NAMES.len(), 42);
     }
 }

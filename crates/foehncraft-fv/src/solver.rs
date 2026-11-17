@@ -327,9 +327,25 @@ pub fn solve(
 /// Builds the multigrid hierarchy of the matrix assembled in the backend
 /// and loads it there.
 pub fn setup_amg(be: &mut dyn Backend, s: &AmgSettings) -> anyhow::Result<HierarchyInfo> {
+    setup_amg_with(be, s, false)
+}
+
+/// As [`setup_amg`]; with `symmetric_part` the hierarchy is built from
+/// ½(A + Aᵀ), the preconditioner of BiCGStab for a transport equation with
+/// convection (D36; stage 6 PR 6d).
+pub fn setup_amg_with(
+    be: &mut dyn Backend,
+    s: &AmgSettings,
+    symmetric_part: bool,
+) -> anyhow::Result<HierarchyInfo> {
     let t = Instant::now();
     let val = be.matrix_values()?;
     let a = be_matrix(be, &val)?;
+    let a = if symmetric_part {
+        a.symmetric_part()
+    } else {
+        a
+    };
     let mut h = amg::build(a, s)?;
     be.amg_load(&h)?;
     be.sync()?;

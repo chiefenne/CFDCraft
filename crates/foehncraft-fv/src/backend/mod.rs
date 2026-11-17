@@ -173,8 +173,20 @@ pub trait Backend: LevelOps {
     /// discretisation (assembled elsewhere, e.g. by the flow solver) and sets
     /// `Dinv` from its diagonal (slot 0).
     fn set_matrix(&mut self, val: &[f64]) -> anyhow::Result<()>;
-    /// Stores a multigrid hierarchy on the device, in its precision.
+    /// Stores a multigrid hierarchy on the device, in its precision, in the
+    /// active slot (see [`amg_slot`](Self::amg_slot)).
     fn amg_load(&mut self, h: &Hierarchy) -> anyhow::Result<()>;
+    /// Makes hierarchy slot `slot` the active one: the V-cycle and
+    /// [`amg_load`](Self::amg_load) use it, the others are kept (slot 0:
+    /// the pressure; stage 6 PR 6d adds slot 1 for the turbulence
+    /// equations, so that their hierarchy does not replace the pressure's).
+    fn amg_slot(&mut self, slot: usize) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            slot == 0,
+            "this backend holds one multigrid hierarchy only (slot {slot} asked)"
+        );
+        Ok(())
+    }
     /// The host copy of the discretisation.
     fn discretisation(&self) -> Option<&Discretisation>;
 }
