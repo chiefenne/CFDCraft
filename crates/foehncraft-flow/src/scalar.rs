@@ -1074,6 +1074,9 @@ pub struct ScalarSummary {
     pub min: f64,
     /// Largest cell value.
     pub max: f64,
+    /// `bounds` of the scalar, if set.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bounds: Option<[f64; 2]>,
     /// Mesh size h (as the velocity errors).
     pub h: f64,
     /// Volume-weighted L2 error against `exact` (absolute).
@@ -1163,6 +1166,7 @@ pub fn summaries(
             }
         }
         out.push(ScalarSummary {
+            bounds: case.scalars.get(&name).and_then(|s| s.bounds),
             name,
             min: mn,
             max: mx,
@@ -1216,6 +1220,13 @@ pub fn field_errors(
 /// One log line of a scalar summary.
 pub fn summary_line(s: &ScalarSummary) -> String {
     let mut l = format!("scalar {}: min {:.6e}, max {:.6e}", s.name, s.min, s.max);
+    if let Some([lo, hi]) = s.bounds {
+        let inside = s.min >= lo && s.max <= hi;
+        l.push_str(&format!(
+            " ({} the bounds [{lo}, {hi}])",
+            if inside { "inside" } else { "OUTSIDE" }
+        ));
+    }
     if let (Some(a), Some(b)) = (s.l2, s.linf) {
         l.push_str(&format!(", error L2 {a:.4e}, max {b:.4e}"));
     }

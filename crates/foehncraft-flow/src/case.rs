@@ -2993,13 +2993,15 @@ pub(crate) fn write_outputs(
         }
     }
     for l in &case.output.lines {
-        let mut csv = csv_preamble(
-            "line",
-            &name,
-            at,
-            "s m (distance from `from`), x y z m, u v w m/s, p Pa",
-        );
-        csv.push_str("s,x,y,z,u,v,w,p\n");
+        let mut units = String::from("s m (distance from `from`), x y z m, u v w m/s, p Pa");
+        let mut head = String::from("s,x,y,z,u,v,w,p");
+        for st in &fl.state.scalars {
+            let _ = write!(units, ", {} (cell value)", st.name);
+            let _ = write!(head, ",{}", st.name);
+        }
+        let mut csv = csv_preamble("line", &name, at, &units);
+        csv.push_str(&head);
+        csv.push('\n');
         let d = sub(l.to, l.from);
         let len = norm(d);
         for i in 0..l.points {
@@ -3007,7 +3009,7 @@ pub(crate) fn write_outputs(
             let x = std::array::from_fn(|k| l.from[k] + t * d[k]);
             let c = locate(loc, geo, x);
             let (u, p) = value_at(fl, geo, c, x);
-            let _ = writeln!(
+            let _ = write!(
                 csv,
                 "{:e},{:e},{:e},{:e},{:e},{:e},{:e},{:e}",
                 t * len,
@@ -3019,6 +3021,10 @@ pub(crate) fn write_outputs(
                 u[2],
                 p
             );
+            for st in &fl.state.scalars {
+                let _ = write!(csv, ",{:e}", st.phi[c]);
+            }
+            csv.push('\n');
         }
         std::fs::write(out.join(format!("line_{}.csv", l.name)), csv)?;
     }
