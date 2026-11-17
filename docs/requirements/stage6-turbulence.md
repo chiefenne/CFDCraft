@@ -55,7 +55,7 @@ Contents:
 | k-ω SST (Menter, Kuntz & Langtry 2003) with the production limiter of the paper, Kato–Launder and Durbin options | D12, D130 | M1 decision 2026-11-14; brief 2026-11-17 adds the limiters |
 | Standard k-ε (Launder & Spalding 1974) and realizable k-ε (Shih et al. 1995) | D12, D131 | M1 decision |
 | k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004) | D12, D132 | M1 decision (in place of RNG k-ε) |
-| Elliptic-blending k-ε (Billard & Laurence 2012) | D133 (**proposed**, section 3.4) | brief 2026-11-17, maintainer's decision pending |
+| Elliptic-blending k-ε (Billard & Laurence 2012) | D133 (section 3.4) | brief 2026-11-17; maintainer decision 2026-11-17: joins ζ-f |
 | Lag elliptic-blending k-ε (Lardeau & Billard 2016) | P11 (**proposed**) | brief, "optionally" |
 | All-y⁺ momentum wall treatments: automatic (SST), compound (ζ-f, EB, optional for k-ε), scalable and standard wall functions, rough walls | D13, D134 | M1 decision; brief |
 | Thermal law of the wall for any Pr (Kader 1981; Jayatilleke P-function), constant and Kays–Crawford turbulent Prandtl number | D135 | brief; needed by D111 |
@@ -69,7 +69,7 @@ Contents:
 
 | Topic | Earlier decision | Brief of 2026-11-17 | This specification |
 |---|---|---|---|
-| Near-wall model for separation and heat transfer | ζ-f (Hanjalić 2004) with the compound wall treatment, in M1 (2026-11-14); PANS on ζ-f later (P7); literature line Hanjalić, newer Basara | Elliptic-blending k-ε (Billard & Laurence 2012), optionally the lag variant; compare with ζ-f | ζ-f stays as decided. EB k-ε is proposed to **join** ζ-f, after it in stage 6 (section 3.5 compares the two). Nothing of ζ-f is dropped. **Maintainer's decision needed** (question Q1). |
+| Near-wall model for separation and heat transfer | ζ-f (Hanjalić 2004) with the compound wall treatment, in M1 (2026-11-14); PANS on ζ-f later (P7); literature line Hanjalić, newer Basara | Elliptic-blending k-ε (Billard & Laurence 2012), optionally the lag variant; compare with ζ-f | ζ-f stays as decided. EB k-ε **joins** ζ-f, after it in stage 6 (maintainer decision 2026-11-17, D133; section 3.5 compares the two). Nothing of ζ-f is dropped. |
 | SST variant | SST 2003 | SST 2003 with Kato–Launder production limiter or Durbin realizability constraint | Kept. The 2003 limiter is the default; Kato–Launder and Durbin are options (D130). The ω production is written with the limited P̃_k, as corrected for the 2003 paper (section 3.1). |
 | Realizable k-ε | M1 | "fast-converging industrial baseline" | Kept, unchanged (D131). |
 | Standard k-ε | M1, for literature data | not mentioned | Kept (D12); its known stagnation-point anomaly becomes a test of the limiters (section 9). |
@@ -308,7 +308,7 @@ Hanjalić, Popovac & Hadžiabdić (2004); constants of the paper ◇.
 - Curvature correction for the U-bend (P8) and PANS on ζ-f (P7) stay later.
   The later literature of Basara and co-workers (P7) builds on this form.
 
-### 3.4 Elliptic-blending k-ε (D133, proposed)
+### 3.4 Elliptic-blending k-ε (D133)
 
 Billard & Laurence (2012), the "BL-v²/k" model. Variables k, ε, φ = v²/k and
 the blending parameter α:
@@ -370,7 +370,7 @@ height through ζ. The compound treatment of ζ-f (section 4.4) removes most
 of that sensitivity by blending f_w, which is why the 2004 and 2007 papers
 pair them.
 
-**Recommendation: EB k-ε joins ζ-f, delivered after it in stage 6**
+**Decision (maintainer, 2026-11-17): EB k-ε joins ζ-f, delivered after it in stage 6**
 (pull request 6e, section 10). It reuses the k and ε equations, the v²/k
 transport equation and the elliptic solver of ζ-f, so the extra code is one
 source kernel and its tests. ζ-f stays the decided near-wall model and the
@@ -914,7 +914,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂ | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 MMS and decay (SST), 9.3 flat plate, 9.4 channel (SST) |
 | 6c | Standard and realizable k-ε, scalable and standard wall functions, compound treatment for the k-ε family, Cebeci–Bradshaw roughness | `turb/keps.rs` | 9.2, 9.3, 9.4 for the k-ε family, rough pipe and Moody study |
 | 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
-| 6e | EB k-ε (if the maintainer agrees, Q1) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
+| 6e | EB k-ε (D133) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
 | 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports | cases, gallery, `tools/notebooks/stage6_colab.ipynb` | 9.5, 9.6, 9.7, 6.6 |
 | release | v0.6: version bump, changelog summary, README, verification manual, Release workflow (dry run first) | | all of section 9 green or findings recorded |
@@ -928,8 +928,7 @@ after the models because it needs u* from each of them.
 
 ## 11. Questions for the maintainer
 
-- **Q1 (decision):** EB k-ε joins ζ-f in stage 6 (recommended), replaces
-  ζ-f, or follows later as a P item?
+- **Q1 (closed 2026-11-17):** EB k-ε joins ζ-f in stage 6 (D133).
 - **Q2:** Lag EB k-ε as P11 (possible later), decided after the EB
   verification (recommended), or in stage 6?
 - **Q3:** The model bands of section 9 are a proposal; change any before
