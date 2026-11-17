@@ -28,6 +28,7 @@ pub mod locate;
 pub mod mesh;
 pub mod partition;
 pub mod quality;
+pub mod query;
 pub mod renumber;
 pub mod wedge;
 

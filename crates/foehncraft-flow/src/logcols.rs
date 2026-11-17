@@ -5,6 +5,7 @@
 //! | Name | Columns |
 //! |---|---|
 //! | `residual.momentum`, `residual.continuity` | `ResU ResV ResW`, `ResM` |
+//! | `residual.scalars` | one column per passive scalar (`Res<name>`) |
 //! | `linear.momentum`, `linear.pressure` | solver iterations (`U V W`, `P`) |
 //! | `probe.<name>.<q>` | value at an `[[output.probes]]` point |
 //! | `cell.<index>.<q>` | value in one cell (debugging) |
@@ -90,6 +91,9 @@ pub enum Spec {
     ResMomentum,
     /// `residual.continuity`.
     ResContinuity,
+    /// `residual.scalars`: the names of the case's scalars (filled in by
+    /// [`Columns::build`]).
+    ResScalars(Vec<String>),
     /// `linear.momentum`.
     LinMomentum,
     /// `linear.pressure`.
@@ -124,6 +128,7 @@ pub enum Spec {
 pub const KINDS: &[&str] = &[
     "residual.momentum",
     "residual.continuity",
+    "residual.scalars",
     "linear.momentum",
     "linear.pressure",
     "probe.<name>.<quantity>",
@@ -165,6 +170,7 @@ impl Spec {
         Ok(match (parts[0], parts.len()) {
             ("residual", 2) if parts[1] == "momentum" => Self::ResMomentum,
             ("residual", 2) if parts[1] == "continuity" => Self::ResContinuity,
+            ("residual", 2) if parts[1] == "scalars" => Self::ResScalars(Vec::new()),
             ("linear", 2) if parts[1] == "momentum" => Self::LinMomentum,
             ("linear", 2) if parts[1] == "pressure" => Self::LinPressure,
             ("min", 2) => Self::Min(quantity(parts[1])?),
@@ -324,7 +330,7 @@ impl Columns {
     ) -> Result<Self> {
         let digits = case.log.digits;
         let with_error = case.time.is_some_and(|t| t.error_tolerance.is_some());
-        let specs: Vec<Spec> = match &case.log.columns {
+        let mut specs: Vec<Spec> = match &case.log.columns {
             Some(names) => names
                 .iter()
                 .map(|n| Spec::parse(n))
@@ -351,6 +357,19 @@ impl Columns {
                 Spec::LinPressure,
             ],
         };
+        let names: Vec<String> = case.scalars.keys().cloned().collect();
+        if case.log.columns.is_none() && !names.is_empty() {
+            let at = specs
+                .iter()
+                .position(|s| *s == Spec::ResContinuity)
+                .map_or(specs.len(), |i| i + 1);
+            specs.insert(at, Spec::ResScalars(Vec::new()));
+        }
+        for s in &mut specs {
+            if let Spec::ResScalars(v) = s {
+                v.clone_from(&names);
+            }
+        }
         for s in &specs {
             if let Spec::Cell(i, _) = s {
                 crate::need!(
@@ -476,6 +495,10 @@ impl Columns {
             match s {
                 Spec::ResMomentum => out.extend(ctx.res.momentum.iter().map(|&r| num(r))),
                 Spec::ResContinuity => out.push(num(ctx.res.continuity)),
+                Spec::ResScalars(names) => out
+                    .extend((0..names.len()).map(|i| {
+                        num(ctx.res.scalars.residual.get(i).copied().unwrap_or(f64::NAN))
+                    })),
                 Spec::LinMomentum => {
                     out.extend(ctx.res.momentum_iterations.iter().map(|&n| int(n)))
                 }
@@ -605,6 +628,19 @@ fn layout(s: &Spec, d: usize, transient: bool) -> Vec<Column> {
             "",
             w,
         )],
+        Spec::ResScalars(names) => names
+            .iter()
+            .map(|n| {
+                let short: String = format!("Res{n}").chars().take(w).collect();
+                col(
+                    format!("residual.scalars.{n}"),
+                    &short,
+                    "scaled residuals",
+                    "",
+                    w,
+                )
+            })
+            .collect(),
         Spec::LinMomentum => {
             let g = if transient {
                 "solvers"

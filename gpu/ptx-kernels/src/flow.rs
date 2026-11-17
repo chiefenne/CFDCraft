@@ -56,4 +56,7 @@ entries! {
     flow_transpose => e::Transpose,
     flow_matrix_product => e::MatrixProduct,
     flow_transposed_product => e::TransposedProduct,
+    flow_scalar_faces => e::ScalarFaces,
+    flow_scalar_rows => e::ScalarRows,
+    flow_scalar_scale => e::ScalarScale,
 }

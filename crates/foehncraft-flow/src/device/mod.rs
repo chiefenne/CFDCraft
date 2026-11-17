@@ -76,6 +76,9 @@ pub enum Eps2 {
     PerCell,
     /// One value, Venkatakrishnan–Wang.
     Single(f64),
+    /// Per cell, from a buffer of the caller (a limiter constant K of its
+    /// own, e.g. a scalar's).
+    Cells(Buf),
 }
 
 /// Inputs and outputs of [`FlowDevice::boundary_values`].
@@ -205,6 +208,85 @@ pub struct FluxArgs {
     pub time: Option<(Buf, Buf, f64)>,
 }
 
+/// Inputs and outputs of [`FlowDevice::scalar_faces`].
+#[derive(Debug, Clone, Copy)]
+pub struct ScalarFaceArgs {
+    /// Boundary coefficient a per boundary face.
+    pub bc_a: Buf,
+    /// Boundary constant b per boundary face.
+    pub bc_b: Buf,
+    /// Convecting face mass flux.
+    pub mass_flux: Buf,
+    /// ρΓ per face (kg/(m s)).
+    pub gamma: Buf,
+    /// Cell values.
+    pub phi: Buf,
+    /// Cell gradient.
+    pub grad: Buf3,
+    /// Limiter per cell.
+    pub psi: Buf,
+    /// 1 linear upwind, 0 upwind.
+    pub blend: f64,
+    /// Fraction of the bounded central scheme.
+    pub central: f64,
+    /// β of its bounding.
+    pub beta: f64,
+    /// 1 with the non-orthogonal correction.
+    pub nonorth: f64,
+    /// Output c_P.
+    pub cp: Buf,
+    /// Output c_N.
+    pub cn: Buf,
+    /// Output b_f.
+    pub bf: Buf,
+}
+
+/// Time terms of a scalar row.
+#[derive(Debug, Clone, Copy)]
+pub struct ScalarTime {
+    /// 1/Δt.
+    pub inv_dt: f64,
+    /// a₀, a₁, a₂ of the backward difference.
+    pub a: [f64; 3],
+    /// φⁿ.
+    pub old: Buf,
+    /// φⁿ⁻¹ (read when a₂ ≠ 0).
+    pub old2: Buf,
+    /// Bounds of the bounded BDF2 (±∞: none).
+    pub bounds: (f64, f64),
+}
+
+/// Inputs and outputs of [`FlowDevice::scalar_rows`].
+#[derive(Debug, Clone, Copy)]
+pub struct ScalarRowArgs {
+    /// Face coefficients.
+    pub cp: Buf,
+    /// See `cp`.
+    pub cn: Buf,
+    /// Deferred parts.
+    pub bf: Buf,
+    /// Convecting face mass flux.
+    pub mass_flux: Buf,
+    /// Current cell values.
+    pub phi: Buf,
+    /// S_u per cell ([φ]/s), if any.
+    pub su: Option<Buf>,
+    /// S_p ≤ 0 per cell (1/s), if any.
+    pub sp: Option<Buf>,
+    /// α.
+    pub alpha: f64,
+    /// Time terms (None: steady).
+    pub time: Option<ScalarTime>,
+    /// Output: matrix values.
+    pub val: Buf,
+    /// Output: right-hand side.
+    pub rhs: Buf,
+    /// Output: relaxed diagonal.
+    pub diag: Buf,
+    /// Output: 1 where the bounded BDF2 fell back to first order.
+    pub order: Buf,
+}
+
 /// Static data of a device.
 pub struct Setup<'a> {
     /// Discretisation (geometry, velocity weights, matrix structure).
@@ -282,6 +364,27 @@ pub trait FlowDevice {
     /// Venkatakrishnan limiter of the velocity component `phi` with its
     /// gradient and boundary values.
     fn limiter(&mut self, phi: Buf, value: Buf, grad: Buf3, eps2: Eps2, out: Buf) -> Result<()>;
+    /// Least-squares gradient of a scalar with its own weights `w` (one
+    /// entry per cell-face entry) and boundary coefficients φ_f = a φ_P + b.
+    fn gradient_with(&mut self, w: Buf3, phi: Buf, bc_a: Buf, bc_b: Buf, out: Buf3) -> Result<()>;
+    /// Venkatakrishnan limiter of a scalar with its boundary coefficients.
+    #[allow(clippy::too_many_arguments)]
+    fn limiter_with(
+        &mut self,
+        phi: Buf,
+        bc_a: Buf,
+        bc_b: Buf,
+        grad: Buf3,
+        eps2: Eps2,
+        out: Buf,
+    ) -> Result<()>;
+    /// Face coefficients of a scalar.
+    fn scalar_faces(&mut self, a: &ScalarFaceArgs) -> Result<()>;
+    /// Rows of a scalar.
+    fn scalar_rows(&mut self, a: &ScalarRowArgs) -> Result<()>;
+    /// Residual scale ‖a φ‖ + ‖b − (a/α − a) φ‖ of a scalar row (unrelaxed
+    /// a and b).
+    fn scalar_scale(&mut self, phi: Buf, rhs: Buf, diag: Buf, alpha: f64) -> Result<f64>;
     /// Face mass fluxes (Rhie–Chow).
     fn mass_flux(&mut self, a: &FluxArgs, out: Buf) -> Result<()>;
     /// Momentum face coefficients.

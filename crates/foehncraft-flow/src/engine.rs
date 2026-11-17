@@ -529,6 +529,11 @@ pub fn case_hash(case: &FlowCase) -> String {
             text.push_str(&format!("\n# table of {name}: {}", t.sha256));
         }
     }
+    // the scalar sub-tables of the boundaries (not serialised with the
+    // boundary conditions)
+    if !case.boundary_scalar.is_empty() {
+        text.push_str(&format!("\n# boundary scalars: {:?}", case.boundary_scalar));
+    }
     for (name, t) in &case.tables {
         if let Some(h) = t.sha256() {
             text.push_str(&format!("\n# table {name}: {h}"));

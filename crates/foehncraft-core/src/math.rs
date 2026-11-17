@@ -499,6 +499,110 @@ pub fn tanh(x: f64) -> f64 {
     if x < 0.0 { -r } else { r }
 }
 
+// ---------------------------------------------------------------------------
+// switches of the turbulence models (stage 6 specification, section 2.6)
+
+/// Default relative width w of the smooth switches [`smin`] and [`smax`].
+pub const SMOOTH_WIDTH: f64 = 1e-3;
+
+/// min(a, b), the published hard form of a model's switch (a select, no
+/// branch on the GPU). NaN in either argument gives NaN.
+#[inline(always)]
+pub fn pmin(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else if b < a {
+        b
+    } else {
+        a
+    }
+}
+
+/// max(a, b), the published hard form (see [`pmin`]).
+#[inline(always)]
+pub fn pmax(a: f64, b: f64) -> f64 {
+    if a.is_nan() || b.is_nan() {
+        f64::NAN
+    } else if b > a {
+        b
+    } else {
+        a
+    }
+}
+
+/// |a|, the published hard form.
+#[inline(always)]
+pub fn pabs(a: f64) -> f64 {
+    abs(a)
+}
+
+/// The smooth minimum of the linearisation and the adjoint (D59 (3)):
+///
+/// smin(a, b; w) = ½ (a + b − √((a − b)² + (w m)²)),  m = ½ (|a| + |b|),
+///
+/// C¹ in a and b, below min(a, b) by at most w m / 2, and equal to it for
+/// w = 0. `w` is the relative width ([`SMOOTH_WIDTH`] by default).
+#[inline(always)]
+pub fn smin(a: f64, b: f64, w: f64) -> f64 {
+    let m = 0.5 * (abs(a) + abs(b));
+    let d = a - b;
+    let e = w * m;
+    0.5 * (a + b - sqrt(d * d + e * e))
+}
+
+/// The smooth maximum, smax(a, b; w) = −smin(−a, −b; w): above
+/// max(a, b) by at most w m / 2.
+#[inline(always)]
+pub fn smax(a: f64, b: f64, w: f64) -> f64 {
+    -smin(-a, -b, w)
+}
+
+/// The smooth |a| of the linearisation, √(a² + (w s)²) with the scale s =
+/// `scale` of the quantity (|a| has no scale of its own at a = 0): C¹,
+/// ≥ |a| and above it by at most w s.
+#[inline(always)]
+pub fn sabs(a: f64, w: f64, scale: f64) -> f64 {
+    let e = w * scale;
+    sqrt(a * a + e * e)
+}
+
+/// A switch of a model: the published hard form, or the smooth one of
+/// width `w` (`turbulence.smooth_limits`, section 2.6 of the stage 6
+/// specification). The kernels take it by value, so the choice is one
+/// select per evaluation and no data-dependent branch.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Switches {
+    /// Relative width of the smooth form; 0 gives the hard form.
+    pub w: f64,
+}
+
+impl Switches {
+    /// The published hard form.
+    pub const HARD: Switches = Switches { w: 0.0 };
+    /// The smooth form with the default width.
+    pub const SMOOTH: Switches = Switches { w: SMOOTH_WIDTH };
+
+    /// min(a, b) in the chosen form.
+    #[inline(always)]
+    pub fn min(self, a: f64, b: f64) -> f64 {
+        if self.w > 0.0 {
+            smin(a, b, self.w)
+        } else {
+            pmin(a, b)
+        }
+    }
+
+    /// max(a, b) in the chosen form.
+    #[inline(always)]
+    pub fn max(self, a: f64, b: f64) -> f64 {
+        if self.w > 0.0 {
+            smax(a, b, self.w)
+        } else {
+            pmax(a, b)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -618,5 +722,60 @@ mod tests {
             let d = ulps(pow(x, 0.7), x.powf(0.7));
             assert!(d <= 16, "pow({x}, 0.7): {d} ulp");
         }
+    }
+    #[test]
+    fn hard_switches_are_min_max_abs() {
+        assert_eq!(pmin(1.0, 2.0), 1.0);
+        assert_eq!(pmin(2.0, -1.0), -1.0);
+        assert_eq!(pmax(1.0, 2.0), 2.0);
+        assert_eq!(pmax(-3.0, -4.0), -3.0);
+        assert_eq!(pabs(-2.5), 2.5);
+        assert!(pmin(f64::NAN, 1.0).is_nan() && pmax(1.0, f64::NAN).is_nan());
+        assert_eq!(Switches::HARD.min(3.0, 1.0), 1.0);
+        assert_eq!(Switches::HARD.max(3.0, 1.0), 3.0);
+    }
+
+    #[test]
+    fn smooth_switches_are_bounded_and_c1() {
+        let w = SMOOTH_WIDTH;
+        for &(a, b) in &[
+            (1.0f64, 2.0f64),
+            (2.0, 2.0),
+            (-1.0, 3.0),
+            (1e-3, 1.1e-3),
+            (5.0, -5.0),
+            (0.0, 0.0),
+        ] {
+            let m = 0.5 * (a.abs() + b.abs());
+            let lo = smin(a, b, w);
+            let hi = smax(a, b, w);
+            // error bound w m / 2 (the spec), and on the safe side
+            assert!(
+                lo <= a.min(b) && a.min(b) - lo <= 0.5 * w * m + 1e-15,
+                "smin({a}, {b}) = {lo}"
+            );
+            assert!(
+                hi >= a.max(b) && hi - a.max(b) <= 0.5 * w * m + 1e-15,
+                "smax({a}, {b}) = {hi}"
+            );
+        }
+        // w = 0 is the hard form
+        assert_eq!(smin(1.0, 2.0, 0.0), 1.0);
+        assert_eq!(smax(1.0, 2.0, 0.0), 2.0);
+        // C¹: the derivative in a is continuous across a = b (central
+        // differences on both sides agree with the value ½ at a = b)
+        let b = 1.0;
+        let h = 1e-7;
+        let der = |a: f64| (smin(a + h, b, w) - smin(a - h, b, w)) / (2.0 * h);
+        assert!(
+            (der(b) - 0.5).abs() < 1e-3,
+            "d smin/da at a = b: {}",
+            der(b)
+        );
+        assert!((der(b - 0.05) - 1.0).abs() < 1e-3 && der(b + 0.05).abs() < 1e-3);
+        // smooth |a| is ≥ |a| and within w scale
+        assert!(sabs(0.0, w, 1.0) == w && sabs(-2.0, w, 1.0) >= 2.0);
+        assert!(sabs(-2.0, w, 1.0) - 2.0 <= w);
+        assert_eq!(Switches::SMOOTH.min(1.0, 2.0), smin(1.0, 2.0, w));
     }
 }

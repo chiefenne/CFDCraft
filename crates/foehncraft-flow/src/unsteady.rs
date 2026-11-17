@@ -265,6 +265,8 @@ struct RunSpec {
 struct RunOut {
     solve: Solve,
     u: Soa3,
+    /// Final scalar fields, in the order of the case's scalar sections.
+    scalars: Vec<Vec<f64>>,
     volume: Vec<f64>,
     stopped: bool,
 }
@@ -317,6 +319,7 @@ pub fn run(
         solves: Vec::new(),
         orders: Vec::new(),
         time_orders: Vec::new(),
+        scalar_orders: Vec::new(),
         uncertainty: Vec::new(),
         uncertainty_of: "",
         stopped: false,
@@ -448,6 +451,40 @@ pub fn run(
             })
             .collect();
         let dts = &v.time_steps;
+        // the scalars: the same differences of successive solutions
+        for (k, sm) in outs[0].solve.scalars.iter().enumerate() {
+            let d: Vec<f64> = outs
+                .windows(2)
+                .map(|w| {
+                    let (a, b) = (&w[0], &w[1]);
+                    let (mut e2, mut vol) = (0.0, 0.0);
+                    for c in 0..a.volume.len() {
+                        let x = a.scalars[k][c] - b.scalars[k][c];
+                        e2 += x * x * a.volume[c];
+                        vol += a.volume[c];
+                    }
+                    (e2 / vol).sqrt()
+                })
+                .collect();
+            let o: Vec<f64> = d
+                .windows(2)
+                .enumerate()
+                .map(|(i, d)| (d[0] / d[1]).ln() / (dts[i] / dts[i + 1]).ln())
+                .collect();
+            lg.note(&format!(
+                "time sweep: scalar {}: observed time orders {o:.3?}",
+                sm.name
+            ));
+            if let (Some([lo, hi]), Some(&last)) = (v.scalar_order, o.last())
+                && !(lo..=hi).contains(&last)
+            {
+                rep.failures.push(format!(
+                    "scalar {}: observed time order {last:.3} on the smallest steps, outside [{lo}, {hi}]",
+                    sm.name
+                ));
+            }
+            rep.scalar_orders.push((format!("{} (time)", sm.name), o));
+        }
         rep.time_orders = diffs
             .windows(2)
             .enumerate()
@@ -810,6 +847,7 @@ fn run_one<F: FnMut(&str)>(
     if let Some(src) = crate::case::momentum_source(&case, geo, nc, time0.start_time)? {
         fl.set_momentum_source(src)?;
     }
+    crate::scalar::attach(&mut fl, &case, mesh, geo)?;
     let mut tr = Transient::new(&mut fl, time0.scheme, time0.start_time)?;
     let mut af = AnalyticFaces::new(&case, mesh, &ub0);
     let mut dt = dt0;
@@ -910,17 +948,24 @@ fn run_one<F: FnMut(&str)>(
     let probes = Probes::new(&case, &extra, &loc, geo);
     let cont = restart_from.as_ref().map(|_| first_step);
     let hist_dir = out;
+    let mut hunits = String::from(
+        "step -, time s, dt s, cfl - (largest Courant number), momentum_x momentum_y \
+         momentum_z continuity - (scaled residuals), outer cg - (iterations)",
+    );
+    let mut hhead =
+        String::from("step,time,dt,cfl,momentum_x,momentum_y,momentum_z,continuity,outer,cg");
+    for s in case.scalars.keys() {
+        let _ = write!(
+            hunits,
+            ", scalar_{s} - (scaled residual), first_order_{s} - (cells at first order)"
+        );
+        let _ = write!(hhead, ",scalar_{s},first_order_{s}");
+    }
     let mut history = History::new(
         hist_dir,
         &suffix_name("history", desc, last),
-        &crate::case::csv_preamble(
-            "history",
-            name,
-            None,
-            "step -, time s, dt s, cfl - (largest Courant number), momentum_x momentum_y \
-             momentum_z continuity - (scaled residuals), outer cg - (iterations)",
-        ),
-        "step,time,dt,cfl,momentum_x,momentum_y,momentum_z,continuity,outer,cg",
+        &crate::case::csv_preamble("history", name, None, &hunits),
+        &hhead,
         cont,
     )?;
     let walls: Vec<String> = mesh
@@ -1145,8 +1190,8 @@ fn run_one<F: FnMut(&str)>(
                     done: nsteps,
                     time: Some(tr.clock.time),
                     dt: Some(h),
-                    residuals: fl.diverged.unwrap_or_default(),
-                    last_residuals: (nsteps > 0).then_some(last_rep.residuals),
+                    residuals: fl.diverged.clone().unwrap_or_default(),
+                    last_residuals: (nsteps > 0).then_some(last_rep.residuals.clone()),
                     first_courant: first_cfl,
                 };
                 let prepared = (|| -> Result<(crate::simplec::State, Vec<&'static str>)> {
@@ -1196,7 +1241,7 @@ fn run_one<F: FnMut(&str)>(
             }
             Err(e) => return Err(e),
         };
-        last_rep = rp;
+        last_rep = rp.clone();
         if nsteps == 0 {
             first_cfl = Some(rp.cfl);
         }
@@ -1209,8 +1254,12 @@ fn run_one<F: FnMut(&str)>(
         let n = rp.step;
         let r = &rp.residuals;
         if n.is_multiple_of(case.output.history_every) {
+            let mut sc = String::new();
+            for (x, k) in r.scalars.residual.iter().zip(&r.scalars.first_order) {
+                let _ = write!(sc, ",{x:e},{k}");
+            }
             history.row(&format!(
-                "{n},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{},{}",
+                "{n},{:e},{:e},{:e},{:e},{:e},{:e},{:e},{},{}{sc}",
                 rp.time,
                 h,
                 rp.cfl,
@@ -1232,6 +1281,7 @@ fn run_one<F: FnMut(&str)>(
                     "continuity": r.continuity,
                     "outer": rp.outer,
                     "cg": r.pressure_iterations,
+                    "scalars": r.scalars.residual,
                 });
                 if let Some(e) = rp.error {
                     row["error"] = e.into();
@@ -1579,6 +1629,14 @@ fn run_one<F: FnMut(&str)>(
         let rs = restart_of(&mut fl, &tr, mesh, name, dt)?;
         restart::write(&out.join("restart.h5"), &rs)?;
     }
+    let scalars = crate::scalar::summaries(
+        &mut fl,
+        &case,
+        mesh,
+        geo,
+        crate::case::dimension(&case),
+        tr.clock.time,
+    )?;
     let sol = Solution {
         state: fl.state()?,
         disc: &fl.disc,
@@ -1753,7 +1811,12 @@ fn run_one<F: FnMut(&str)>(
             )?;
         }
     }
+    for sm in &scalars {
+        lg.line(&crate::scalar::summary_line(sm));
+    }
+    let scalar_fields: Vec<Vec<f64>> = sol.state.scalars.iter().map(|x| x.phi.clone()).collect();
     let solve = Solve {
+        scalars,
         remediation,
         balance: Some(balance_summary),
         mesh: desc.into(),
@@ -1791,6 +1854,7 @@ fn run_one<F: FnMut(&str)>(
     let volume = geo.cell_volume.clone();
     Ok(RunOut {
         u: sol.state.u.clone(),
+        scalars: scalar_fields,
         solve,
         volume,
         stopped,

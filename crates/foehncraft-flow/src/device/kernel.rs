@@ -12,7 +12,7 @@
 
 use super::{
     BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, Lsq, Mask, MomentumFaceArgs,
-    MomentumRowArgs, Setup,
+    MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, Setup,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -252,6 +252,18 @@ impl<E: Exec> KernelFlow<E> {
             return Ok(());
         }
         self.x.launch::<K>(n, a)
+    }
+
+    /// The ε² array of a limiter.
+    fn eps2_raw(&mut self, eps2: Eps2) -> Result<Raw<f64>> {
+        Ok(match eps2 {
+            Eps2::PerCell => self.r(self.eps2),
+            Eps2::Single(v) => {
+                self.x.upload(self.eps2_one, &[v])?;
+                self.r(self.eps2_one)
+            }
+            Eps2::Cells(b) => self.r(b),
+        })
     }
 
     /// Boundary constants of `value` with mask `m` into the scratch array.
@@ -541,13 +553,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         ins.extend(grad.all());
         check(&[out], &ins)?;
         self.constants(Mask::Velocity, value)?;
-        let e2 = match eps2 {
-            Eps2::PerCell => self.r(self.eps2),
-            Eps2::Single(v) => {
-                self.x.upload(self.eps2_one, &[v])?;
-                self.r(self.eps2_one)
-            }
-        };
+        let e2 = self.eps2_raw(eps2)?;
         let args = e::LimiterArgs {
             m: self.m,
             phi: self.r(phi),
@@ -558,6 +564,149 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             out: self.r(out),
         };
         self.go::<e::Limiter>(self.nc, &args)
+    }
+
+    fn gradient_with(&mut self, w: Buf3, phi: Buf, bc_a: Buf, bc_b: Buf, out: Buf3) -> Result<()> {
+        let mut ins = vec![phi, bc_a, bc_b];
+        ins.extend(w.all());
+        check(&out.all(), &ins)?;
+        let args = e::GradientArgs {
+            m: self.m,
+            w: self.r3(w),
+            phi: self.r(phi),
+            bc_a: self.r(bc_a),
+            bc_b: self.r(bc_b),
+            out: self.r3(out),
+        };
+        self.go::<e::Gradient>(self.nc, &args)
+    }
+
+    fn limiter_with(
+        &mut self,
+        phi: Buf,
+        bc_a: Buf,
+        bc_b: Buf,
+        grad: Buf3,
+        eps2: Eps2,
+        out: Buf,
+    ) -> Result<()> {
+        let mut ins = vec![phi, bc_a, bc_b];
+        ins.extend(grad.all());
+        check(&[out], &ins)?;
+        let e2 = self.eps2_raw(eps2)?;
+        let args = e::LimiterArgs {
+            m: self.m,
+            phi: self.r(phi),
+            bc_a: self.r(bc_a),
+            bc_b: self.r(bc_b),
+            grad: self.r3(grad),
+            eps2: e2,
+            out: self.r(out),
+        };
+        self.go::<e::Limiter>(self.nc, &args)
+    }
+
+    fn scalar_faces(&mut self, a: &ScalarFaceArgs) -> Result<()> {
+        let mut ins = vec![a.bc_a, a.bc_b, a.mass_flux, a.gamma, a.phi, a.psi];
+        ins.extend(a.grad.all());
+        check(&[a.cp, a.cn, a.bf], &ins)?;
+        let args = e::ScalarFaceArgs {
+            m: self.m,
+            bc_a: self.r(a.bc_a),
+            bc_b: self.r(a.bc_b),
+            mass_flux: self.r(a.mass_flux),
+            gamma: self.r(a.gamma),
+            phi: self.r(a.phi),
+            grad: self.r3(a.grad),
+            psi: self.r(a.psi),
+            blend: a.blend,
+            central: a.central,
+            beta: a.beta,
+            nonorth: a.nonorth,
+            nonorth_limit: -1.0,
+            cp: self.r(a.cp),
+            cn: self.r(a.cn),
+            bf: self.r(a.bf),
+        };
+        self.go::<e::ScalarFaces>(self.nf, &args)
+    }
+
+    fn scalar_rows(&mut self, a: &ScalarRowArgs) -> Result<()> {
+        let mut ins = vec![a.cp, a.cn, a.bf, a.mass_flux, a.phi];
+        ins.extend(a.su);
+        ins.extend(a.sp);
+        if let Some(t) = &a.time {
+            ins.push(t.old);
+            ins.push(t.old2);
+        }
+        check(&[a.val, a.rhs, a.diag, a.order], &ins)?;
+        let opt = |b: Option<Buf>| b.map_or(Raw::EMPTY, |b| self.r(b));
+        let (transient, inv_dt, coef, old, old2, (lo, hi)) = match &a.time {
+            Some(t) => (
+                1,
+                t.inv_dt,
+                t.a,
+                self.r(t.old),
+                if t.a[2] != 0.0 {
+                    self.r(t.old2)
+                } else {
+                    Raw::EMPTY
+                },
+                t.bounds,
+            ),
+            None => (
+                0,
+                0.0,
+                [1.0, 0.0, 0.0],
+                Raw::EMPTY,
+                Raw::EMPTY,
+                (f64::NEG_INFINITY, f64::INFINITY),
+            ),
+        };
+        let args = e::ScalarRowArgs {
+            m: self.m,
+            cp: self.r(a.cp),
+            cn: self.r(a.cn),
+            bf: self.r(a.bf),
+            mass_flux: self.r(a.mass_flux),
+            phi: self.r(a.phi),
+            rho: self.rho,
+            su: opt(a.su),
+            sp: opt(a.sp),
+            alpha: a.alpha,
+            transient,
+            inv_dt,
+            a: coef,
+            old,
+            old2,
+            lo,
+            hi,
+            val: self.r(a.val),
+            rhs: self.r(a.rhs),
+            diag: self.r(a.diag),
+            order: self.r(a.order),
+        };
+        self.go::<e::ScalarRows>(self.nc, &args)
+    }
+
+    fn scalar_scale(&mut self, phi: Buf, rhs: Buf, diag: Buf, alpha: f64) -> Result<f64> {
+        let nc = self.nc;
+        let mut v = self.r(self.rs_v);
+        let mut w = self.r(self.rs_w);
+        v.len = nc as u64;
+        w.len = nc as u64;
+        let args = e::ScalarScaleArgs {
+            phi: self.r(phi),
+            rhs: self.r(rhs),
+            diag: self.r(diag),
+            alpha,
+            v,
+            w,
+        };
+        self.go::<e::ScalarScale>(nc, &args)?;
+        let a = self.sum_sq_raw(v)?;
+        let b = self.sum_sq_raw(w)?;
+        Ok((a.sqrt() + b.sqrt()).max(f64::MIN_POSITIVE))
     }
 
     fn mass_flux(&mut self, a: &FluxArgs, out: Buf) -> Result<()> {

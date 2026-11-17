@@ -17,6 +17,8 @@
 //! - per face (with `face_id`): `mass_flux`, and transient `m_old`, `x_cur`,
 //!   `x_old`; per boundary face `ub_<i>`, `pb`, and with convective outlets
 //!   (D29) the boundary velocity of the level before, `ub_old_<i>`;
+//! - the passive scalars (D51): attribute `scalars` (the names), per cell
+//!   `scalar_<name>` and, transient, `scalar_old_<name>` (the level before);
 //! - `amg_matrix`: the pressure matrix of the last multigrid setup (the
 //!   hierarchy is rebuilt from it, so the preconditioner is the same);
 //! - optional, for meshes that move (D91, L22): `point_id`,
@@ -173,6 +175,18 @@ mod io {
             }
             put3(&g, "grad_p_", &s.grad_p)?;
             put3(&g, "psi_", &s.psi)?;
+            // the passive scalars (D51): `scalar_<name>`, transient also
+            // `scalar_old_<name>`; attribute `scalars` lists the names
+            if !s.scalars.is_empty() {
+                let names: Vec<&str> = s.scalars.iter().map(|x| x.name.as_str()).collect();
+                sattr(&g, "scalars", &names.join(" "))?;
+                for x in &s.scalars {
+                    ds(&g, &format!("scalar_{}", x.name), &x.phi)?;
+                    if let Some(o) = &x.old {
+                        ds(&g, &format!("scalar_old_{}", x.name), o)?;
+                    }
+                }
+            }
             if let Some(m) = &r.amg_matrix {
                 ds(&g, "amg_matrix", m)?;
             }
@@ -225,6 +239,29 @@ mod io {
         }
     }
 
+    /// The passive scalars of a restart file (none in files without them).
+    fn read_scalars(g: &h5::File, transient: bool) -> Result<Vec<crate::scalar::ScalarState>> {
+        if g.attr("scalars").is_err() {
+            return Ok(Vec::new());
+        }
+        let names = rsattr(g, "scalars")?;
+        names
+            .split_whitespace()
+            .map(|n| {
+                let old = format!("scalar_old_{n}");
+                Ok(crate::scalar::ScalarState {
+                    name: n.to_string(),
+                    phi: rd(g, &format!("scalar_{n}"))?,
+                    old: if transient && g.link_exists(&old) {
+                        Some(rd(g, &old)?)
+                    } else {
+                        None
+                    },
+                })
+            })
+            .collect()
+    }
+
     /// Kind and progress of a restart file, from its attributes.
     pub fn progress(path: &Path) -> Result<(bool, u64)> {
         let g = h5::File::open(path).with_context(|| format!("opening {}", path.display()))?;
@@ -271,6 +308,7 @@ mod io {
             ],
             grad_p: get3(&g, "grad_p_")?,
             psi: get3(&g, "psi_")?,
+            scalars: read_scalars(&g, transient)?,
         };
         let amg_matrix = if g.link_exists("amg_matrix") {
             Some(rd(&g, "amg_matrix")?)
@@ -473,6 +511,15 @@ impl Restart {
                 ],
                 grad_p: remap3(&s.grad_p, &mc),
                 psi: remap3(&s.psi, &mc),
+                scalars: s
+                    .scalars
+                    .iter()
+                    .map(|x| crate::scalar::ScalarState {
+                        name: x.name.clone(),
+                        phi: remap(&x.phi, &mc),
+                        old: x.old.as_ref().map(|o| remap(o, &mc)),
+                    })
+                    .collect(),
             };
             if let Some((o, ..)) = &mut self.transient {
                 *o = OldLevels {
