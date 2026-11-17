@@ -1253,7 +1253,7 @@ pub fn check_case(
             }
             let t0 = case.time.map_or(0.0, |t| t.start_time);
             let values = case.compiled_boundaries().unwrap_or_default();
-            let findings = crate::bc::check(
+            let mut findings = crate::bc::check(
                 &mesh,
                 &geo,
                 &case.boundary,
@@ -1265,6 +1265,7 @@ pub fn check_case(
                 },
                 case.check_context(),
             );
+            findings.extend(crate::turbulence::setup_findings(&case));
             rep.diagnostics
                 .extend(findings.iter().map(crate::bc::Finding::diagnostic));
         }

@@ -334,7 +334,7 @@ pub fn run(
     for (ri, spec) in specs.iter().enumerate() {
         let (mesh, geo, desc) = mesh_for(case, spec.level)?;
         let values = case.compiled_boundaries()?;
-        let findings = bc::check(
+        let mut findings = bc::check(
             &mesh,
             &geo,
             &case.boundary,
@@ -346,6 +346,7 @@ pub fn run(
             },
             case.check_context(),
         );
+        findings.extend(crate::turbulence::setup_findings(&case));
         if ri == 0 {
             rep.findings = findings.clone();
             lg.frame(&crate::logblocks::banner(steer.build.as_ref(), case));
@@ -1293,6 +1294,7 @@ fn run_one<F: FnMut(&str)>(
                     "cg": r.pressure_iterations,
                     "scalars": r.scalars.residual,
                     "turbulence": r.turbulence.residual,
+                    "turbulence_floors": r.turbulence.floors,
                 });
                 if let Some(e) = rp.error {
                     row["error"] = e.into();

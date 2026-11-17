@@ -20,7 +20,9 @@ pub(crate) struct Walls {
     /// Outward unit normal per wall face.
     pub normal: [Vec<f64>; 3],
     /// First-cell distance y_P = |(x_f − x_P)·n̂| per wall face, at least
-    /// 10⁻³ V_P^⅓.
+    /// 10⁻³ of the cell's thickness V_P/A_f normal to the face (not of
+    /// V_P^⅓, which on thin wall cells of a unit-depth 2D mesh exceeds y_P
+    /// itself and lowers ω_P by an order of magnitude).
     pub y: Vec<f64>,
     /// k_s per wall face (0: smooth).
     pub ks: Vec<f64>,
@@ -61,7 +63,7 @@ impl Walls {
                 let xf = geo.face_centroid[f];
                 let xc = geo.cell_centroid[c];
                 let d = (0..3).map(|i| (xf[i] - xc[i]) * n[i]).sum::<f64>().abs();
-                let floor = 1e-3 * geo.cell_volume[c].cbrt();
+                let floor = 1e-3 * geo.cell_volume[c] / a;
                 w.stat.faces.push(f as u32);
                 for (i, ni_) in n.iter().enumerate() {
                     w.normal[i].push(*ni_);

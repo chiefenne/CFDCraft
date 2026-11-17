@@ -1555,10 +1555,71 @@ pub fn check(
                 diag::BC_TURBULENCE_UNUSED,
                 Some(name),
                 format!(
-                    "{} unused: the flow is laminar (turbulence models come with stage 6)",
+                    "{} unused: the flow is laminar (set `model` in [turbulence] for a \
+                     turbulence model)",
                     t.join(", ")
                 ),
             );
+        } else if !laminar {
+            if !t.is_empty() && !crate::turbulence::inlet::is_inlet(bc) {
+                push(
+                    Level::Warning,
+                    diag::BC_TURBULENCE_UNUSED_VALUE,
+                    Some(name),
+                    format!(
+                        "{} unused: only inlets take turbulence values (outlets take k and \
+                         ω of the cell at backflow, walls their wall values)",
+                        t.join(", ")
+                    ),
+                );
+            }
+            for (error, code, message) in crate::turbulence::inlet::check(bc) {
+                let level = if error {
+                    Level::Error
+                } else if code == diag::TURB_INLET_DEFAULT {
+                    Level::Note
+                } else {
+                    Level::Warning
+                };
+                push(level, code, Some(name), message);
+            }
+        }
+    }
+    // rough walls: k_s beyond the first cell centre (BC027)
+    if !laminar {
+        for p in &mesh.boundaries {
+            let Some(bc) = bcs.get(&p.name) else { continue };
+            let ks = bc.roughness();
+            if !matches!(bc, BoundaryCondition::Wall { .. }) || ks <= 0.0 {
+                continue;
+            }
+            let (mut total, mut beyond) = (0.0, 0.0);
+            for f in p.range() {
+                let s = geo.face_area[f];
+                let a = norm(s);
+                let c = mesh.owner[f] as usize;
+                let y = (0..3)
+                    .map(|i| (geo.face_centroid[f][i] - geo.cell_centroid[c][i]) * s[i] / a)
+                    .sum::<f64>()
+                    .abs();
+                total += a;
+                if ks > y {
+                    beyond += a;
+                }
+            }
+            if total > 0.0 && beyond > 0.1 * total {
+                push(
+                    Level::Warning,
+                    diag::BC_ROUGHNESS,
+                    Some(&p.name),
+                    format!(
+                        "roughness = {ks} m exceeds the first-cell distance on {:.0} % of \
+                         the wall's area: the roughness elements reach beyond the first \
+                         cell centre (coarsen the wall cells or check k_s)",
+                        100.0 * beyond / total
+                    ),
+                );
+            }
         }
     }
     // wall velocity normal to the wall, velocity inlets with outflow,

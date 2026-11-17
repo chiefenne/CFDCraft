@@ -471,7 +471,9 @@ face):
 
 - y_P = (x_P − x_f)·n_f, the normal distance of the cell centroid from the
   face plane, with n_f the outward unit normal; a floor of 10⁻³ of the
-  cell's characteristic length guards degenerate cells (counted in health).
+  cell thickness V_P/A_f normal to the face guards degenerate cells
+  (counted in health); not 10⁻³ V_P^⅓, which on the thin wall cells of a
+  unit-depth 2D mesh exceeds y_P itself (*6b*).
 - U_t = |u_P − u_w − ((u_P − u_w)·n_f) n_f|, the tangential velocity
   relative to the wall velocity (D29 moving walls), and its direction t_f.
 - Inputs: k_P, ν (face value), roughness k_s (section 4.5), the model's

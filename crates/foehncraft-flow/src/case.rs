@@ -1510,6 +1510,18 @@ pub(crate) fn turbulence_summary<F: FnMut(&str)>(
             w.boundary, w.min, w.mean, w.max
         ));
     }
+    let h = &sm.health;
+    lg.line(&format!(
+        "  floors: k at most {} cells ({} solves above 0.1 %, {} in the final tenth), ω at \
+         most {} cells ({}, {}); ν_t capped in at most {} cells",
+        h.floor_cells_max[0],
+        h.floor_iterations[0],
+        h.floor_iterations_late[0],
+        h.floor_cells_max[1],
+        h.floor_iterations[1],
+        h.floor_iterations_late[1],
+        h.capped_max
+    ));
     for d in finds {
         lg.note(&d.message);
         warnings.push(d);
@@ -2070,7 +2082,7 @@ pub fn run_steered(
             lg.frame(&crate::logblocks::banner(steer.build.as_ref(), &case));
         }
         // boundary-condition check (D30)
-        let findings = bc::check(
+        let mut findings = bc::check(
             &mesh,
             &geo,
             &case.boundary,
@@ -2078,6 +2090,7 @@ pub fn run_steered(
             at,
             case.check_context(),
         );
+        findings.extend(crate::turbulence::setup_findings(&case));
         if li == 0 {
             rep.findings = findings.clone();
         }
@@ -2362,6 +2375,7 @@ pub fn run_steered(
                         "cg": res.pressure_iterations,
                         "scalars": res.scalars.residual,
                         "turbulence": res.turbulence.residual,
+                        "turbulence_floors": res.turbulence.floors,
                     }));
                 }
             }
@@ -3582,7 +3596,7 @@ pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Re
     log(&format!("{}: {desc}", path.display()));
     // the property program on this mesh: regions name existing zones (D112)
     physics_on(case, &physics(case)?, &mesh, &geo)?;
-    let findings = bc::check(
+    let mut findings = bc::check(
         &mesh,
         &geo,
         &case.boundary,
@@ -3594,6 +3608,7 @@ pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Re
         },
         case.check_context(),
     );
+    findings.extend(crate::turbulence::setup_findings(&case));
     for f in &findings {
         log(&f.to_string());
     }

@@ -322,9 +322,15 @@ impl TurbulenceSection {
 pub struct TurbulenceSettings {
     /// Convection scheme (`central` only in transient runs, TURB006).
     pub scheme: Scheme,
-    /// Limiter of the gradients.
+    /// Limiter of the gradients (`venkatakrishnan` and
+    /// `venkatakrishnan-wang` are the same for k and ω: the threshold is
+    /// scaled with the variable's range).
     pub limiter: LimiterKind,
-    /// Constant K of the limiter.
+    /// Relative threshold K of the limiter, ε = K (φ_max − φ_min) over the
+    /// domain (Wang 2000). The default 0 (taken as 10⁻¹²) is the bounded
+    /// Venkatakrishnan function: the dimensional threshold (K h)³ of the
+    /// momentum equations is far above the differences of k (10⁻⁸ to
+    /// 10⁻³ m²/s² on a flat plate) and would switch the limiter off.
     pub limiter_k: f64,
     /// Under-relaxation of k and ω (default 0.8 steady, 1 transient).
     pub relaxation: Option<f64>,
@@ -343,7 +349,7 @@ impl Default for TurbulenceSettings {
         Self {
             scheme: Scheme::LinearUpwind,
             limiter: LimiterKind::Venkatakrishnan,
-            limiter_k: 5.0,
+            limiter_k: 0.0,
             relaxation: None,
             tolerance: None,
             max_iter: 50,
@@ -389,9 +395,9 @@ impl TurbulenceSettings {
             "[solver.turbulence] max_iter must be >= 1"
         );
         crate::need!(
-            self.limiter_k > 0.0,
+            self.limiter_k >= 0.0 && self.limiter_k.is_finite(),
             CASE_RANGE,
-            "[solver.turbulence] limiter_k must be > 0"
+            "[solver.turbulence] limiter_k must be >= 0"
         );
         crate::need!(
             transient || self.scheme != Scheme::Central,
@@ -476,14 +482,24 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
 }
 
 /// The run-time findings of the setup (notes and warnings for the log).
-pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<Diagnostic> {
+pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
+    use crate::bc::{Finding, Level};
     let mut out = Vec::new();
     let t = &case.turbulence;
     if t.is_laminar() {
         return out;
     }
+    let mut push = |level, code, message: String| {
+        out.push(Finding {
+            level,
+            code,
+            boundary: None,
+            message,
+        })
+    };
     if !t.constants.is_empty() {
-        out.push(Diagnostic::new(
+        push(
+            Level::Warning,
             diag::TURB_CONSTANTS,
             format!(
                 "SST constants changed in [turbulence.constants]: {}",
@@ -493,28 +509,29 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<Diagnostic> {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
-        ));
+        );
     }
     if !case
         .boundary
         .values()
         .any(|b| matches!(b, BoundaryCondition::Wall { .. }))
     {
-        out.push(Diagnostic::new(
+        push(
+            Level::Note,
             diag::TURB_NO_WALL,
-            "no wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0)",
-        ));
+            "no wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0)".into(),
+        );
     }
-    if case.time.as_ref().is_some_and(|t| {
-        t.scheme == crate::transient::TimeScheme::CrankNicolson
-    }) {
-        out.push(Diagnostic::new(
+    if case
+        .time
+        .as_ref()
+        .is_some_and(|t| t.scheme == crate::transient::TimeScheme::CrankNicolson)
+    {
+        push(
+            Level::Note,
             diag::TURB_UNBOUNDED_SCHEME,
-            "Crank–Nicolson is not bounded for k and ω: they take BDF2",
-        ));
-        if let Some(d) = out.last_mut() {
-            d.severity = diag::Severity::Note;
-        }
+            "Crank–Nicolson is not bounded for k and ω: they take BDF2".into(),
+        );
     }
     out
 }
@@ -635,7 +652,6 @@ pub struct Turbulence {
     nb: usize,
     k: Var,
     w: Var,
-    eps2: Option<Buf>,
     nu_t: Buf,
     nu_t_prev: Option<Buf>,
     f1: Buf,
@@ -675,6 +691,28 @@ pub struct Turbulence {
     t_set: f64,
     /// The wall distance per cell (host).
     pub wall_distance: Vec<f64>,
+    /// Health (D69): per equation (k, ω) the iterations in which the floor
+    /// acted on more than 0.1 % of the cells, and the most cells floored in
+    /// one iteration; the most cells with a capped ν_t.
+    pub health: TurbHealth,
+}
+
+/// Floor and cap counts of a run (D69, TURB002).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TurbHealth {
+    /// Iterations with floors on more than 0.1 % of the cells, k and ω.
+    pub floor_iterations: [usize; 2],
+    /// Of those, the ones in the final tenth of the solves so far (the
+    /// inexact linear solves of the first iterations may undershoot; a
+    /// converging run does not need the floor at its end).
+    pub floor_iterations_late: [usize; 2],
+    /// Per solve, a bit per equation: the floor acted on more than 0.1 %.
+    #[serde(skip)]
+    flags: Vec<u8>,
+    /// Most cells floored in one iteration, k and ω.
+    pub floor_cells_max: [usize; 2],
+    /// Most cells with ν_t capped by `max_viscosity_ratio` in one iteration.
+    pub capped_max: usize,
 }
 
 /// A new buffer with the values `v`.
@@ -811,14 +849,6 @@ impl Turbulence {
         let k = var(dev, false)?;
         let w = var(dev, true)?;
         let ka_host = kinds(mesh, &case.boundary, treatment, false).1;
-        let eps2 = if settings.limiter == LimiterKind::Venkatakrishnan {
-            let e = disc.venkat_eps2(settings.limiter_k);
-            let b = dev.alloc(nc)?;
-            dev.upload(b, &e)?;
-            Some(b)
-        } else {
-            None
-        };
         let a3 = |dev: &mut dyn FlowDevice| -> Result<Buf3> {
             Ok(Buf3 {
                 x: dev.alloc(nc)?,
@@ -883,7 +913,6 @@ impl Turbulence {
             nb,
             k,
             w,
-            eps2,
             nu_t: dev.alloc(nc)?,
             nu_t_prev: None,
             f1: dev.alloc(nc)?,
@@ -924,6 +953,7 @@ impl Turbulence {
             added: None,
             t_set: f64::NAN,
             wall_distance: Vec::new(),
+            health: TurbHealth::default(),
         };
         if t.settings.viscosity_relaxation < 1.0 {
             t.nu_t_prev = Some(dev.alloc(nc)?);
@@ -1203,14 +1233,9 @@ impl Turbulence {
         for v in [&self.k, &self.w] {
             dev.gradient_with(v.lsq, v.phi, v.bc_a, v.bc_b, None, v.grad)?;
             if s.scheme != Scheme::Upwind && s.limiter != LimiterKind::None {
-                let eps2 = match (s.limiter, self.eps2) {
-                    (LimiterKind::Venkatakrishnan, Some(b)) => Eps2::Cells(b),
-                    _ => {
-                        let (mn, mx) = dev.min_max(v.phi)?;
-                        let e = s.limiter_k * (mx - mn);
-                        Eps2::Single(e * e)
-                    }
-                };
+                let (mn, mx) = dev.min_max(v.phi)?;
+                let e = s.limiter_k.max(1e-12) * (mx - mn);
+                let eps2 = Eps2::Single((e * e).max(1e-300));
                 dev.limiter_with(v.phi, v.bc_a, v.bc_b, None, v.grad, eps2, v.psi)?;
             }
         }
@@ -1422,6 +1447,25 @@ impl Turbulence {
             dev.lincomb(self.nu_t, a, self.nu_t, 1.0 - a, prev)?;
         }
         out.capped = dev.sum_sq(self.capped)?.round() as usize;
+        let nc = self.n_cells();
+        let mut flag = 0u8;
+        for (e, &n) in out.floors.iter().enumerate() {
+            if n * 1000 > nc {
+                self.health.floor_iterations[e] += 1;
+                flag |= 1 << e;
+            }
+            self.health.floor_cells_max[e] = self.health.floor_cells_max[e].max(n);
+        }
+        let h = &mut self.health;
+        h.flags.push(flag);
+        let tail = h.flags.len().div_ceil(10);
+        for e in 0..2 {
+            h.floor_iterations_late[e] = h.flags[h.flags.len() - tail..]
+                .iter()
+                .filter(|&&f| f & (1 << e) != 0)
+                .count();
+        }
+        self.health.capped_max = self.health.capped_max.max(out.capped);
         self.faces(dev)?;
         self.modified_pressure(dev, bc)?;
         Ok(out)
@@ -1708,6 +1752,8 @@ pub struct TurbulenceSummary {
     pub viscosity_ratio_max: f64,
     /// The cell of `viscosity_ratio_max`.
     pub viscosity_ratio_cell: usize,
+    /// Floor and cap counts of the run.
+    pub health: TurbHealth,
 }
 
 /// The summary of the turbulence model of `fl`, the findings it gives
@@ -1723,6 +1769,21 @@ pub fn summary(
     let walls = t.y_plus_summary(dev, mesh)?;
     let (rmax, cell) = t.ratio_max(dev)?;
     let mut finds = Vec::new();
+    for (e, name) in EQUATIONS.iter().enumerate() {
+        let n = t.health.floor_iterations_late[e];
+        if n > 0 {
+            finds.push(Diagnostic::new(
+                diag::TURB_FLOOR,
+                format!(
+                    "the positivity floor of {name} acted on more than 0.1 % of the cells in \
+                     {n} of the final tenth of the solves, at most {} cells in one (a \
+                     converging run does not need it at its end: check the mesh near the \
+                     boundary-layer edge and the inlet values)",
+                    t.health.floor_cells_max[e]
+                ),
+            ));
+        }
+    }
     for (b, _, _, _, out) in &walls {
         if *out > 0.1 {
             finds.push(Diagnostic::new(
@@ -1749,6 +1810,7 @@ pub fn summary(
                 .collect(),
             viscosity_ratio_max: rmax,
             viscosity_ratio_cell: cell,
+            health: t.health.clone(),
         },
         finds,
     )))
