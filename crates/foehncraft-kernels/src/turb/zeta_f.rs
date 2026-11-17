@@ -361,7 +361,7 @@ pub fn zeta_f_cell<T: Real>(
     // [+ (N_ζ − 1) ζ/T for f₀]
     let mut rhs_f = inv_t * (f(c.c1 - 1.0) + f(c.c2) * pk / e) * (f(2.0 / 3.0) - z);
     if f0 {
-        rhs_f = rhs_f + e_k * n1 * z;
+        rhs_f += e_k * n1 * z;
     }
     ZetaFCell {
         nu_t,
