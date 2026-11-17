@@ -512,7 +512,13 @@ impl Columns {
                         num(ctx.res.scalars.residual.get(i).copied().unwrap_or(f64::NAN))
                     })),
                 Spec::ResTurbulence => out.extend((0..2).map(|i| {
-                    num(ctx.res.turbulence.residual.get(i).copied().unwrap_or(f64::NAN))
+                    num(ctx
+                        .res
+                        .turbulence
+                        .residual
+                        .get(i)
+                        .copied()
+                        .unwrap_or(f64::NAN))
                 })),
                 Spec::LinMomentum => {
                     out.extend(ctx.res.momentum_iterations.iter().map(|&n| int(n)))

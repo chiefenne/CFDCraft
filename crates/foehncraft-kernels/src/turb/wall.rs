@@ -98,9 +98,13 @@ pub struct WallFace<T> {
     pub u_tau: T,
     /// y⁺ = u_τ y_P/ν.
     pub y_plus: T,
-    /// ω imposed in the near-wall cell (smooth walls) or at the wall
-    /// (rough walls) (1/s).
+    /// ω of the near-wall cell (automatic treatment: weighted by
+    /// 1 − `blending` in its row) (1/s).
     pub omega: T,
+    /// ω at the wall face (Dirichlet value): smooth walls
+    /// 10·6ν/(β₁ d₁²) with d₁ = 2 y_P, the wall-cell height (Menter 1994);
+    /// rough walls the value of Aupoix (1/s).
+    pub omega_wall: T,
     /// k at the wall (rough walls; 0 smooth).
     pub k_wall: T,
     /// Effective kinematic wall viscosity ν_w = τ_w y_P/(ρ U_t) (m²/s).
@@ -135,6 +139,8 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
     let (ut, y, nu) = (i.ut, i.y, i.nu);
     let kappa = f(c.kappa);
     let w_vis = f(6.0) * nu / (f(c.beta1) * y * y);
+    // 10·6ν/(β₁ (2 y_P)²)
+    let omega_wall = f(2.5) * w_vis;
     let tiny = f(1e-300);
     if i.ks > T::ZERO {
         // rough wall: wall values of Aupoix with u_τ of the last iteration
@@ -149,6 +155,7 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
             u_tau,
             y_plus: u_tau * y / nu,
             omega,
+            omega_wall: omega,
             k_wall,
             nu_wall: nu + k_wall / omega,
             blending: T::ONE,
@@ -160,6 +167,7 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
             u_tau,
             y_plus: u_tau * y / nu,
             omega: w_vis,
+            omega_wall,
             k_wall: T::ZERO,
             nu_wall: nu,
             blending: T::ONE,
@@ -184,6 +192,7 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
         u_tau,
         y_plus: u_tau * y / nu,
         omega,
+        omega_wall,
         k_wall: T::ZERO,
         nu_wall,
         blending: v4 / u4.max_of(tiny),

@@ -405,6 +405,21 @@ pub struct WallFaceOps {
     pub w_b: Buf,
 }
 
+/// Inputs and outputs of [`FlowDevice::wall_cells`].
+#[derive(Debug, Clone, Copy)]
+pub struct WallCellOps {
+    /// ω per wall face.
+    pub omega: Buf,
+    /// Area weight per wall face (0 on rough faces).
+    pub weight: Buf,
+    /// Viscous weight of the blending per wall face.
+    pub blending: Buf,
+    /// Output: the fixed value of ω per cell.
+    pub fix_val: Buf,
+    /// Output: its weight per cell (0 off the near-wall cells).
+    pub fix_mask: Buf,
+}
+
 /// Static data of a device.
 pub struct Setup<'a> {
     /// Discretisation (geometry, velocity weights, matrix structure).
@@ -589,7 +604,7 @@ pub trait FlowDevice {
     fn wall_faces(&mut self, a: &WallFaceOps) -> Result<()>;
     /// The area-weighted wall-face values `omega` of the near-wall cells
     /// into `fix_val`.
-    fn wall_cells(&mut self, omega: Buf, weight: Buf, fix_val: Buf) -> Result<()>;
+    fn wall_cells(&mut self, a: &WallCellOps) -> Result<()>;
     /// x ← min(max(x, lo), hi); returns the number of entries a bound
     /// changed (`work` is a scratch buffer of the length of x).
     fn floor(&mut self, x: Buf, lo: f64, hi: f64, work: Buf) -> Result<usize>;

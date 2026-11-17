@@ -301,7 +301,11 @@ mod io {
             return Ok(None);
         }
         let opt = |n: &str| -> Result<Option<Vec<f64>>> {
-            Ok(if g.link_exists(n) { Some(rd(g, n)?) } else { None })
+            Ok(if g.link_exists(n) {
+                Some(rd(g, n)?)
+            } else {
+                None
+            })
         };
         Ok(Some(crate::turbulence::TurbState {
             k: rd(g, "turb_k")?,

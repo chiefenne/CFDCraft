@@ -71,10 +71,13 @@ pub struct ScalarRowInputs<'a, T> {
     pub lo: T,
     /// Upper bound (+∞: none).
     pub hi: T,
-    /// 1 in the cells whose value is fixed (the ω of SST in the near-wall
-    /// cells, stage 6 specification 4.4), else 0; empty: none.
+    /// Weight m ∈ [0, 1] of the fixed value per cell (the ω of the
+    /// automatic wall treatment of SST in the near-wall cells, stage 6
+    /// specification 4.4): the row becomes (1 − m)·(transport row) +
+    /// m a_P (φ_P − value), so m = 1 fixes the value and m = 0 leaves the
+    /// row; empty: none.
     pub fix_mask: &'a [T],
-    /// The fixed values (read where `fix_mask` is 1).
+    /// The fixed values (read where `fix_mask` is above 0).
     pub fix_val: &'a [T],
     /// A positive variable (k, ω): the sum D of the deferred corrections
     /// enters as S_u = max(D, 0) and S_p = min(D, 0)/φ* (stage 6
@@ -172,18 +175,21 @@ pub unsafe fn scalar_row<T: Real>(c: usize, inp: &ScalarRowInputs<T>, val: *mut 
             diag += tau * a0;
             b += tau * rest;
         }
-        let mut dr = diag / inp.alpha;
+        let dr = diag / inp.alpha;
         b += (dr - diag) * ld(inp.phi, c);
-        // a fixed value: the row becomes φ_P = value (a_P = 1, the
-        // off-diagonals 0); the rows of the neighbours keep their coupling
-        if !inp.fix_mask.is_empty() && ld(inp.fix_mask, c) > T::ZERO {
+        // a (partly) fixed value: (1 − m)·row + m a_P (φ_P − value), the
+        // off-diagonals scaled by 1 − m (the row stays diagonally dominant;
+        // m = 1: φ_P = value); the rows of the neighbours keep their coupling
+        if !inp.fix_mask.is_empty() {
+            let m = ld(inp.fix_mask, c);
+            let keep = T::ONE - m;
             let mut i = 1;
             while i < j {
-                *val.add(inp.layout.pos(c, i)) = T::ZERO;
+                let at = val.add(inp.layout.pos(c, i));
+                *at = *at * keep;
                 i += 1;
             }
-            dr = T::ONE;
-            b = ld(inp.fix_val, c);
+            b = keep * b + m * dr * ld(inp.fix_val, c);
         }
         *val.add(inp.layout.pos(c, 0)) = dr;
         ScalarRow {

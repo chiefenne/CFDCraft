@@ -1786,7 +1786,7 @@ impl Entry for WallFaces {
             *a.blending.out().add(i) = r.blending;
             *a.mu_eff.out().add(f) = a.rho * r.nu_wall;
             *a.k_b.out().add(fb) = r.k_wall;
-            *a.w_b.out().add(fb) = if inp.ks > 0.0 { r.omega } else { 0.0 };
+            *a.w_b.out().add(fb) = r.omega_wall;
         }
     }
 }
@@ -1805,8 +1805,13 @@ pub struct WallCellArgs {
     pub weight: Raw<f64>,
     /// ω per wall face.
     pub omega: Raw<f64>,
+    /// Viscous weight of the blending per wall face (1: low-Re).
+    pub blending: Raw<f64>,
     /// Output: the fixed value per cell.
     pub fix_val: Raw<f64>,
+    /// Output: the weight of the fixed value per cell, the area mean of
+    /// 1 − blending over the smooth wall faces.
+    pub fix_mask: Raw<f64>,
 }
 
 /// The area-weighted mean of the wall-face values of each near-wall cell,
@@ -1822,14 +1827,17 @@ impl Entry for WallCells {
             let c = ld(a.cells.get(), i) as usize;
             let lo = ld(a.ptr.get(), i) as usize;
             let hi = ld(a.ptr.get(), i + 1) as usize;
-            let mut v = 0.0;
+            let (mut v, mut m) = (0.0, 0.0);
             let mut j = lo;
             while j < hi {
                 let s = ld(a.slots.get(), j) as usize;
-                v += ld(a.weight.get(), j) * ld(a.omega.get(), s);
+                let w = ld(a.weight.get(), s);
+                v += w * ld(a.omega.get(), s);
+                m += w * (1.0 - ld(a.blending.get(), s));
                 j += 1;
             }
             *a.fix_val.out().add(c) = v;
+            *a.fix_mask.out().add(c) = m;
         }
     }
 }

@@ -54,7 +54,7 @@ pub mod wall;
 use crate::bc::{BoundaryArrays, BoundaryCondition};
 use crate::device::{
     Buf, Buf3, Eps2, FlowDevice, Lsq, Mask, ScalarFaceArgs, ScalarRowArgs, ScalarTime, SstCellOps,
-    TurbFaceOps, WallFaceOps,
+    TurbFaceOps, WallCellOps, WallFaceOps,
 };
 use crate::diag::{self, Diagnostic};
 use crate::expr::{self, Env, Scalar, Vars};
@@ -275,7 +275,11 @@ impl TurbulenceSection {
             },
             newton: u32::from(s.destruction == Destruction::Newton),
             c_lim: self.durbin_coefficient,
-            smooth: if self.smooth_limits { SMOOTH_WIDTH } else { 0.0 },
+            smooth: if self.smooth_limits {
+                SMOOTH_WIDTH
+            } else {
+                0.0
+            },
             k_amb,
             w_amb,
             max_ratio: self.max_viscosity_ratio,
@@ -367,7 +371,8 @@ impl TurbulenceSettings {
 
     /// Relative tolerance of a solve.
     pub fn tol(&self, transient: bool) -> f64 {
-        self.tolerance.unwrap_or(if transient { 1e-8 } else { 1e-2 })
+        self.tolerance
+            .unwrap_or(if transient { 1e-8 } else { 1e-2 })
     }
 
     /// Checks the ranges.
@@ -467,7 +472,12 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
             }
         }
         if inlet::is_inlet(bc) || matches!(bc, BoundaryCondition::Wall { .. }) {
-            InletSpec::of(&bc.turbulence(), &env, transient, &format!("boundary.{name}"))?;
+            InletSpec::of(
+                &bc.turbulence(),
+                &env,
+                transient,
+                &format!("boundary.{name}"),
+            )?;
         }
         if let BoundaryCondition::Wall { .. } = bc {
             let ks = bc.roughness();
@@ -738,7 +748,7 @@ fn kinds(
         let fixed = match bc {
             Some(b) if inlet::is_inlet(b) => true,
             Some(b @ BoundaryCondition::Wall { .. }) => {
-                b.roughness() > 0.0 || (!omega && treatment == WallTreatment::LowRe)
+                omega || b.roughness() > 0.0 || treatment == WallTreatment::LowRe
             }
             _ => false,
         };
@@ -885,7 +895,7 @@ impl Turbulence {
             dev.wall_setup(&walls.stat)?;
             Some(wd)
         };
-        let fix_mask = up(dev, &walls.fix_mask)?;
+        let fix_mask = up(dev, &vec![0.0; nc])?;
         let pressure: Vec<u32> = bc_arrays
             .pb_rule
             .iter()
@@ -973,7 +983,11 @@ impl Turbulence {
         let (k0, w0) = t.initial_values(dev, case, geo, bc_arrays, &env)?;
         dev.upload(t.k.phi, &k0)?;
         dev.upload(t.w.phi, &w0)?;
-        let kref = k0.iter().copied().fold(0.0, f64::max).max(t.inlet_k_max(bc_arrays));
+        let kref = k0
+            .iter()
+            .copied()
+            .fold(0.0, f64::max)
+            .max(t.inlet_k_max(bc_arrays));
         let kref = if kref > 0.0 { kref } else { 1e-6 };
         t.k.floor = 1e-10 * kref;
         t.w.floor = t.k.floor / (1e-2 * nu);
@@ -989,7 +1003,9 @@ impl Turbulence {
                 let fb = fb as usize;
                 let u = [bc.ub[0][fb], bc.ub[1][fb], bc.ub[2][fb]];
                 let sp = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
-                self.inlets.specs[s].at(sp, x, 0.0, self.nu, self.c.beta_star).0
+                self.inlets.specs[s]
+                    .at(sp, x, 0.0, self.nu, self.c.beta_star)
+                    .0
             })
             .fold(0.0, f64::max)
     }
@@ -1199,7 +1215,11 @@ impl Turbulence {
         }
         let idx: Vec<u32> = self.inlets.faces.iter().map(|f| f.0).collect();
         let (ux, uy, uz) = if self.inlets.speed {
-            (dev.gather(ub.x, &idx)?, dev.gather(ub.y, &idx)?, dev.gather(ub.z, &idx)?)
+            (
+                dev.gather(ub.x, &idx)?,
+                dev.gather(ub.y, &idx)?,
+                dev.gather(ub.z, &idx)?,
+            )
         } else {
             let z = vec![0.0; idx.len()];
             (z.clone(), z.clone(), z)
@@ -1286,7 +1306,13 @@ impl Turbulence {
             k_b: self.k.b_wall,
             w_b: self.w.b_wall,
         })?;
-        dev.wall_cells(wd.omega, wd.weight, self.fix_val)
+        dev.wall_cells(&WallCellOps {
+            omega: wd.omega,
+            weight: wd.weight,
+            blending: wd.blending,
+            fix_val: self.fix_val,
+            fix_mask: self.fix_mask,
+        })
     }
 
     /// μ_eff on the faces off the walls and the diffusivities of k and ω.
@@ -1306,7 +1332,13 @@ impl Turbulence {
     /// The velocity gradient of `u` with the boundary values `ub`.
     fn velocity_gradient(&self, dev: &mut dyn FlowDevice, u: Buf3, ub: Buf3) -> Result<()> {
         for i in 0..3 {
-            dev.gradient(Lsq::Velocity, u.all()[i], Mask::Velocity, ub.all()[i], self.gu[i])?;
+            dev.gradient(
+                Lsq::Velocity,
+                u.all()[i],
+                Mask::Velocity,
+                ub.all()[i],
+                self.gu[i],
+            )?;
         }
         Ok(())
     }
@@ -1386,7 +1418,11 @@ impl Turbulence {
                 grad: v.grad,
                 psi: v.psi,
                 blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
-                central: if s.scheme == Scheme::Central { 1.0 } else { 0.0 },
+                central: if s.scheme == Scheme::Central {
+                    1.0
+                } else {
+                    0.0
+                },
                 beta: 0.1,
                 nonorth: 1.0,
                 cp: self.cp,
@@ -1414,8 +1450,11 @@ impl Turbulence {
                 sp: Some(sp),
                 alpha,
                 time,
-                fix: (e == 1 && self.wd.is_some() && !self.walls.stat.cells.is_empty())
-                    .then_some((self.fix_mask, self.fix_val)),
+                fix: (e == 1
+                    && self.treatment == kwall::AUTOMATIC
+                    && self.wd.is_some()
+                    && !self.walls.stat.cells.is_empty())
+                .then_some((self.fix_mask, self.fix_val)),
                 positive: true,
                 val: self.val,
                 rhs: self.rhs,

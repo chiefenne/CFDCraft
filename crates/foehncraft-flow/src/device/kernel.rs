@@ -12,8 +12,8 @@
 
 use super::{
     BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, Lsq, Mask, MomentumFaceArgs,
-    MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, Setup, SstCellOps, TurbFaceOps, WallFaceOps,
-    WallStatic,
+    MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, Setup, SstCellOps, TurbFaceOps, WallCellOps,
+    WallFaceOps, WallStatic,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -1126,7 +1126,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         ins.extend(a.u.all());
         ins.extend(a.ub.all());
         check(
-            &[a.y_plus, a.omega, a.blending, a.mu_eff, a.k_b, a.w_b, a.u_tau],
+            &[
+                a.y_plus, a.omega, a.blending, a.mu_eff, a.k_b, a.w_b, a.u_tau,
+            ],
             &ins,
         )?;
         let args = e::WallFaceArgs {
@@ -1166,18 +1168,20 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         Ok(self.sum_sq(work)?.round() as usize)
     }
 
-    fn wall_cells(&mut self, omega: Buf, weight: Buf, fix_val: Buf) -> Result<()> {
+    fn wall_cells(&mut self, a: &WallCellOps) -> Result<()> {
         let Some([_, cells, ptr, slots]) = self.wall else {
             anyhow::bail!("flow device: wall_cells before wall_setup");
         };
-        check(&[fix_val], &[omega, weight])?;
+        check(&[a.fix_val, a.fix_mask], &[a.omega, a.weight, a.blending])?;
         let args = e::WallCellArgs {
             cells,
             ptr,
             slots,
-            weight: self.r(weight),
-            omega: self.r(omega),
-            fix_val: self.r(fix_val),
+            weight: self.r(a.weight),
+            omega: self.r(a.omega),
+            blending: self.r(a.blending),
+            fix_val: self.r(a.fix_val),
+            fix_mask: self.r(a.fix_mask),
         };
         self.go::<e::WallCells>(cells.len as usize, &args)
     }

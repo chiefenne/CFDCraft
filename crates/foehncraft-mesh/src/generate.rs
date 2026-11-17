@@ -688,7 +688,11 @@ impl BoxSpec {
             }
         }
         soup.finish(
-            &self.boundary_names().iter().map(String::as_str).collect::<Vec<_>>(),
+            &self
+                .boundary_names()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
             self.classifier(),
         )
     }
@@ -784,7 +788,11 @@ impl BoxSpec {
             soup.add_cell(faces.iter().map(|f| &f[..]));
         }
         soup.finish(
-            &self.boundary_names().iter().map(String::as_str).collect::<Vec<_>>(),
+            &self
+                .boundary_names()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
             self.classifier(),
         )
     }
@@ -820,7 +828,11 @@ impl BoxSpec {
         dual_of_tets(
             &grid,
             &tets,
-            &self.boundary_names().iter().map(String::as_str).collect::<Vec<_>>(),
+            &self
+                .boundary_names()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
             self.classifier(),
         )
     }
