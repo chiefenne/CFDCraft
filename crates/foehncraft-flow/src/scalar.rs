@@ -423,6 +423,8 @@ struct Field {
     psi: Buf,
     bc_a: Buf,
     bc_b: Buf,
+    /// The jump per periodic face of the heat-flux mode (D109 (1)).
+    jump: Option<Buf>,
     lsq: Buf3,
     gamma: Buf,
     su: Option<Buf>,
@@ -677,6 +679,7 @@ impl Scalars {
                 psi,
                 bc_a,
                 bc_b,
+                jump: None,
                 lsq: lsq_b,
                 gamma,
                 su,
@@ -780,7 +783,7 @@ impl Scalars {
             let mut its = 0;
             let mut first = 0;
             for sweep in 0..s.sweeps {
-                dev.gradient_with(f.lsq, f.phi, f.bc_a, f.bc_b, f.grad)?;
+                dev.gradient_with(f.lsq, f.phi, f.bc_a, f.bc_b, f.jump, f.grad)?;
                 if s.scheme != Scheme::Upwind && s.limiter != LimiterKind::None {
                     let eps2 = match (s.limiter, f.eps2) {
                         (LimiterKind::Venkatakrishnan, Some(b)) => Eps2::Cells(b),
@@ -790,11 +793,12 @@ impl Scalars {
                             Eps2::Single(e * e)
                         }
                     };
-                    dev.limiter_with(f.phi, f.bc_a, f.bc_b, f.grad, eps2, f.psi)?;
+                    dev.limiter_with(f.phi, f.bc_a, f.bc_b, f.jump, f.grad, eps2, f.psi)?;
                 }
                 dev.scalar_faces(&ScalarFaceArgs {
                     bc_a: f.bc_a,
                     bc_b: f.bc_b,
+                    jump: f.jump,
                     mass_flux,
                     gamma: f.gamma,
                     phi: f.phi,

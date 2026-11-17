@@ -34,6 +34,7 @@ unsafe fn topo<'a>(
             cell_ptr: sl(cell_ptr, nc + 1),
             cell_faces: sl(cell_faces, ne),
             n_interior: ni,
+            periodic: ni,
         }
     }
 }
@@ -88,6 +89,7 @@ pub unsafe extern "ptx-kernel" fn fv_gradient(
         let bc = Boundary {
             a: sl(bc_a, nf - ni),
             b: sl(bc_b, nf - ni),
+            jump: &[],
         };
         let g = fv::lsq_gradient(c, &t, &v3(ne, wx, wy, wz), sl(phi, nc), &bc);
         *gx.add(c) = g[0];
@@ -138,6 +140,7 @@ pub unsafe extern "ptx-kernel" fn fv_limiter(
         let bc = Boundary {
             a: sl(bc_a, nf - ni),
             b: sl(bc_b, nf - ni),
+            jump: &[],
         };
         let v = fv::venkat_limiter(
             c,
@@ -204,10 +207,12 @@ pub unsafe extern "ptx-kernel" fn fv_faces(
                 cell_ptr: &[],
                 cell_faces: &[],
                 n_interior: ni,
+                periodic: ni,
             },
             bc: Boundary {
                 a: sl(bc_a, nf - ni),
                 b: sl(bc_b, nf - ni),
+                jump: &[],
             },
             mass_flux: sl(mass_flux, nf),
             gamma: sl(gamma, nf),
@@ -216,6 +221,11 @@ pub unsafe extern "ptx-kernel" fn fv_faces(
             weight: sl(weight, nf),
             face_centroid: v3(nf, fcx, fcy, fcz),
             cell_centroid: v3(nc, ccx, ccy, ccz),
+            shift: Vec3 {
+                x: &[],
+                y: &[],
+                z: &[],
+            },
             phi: sl(phi, nc),
             grad: v3(nc, gx, gy, gz),
             psi: sl(psi, nc),

@@ -1277,6 +1277,7 @@ impl FlowCase {
             laminar: true,
             transient: self.time.is_some(),
             potential_flow: self.initial.potential_flow,
+            body_force: self.uniform_body_force() != Some([0.0; 3]),
         }
     }
 
@@ -1491,8 +1492,30 @@ pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geo
     }
     let (mut mesh, source, _) = build_mesh(&sec)?;
     renumber(&mut mesh, sec.renumber, sec.seed).map_err(anyhow::Error::msg)?;
+    // periodic pairs (D29): the last step, after the renumbering
+    let pairs = bc::periodic_pairs(&case.boundary)?;
+    let mut desc = format!("{source}: {} cells", mesh.n_cells);
+    if !pairs.is_empty() {
+        let specs: Vec<_> = pairs.iter().map(|p| p.spec.clone()).collect();
+        mesh = foehncraft_mesh::periodic::pair(&mesh, &specs).map_err(|e| {
+            diag::err(diag::Diagnostic::new(diag::BC_PERIODIC, e))
+        })?;
+        let pd = mesh.periodic.as_ref().expect("paired");
+        for p in &pd.pairs {
+            let t = p.translation;
+            let _ = write!(
+                desc,
+                "; periodic {}–{} ({} face pairs, translation ({:.6e}, {:.6e}, {:.6e}) m)",
+                p.a,
+                p.b,
+                p.a_faces.len(),
+                t[0],
+                t[1],
+                t[2]
+            );
+        }
+    }
     let geo = Geometry::compute(&mesh);
-    let desc = format!("{source}: {} cells", mesh.n_cells);
     Ok((mesh, geo, desc))
 }
 

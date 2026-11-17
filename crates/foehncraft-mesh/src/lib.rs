@@ -10,6 +10,7 @@
 //! - [`cylinder`]: the built-in channel with a cylinder (Schäfer & Turek);
 //! - [`wedge`]: axisymmetric wedge meshes revolved from a 2D mesh;
 //! - [`gmsh`]: the Gmsh `.msh` 4.1 reader (D33);
+//! - [`periodic`]: translational periodic boundary pairs (D29, D109);
 //! - [`renumber`]: reverse Cuthill–McKee renumbering of the cells;
 //! - [`locate`]: point location and cell-to-cell particle tracking (D47);
 //! - [`partition`]: domain decomposition (D32);
@@ -27,12 +28,13 @@ pub mod gmsh;
 pub mod locate;
 pub mod mesh;
 pub mod partition;
+pub mod periodic;
 pub mod quality;
 pub mod query;
 pub mod renumber;
 pub mod wedge;
 
 pub use geometry::Geometry;
-pub use mesh::{Boundary, CellShape, Mesh};
+pub use mesh::{Boundary, CellShape, Mesh, Periodic, PeriodicPair};
 #[cfg(feature = "hdf5")]
 pub mod vtkhdf;

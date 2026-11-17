@@ -215,6 +215,8 @@ pub struct ScalarFaceArgs {
     pub bc_a: Buf,
     /// Boundary constant b per boundary face.
     pub bc_b: Buf,
+    /// Jump per periodic face (`None`: plain periodic).
+    pub jump: Option<Buf>,
     /// Convecting face mass flux.
     pub mass_flux: Buf,
     /// ρΓ per face (kg/(m s)).
@@ -366,7 +368,18 @@ pub trait FlowDevice {
     fn limiter(&mut self, phi: Buf, value: Buf, grad: Buf3, eps2: Eps2, out: Buf) -> Result<()>;
     /// Least-squares gradient of a scalar with its own weights `w` (one
     /// entry per cell-face entry) and boundary coefficients φ_f = a φ_P + b.
-    fn gradient_with(&mut self, w: Buf3, phi: Buf, bc_a: Buf, bc_b: Buf, out: Buf3) -> Result<()>;
+    /// `jump`: the jump per periodic face (D109 (1); `None`: plain
+    /// periodic).
+    #[allow(clippy::too_many_arguments)]
+    fn gradient_with(
+        &mut self,
+        w: Buf3,
+        phi: Buf,
+        bc_a: Buf,
+        bc_b: Buf,
+        jump: Option<Buf>,
+        out: Buf3,
+    ) -> Result<()>;
     /// Venkatakrishnan limiter of a scalar with its boundary coefficients.
     #[allow(clippy::too_many_arguments)]
     fn limiter_with(
@@ -374,6 +387,7 @@ pub trait FlowDevice {
         phi: Buf,
         bc_a: Buf,
         bc_b: Buf,
+        jump: Option<Buf>,
         grad: Buf3,
         eps2: Eps2,
         out: Buf,
