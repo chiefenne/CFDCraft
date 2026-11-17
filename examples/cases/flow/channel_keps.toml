@@ -1,0 +1,62 @@
+# Fully developed turbulent channel flow at Re_τ ≈ 395, standard k-ε with
+# scalable wall functions (stage 6 part 6c, D131, D134, specification
+# 9.4).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_keps.toml
+#
+# The channel of channel_sst.toml (0 < y < 2h, h = 1 m, ν = 1/395 m²/s,
+# periodic module of 0.1 m, mass flow 3.51 kg/s: U_b = 17.55 m/s, the DNS
+# bulk velocity of Moser, Kim & Mansour (1999) at u_τ = 1 m/s). The
+# solver adjusts the body force F = τ_w/h, so u_τ = √(F h/ρ) and
+# U_b⁺ = 17.55/√F follow from the driving force in the log.
+#
+# 12 uniform cells across: the first-cell y⁺ is 32, in the claimed band of
+# the wall functions. Result: U_b⁺ = 18.31, +4.3 % from the DNS (band
+# ±5 %, specification 9.4). The y⁺ study of the verification page gives
+# +4.3 … +4.9 % for first-cell y⁺ from 9 to 47 (uniform meshes of 8 to
+# 40 cells) and +6.0 % on 4 cells (y⁺ 93).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 2.0, 0.1]
+cells = [2, 12, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.0025316455696202532   # 1/395
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[initial]
+velocity = [15.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 3.51
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 3000
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.0, 0.05], to = [0.05, 1.0, 0.05], points = 200 } ]

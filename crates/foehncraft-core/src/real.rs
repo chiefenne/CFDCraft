@@ -67,6 +67,16 @@ pub trait Real:
 
     /// tanh x ([`crate::math::tanh`]).
     fn tanh_of(self) -> Self;
+
+    /// cos(⅓ arccos x) for x in [−1, 1] ([`crate::math::cos_acos3`]), the
+    /// trigonometric root of the realizable k-ε eddy viscosity
+    /// (A_s = √6 cos(⅓ arccos(√6 W̃)), Shih et al. 1995). One function, so
+    /// that its derivative stays finite at x = 1 (where that of arccos is
+    /// not).
+    fn cos_acos3_of(self) -> Self;
+
+    /// sin x ([`crate::math::sin`]).
+    fn sin_of(self) -> Self;
 }
 
 impl Real for f64 {
@@ -107,6 +117,14 @@ impl Real for f64 {
     fn tanh_of(self) -> Self {
         crate::math::tanh(self)
     }
+    #[inline(always)]
+    fn cos_acos3_of(self) -> Self {
+        crate::math::cos_acos3(self)
+    }
+    #[inline(always)]
+    fn sin_of(self) -> Self {
+        crate::math::sin(self)
+    }
 }
 
 impl Real for f32 {
@@ -146,6 +164,14 @@ impl Real for f32 {
     #[inline(always)]
     fn tanh_of(self) -> Self {
         crate::math::tanh(self as f64) as f32
+    }
+    #[inline(always)]
+    fn cos_acos3_of(self) -> Self {
+        crate::math::cos_acos3(self as f64) as f32
+    }
+    #[inline(always)]
+    fn sin_of(self) -> Self {
+        crate::math::sin(self as f64) as f32
     }
 }
 

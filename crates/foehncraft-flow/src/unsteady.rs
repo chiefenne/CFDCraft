@@ -957,7 +957,7 @@ fn run_one<F: FnMut(&str)>(
     let mut hhead =
         String::from("step,time,dt,cfl,momentum_x,momentum_y,momentum_z,continuity,outer,cg");
     if !case.turbulence.is_laminar() {
-        for s in crate::turbulence::EQUATIONS {
+        for s in crate::turbulence::equations(case.turbulence.model) {
             let _ = write!(hunits, ", {s} - (scaled residual)");
             let _ = write!(hhead, ",{s}");
         }

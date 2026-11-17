@@ -1,0 +1,86 @@
+# Turbulent flat plate of the NASA Turbulence Modeling Resource (TMR,
+# 2D zero-pressure-gradient case), standard k-ε with scalable wall
+# functions (stage 6 part 6c, D131, D134, specification 9.3).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tmr_plate_keps.toml
+#
+# The geometry and the free stream of tmr_plate_sst.toml: plate from x = 0
+# to x = 2 m, inflow at x = −1/3 m, top at y = 1 m, Re = U L/ν = 5·10⁶
+# with U = 1 m/s, ν = 2·10⁻⁷ m²/s, k = 2.25·10⁻⁷ U² and
+# ε = C_μ k ω = 2.53125·10⁻⁶ m²/s³ (ω = 125 U/L). The sustaining terms
+# (`turbulence.ambient`, Spalart & Rumsey 2007) hold k and ε at these
+# values in the free stream: without them the k-ε family lets the free
+# stream decay by a factor of 20 over the plate (the realizable model to
+# zero), and the boundary layer starts from nothing.
+#
+# The mesh: 64 × 48 cells, 16 ahead of the plate and 48 on it, in y a
+# ratio of 361 between the top and the wall cell, so that the first-cell
+# y⁺ at x = 0.97 is 30 (the claimed band of the wall functions starts
+# there; towards the leading edge it falls below 30, and TURB001 warns
+# for 41 % of the plate). The wall probe `x097` gives C_f; White's correlation
+# C_f = 0.455/ln²(0.06 Re_x) gives 2.875·10⁻³ at Re_x = 4.85·10⁶.
+#
+# Result: C_f(0.97) = 2.829·10⁻³ (−1.6 %) in 236 iterations, 15 s on one
+# core. The y⁺ study of the verification page (first-cell y⁺ 1 to 100)
+# stays within −2.6 % … −0.3 % of White with the scalable treatment.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-0.3333333333333333, 0.0, 0.0]
+upper = [2.0, 1.0, 1.0]
+cells = [64, 48, 1]
+grading = { y = { ratio = 361.051 } }
+segments = { x = [ { to = 0.0, cells = 16, ratio = 0.1 }, { to = 2.0, cells = 48, ratio = 20.0 } ] }
+split = [ { boundary = "ymin", axis = "x", at = 0.0, name = "plate" } ]
+
+[fluid]
+density = 1.0
+viscosity = 2.0e-7
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+ambient = { k = 2.25e-7, epsilon = 2.53125e-6 }
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+k = 2.25e-7
+epsilon = 2.53125e-6
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+k = 2.25e-7
+epsilon = 2.53125e-6
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "symmetry"
+[boundary.plate]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 3000
+log_every = 200
+
+[verification]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = true
+wall_probes = [ { name = "x097", boundary = "plate", point = [0.970084, 0.0, 0.5] } ]
+reference = { velocity = 1.0 }
+lines = [ { name = "x097", from = [0.97, 0.0, 0.5], to = [0.97, 0.05, 0.5], points = 400 } ]

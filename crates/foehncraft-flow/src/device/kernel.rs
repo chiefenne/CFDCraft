@@ -11,7 +11,7 @@
 //! algorithms (output, restart) reach the host.
 
 use super::{
-    BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, Lsq, Mask, MomentumFaceArgs,
+    BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask, MomentumFaceArgs,
     MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, Setup, SstCellOps, TurbFaceOps, WallCellOps,
     WallFaceOps, WallStatic,
 };
@@ -1103,6 +1103,51 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.go::<e::SstCells>(self.nc, &args)
     }
 
+    fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()> {
+        let mut ins = vec![a.k, a.e];
+        for g in &a.grad_u {
+            ins.extend(g.all());
+        }
+        if let Some((x, y)) = a.add {
+            ins.push(x);
+            ins.push(y);
+        }
+        if let Some((x, y)) = a.wall {
+            ins.push(x);
+            ins.push(y);
+        }
+        let mut outs = vec![a.nu_t, a.c_mu, a.pk, a.dk, a.de, a.capped];
+        if let Some(s) = a.sources {
+            outs.extend(s);
+        }
+        check(&outs, &ins)?;
+        let src = a.sources.map(|s| s.map(|b| self.r(b)));
+        let none = Raw::EMPTY;
+        let args = e::KepsCellArgs {
+            grad_u: self.rg(&a.grad_u),
+            k: self.r(a.k),
+            e: self.r(a.e),
+            nu: a.nu,
+            c: a.c,
+            o: a.o,
+            add_k: a.add.map_or(none, |(x, _)| self.r(x)),
+            add_e: a.add.map_or(none, |(_, y)| self.r(y)),
+            wall_mask: a.wall.map_or(none, |(x, _)| self.r(x)),
+            wall_pk: a.wall.map_or(none, |(_, y)| self.r(y)),
+            nu_t: self.r(a.nu_t),
+            c_mu: self.r(a.c_mu),
+            pk: self.r(a.pk),
+            su_k: src.map_or(none, |s| s[0]),
+            sp_k: src.map_or(none, |s| s[1]),
+            su_e: src.map_or(none, |s| s[2]),
+            sp_e: src.map_or(none, |s| s[3]),
+            dk: self.r(a.dk),
+            de: self.r(a.de),
+            capped: self.r(a.capped),
+        };
+        self.go::<e::KepsCells>(self.nc, &args)
+    }
+
     fn turb_faces(&mut self, a: &TurbFaceOps) -> Result<()> {
         check(
             &[a.mu_eff, a.gamma_k, a.gamma_w],
@@ -1127,13 +1172,13 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         let Some([faces, ..]) = self.wall else {
             anyhow::bail!("flow device: wall_faces before wall_setup");
         };
-        let mut ins = vec![a.y, a.ks];
+        let mut ins = vec![a.y, a.ks, a.k, a.cs];
         ins.extend(a.normal.all());
         ins.extend(a.u.all());
         ins.extend(a.ub.all());
         check(
             &[
-                a.y_plus, a.omega, a.blending, a.mu_eff, a.k_b, a.w_b, a.u_tau,
+                a.y_plus, a.omega, a.blending, a.mu_eff, a.k_b, a.w_b, a.u_tau, a.pk, a.prod_w,
             ],
             &ins,
         )?;
@@ -1149,12 +1194,16 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             rho: self.rho,
             treatment: a.treatment,
             c: a.c,
+            ke: a.ke,
+            k: self.r(a.k),
+            cs: self.r(a.cs),
             u_tau_old: self.r(a.u_tau),
             u_tau: self.r(a.u_tau),
             y_plus: self.r(a.y_plus),
             omega: self.r(a.omega),
             blending: self.r(a.blending),
             pk: self.r(a.pk),
+            prod_w: self.r(a.prod_w),
             mu_eff: self.r(a.mu_eff),
             k_b: self.r(a.k_b),
             w_b: self.r(a.w_b),
@@ -1180,8 +1229,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             anyhow::bail!("flow device: wall_cells before wall_setup");
         };
         check(
-            &[a.fix_val, a.fix_mask, a.wall_pk],
-            &[a.omega, a.weight, a.blending, a.pk],
+            &[a.fix_val, a.fix_mask, a.wall_pk, a.prod_mask],
+            &[a.omega, a.weight, a.blending, a.pk, a.prod_w],
         )?;
         let args = e::WallCellArgs {
             cells,
@@ -1191,9 +1240,12 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             omega: self.r(a.omega),
             blending: self.r(a.blending),
             pk: self.r(a.pk),
+            prod_w: self.r(a.prod_w),
             wall_pk: self.r(a.wall_pk),
+            prod_mask: self.r(a.prod_mask),
             fix_val: self.r(a.fix_val),
             fix_mask: self.r(a.fix_mask),
+            phi: a.phi.map_or(Raw::EMPTY, |b| self.r(b)),
         };
         self.go::<e::WallCells>(cells.len as usize, &args)
     }

@@ -8,13 +8,16 @@ transport equation, its wall distance and its solver path
 ([below](#passive-scalars-and-the-wall-distance-part-6a)), part 6p the
 periodic boundaries that the channel cases need
 ([below](#periodic-boundaries-part-6p)), part 6b the k-ω SST model
-([below](#k-ω-sst-part-6b)). The commands are in
+([below](#k-ω-sst-part-6b)), part 6c the k-ε family with its wall
+functions ([below](#k-ε-family-part-6c)). The commands are in
 [recipe 63](../recipes/scalars.md#passive-scalars),
-[recipe 67](../recipes/boundary-conditions.md#periodic) and
-[recipe 68](../recipes/turbulence.md#sst), the pictures in
+[recipe 67](../recipes/boundary-conditions.md#periodic),
+[recipe 68](../recipes/turbulence.md#sst) and
+[recipe 71](../recipes/turbulence.md#k-epsilon), the pictures in
 [gallery 63](../gallery/scalars.md#passive-scalars),
-[gallery 67](../gallery/boundary-conditions.md#periodic) and
-[gallery 68](../gallery/turbulence.md#sst), the generated
+[gallery 67](../gallery/boundary-conditions.md#periodic),
+[gallery 68](../gallery/turbulence.md#sst) and
+[gallery 71](../gallery/turbulence.md#k-epsilon), the generated
 tables of every case in the [verification manual](manual.md).
 
 ## Passive scalars and the wall distance (part 6a)
@@ -242,3 +245,74 @@ the other model MMS), the D166 features as named variables of the
 expression language (with their first consumer, D104), turbulence values
 of the backflow at outlets (the cell's values are used; BC028 says so),
 and curvature correction and QCR (D170, part 6h).
+
+## k-ε family (part 6c)
+
+**The models** (D131). The standard k-ε of Launder & Spalding (C_μ 0.09,
+C_ε1 1.44, C_ε2 1.92, σ_k 1.0, σ_ε 1.3) and the realizable k-ε of Shih
+et al. (1995): variable C_μ = 1/(A₀ + A_s U* k/ε) with A₀ = 4.0, the
+destruction C₂ ε²/(k + √(νε)), C₁ = max(0.43, η/(η + 5)), σ_ε 1.2. One
+kernel (`turb::keps`) for both, generic over the number type, so the
+dual-number Jacobian sees the closures; the arccos of A_s is a helper of
+`foehncraft-core::math` with its derivative. The standard model takes the
+Durbin bound by default (inactive in equilibrium, it keeps the impulsive
+start of near-wall cells bounded); Kato–Launder, the clip
+min(P_k, 10ε) and `none` are options. The ε destruction is linearised
+with the Picard form by default: the Newton form removes at most half
+of ε per iteration and let k collapse in the decaying free stream of the
+plate. Inlets and initial values take ε directly or ω (converted with
+ε = C_μ k ω); a restart file of the other family is converted the same
+way.
+
+**The walls** (D134). All treatments take u* = C_μ^¼ k_P^½ and
+y* = u* y_P/ν, with no iteration. `scalable`: the log law at
+ỹ* = max(y*, 11.06), ε_P = u*³/(κ ỹ), P_k,P = (τ_w/ρ) u*/(κ ỹ).
+`standard`: the log law from y* = 11.06, the viscous sublayer below it.
+`compound`: the blend of Popovac & Hanjalić with Γ = 0.01 y*⁴/(1 + 5y*)
+for u⁺, ε_P and P_k,P. ε_P is fixed in the near-wall cell (weight 1) and
+written into the field before each solve; k and ε have zero gradient at
+the wall. Rough walls shift the log law by ΔB of Cebeci & Bradshaw with
+C_s = 0.5.
+
+### Results
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| TMR flat plate (`tmr_plate_keps.toml`), standard k-ε, `scalable`, 3 072 cells, sustaining terms at the inlet values, first-cell y⁺ 1 / 2 / 5 / 10 / 30 / 60 / 100 at x = 0.97 | C_f(0.97) against White, 2.875e-3 | ±5 % | −2.6, −1.7, −1.0, −0.3, −1.6, −1.5, −0.8 % |
+| | y⁺ insensitivity against the y⁺ ≈ 1 result | ±5 % (scalable from y⁺ 30) | +1.1 to +2.4 % (every y⁺ within 2.4 %) |
+| The plate, standard k-ε, `compound` | C_f(0.97) for y⁺ 30 / 60 / 100 | ±5 % | −2.3, −3.6, −3.4 % |
+| | C_f(0.97) for y⁺ 1.3 / 2.6 / 6 / 11 | not claimed | +58, +52, +40, +21 %: **finding**, the high-Re model has no damping in the buffer layer; TURB001 below y⁺ 30 |
+| The plate, realizable k-ε, `scalable` and `compound`, y⁺ 30 / 60 / 100 | C_f(0.97) against White | ±5 % | scalable −6.8, −5.2, −3.3 %; compound −7.4, −7.1, −5.9 %: **finding** |
+| Channel at Re_τ = 395 (`channel_keps.toml`), standard k-ε, `scalable`, 12 uniform cells, first-cell y⁺ 32 | U_b⁺ against the DNS (17.55) | ±5 % | 18.31 (+4.3 %) |
+| The channel on 4 to 40 cells (y⁺ 93 to 9), `scalable` | U_b⁺ | ±5 % from y⁺ 30 | +6.0 % (y⁺ 93), +4.3 to +4.9 % (y⁺ 47 to 9) |
+| The channel, `compound`, y⁺ 93 to 11; graded mesh at y⁺ 0.4 | U_b⁺ | ±3 % at y⁺ ≈ 1 | +5.9 % (93) to +1.6 % (24), −4.4 % (16), −12.9 % (11); −32 % at y⁺ 0.4 (τ_w 2.2 times too high): **finding**, resolved walls go to ζ-f and EB (owner decision 2026-11-17) |
+| The channel, realizable, `scalable`, y⁺ 93 to 9 | U_b⁺ | ±5 % | +6.0 to +10.7 %: **finding** |
+| Rough pipe (`pipe_rough_keps.toml`), Re = 10⁶, k_s/D = 10⁻³ | f against Colebrook (0.01994) | ±5 % | 0.02081 (+4.4 %) |
+| Moody study (`examples/studies/moody_study.py`), Re 3·10⁴ to 10⁷, k_s/D 0 to 10⁻² | f against Colebrook | ±5 % | smooth −5.0 to −1.7 %; fully rough +8 to +11 % (C_s = 0.4: +1 to +3 %); transitional −17 to +8 %: **finding** |
+| Homogeneous decay in a box, k₀ = ε₀ = 1, t = 0.5, 10 / 20 / 40 steps | BDF2 time order of k and ε against the exact solution | 1.8 – 2.2 | asserted in `tests/keps.rs` |
+| Sustaining terms in a box at rest, both models | k and ε constant | round-off | asserted |
+| Restart of an SST run with the k-ε model | ε = C_μ k ω on the way in, ε in the new file | – | asserted |
+| Plate with `compound` on 1 and 4 threads | residuals, wall shear after 8 iterations | bit-identical | asserted |
+| Kernels | realizable C_μ in simple shear, the realizability bound ν_t ≤ k/(3λ_max), the sustaining terms, the source signs, dual-number derivatives; the wall treatments in the log layer and the sublayer, ΔB continuous at k_s⁺ 2.25 and 90 | – | kernel tests of `turb::keps` and `turb::wall` |
+
+**Findings.** (1) The compound treatment with the high-Re k-ε models
+overpredicts the wall shear below y⁺ 30 (up to 2.2 times at y⁺ ≈ 1): the
+models have no damping in the buffer layer. The owner chose to keep it
+as a finding and leave resolved walls to ζ-f (6d) and EB (6e); TURB001
+warns. (2) The realizable model gives 3 to 7 % less wall friction than
+the correlations on the plate and 6 to 7 % more U_b⁺ in the channel, in
+both cases in the same direction; the log-layer consistency of its
+constants holds (κ² = σ_ε(C₂√C_μ − C₁) = 0.168), so the near-wall cell,
+where its C_μ responds to the poorly resolved velocity gradient, is the
+first suspect; open for 6g. (3) With the default C_s = 0.5 the fully
+rough friction factor lies 8 to 11 % above Colebrook; C_s = 0.4 puts it
+within 3 %. In the transitional range the Nikuradse-type ΔB cannot follow
+Colebrook's monotonic curve (up to 17 % below). (4) With the TMR inlet
+values and no sustaining terms the free stream of the k-ε family decays
+(the realizable k to zero): the plate runs with the sustaining terms.
+
+**Not in this part.** The improved blending of the SST `automatic`
+treatment and a sweep of the SST wall value of ω, both left open by 6b,
+move to 6g with the model comparison; the GCI of the k-ε plate and
+channel also follows there.
+

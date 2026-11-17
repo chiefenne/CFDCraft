@@ -21,8 +21,9 @@
 //!   `scalar_<name>` and, transient, `scalar_old_<name>` (the level before);
 //! - the periodic pairs (D29): `periodic_force`, the driving force per
 //!   pair;
-//! - the turbulence model (stage 6): attribute `turbulence` (the model),
-//!   per cell `turb_k`, `turb_omega`, `turb_nu_t`, `turb_p_modified` (the
+//! - the turbulence model (stage 6): attribute `turbulence` (the family:
+//!   `k-omega-sst`, or `k-epsilon` when `turb_omega` holds ε), per cell
+//!   `turb_k`, `turb_omega`, `turb_nu_t`, `turb_p_modified` (the
 //!   solver's p̂; `p` is the static pressure), `turb_wall_distance`,
 //!   transient `turb_k_old`, `turb_omega_old`; per face `turb_mu_eff`; per
 //!   boundary face `turb_k_b`, `turb_omega_b`, `turb_u_tau`, `turb_y_plus`,
@@ -201,7 +202,17 @@ mod io {
             // the turbulence model (stage 6): `turb_*`, attribute
             // `turbulence`
             if let Some(t) = &s.turbulence {
-                sattr(&g, "turbulence", "k-omega-sst")?;
+                // the second variable keeps its dataset name `turb_omega`;
+                // the attribute says whether it holds ω or ε
+                sattr(
+                    &g,
+                    "turbulence",
+                    if t.epsilon {
+                        "k-epsilon"
+                    } else {
+                        "k-omega-sst"
+                    },
+                )?;
                 ds(&g, "turb_k", &t.k)?;
                 ds(&g, "turb_omega", &t.omega)?;
                 ds(&g, "turb_nu_t", &t.nu_t)?;
@@ -307,7 +318,9 @@ mod io {
                 None
             })
         };
+        let epsilon = rsattr(g, "turbulence")? == "k-epsilon";
         Ok(Some(crate::turbulence::TurbState {
+            epsilon,
             k: rd(g, "turb_k")?,
             omega: rd(g, "turb_omega")?,
             nu_t: rd(g, "turb_nu_t")?,
@@ -590,6 +603,7 @@ impl Restart {
                     .collect(),
                 periodic_force: s.periodic_force.clone(),
                 turbulence: s.turbulence.as_ref().map(|t| crate::turbulence::TurbState {
+                    epsilon: t.epsilon,
                     k: remap(&t.k, &mc),
                     omega: remap(&t.omega, &mc),
                     nu_t: remap(&t.nu_t, &mc),

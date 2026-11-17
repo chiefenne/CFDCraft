@@ -352,6 +352,42 @@ pub struct SstCellOps {
     pub capped: Buf,
 }
 
+/// Inputs and outputs of [`FlowDevice::keps_cells`].
+#[derive(Debug, Clone, Copy)]
+pub struct KepsCellOps {
+    /// Velocity gradient.
+    pub grad_u: [Buf3; 3],
+    /// k.
+    pub k: Buf,
+    /// ε.
+    pub e: Buf,
+    /// ν.
+    pub nu: f64,
+    /// Constants.
+    pub c: foehncraft_kernels::turb::keps::KepsConstants,
+    /// Options.
+    pub o: foehncraft_kernels::turb::keps::KepsOptions,
+    /// Added sources of k and ε, if any.
+    pub add: Option<(Buf, Buf)>,
+    /// The weight and the weighted value of the wall production per cell,
+    /// if any.
+    pub wall: Option<(Buf, Buf)>,
+    /// Output ν_t.
+    pub nu_t: Buf,
+    /// Output C_μ.
+    pub c_mu: Buf,
+    /// Output P_k.
+    pub pk: Buf,
+    /// Outputs S_u, S_p of k and of ε (None: ν_t, C_μ, P_k only).
+    pub sources: Option<[Buf; 4]>,
+    /// Output ν_t/σ_k.
+    pub dk: Buf,
+    /// Output ν_t/σ_ε.
+    pub de: Buf,
+    /// Output: 1 where the ν_t cap acted.
+    pub capped: Buf,
+}
+
 /// Inputs and outputs of [`FlowDevice::turb_faces`].
 #[derive(Debug, Clone, Copy)]
 pub struct TurbFaceOps {
@@ -392,6 +428,12 @@ pub struct WallFaceOps {
     pub treatment: u32,
     /// Constants.
     pub c: foehncraft_kernels::turb::sst::SstConstants,
+    /// Constants of the k-ε family.
+    pub ke: foehncraft_kernels::turb::keps::KepsConstants,
+    /// k per cell.
+    pub k: Buf,
+    /// C_s per wall face.
+    pub cs: Buf,
     /// u_τ per wall face (input of the last iteration and output).
     pub u_tau: Buf,
     /// Output y⁺ per wall face.
@@ -400,8 +442,10 @@ pub struct WallFaceOps {
     pub omega: Buf,
     /// Output viscous weight per wall face.
     pub blending: Buf,
-    /// Output: the log-layer production per wall face.
+    /// Output: the weighted wall production per wall face.
     pub pk: Buf,
+    /// Output: the weight of the wall production per wall face.
+    pub prod_w: Buf,
     /// Output μ_w into the face viscosity.
     pub mu_eff: Buf,
     /// Output wall values of k and ω (bc_b, per boundary face).
@@ -419,14 +463,21 @@ pub struct WallCellOps {
     pub weight: Buf,
     /// Viscous weight of the blending per wall face.
     pub blending: Buf,
-    /// Log-layer production per wall face.
+    /// Weighted wall production per wall face.
     pub pk: Buf,
-    /// Output: its area mean per cell.
+    /// Weight of the wall production per wall face.
+    pub prod_w: Buf,
+    /// Output: the area mean of `pk` per cell.
     pub wall_pk: Buf,
+    /// Output: the area mean of `prod_w` per cell.
+    pub prod_mask: Buf,
     /// Output: the fixed value of ω per cell.
     pub fix_val: Buf,
     /// Output: its weight per cell (0 off the near-wall cells).
     pub fix_mask: Buf,
+    /// The fixed variable, moved to the fixed value by the weight in the
+    /// near-wall cells (the k-ε family), or none.
+    pub phi: Option<Buf>,
 }
 
 /// Static data of a device.
@@ -607,6 +658,8 @@ pub trait FlowDevice {
     fn wall_setup(&mut self, s: &WallStatic) -> Result<()>;
     /// The k-ω SST model per cell.
     fn sst_cells(&mut self, a: &SstCellOps) -> Result<()>;
+    /// The standard or realizable k-ε model per cell.
+    fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()>;
     /// Face viscosities of a turbulent flow.
     fn turb_faces(&mut self, a: &TurbFaceOps) -> Result<()>;
     /// The wall treatment per wall face (after [`wall_setup`](Self::wall_setup)).

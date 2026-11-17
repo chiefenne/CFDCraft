@@ -248,7 +248,7 @@ check warns above 10° (BC024).
 Inlets also take the turbulence values of the
 [turbulence models](#turbulence-d129d139): `turbulence_intensity` with
 `turbulence_length_scale` or `viscosity_ratio`, or `k` with `omega`
-directly. Pressure outlets accept them for the backflow, but the backflow
+directly (or `k` with `epsilon` for the k-ε family). Pressure outlets accept them for the backflow, but the backflow
 takes k and ω of the cell for now (BC028 says so); in laminar flow the
 check reports them as unused (BC009). Walls take `roughness`.
 
@@ -386,36 +386,42 @@ Stage 6 part 6b ([gallery 68](../gallery/turbulence.md#sst),
 [recipe 68](../recipes/turbulence.md#sst)): the k-ω SST model of Menter,
 Kuntz & Langtry (2003) with its production limiter, the wall treatments
 `low-re` (integration to the wall, y⁺ ≲ 1) and `automatic` (any y⁺),
-rough walls after Aupoix (2015). Specification:
+rough walls after Aupoix (2015). Part 6c
+([gallery 71](../gallery/turbulence.md#k-epsilon),
+[recipe 71](../recipes/turbulence.md#k-epsilon)): the standard and
+realizable k-ε models with the wall functions `scalable`, `standard` and
+`compound`, rough walls after Cebeci & Bradshaw (1977). Specification:
 [stage 6](../requirements/stage6-turbulence.md).
 
 | Key | Default | Meaning |
 |---|---|---|
-| `turbulence.model` | `"laminar"` | `"k-omega-sst"` |
-| `turbulence.wall_treatment` | `"automatic"` | `"automatic"` (Menter, Kuntz & Langtry 2003: blended viscous and log-law u_τ, ω and production in the first cell) or `"low-re"` (k = 0 and ω_w = 60ν/(β₁ d₁²) on the wall face, d₁ the wall-cell height) |
-| `turbulence.production_limiter` | `"menter"` | `"menter"` (P̃ = min(ν_t S², 10 β* k ω)), `"kato-launder"` (ν_t S Ω), `"durbin"` (the realisability bound with `durbin_coefficient`), `"none"` |
-| `turbulence.ambient.k`, `turbulence.ambient.omega` | none | sustaining terms of Spalart & Rumsey (2007): destruction at these free-stream values is balanced, so k and ω do not decay ahead of a body |
+| `turbulence.model` | `"laminar"` | `"k-omega-sst"`, `"k-epsilon"` (Launder & Spalding 1974), `"realizable-k-epsilon"` (Shih et al. 1995) |
+| `turbulence.wall_treatment` | SST `"automatic"`, k-ε `"scalable"` | SST: `"automatic"` (Menter, Kuntz & Langtry 2003: blended viscous and log-law u_τ, ω and production in the first cell) or `"low-re"` (k = 0 and ω_w = 60ν/(β₁ d₁²) on the wall face, d₁ the wall-cell height). k-ε family: `"scalable"` (log law at max(y*, 11.06), any y⁺, accurate from y⁺ 30), `"standard"` (log law, 30 ≤ y⁺ ≤ 300), `"compound"` (blended profile of Popovac & Hanjalić; with the high-Re k-ε claimed from y⁺ 30 like the wall functions) |
+| `turbulence.production_limiter` | SST `"menter"`, k-ε `"durbin"` | `"menter"` (SST: P̃ = min(ν_t S², 10 β* k ω); k-ε: min(P_k, 10ε)), `"kato-launder"` (ν_t S Ω), `"durbin"` (the realisability bound with `durbin_coefficient`), `"none"`; the realizable k-ε takes `"none"` only |
+| `turbulence.ambient.k`, `turbulence.ambient.omega` or `epsilon` | none | sustaining terms of Spalart & Rumsey (2007): destruction at these free-stream values is balanced, so k and ω (or ε) do not decay ahead of a body; SST takes `omega`, the k-ε family `epsilon` |
 | `turbulence.max_viscosity_ratio` | 1e5 | cap of ν_t/ν; capped cells are counted (TURB008) |
 | `turbulence.smooth_limits` | false | smooth min and max in the model (specification 2.6, for the adjoint) |
 | `turbulence.wall_distance` | `"exact"` | `"exact"` (BVH, D48) or `"pde"` (Poisson distance, one solve at the start) |
-| `turbulence.constants` | literature values | overrides by name: `beta_star`, `a1`, `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`, `sigma_k2`, `sigma_omega1`, `sigma_omega2`; a warning names each changed constant (TURB007) |
-| `initial.k`, `initial.omega` | from the first inlet | start values, numbers or expressions of x, y, z |
+| `turbulence.constants` | literature values | overrides by name: SST `beta_star`, `a1`, `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`, `sigma_k2`, `sigma_omega1`, `sigma_omega2`; k-ε `c_mu`, `c_epsilon1`, `c_epsilon2` (realizable: C₂), `sigma_k`, `sigma_epsilon`, `a0` (realizable), `kappa`; a warning names each changed constant (TURB007) |
+| `initial.k`, `initial.omega` or `initial.epsilon` | from the first inlet | start values, numbers or expressions of x, y, z; ω converts to ε = C_μ k ω and back |
 | `initial.turbulence_intensity`, `initial.viscosity_ratio` | 0.01, 1 | start values from the intensity of `initial.velocity` and ν_t/ν |
 | `boundary.<inlet>.turbulence_intensity` | 0.05 | I, k = 1.5 (I U)² with U the inlet speed |
 | `boundary.<inlet>.turbulence_length_scale` or `viscosity_ratio` | ν_t/ν = 10 | ω = √k/(β*^¼ ℓ) or ω = k/(ν · ratio) |
-| `boundary.<inlet>.k`, `omega` | none | k and ω directly, numbers or expressions |
-| `boundary.<wall>.roughness` | 0 | equivalent sand-grain roughness k_s (m); the wall values of k and ω of Aupoix (2015); BC027 when k_s exceeds the first-cell height on more than a tenth of the wall |
+| `boundary.<inlet>.k`, `omega` or `epsilon` | none | k and ω or ε directly, numbers or expressions (ω and ε together: BC029) |
+| `boundary.<wall>.roughness` | 0 | equivalent sand-grain roughness k_s (m); SST: the wall values of k and ω of Aupoix (2015); k-ε: the log-law shift ΔB of Cebeci & Bradshaw (1977); BC027 when k_s exceeds the first-cell height on more than a tenth of the wall |
+| `boundary.<wall>.roughness_constant` | 0.5 | C_s of Cebeci & Bradshaw (k-ε family); 0.4 brings the fully rough friction factor of pipes to Colebrook's within 3 % |
 | `solver.turbulence.scheme` | `"linear-upwind"` | convection of k and ω: `upwind`, `linear-upwind`, `central` (transient runs only, TURB006) |
 | `solver.turbulence.limiter`, `limiter_k` | `venkatakrishnan`, 0 | limiter of the gradients of k and ω; the threshold is relative, ε = K (φ_max − φ_min) |
 | `solver.turbulence.relaxation` | 0.8 steady, 1 transient | under-relaxation of k and ω |
 | `solver.turbulence.viscosity_relaxation` | 1 | relaxation of ν_t |
 | `solver.turbulence.tolerance`, `max_iter` | 1e-2 steady, 1e-8 transient; 50 | relative tolerance and iterations of each BiCGStab solve |
-| `solver.turbulence.destruction` | `"newton"` | linearisation of the ω destruction: `newton` (2βω in the diagonal) or `picard` |
+| `solver.turbulence.destruction` | ω `"newton"`, ε `"picard"` | linearisation of the ω or ε destruction: `newton` (2βω in the diagonal) or `picard` |
 
 The checks: TURB001 (the first-cell y⁺ does not suit the wall treatment
 on more than a tenth of a wall: above 2 with `low-re`, or in the buffer
 layer between 3 and 20 with `automatic`, where C_f of the flat plate is up
-to 16 % high), TURB002 (the floor of k or ω acted in the final tenth of the
+to 16 % high; below 30 with `scalable`, outside 30 … 300 with `standard`
+and `compound` of the k-ε family), TURB002 (the floor of k or ω acted in the final tenth of the
 solves), TURB003 and TURB009 (inlet turbulence out of the usual range, or
 defaulted), TURB005 (no wall), TURB006 (a scheme the model does not allow),
 TURB007 (changed constants), TURB008 (ν_t capped).

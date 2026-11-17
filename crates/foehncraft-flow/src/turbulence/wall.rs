@@ -26,8 +26,12 @@ pub(crate) struct Walls {
     pub y: Vec<f64>,
     /// k_s per wall face (0: smooth).
     pub ks: Vec<f64>,
+    /// C_s of Cebeci & Bradshaw per wall face.
+    pub cs: Vec<f64>,
     /// Weight of each wall face in the mean of its cell (its area over the
-    /// smooth wall area of the cell; 0 for rough faces).
+    /// smooth wall area of the cell; 0 for rough faces of SST, whose ω
+    /// takes the rough-wall value as a boundary value; the k-ε family
+    /// counts rough faces like smooth ones).
     pub weight: Vec<f64>,
     /// 1 in the cells with a smooth wall face (ω fixed), per cell.
     pub fix_mask: Vec<f64>,
@@ -40,8 +44,14 @@ pub(crate) struct Walls {
 }
 
 impl Walls {
-    /// The wall faces of the conditions `bcs` on `mesh`.
-    pub fn new(mesh: &Mesh, geo: &Geometry, bcs: &BTreeMap<String, BoundaryCondition>) -> Self {
+    /// The wall faces of the conditions `bcs` on `mesh`; `rough_fixed`:
+    /// rough faces fix the cell value as smooth ones do (the k-ε family).
+    pub fn new(
+        mesh: &Mesh,
+        geo: &Geometry,
+        bcs: &BTreeMap<String, BoundaryCondition>,
+        rough_fixed: bool,
+    ) -> Self {
         let nc = mesh.n_cells;
         let ni = mesh.n_interior_faces();
         let nb = mesh.n_boundary_faces();
@@ -55,6 +65,7 @@ impl Walls {
                 continue;
             };
             let ks = bc.roughness();
+            let cs = bc.roughness_constant();
             for f in p.range() {
                 let s = geo.face_area[f];
                 let a = (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt();
@@ -70,6 +81,7 @@ impl Walls {
                 }
                 w.y.push(d.max(floor));
                 w.ks.push(ks);
+                w.cs.push(cs);
                 w.area.push(a);
                 w.boundary.push(bi);
                 w.mask_b[f - ni] = 1.0;
@@ -85,9 +97,10 @@ impl Walls {
         w.weight = vec![0.0; w.stat.faces.len()];
         w.stat.ptr.push(0);
         for (c, slots) in per_cell {
+            let fixes = |s: u32| rough_fixed || w.ks[s as usize] <= 0.0;
             let smooth: f64 = slots
                 .iter()
-                .filter(|&&s| w.ks[s as usize] <= 0.0)
+                .filter(|&&s| fixes(s))
                 .map(|&s| w.area[s as usize])
                 .sum();
             if smooth <= 0.0 {
@@ -96,7 +109,7 @@ impl Walls {
                 continue;
             }
             for &s in &slots {
-                if w.ks[s as usize] <= 0.0 {
+                if fixes(s) {
                     w.weight[s as usize] = w.area[s as usize] / smooth;
                 }
             }

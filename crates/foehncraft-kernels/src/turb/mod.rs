@@ -15,6 +15,7 @@
 //! hard form for a width w = 0, the C¹ form of section 2.6 otherwise.
 
 pub mod invariants;
+pub mod keps;
 pub mod sst;
 pub mod wall;
 
