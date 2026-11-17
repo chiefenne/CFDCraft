@@ -437,8 +437,10 @@ exposed faces; the step case uses it.
 | TMR plate (`tmr_plate_zeta_f0.toml`) from the TMR free stream, y⁺ 1 | C_f(0.97) against White, 2.875e-3; convergence | ±3 % | 2.802e-3 (−2.5 %), converged to 10⁻⁷, no floor |
 | The plate at y⁺ 10 / 30 | C_f(0.97) against White | ±3 % | +0.9 / −2.0 %, converged (ζ-f: not converged) |
 | Backward-facing step (`backstep_zeta_f0.toml`), 8 200 cells | x_r/H against 6.26 | ±10 % | 6.38 (+2 %) |
-| The step on 32 800 cells | x_r/H | ±10 % | 6.38 (+2 %), the same to 0.1 % |
-| The step with ζ-f (2004, `compound`) / SST (`automatic`, Gmsh mesh) | x_r/H | ±10 % | 7.82 (+25 %; 6.80 with `a = 0.849`) / 5.79 (−7 %) |
+| The step on 32 800 cells | x_r/H | ±10 % | 6.35 (+1.5 %), within 0.5 % of the coarse mesh |
+| The step with ζ-f (2004, `compound`) | x_r/H | ±10 % | 7.82 (+25 %; 6.80 with `a = 0.849`) |
+| The step with SST (`automatic`) on 8 200 / 32 800 cells | x_r/H | ±10 % | 6.81 / 6.80 (+9 %); the 5.79 reported first came from 4 000 iterations at α_u = 0.5, before the bubble had settled |
+| The step with k-ε (`scalable`), 32 800 cells | x_r/H | – | 5.36 (−14 %) |
 | The plate on 1 and 4 threads (20 480 cells) | residuals, wall shear after 8 iterations | bit-identical | asserted |
 | Kernels | f₀ form against the 2004 source, the limits of the blend (y⁺ 30 to 300), Γ as the derivative of the blend, ψ, dual numbers | – | kernel tests of `turb::zeta_f` and `turb::wall` |
 | Mesher | step volume, exposed area, unused nodes, taken names | exact | `removed_box_builds_a_step` |
@@ -448,6 +450,17 @@ S = (2 S_ij S_ij)^½ is active in the separated shear layer of the step
 and halves ν_t there; the bubble then grows to 7.4 to 7.7 H with both
 ζ-f models. (2) The published k sink −ε has no positive steady k in the
 laminar part of a boundary layer (the 6d finding); k/T_K removes it.
-(3) The step and the SST run are single meshes; C_p, C_f and the
-profiles against the experiment and a GCI follow with the stage 6
-validation.
+(3) C_p, C_f and the profiles of the step against the experiment and a
+GCI follow with the stage 6 validation. (4) Iterations of the step
+(measured after 6d2, fields every 50 to 250 iterations): with the
+momentum under-relaxation 0.5 throughout, x_r is within 1 % of its final
+value after 950 (ζ-f₀), 1 250 (k-ε) and 1 500 (SST) iterations on 8 200
+cells, and after about 2 900 (ζ-f₀) and more than 4 000 (SST) on 32 800
+cells. With 0.5 for the first 100 iterations and 0.8 after them it takes
+550 to 600 and about 1 750; 0.7 from the start works as well, 0.9 stalls
+the residual at 10⁻⁴, and a turbulence relaxation of 0.95 oscillates. The
+count grows about three times when the mesh spacing halves: the
+relaxation sets a local pseudo time step of a few cell transit times, and
+the bubble needs a fixed time to form. The scaled residual is 5·10⁻⁵ to
+2·10⁻⁴ when x_r has settled; a residual tolerance does not show when the
+step result is done.

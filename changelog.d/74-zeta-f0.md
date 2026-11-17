@@ -24,4 +24,4 @@
   boundary layer turns turbulent from the TMR free stream (ζ-f stays
   laminar). Backward-facing step of Driver & Seegmiller (new case
   `backstep_zeta_f0`): x_r/H = 6.38, +2 % from the experiment (ζ-f +25 %,
-  SST −7 %).
+  SST +9 %).

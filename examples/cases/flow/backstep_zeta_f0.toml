@@ -19,8 +19,10 @@
 # interval halved): 6.38 as well. The realizability bound of the time
 # scale decides it: with the coefficient 0.6 instead of the default
 # 0.6 √2 it halves ν_t in the separated shear layer and x_r/H comes out
-# at 7.4. Under-relaxation 0.5 of the momentum (0.7 diverges with every
-# model here, SST included).
+# at 7.4. The momentum under-relaxation is 0.5 while the bubble forms
+# and 0.8 from iteration 100 (`[[schedule]]`): x_r settles to 1 % in
+# about 550 iterations, against 950 with 0.5 throughout; 0.9 stalls the
+# residual at 10⁻⁴.
 
 case_format = "0.6"
 
@@ -68,11 +70,15 @@ type = "symmetry"
 
 [solver]
 tolerance = 1e-6
-max_iterations = 4000
+max_iterations = 1500
 log_every = 200
 
 [solver.momentum]
 relaxation = 0.5
+
+[[schedule]]
+at_iteration = 100
+set = { solver.momentum.relaxation = 0.8 }
 
 [verification]
 require_convergence = false
