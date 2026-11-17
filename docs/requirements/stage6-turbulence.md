@@ -288,6 +288,30 @@ the frame, as in the paper; stated in the doc comment.
 + C₂ ε_amb²/(k_amb + √(ν ε_amb))), so that the ambient state is a steady
 solution of the decay.
 
+**Notes of 6c (PR #71).**
+
+- *Production default.* The standard k-ε takes the Durbin bound
+  ν_t ≤ C_lim k/(√3 S) by default (`durbin`, C_lim = 1; the draft had
+  `none`). It is inactive in an equilibrium log layer (C_μ S k/ε = 0.30
+  against the bound 0.58), changes the channel of 9.4 by less than 0.2 %,
+  and keeps the impulsive start of a flat plate bounded: with the compound
+  treatment at y⁺ 30 the first iteration, k from the free stream and the
+  shear of the no-slip start, gave P_k/ε ≈ 2·10⁴ in the wall cells, ν_t
+  reached its cap and the run diverged in iteration 10. `none` stays
+  available. The realizable model takes `none` only (its C_μ is the bound).
+- *Free stream.* With the TMR inlet values (ε = C_μ k ω, ω = 125 U/L) the
+  free stream decays: k by a factor of about 20 over the plate with the
+  standard model; the realizable model takes k to zero at a finite
+  distance (√(νε) > k in its destruction). The flat plate of 9.3 runs the
+  k-ε family with the sustaining terms at the inlet values.
+- *ε in the wall cells.* The fixed ε of the wall treatment (4.4) is also
+  written into the field before the solve: a start value far from it (the
+  free-stream ε 500 times the wall value) left the first solve negative in
+  the wall row, ε at its floor and ν_t at its cap.
+- *u* of the wall functions.* All k-ε treatments take u* = C_μ^¼ k_P^½
+  (the realizable model with the constant C_μ = 0.09), y* = u* y_P/ν and
+  ν_w = ν y*/u⁺(y*): no iteration.
+
 ### 3.3 k-ε-ζ-f (D132)
 
 Hanjalić, Popovac & Hadžiabdić (2004); constants of the paper ◇.
@@ -516,8 +540,17 @@ bitwise reproducible.
 | `low-re` (integration to the wall) | SST, ζ-f, EB | τ_w = μ U_t/y_P | SST: k_w = 0 and the wall-face value ω_w = 10·6ν/(β₁ d₁²) with d₁ = 2 y_P, the wall-cell height (Menter 1994), as Dirichlet values (*6b*: replaces the first-cell value ω_P = 6ν/(β₁ y_P²) of the draft, see the note below); ζ-f, EB: ε_w, f_w or α_w of section 3 | y⁺ ≲ 1 |
 | `automatic` (Menter, Kuntz & Langtry 2003) | SST (default) | u_τ = (u_τ,vis⁴ + u_τ,log⁴)^{1/4}, u_τ,vis = (ν U_t/y_P)^½, u_τ,log = κ U_t/ln(E y⁺) (fixed number of Newton steps, as for Spalding's law) | ω_P = (ω_vis² + ω_log²)^½, ω_vis = 6ν/(β₁ y_P²), ω_log = u_τ/(√β* κ y_P), imposed with the weight 1 − b, b = u_τ,vis⁴/u_τ⁴ (4.4), on top of the wall-face ω_w of `low-re`; the log law takes y⁺ ≥ 11.06 (its lower end with κ = 0.41, E = 9.793), so that u_τ,log has no spurious root in the sublayer and b → 1 there (*6b*) | any; validated 0.5 ≤ y⁺ ≤ 100 |
 | `compound` (Popovac & Hanjalić 2007) | ζ-f, EB (default), k-ε family (option) | τ_w from the blended profile: u⁺ = e^{−Γ} y⁺ + e^{−1/Γ} u⁺_log, Γ = 0.01 (y⁺)⁴/(1 + 5 y⁺) ◇ | ε_P = e^{−Γ} 2νk_P/y_P² + e^{−1/Γ} C_μ^{3/4} k_P^{3/2}/(κ y_P); P_k,P blended likewise between the integrated and the log-law value τ_w u_τ/(κ y_P); f_w (ζ-f) blended between −2νζ_P/y_P² and 0 | any; validated 0.5 ≤ y⁺ ≤ 100 |
-| `scalable` (Grotjans & Menter 1998) | k-ε family (default) | log law evaluated at ỹ* = max(y*, 11.06) | ε_P = C_μ^{3/4} k_P^{3/2}/(κ y_P) (with ỹ*), P_k,P = τ_w u_τ/(κ y_P) | y⁺ ≥ 1 without failure; accuracy claimed for y⁺ ≥ 30 |
-| `standard` (Launder & Spalding 1974) | k-ε family | log law with u_τ = C_μ^{1/4} k_P^{1/2} | as scalable, without the floor | 30 ≤ y⁺ ≤ 300 |
+| `scalable` (Grotjans & Menter 1998) | k-ε family (default) | log law evaluated at ỹ* = max(y*, 11.06) | ε_P = C_μ^{3/4} k_P^{3/2}/(κ y_P) (with ỹ*), P_k,P = τ_w u_τ/(κ y_P) | y⁺ ≥ 1 without failure; accuracy claimed for y⁺ ≥ 30 (*6c*: the flat plate stays within 3 % of White's correlation from y⁺ 1 to 100) |
+| `standard` (Launder & Spalding 1974) | k-ε family | log law with u_τ = C_μ^{1/4} k_P^{1/2} | as scalable, without the floor; below y* = 11.06 the viscous sublayer (τ_w = μU_t/y_P, P_k,P = 0) | 30 ≤ y⁺ ≤ 300 |
+
+**Compound treatment with the k-ε family (*6c* finding, owner decision
+2026-11-17).** The high-Re k-ε models have no near-wall damping, so
+below the log layer the compound treatment overpredicts the wall shear
+stress: flat plate +21 % at y⁺ 11, +40 % at 6, +58 % at 1.3; channel
+at Re_τ 395 τ_w 2.2 times too high at y⁺ 0.4. The claimed range of
+`compound` with the k-ε family is therefore 30 ≤ y⁺ ≤ 300 (TURB001
+below), where it agrees with the wall functions; walls resolved to
+y⁺ ≈ 1 take ζ-f (6d) or EB (6e). No two-layer model is added.
 
 **Wall value of ω in `low-re` (*6b*, from the flat-plate runs).** Fixing
 ω_P = 6ν/(β₁ y_P²) in the first cell, as the draft had it, made C_f(0.97)
@@ -566,7 +599,15 @@ k_s⁺ = u_τ k_s/ν:
   for 2.25 ≤ k_s⁺ < 90; fully rough ΔB = (1/κ) ln(1 + C_s k_s⁺) for
   k_s⁺ ≥ 90; C_s = 0.5 (`roughness_constant`) ◇. The pieces join
   continuously; the smooth helper of section 2.6 joins them C¹ for the
-  linearisation.
+  linearisation. *6c finding (rough pipe, 9.7):* with κ = 0.41,
+  E = 9.793 the default C_s = 0.5 gives the fully rough intercept
+  (1/κ) ln(E/C_s) = 7.3 instead of Nikuradse's 8.5, and the friction
+  factor lies 8 to 11 % above Colebrook's; C_s = 0.4 gives +1 to +3 %.
+  The default stays 0.5, the industry value that published k_s tables
+  are used with; the recipe names 0.4 for Colebrook-type pipes.
+- **k-ε family:** a rough wall face fixes ε like a smooth one; k and ε
+  have zero gradient at every wall (k_w is not a boundary value of the
+  wall functions).
 - **SST** (`low-re` and `automatic`): rough-wall ω boundary value of
   Aupoix (2015), ω_w = (u_τ²/ν) ω_w⁺(k_s⁺) with the correlation of that
   paper ◇; with the automatic treatment ω_vis is replaced by this value.
@@ -676,7 +717,7 @@ branch, so no warp divergence on the GPU.
 | ω | (γ/ν_t) P̃_k | γ P̃_k/ν_t* (ν_t* floored, 6.2 floors) | 0 |
 | ω | −β ω² | β ω*² (Newton) | −2β ω* |
 | ω | cross diffusion CD = 2(1 − F₁) σ_ω2 ∇k·∇ω/ω | max(CD, 0) | min(CD, 0)/ω* |
-| ε (standard, ζ-f) | (C_ε1 P_k − C_ε2 ε)/T | C_ε1 P_k/T | −C_ε2/T |
+| ε (standard, ζ-f) | (C_ε1 P_k − C_ε2 ε)/T | C_ε1 P_k/T | −C_ε2/T (*6c*: the default; `newton` gives C_ε2 ε*/T and −2C_ε2/T) |
 | ε (realizable) | C₁ S ε − C₂ ε²/(k + √(νε)) | C₁ S ε* | −C₂ ε*/(k* + √(νε*)) |
 | ζ | f − (ζ/k) P_k | max(f, 0) | min(f, 0)/ζ* − P_k/k* |
 | φ (EB) | sources of 3.4 | positive parts | negative parts divided by φ* |
@@ -686,7 +727,12 @@ branch, so no warp divergence on the GPU.
 
 The divisions by φ* use φ* ≥ φ_floor. The Newton form of the ω
 destruction makes the diagonal twice as strong as the Picard form and
-converges faster; the Picard form (S_p = −β ω*) is an option.
+converges faster; the Picard form (S_p = −β ω*) is an option. *6c:* for ε
+the Picard form is the default (`solver.turbulence.destruction` unset):
+the Newton form removes at most half of ε per iteration, and in a decaying
+free stream k collapsed to its floor in 1 600 of 3 072 cells of the plate
+while ε lagged behind; with Picard the plate converges in about 240
+iterations.
 
 **Floors** after each solve: k ≥ k_min, ε ≥ ε_min, ω ≥ ω_min with
 k_min = 10⁻¹⁰ k_ref and ω_min, ε_min from k_min and the reference
@@ -831,7 +877,7 @@ implemented):
 | `BC027` | warning | A wall roughness k_s larger than the first-cell distance on more than 10 % of the wall's area. |
 | `BC028` | warning | A turbulence value that the run does not use: `zeta` with SST or k-ε, `omega` with an ε model, or any turbulence value at an outlet (*6b*: the backflow takes k and ω of the cell until the backflow values are implemented); BC009 stays for laminar cases. |
 | `BC029` | error | Two incompatible turbulence specifications on one inlet (for example `turbulence_length_scale` and `viscosity_ratio`, or `k` with intensity). |
-| `TURB001` | warning | First-cell y⁺ outside the claimed range of the wall treatment (section 4.3) on more than 10 % of a wall's area (reported per boundary with the area-weighted min, mean and max). *6b:* above 2 with `low-re`; between 3 and 20 with `automatic`, where the blending overpredicts the wall shear stress (section 9.3). |
+| `TURB001` | warning | First-cell y⁺ outside the claimed range of the wall treatment (section 4.3) on more than 10 % of a wall's area (reported per boundary with the area-weighted min, mean and max). *6b:* above 2 with `low-re`; between 3 and 20 with `automatic`, where the blending overpredicts the wall shear stress (section 9.3). *6c:* k-ε family: below 30 with `scalable`, outside 30 … 300 with `standard` and `compound`. |
 | `TURB002` | warning | A positivity floor or bound acted on more than 0.1 % of the cells in an iteration (equation and cell count). *6b:* reported only for iterations in the final tenth of the solves; the run record counts all of them. |
 | `TURB003` | warning | Inlet turbulence outside the usual range: I > 0.5, or a viscosity ratio below 10⁻² or above 10⁵. |
 | `TURB004` | note | Kato–Launder production in a rotating zone: Ω is the absolute-frame vorticity. |
@@ -855,7 +901,7 @@ code; the table below is the target.
 |---|---|---|---|---|---|
 | `turbulence.model` | "laminar" \| "k-omega-sst" \| "k-epsilon" \| "realizable-k-epsilon" \| "k-epsilon-zeta-f" \| "elliptic-blending-k-epsilon" | `"laminar"` | | | Turbulence model (D12, D130–D133). |
 | `turbulence.wall_treatment` | "automatic" \| "compound" \| "low-re" \| "scalable" \| "standard" | per model: SST `automatic`, ζ-f and EB `compound`, k-ε family `scalable` | | | Momentum wall treatment (D134). |
-| `turbulence.production_limiter` | "menter" \| "kato-launder" \| "durbin" \| "none" | SST `menter`, k-ε `none` | | | Production form of SST and standard k-ε (3.1, 3.2). |
+| `turbulence.production_limiter` | "menter" \| "kato-launder" \| "durbin" \| "none" | SST `menter`, standard k-ε `durbin` (*6c*), realizable `none` (the only value) | | | Production form of SST and standard k-ε (3.1, 3.2); for the k-ε family `menter` is the clip min(P_k, 10ε). |
 | `turbulence.durbin_coefficient` | number | `1.0` | | | C_lim of the Durbin bound. |
 | `turbulence.ambient` | { k, omega \| epsilon } | none | SI | | Sustaining terms (Spalart & Rumsey 2007). |
 | `turbulence.curvature_correction` | boolean | `false` | | | SST: the curvature and rotation correction of Smirnov & Menter (2009) (3.6, D170); constants `c_r1`, `c_r2`, `c_r3`. |
@@ -871,7 +917,7 @@ code; the table below is the target.
 | `solver.turbulence.tolerance` | number | 1e-2 steady, 1e-8 transient | | yes | Relative tolerance per solve. |
 | `solver.turbulence.max_iter` | integer | `50` | | yes | BiCGStab iterations per solve. |
 | `solver.turbulence.preconditioner` | "jacobi" \| "amg" | `"jacobi"` | | | Preconditioner (D36). |
-| `solver.turbulence.destruction` | "newton" \| "picard" | `"newton"` | | | Linearisation of −βω² and similar terms (6.2). |
+| `solver.turbulence.destruction` | "newton" \| "picard" | ω `"newton"`, ε `"picard"` (*6c*) | | | Linearisation of −βω² and similar terms (6.2). |
 | `solver.turbulence.viscosity_relaxation` | number | `1.0` | | yes | Relaxation α_νt of ν_t. |
 | `solver.elliptic.tolerance` | number | 1e-2 steady, 1e-8 transient | | yes | f and α solves. |
 | `solver.elliptic.max_iter` | integer | `100` | | yes | CG iterations. |
@@ -966,6 +1012,27 @@ u⁺ at x = 0.97 follows Spalding's law within 2.3 %. The y⁺ study of
 wall functions of 6c. The temperature rows wait for 6f, the other models
 for 6c–6e.
 
+**Results of 6c (PR #71, k-ε family; details on the
+[verification page](../verification/stage6.md#k-ε-family-part-6c)).**
+TMR plate on 64 × 48 cells with the sustaining terms at the inlet values
+(3.2 notes), the wall grading changed for each first-cell y⁺ at
+x = 0.97; C_f(0.97) against White's 2.875·10⁻³:
+
+| First-cell y⁺ | 1 | 2 | 5 | 10 | 30 | 60 | 100 |
+|---|---|---|---|---|---|---|---|
+| standard k-ε, `scalable` | −2.6 % | −1.7 % | −1.0 % | −0.3 % | −1.6 % | −1.5 % | −0.8 % |
+| standard k-ε, `compound` | +58 % | +52 % | +40 % | +21 % | −2.3 % | −3.6 % | −3.4 % |
+| realizable, `scalable` | −10.6 %¹ | | | | −6.8 %¹ | −5.2 % | −3.3 % |
+| realizable, `compound` | | | | | −7.4 % | −7.1 % | −5.9 % |
+
+¹ not converged to the tolerance (residual stalls near 10⁻⁵). The
+C_f(Re_x) row passes for the standard model with both treatments in their
+claimed ranges; the y⁺ insensitivity of `scalable` (all y⁺ within 2.4 % of
+its y⁺ ≈ 1 result) and of `compound` from y⁺ 30 passes the ±5 % band.
+The realizable model lies 3 to 7 % below White (finding, as in the
+channel). The GCI of the k-ε plate follows with the model comparison of
+6g.
+
 ### 9.4 Fully developed channel flow
 
 Periodic plane channel driven by a mean pressure gradient that fixes
@@ -993,6 +1060,25 @@ across) U_b⁺ = 17.427, 17.381, 17.346: observed order 0.40, extrapolated
 17.237, GCI_fine 0.78 %, outside the verification band (finding; the
 fourth mesh did not reach its tolerance). Re_τ = 180 and 590, the profiles and the wall-function
 insensitivity follow with the model comparison of 6g.
+
+**Results of 6c (PR #71, k-ε family, Re_τ = 395; details on the
+[verification page](../verification/stage6.md#k-ε-family-part-6c)).**
+U_b⁺ from the driving force on uniform meshes of 4 to 40 cells across
+(first-cell y⁺ 93 to 9):
+
+| Model, treatment | y⁺ 93 | 47 | 32 | 24 | 16 | 11–9 |
+|---|---|---|---|---|---|---|
+| standard k-ε, `scalable` | +6.0 % | +4.6 % | +4.3 % | +4.3 % | +4.5 % | +4.9 % |
+| standard k-ε, `compound` | +5.9 % | +4.2 % | +3.1 % | +1.6 % | −4.4 % | −12.9 % |
+| standard k-ε, `standard` | as `scalable` from y⁺ 24 | | | | −7.0 % | −25 % (y⁺ 13) |
+| realizable, `scalable` | +7.1 % | +6.0 % | +6.5 % | +7.3 % | +9.2 % | +10.7 % |
+
+The ±5 % row of the wall functions at y⁺ ≈ 30 passes for the standard
+model (+4.3 %, `channel_keps.toml`). The realizable model misses it by
+1.5 % (finding; on the flat plate its C_f is 3 to 7 % low as well, the
+same direction). The ±3 % row of the compound treatment at y⁺ ≈ 1 does
+not hold for the high-Re k-ε models (−32 % on a graded mesh at y⁺ 0.4,
+the finding of 4.3); it moves to ζ-f and EB.
 
 ### 9.5 Backward-facing step (Driver & Seegmiller 1985)
 
@@ -1033,12 +1119,34 @@ figure or table, and retrieval note.
 ### 9.7 Cases kept from the earlier stage-6 scope
 
 Unchanged from the stage plan: rough-pipe friction factor against
-Colebrook (periodic pipe, fully rough and transitional, ±5 %), the study
+Colebrook (periodic pipe, fully rough and transitional, ±5 %; *6c*
+results below), the study
 over Re and k_s/D that reproduces the Moody chart (D62), laminar
 Taylor–Couette flow in a rotating frame (D55) against the analytic
 solution, the turbulent heated pipe as a passive scalar against Gnielinski
 (1976) (±10 %, 10⁴ ≤ Re ≤ 10⁶, D111) with each model and both Pr_t
 options, and the CPU–GPU and thread-count parity of section 6.6.
+
+**Results of 6c (PR #71): rough pipe and Moody study.** Standard k-ε,
+`scalable`, wedge pipe of one periodic module, `pipe_rough_keps.toml` and
+`examples/studies/moody_study.py`; Darcy f from the driving force against
+Colebrook:
+
+| Re | smooth | k_s/D = 10⁻⁴ | 10⁻³ | 10⁻² |
+|---|---|---|---|---|
+| 3·10⁴ | −5.0 % | −6.1 % | −14.1 % | −10.0 % |
+| 10⁵ | −3.8 % | −6.5 % | −17.3 % | +9.6 % |
+| 10⁶ | −2.7 % | −13.5 % | +4.4 % | +11.0 % |
+| 10⁷ | −1.7 % | +2.0 % | +7.9 % | +11.1 % |
+
+Smooth pipes pass from Re 10⁵ (the wall functions of a 6-cell mesh at
+Re 3·10⁴ sit at the band's edge). Fully rough (k_s⁺ > 90): +8 to +11 %
+with the default C_s = 0.5, +1 to +3 % with C_s = 0.4 (finding of 4.5).
+Transitional (k_s⁺ 3 to 50): the Cebeci–Bradshaw shift follows
+Nikuradse's inflectional sand-grain curve and lies up to 17 % below
+Colebrook's monotonic interpolation for commercial pipes; the ±5 % band
+against Colebrook cannot hold there by construction of ΔB (finding). The
+chart is gallery 71.
 
 ### 9.8 The SST options of 3.6 (D170)
 
@@ -1064,7 +1172,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6a | Generic scalar transport (D116), passive scalars and their boundary sub-tables (D51), bounded BDF2 (D28 (1)), smooth-limit helpers (2.6), exact wall distance with the BVH (D48, D108 (1)) and the derived field `wall-distance` (done, PR #63) | `foehncraft-kernels/src/scalar.rs`, `foehncraft-mesh/src/query/bvh.rs`, `foehncraft-flow/src/scalar.rs`, `foehncraft-core/src/math.rs` | 9.2 laminar heated channel (developed profile at the inlet, uniform wall flux, zero-gradient outlet; Nu within 0.5 %), wall distance, scalar MMS on hex, poly and tet cells, scalar time order |
 | 6p | Periodic boundaries for the flow and the scalars (translational pairs, mass-flow or pressure-gradient driving, the heat-flux jump of D109 (1) for passive scalars; the wall-temperature map of D109–D111 with the energy stage) (done, PR #67) | `foehncraft-mesh` periodic pairing, `foehncraft-flow/src/bc.rs` | periodic Poiseuille and heated channel equal to the open ones; needed by the 9.4 channel at Re_τ 180/395/590 |
 | 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂; the optional PDE wall distance with the key `turbulence.wall_distance` (the exact distance of 6a is the default); the invariant features of D166 as named expression variables (same definitions as the D106 export) (done, PR #68: the features as the derived field `turbulence-features`; their names in the expression language come with the first consumer, D104; the SST MMS moves to 6g; turbulence values of the backflow at outlets later, BC028) | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 decay (SST), 9.3 flat plate, 9.4 channel (SST) |
-| 6c | Standard and realizable k-ε, scalable and standard wall functions, compound treatment for the k-ε family, Cebeci–Bradshaw roughness | `turb/keps.rs` | 9.2, 9.3, 9.4 for the k-ε family, rough pipe and Moody study |
+| 6c | Standard and realizable k-ε, scalable and standard wall functions, compound treatment for the k-ε family, Cebeci–Bradshaw roughness (done, PR #71: compound claimed from y⁺ 30 for the k-ε family, owner decision; Durbin bound and Picard ε destruction as defaults; findings: realizable 3–7 % low friction, rough pipe against Colebrook in 4.5 and 9.7) | `turb/keps.rs`, `turb/wall.rs` | 9.2, 9.3, 9.4 for the k-ε family, rough pipe and Moody study |
 | 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG), the AMG preconditioner for the scalar equations (D36; 6a solves them with Jacobi-preconditioned BiCGStab, enough for the laminar cases) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
 | 6e | EB k-ε (D133) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |

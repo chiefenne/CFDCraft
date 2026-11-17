@@ -5,6 +5,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 68 | [k-ω SST on the TMR flat plate and in a channel](#sst) | 6 | `[turbulence] model = "k-omega-sst"`, `wall_treatment`, inlet turbulence values, `roughness`, derived field `turbulence-features` |
+| 71 | [k-ε family with wall functions: flat plate, channel, Moody chart](#k-epsilon) | 6 | `model = "k-epsilon"`, `"realizable-k-epsilon"`, `wall_treatment = "scalable"`, `"standard"`, `"compound"`, `epsilon` at inlets, `roughness_constant` |
 
 ---
 
@@ -111,6 +112,88 @@ for r in "2 7983.6" "5 2859.1" "10 1298.9" "30 361.1" "100 83.3"; do set -- $r
 done
 python3 -m tools.plot.sst_chart docs/figures/gallery/sst.svg output/plate output/channel \
     output/yp2 output/yp5 output/yp10 output/yp30 output/yp100
+```
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="k-epsilon"></a>
+## 71. k-ε family with wall functions: flat plate, channel, Moody chart
+
+![Left: C_f at x = 0.97 on the TMR flat plate with the standard k-ε model against the first-cell y⁺ from 1 to 100, scalable and compound wall treatments, with White's correlation and its ±5 % band. Right: the Darcy friction factor of rough pipes from Re 3·10⁴ to 10⁷ and k_s/D from 0 to 10⁻² against Colebrook's equation](../figures/gallery/keps.svg)
+
+**The models.** The standard k-ε of Launder & Spalding (1974) and the
+realizable k-ε of Shih et al. (1995), with its variable C_μ and the
+destruction C₂ε²/(k + √(νε)), share one kernel. The standard model is
+bounded by Durbin's realizability limit by default, which is inactive in
+an equilibrium boundary layer and keeps the impulsive start of the
+near-wall cells in check; the ε destruction is linearised in the Picard
+form, which lets ε follow k when the free stream decays. Inlets take k
+with ε or with ω (ε = C_μ k ω), and a run can start from an SST restart
+file.
+
+```toml
+[turbulence]
+model = "k-epsilon"            # or "realizable-k-epsilon"
+wall_treatment = "scalable"    # "standard", "compound"
+```
+
+**The wall treatments.** All take the velocity scale u* = C_μ^¼ k^½ of
+the first cell, so they need no iteration. `scalable` evaluates the log
+law at max(y*, 11.06) and fixes ε and the production of the first cell
+from it; `standard` falls back to the viscous sublayer below 11.06;
+`compound` blends sublayer and log law with the function of Popovac &
+Hanjalić. Rough walls shift the log law by ΔB of Cebeci & Bradshaw.
+
+**The flat plate** (`tmr_plate_keps.toml`). The TMR plate of gallery 68
+on 64 × 48 cells, its free-stream values held by the sustaining terms
+(without them the free stream of the k-ε family decays before the plate).
+With the wall grading changed so that the first cell sits at y⁺ 1 to 100
+at x = 0.97, `scalable` gives C_f within −2.6 to −0.3 % of White's
+correlation at every y⁺ (left). `compound` agrees from y⁺ 30
+(−2.3 to −3.6 %) but overpredicts below, by 21 % at y⁺ 11 and 58 % at
+y⁺ 1: the high-Re models have no damping in the buffer layer. This is a
+finding, and TURB001 warns below y⁺ 30; walls resolved to y⁺ ≈ 1 are for
+the ζ-f and EB models. The realizable model gives 3 to 7 % less friction
+(finding).
+
+**The channel** (`channel_keps.toml`). Re_τ = 395 on 12 uniform cells
+(first-cell y⁺ 32): U_b⁺ = 18.31, +4.3 % from the DNS, inside the ±5 %
+band of wall functions; +4.3 to +4.9 % for every y⁺ from 9 to 47.
+
+**Rough pipes** (`pipe_rough_keps.toml`, `examples/studies/moody_study.py`).
+A wedge pipe of one periodic module; the friction factor follows from the
+driving force (right). Smooth pipes lie 2 to 5 % below Colebrook's
+equation. Fully rough pipes lie 8 to 11 % above with the default
+C_s = 0.5 and within 3 % with C_s = 0.4 (finding). In the transitional
+range the Cebeci–Bradshaw shift follows Nikuradse's sand-grain dip and
+lies below Colebrook's monotonic curve for commercial pipes.
+
+| Check | Result |
+|---|---|
+| Plate, `scalable`, y⁺ 1 to 100: C_f(0.97) against White | −2.6 % to −0.3 % (band ±5 %) |
+| Plate, `compound`, y⁺ 30 / 60 / 100 | −2.3 / −3.6 / −3.4 %; below y⁺ 30 up to +58 % (finding, TURB001) |
+| Channel Re_τ 395, `scalable`, y⁺ 32: U_b⁺ | 18.31, +4.3 % (band ±5 %) |
+| Realizable k-ε, plate and channel | 3 to 7 % low friction (finding) |
+| Rough pipe Re 10⁶, k_s/D 10⁻³ | f 0.02081, +4.4 % from Colebrook |
+| Moody study, 16 runs | smooth −5.0 to −1.7 %, fully rough +8 to +11 % (C_s 0.4: +1 to +3 %) |
+| Homogeneous decay of k and ε, BDF2 | second order (asserted 1.8 to 2.2) |
+| SST restart continued with k-ε; 1 against 4 threads | converted; bit-identical |
+| Bad input (SST treatment with k-ε, realizable with a limiter, ω ambient, ω and ε at one inlet) | CASE005, BC029 |
+
+| | |
+|---|---|
+| Code | kernels `turb::keps` (both closures, sources, Durbin bound), `turb::wall` (`keps_wall_face`, `roughness_shift`, `compound_gamma`), `entry` (`KepsCells`, the k-ε branch of `WallFaces`, the field update of `WallCells`); `foehncraft_flow::turbulence` (model and treatment keys, ω–ε conversion of inlets, initial values and restart files) |
+| Tests | `tests/keps.rs`, kernel tests of `turb::keps` and `turb::wall`, `turbulence/inlet.rs` |
+| Case files | `flow/tmr_plate_keps.toml`, `flow/channel_keps.toml`, `flow/pipe_rough_keps.toml`; study `examples/studies/moody_study.py` |
+| Recipe | [71](../recipes/turbulence.md#k-epsilon) |
+
+```
+target/release/foehn flow examples/cases/flow/tmr_plate_keps.toml
+target/release/foehn flow examples/cases/flow/channel_keps.toml
+target/release/foehn flow examples/cases/flow/pipe_rough_keps.toml
+python3 examples/studies/moody_study.py output/moody --jobs 4 --chart output/moody.svg
 ```
 
 [↑ back to top](#turbulence-models)

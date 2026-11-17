@@ -6,6 +6,7 @@ Part of the [Case catalogue](../cases.md): scripts that build, run and study cas
 |---|---|---|---|
 | `python/poiseuille_inflow.py` | `flow/poiseuille_hex.toml`, coarse mesh, 512 cells | the inflow as a Python expression, a monitor of the outer iterations and a stop criterion of its own (stopped after 145 iterations) | [gallery 24](../gallery/python.md#python-study), [recipe 33](../recipes/python.md#python) |
 | `studies/couette_viscosity_study.py` | `flow/couette_viscosity.toml`, 2 048 cells | a study over six viscosity gradients: one case file and output per variant, `study.csv`, resume; the wall shear stress against μ0 U a / ln(1 + a) | [gallery 24](../gallery/python.md#python-study), [recipe 33](../recipes/python.md#python) |
+| `studies/moody_study.py` | `flow/pipe_rough_keps.toml`, 12 to 160 cells | the Moody chart: 16 rough-pipe runs over Re 3·10⁴ to 10⁷ and k_s/D 0 to 10⁻² with the k-ε model, f from the driving force against Colebrook, an SVG chart; `--cs` sets C_s | [gallery 71](../gallery/turbulence.md#k-epsilon), [recipe 71](../recipes/turbulence.md#k-epsilon) |
 
 The tests of the package (`python/tests/`) run the example cases in
 process and through the command line: a case built in Python and the

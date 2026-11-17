@@ -31,11 +31,11 @@ FLOW = {
         "cavity_re100", "cavity_re100_columns", "cavity_re100_energy", "cavity_re100_schedule", "cavity_re1000_poly3d", "couette_hex",
         "couette_mixed", "couette_poly", "couette_tet", "channel_slip", "poiseuille_table",
         "couette_derived", "couette_viscosity", "couette_transpiration", "poiseuille_water",
-        "pipe_gmsh_raw", "channel_heated", "channel_sst",
+        "pipe_gmsh_raw", "channel_heated", "channel_sst", "channel_keps",
     ],
     "linux-2": [
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
-        "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst",
+        "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst", "tmr_plate_keps",
     ],
     "linux-3": [
         "taylor_green_error", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",
@@ -43,6 +43,7 @@ FLOW = {
         "cavity_re100_poly3d", "cavity_re100_tet3d", "pipe_wedge", "poiseuille_expression",
         "taylor_green_expression", "channel_ramp", "scalar_front_bdf2",
         "poiseuille_periodic", "channel_heated_periodic", "pipe_heated_periodic",
+        "pipe_rough_keps",
     ],
     "long": ["cylinder_re100", "cylinder_re100_short", "cylinder_re100_convective", "cylinder_re20_gci"],
     "quick": [
