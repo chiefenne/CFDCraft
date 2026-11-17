@@ -1,0 +1,64 @@
+# Fully developed flow in a rough pipe, standard k-ε with scalable wall
+# functions and the roughness shift of Cebeci & Bradshaw (stage 6 part 6c,
+# D134, specification 4.5 and 9.7).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pipe_rough_keps.toml
+#
+# Pipe of radius R = 0.5 m (D = 1 m) on an axisymmetric wedge of 0.5°
+# (as pipe_heated_periodic.toml), a periodic module of 0.1 m driven by the
+# mass flow of U = 1 m/s through the wedge section ½ R² sin θ,
+# Re = U D/ν = 10⁶, equivalent sand-grain roughness k_s = 10⁻³ D
+# (k_s⁺ ≈ 50, transitional). The Darcy friction factor follows from the
+# driving force F (the pressure gradient of the log):
+# f = 2 F D/(ρ U²). Colebrook's equation gives f = 0.01994.
+#
+# 40 uniform cells across the radius (first-cell y⁺ 320; the roughness
+# k_s stays below the first-cell distance, BC027). Result: f = 0.02081,
+# +4.4 % from Colebrook. The Moody study (examples/studies/moody_study.py)
+# runs Re from 3·10⁴ to 10⁷ and k_s/D from 0 to 10⁻²; the verification
+# page lists its findings (default C_s = 0.5: fully rough +8 to +11 %
+# above Colebrook, C_s = 0.4 within +3 %).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 0.5, 0.1]
+cells = [2, 40, 1]
+wedge = 0.5            # degrees about the x axis; y is the radius
+
+[fluid]
+density = 1.0
+viscosity = 1e-6
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 1.0908169e-3     # kg/s: ρ U ½ R² sin(0.5°)
+[boundary.xmax]
+type = "periodic"
+[boundary.ymax]
+type = "wall"
+roughness = 1e-3
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 4000
+
+[output]
+vtkhdf = false
+wall_csv = true

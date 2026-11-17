@@ -234,6 +234,20 @@ impl<const N: usize> Real for Dual<N> {
         let t = crate::math::tanh(self.v);
         Self::chain(t, 1.0 - t * t, &self)
     }
+
+    #[inline(always)]
+    fn cos_acos3_of(self) -> Self {
+        Self::chain(
+            crate::math::cos_acos3(self.v),
+            crate::math::cos_acos3_derivative(self.v),
+            &self,
+        )
+    }
+
+    #[inline(always)]
+    fn sin_of(self) -> Self {
+        Self::chain(crate::math::sin(self.v), crate::math::cos(self.v), &self)
+    }
 }
 
 #[cfg(test)]

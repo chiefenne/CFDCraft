@@ -1,8 +1,15 @@
 //! RANS turbulence models on the flow solver (stage 6, D129–D139): the
 //! k-ω SST model, 2003 version (D130, stage 6 PR 6b), with the production
 //! options of D138, the low-Re and automatic wall treatments and rough
-//! walls (D134), the inlet values (D137), the modified pressure
-//! p̂ = p + ⅔ρk and the exact or Poisson wall distance (D48).
+//! walls (D134); the standard and the realizable k-ε model (D131, PR 6c)
+//! with scalable, standard and compound wall treatments and the rough-wall
+//! shift of Cebeci & Bradshaw; the inlet values (D137), the modified
+//! pressure p̂ = p + ⅔ρk and the exact or Poisson wall distance (D48).
+//!
+//! The two-equation models share one machinery: k and a second variable
+//! (ω of SST, ε of the k-ε family), each on the scalar path of stage 6a;
+//! the model enters through its cell kernel ([`ksst::sst_cell`] or
+//! [`kkeps::keps_cell`]) and its wall-face kernel.
 //!
 //! Case file:
 //!
@@ -52,6 +59,7 @@ pub mod inlet;
 pub mod wall;
 
 use crate::bc::{BoundaryArrays, BoundaryCondition};
+use crate::device::KepsCellOps;
 use crate::device::{
     Buf, Buf3, Eps2, FlowDevice, Lsq, Mask, ScalarFaceArgs, ScalarRowArgs, ScalarTime, SstCellOps,
     TurbFaceOps, WallCellOps, WallFaceOps,
@@ -61,6 +69,7 @@ use crate::expr::{self, Env, Scalar, Vars};
 use anyhow::Result;
 use foehncraft_fv::problem::BoundaryKind;
 use foehncraft_fv::solver::{LimiterKind, Preconditioner, Scheme};
+use foehncraft_kernels::turb::keps::{self as kkeps, KepsConstants, KepsOptions};
 use foehncraft_kernels::turb::sst::{self as ksst, SstConstants, SstOptions};
 use foehncraft_kernels::turb::wall as kwall;
 use foehncraft_mesh::{Geometry, Mesh};
@@ -80,6 +89,27 @@ pub enum TurbulenceModel {
     Laminar,
     /// k-ω SST, 2003 version (Menter, Kuntz & Langtry 2003).
     KOmegaSst,
+    /// Standard k-ε (Launder & Spalding 1974).
+    KEpsilon,
+    /// Realizable k-ε (Shih, Liou, Shabbir, Yang & Zhu 1995).
+    RealizableKEpsilon,
+}
+
+impl TurbulenceModel {
+    /// A model of the k-ε family (its second variable is ε).
+    pub fn is_epsilon(self) -> bool {
+        matches!(self, Self::KEpsilon | Self::RealizableKEpsilon)
+    }
+
+    /// The name in the case file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Laminar => "laminar",
+            Self::KOmegaSst => "k-omega-sst",
+            Self::KEpsilon => "k-epsilon",
+            Self::RealizableKEpsilon => "realizable-k-epsilon",
+        }
+    }
 }
 
 /// `turbulence.wall_treatment` (D134).
@@ -92,13 +122,47 @@ pub enum WallTreatment {
     /// The integrated form to the wall: k_w = 0, ω of the viscous sublayer
     /// in the first cell (first-cell y⁺ ≲ 1).
     LowRe,
+    /// k-ε family: the log law at y* = max(y*, 11.06) (Grotjans & Menter
+    /// 1998; the default of the k-ε family).
+    Scalable,
+    /// k-ε family: the wall functions of Launder & Spalding (1974), first
+    /// cell at 30 ≤ y⁺ ≤ 300.
+    Standard,
+    /// k-ε family: the compound treatment of Popovac & Hanjalić (2007),
+    /// any first-cell y⁺.
+    Compound,
+}
+
+impl WallTreatment {
+    /// The name in the case file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Automatic => "automatic",
+            Self::LowRe => "low-re",
+            Self::Scalable => "scalable",
+            Self::Standard => "standard",
+            Self::Compound => "compound",
+        }
+    }
+
+    /// The treatment's id in the wall-face kernel.
+    fn id(self) -> u32 {
+        match self {
+            Self::Automatic => kwall::AUTOMATIC,
+            Self::LowRe => kwall::LOW_RE,
+            Self::Scalable => kwall::SCALABLE,
+            Self::Standard => kwall::STANDARD,
+            Self::Compound => kwall::COMPOUND,
+        }
+    }
 }
 
 /// `turbulence.production_limiter` (D138).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ProductionLimiter {
-    /// P̃_k = min(ν_t S², 10 β* k ω) (2003).
+    /// P̃_k = min(ν_t S², 10 β* k ω) (2003); for the standard k-ε the
+    /// same clip min(ν_t S², 10 ε).
     Menter,
     /// Kato & Launder (1993): P_k = ν_t S Ω, then the 2003 limiter.
     KatoLaunder,
@@ -141,8 +205,12 @@ pub enum Destruction {
 pub struct Ambient {
     /// Ambient k (m²/s²).
     pub k: f64,
-    /// Ambient ω (1/s).
-    pub omega: f64,
+    /// Ambient ω (1/s; SST).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub omega: Option<f64>,
+    /// Ambient ε (m²/s³; the k-ε family).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epsilon: Option<f64>,
 }
 
 /// `[turbulence]`.
@@ -151,15 +219,20 @@ pub struct Ambient {
 pub struct TurbulenceSection {
     /// Turbulence model (D12, D130).
     pub model: TurbulenceModel,
-    /// Momentum wall treatment (D134; SST default `automatic`).
+    /// Momentum wall treatment (D134; SST default `automatic`, k-ε family
+    /// `scalable`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wall_treatment: Option<WallTreatment>,
-    /// Production form of SST (default `menter`).
+    /// Production form of SST (default `menter`) and of the standard k-ε
+    /// (default `durbin`: the realizability bound is inactive in the log
+    /// layer and keeps the impulsive start of near-wall cells bounded; the
+    /// realizable k-ε takes `none` only).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub production_limiter: Option<ProductionLimiter>,
     /// C_lim of the Durbin bound.
     pub durbin_coefficient: f64,
-    /// Sustaining terms (Spalart & Rumsey 2007): ambient k and ω.
+    /// Sustaining terms (Spalart & Rumsey 2007): ambient k and ω (SST) or
+    /// ε (k-ε).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ambient: Option<Ambient>,
     /// Cap of ν_t/ν (counted, TURB008).
@@ -168,9 +241,11 @@ pub struct TurbulenceSection {
     pub smooth_limits: bool,
     /// Wall distance (D48).
     pub wall_distance: WallDistanceMethod,
-    /// Constant overrides by their literature name (`beta_star`, `a1`,
+    /// Constant overrides by their literature name (SST: `beta_star`, `a1`,
     /// `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`,
-    /// `sigma_k2`, `sigma_omega1`, `sigma_omega2`); TURB007.
+    /// `sigma_k2`, `sigma_omega1`, `sigma_omega2`; k-ε: `c_mu`,
+    /// `c_epsilon1`, `c_epsilon2`, `sigma_k`, `sigma_epsilon`, `a0`,
+    /// `kappa`); TURB007.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub constants: BTreeMap<String, f64>,
 }
@@ -204,6 +279,17 @@ pub const SST_CONSTANTS: &[&str] = &[
     "sigma_k2",
     "sigma_omega1",
     "sigma_omega2",
+];
+
+/// The names of the k-ε constants that `[turbulence.constants]` takes.
+pub const KEPS_CONSTANTS: &[&str] = &[
+    "c_mu",
+    "c_epsilon1",
+    "c_epsilon2",
+    "sigma_k",
+    "sigma_epsilon",
+    "a0",
+    "kappa",
 ];
 
 /// Relative width of the smooth switches with `smooth_limits = true`.
@@ -263,9 +349,98 @@ impl TurbulenceSection {
         Ok(c)
     }
 
+    /// The constants of the k-ε family with the overrides.
+    pub fn keps_constants(&self) -> Result<KepsConstants> {
+        let mut c = if self.model == TurbulenceModel::RealizableKEpsilon {
+            KepsConstants::realizable()
+        } else {
+            KepsConstants::standard()
+        };
+        for (name, &v) in &self.constants {
+            let slot = match name.as_str() {
+                "c_mu" => &mut c.c_mu,
+                "c_epsilon1" => &mut c.c_e1,
+                "c_epsilon2" => &mut c.c_e2,
+                "sigma_k" => &mut c.sigma_k,
+                "sigma_epsilon" => &mut c.sigma_e,
+                "a0" => &mut c.a0,
+                "kappa" => &mut c.kappa,
+                _ => {
+                    let hint = crate::bc::did_you_mean(name, KEPS_CONSTANTS.iter().copied())
+                        .map(|h| format!(" (did you mean `{h}`?)"))
+                        .unwrap_or_default();
+                    return Err(diag::err(
+                        Diagnostic::new(
+                            diag::CASE_UNKNOWN_KEY,
+                            format!(
+                                "[turbulence.constants] has no constant `{name}`{hint}; the k-ε \
+                                 constants are {}",
+                                KEPS_CONSTANTS.join(", ")
+                            ),
+                        )
+                        .key(format!("turbulence.constants.{name}")),
+                    ));
+                }
+            };
+            crate::need!(
+                v > 0.0 && v.is_finite(),
+                CASE_RANGE,
+                "[turbulence.constants] {name} must be > 0, is {v}"
+            );
+            *slot = v;
+        }
+        Ok(c)
+    }
+
+    /// The run-time options of the k-ε kernel.
+    pub fn keps_options(&self, s: &TurbulenceSettings) -> KepsOptions {
+        let (k_amb, e_amb) = self
+            .ambient
+            .map_or((0.0, 0.0), |a| (a.k, a.epsilon.unwrap_or(0.0)));
+        let realizable = self.model == TurbulenceModel::RealizableKEpsilon;
+        KepsOptions {
+            variant: if realizable {
+                kkeps::REALIZABLE
+            } else {
+                kkeps::STANDARD
+            },
+            limiter: match self.production_limiter.unwrap_or(if realizable {
+                ProductionLimiter::None
+            } else {
+                ProductionLimiter::Durbin
+            }) {
+                ProductionLimiter::None => kkeps::LIMITER_NONE,
+                ProductionLimiter::KatoLaunder => kkeps::LIMITER_KATO_LAUNDER,
+                ProductionLimiter::Durbin => kkeps::LIMITER_DURBIN,
+                ProductionLimiter::Menter => kkeps::LIMITER_CLIP,
+            },
+            newton: u32::from(s.destruction == Some(Destruction::Newton)),
+            c_lim: self.durbin_coefficient,
+            smooth: if self.smooth_limits {
+                SMOOTH_WIDTH
+            } else {
+                0.0
+            },
+            k_amb,
+            e_amb,
+            max_ratio: self.max_viscosity_ratio,
+        }
+    }
+
+    /// C_μ of the model (β* of SST; the inlet values and the floors).
+    pub fn c_mu(&self) -> Result<f64> {
+        Ok(if self.model.is_epsilon() {
+            self.keps_constants()?.c_mu
+        } else {
+            self.sst_constants()?.beta_star
+        })
+    }
+
     /// The run-time options of the kernel.
     pub fn sst_options(&self, s: &TurbulenceSettings) -> SstOptions {
-        let (k_amb, w_amb) = self.ambient.map_or((0.0, 0.0), |a| (a.k, a.omega));
+        let (k_amb, w_amb) = self
+            .ambient
+            .map_or((0.0, 0.0), |a| (a.k, a.omega.unwrap_or(0.0)));
         SstOptions {
             limiter: match self.production_limiter.unwrap_or(ProductionLimiter::Menter) {
                 ProductionLimiter::Menter => ksst::LIMITER_MENTER,
@@ -273,7 +448,7 @@ impl TurbulenceSection {
                 ProductionLimiter::Durbin => ksst::LIMITER_DURBIN,
                 ProductionLimiter::None => ksst::LIMITER_NONE,
             },
-            newton: u32::from(s.destruction == Destruction::Newton),
+            newton: u32::from(s.destruction.unwrap_or_default() == Destruction::Newton),
             c_lim: self.durbin_coefficient,
             smooth: if self.smooth_limits {
                 SMOOTH_WIDTH
@@ -288,7 +463,11 @@ impl TurbulenceSection {
 
     /// The wall treatment (the model's default when not set).
     pub fn treatment(&self) -> WallTreatment {
-        self.wall_treatment.unwrap_or(WallTreatment::Automatic)
+        self.wall_treatment.unwrap_or(if self.model.is_epsilon() {
+            WallTreatment::Scalable
+        } else {
+            WallTreatment::Automatic
+        })
     }
 
     /// Checks the ranges.
@@ -296,7 +475,53 @@ impl TurbulenceSection {
         if self.is_laminar() {
             return Ok(());
         }
-        self.sst_constants()?;
+        let t = self.treatment();
+        if self.model.is_epsilon() {
+            self.keps_constants()?;
+            crate::need!(
+                matches!(
+                    t,
+                    WallTreatment::Scalable | WallTreatment::Standard | WallTreatment::Compound
+                ),
+                CASE_INCONSISTENT,
+                "turbulence.wall_treatment = \"{}\" is not a treatment of the k-ε family; use \
+                 \"scalable\", \"standard\" or \"compound\"",
+                t.name()
+            );
+            crate::need!(
+                self.model == TurbulenceModel::KEpsilon
+                    || matches!(
+                        self.production_limiter,
+                        None | Some(ProductionLimiter::None)
+                    ),
+                CASE_INCONSISTENT,
+                "turbulence.production_limiter: the realizable k-ε model has its own \
+                 realizable C_μ and takes no production limiter (use \"none\")"
+            );
+            if let Some(a) = self.ambient {
+                crate::need!(
+                    a.epsilon.is_some() && a.omega.is_none(),
+                    CASE_INCONSISTENT,
+                    "turbulence.ambient of a k-ε model takes k and epsilon"
+                );
+            }
+        } else {
+            self.sst_constants()?;
+            crate::need!(
+                matches!(t, WallTreatment::Automatic | WallTreatment::LowRe),
+                CASE_INCONSISTENT,
+                "turbulence.wall_treatment = \"{}\" is not a treatment of SST; use \
+                 \"automatic\" or \"low-re\"",
+                t.name()
+            );
+            if let Some(a) = self.ambient {
+                crate::need!(
+                    a.omega.is_some() && a.epsilon.is_none(),
+                    CASE_INCONSISTENT,
+                    "turbulence.ambient of SST takes k and omega"
+                );
+            }
+        }
         crate::need!(
             self.durbin_coefficient > 0.0 && self.durbin_coefficient.is_finite(),
             CASE_RANGE,
@@ -310,10 +535,11 @@ impl TurbulenceSection {
             self.max_viscosity_ratio
         );
         if let Some(a) = self.ambient {
+            let second = a.omega.or(a.epsilon).unwrap_or(0.0);
             crate::need!(
-                a.k > 0.0 && a.omega > 0.0 && a.k.is_finite() && a.omega.is_finite(),
+                a.k > 0.0 && second > 0.0 && a.k.is_finite() && second.is_finite(),
                 CASE_RANGE,
-                "turbulence.ambient: k and omega must be > 0"
+                "turbulence.ambient: k and omega (or epsilon) must be > 0"
             );
         }
         Ok(())
@@ -342,8 +568,10 @@ pub struct TurbulenceSettings {
     pub tolerance: Option<f64>,
     /// Largest number of BiCGStab iterations per solve.
     pub max_iter: usize,
-    /// Linearisation of the ω destruction.
-    pub destruction: Destruction,
+    /// Linearisation of the destruction of ω or ε (default `newton` for
+    /// ω, `picard` for ε: the Newton form takes at most half of ε away per
+    /// iteration and let k collapse in decaying free streams).
+    pub destruction: Option<Destruction>,
     /// Relaxation α_νt of ν_t.
     pub viscosity_relaxation: f64,
 }
@@ -357,7 +585,7 @@ impl Default for TurbulenceSettings {
             relaxation: None,
             tolerance: None,
             max_iter: 50,
-            destruction: Destruction::Newton,
+            destruction: None,
             viscosity_relaxation: 1.0,
         }
     }
@@ -437,7 +665,8 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
             i.turbulence_intensity.is_none()
                 && i.viscosity_ratio.is_none()
                 && i.k.is_none()
-                && i.omega.is_none(),
+                && i.omega.is_none()
+                && i.epsilon.is_none(),
             CASE_INCONSISTENT,
             "[initial] turbulence values in a laminar case (turbulence.model = \"laminar\")"
         );
@@ -447,17 +676,27 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
     case.solver.turbulence.validate(transient)?;
     let i = &case.initial;
     crate::need!(
-        i.k.is_some() == i.omega.is_some(),
+        !(i.omega.is_some() && i.epsilon.is_some()),
         CASE_INCONSISTENT,
-        "[initial] k and omega go together"
+        "[initial] omega and epsilon together: give one (with k)"
+    );
+    crate::need!(
+        i.k.is_some() == (i.omega.is_some() || i.epsilon.is_some()),
+        CASE_INCONSISTENT,
+        "[initial] k goes with omega or epsilon"
     );
     crate::need!(
         i.k.is_none() || (i.turbulence_intensity.is_none() && i.viscosity_ratio.is_none()),
         CASE_INCONSISTENT,
-        "[initial]: k and omega, or turbulence_intensity and viscosity_ratio, not both"
+        "[initial]: k with omega or epsilon, or turbulence_intensity and viscosity_ratio, \
+         not both"
     );
     let env = case.env()?;
-    for (key, v) in [("initial.k", &i.k), ("initial.omega", &i.omega)] {
+    for (key, v) in [
+        ("initial.k", &i.k),
+        ("initial.omega", &i.omega),
+        ("initial.epsilon", &i.epsilon),
+    ] {
         if let Some(v) = v {
             expr::value(v, &env, Vars::SPACE, key)?;
         }
@@ -512,7 +751,8 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
             Level::Warning,
             diag::TURB_CONSTANTS,
             format!(
-                "SST constants changed in [turbulence.constants]: {}",
+                "{} constants changed in [turbulence.constants]: {}",
+                if t.model.is_epsilon() { "k-ε" } else { "SST" },
                 t.constants
                     .iter()
                     .map(|(k, v)| format!("{k} = {v}"))
@@ -529,7 +769,11 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
         push(
             Level::Note,
             diag::TURB_NO_WALL,
-            "no wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0)".into(),
+            if t.model.is_epsilon() {
+                "no wall boundary: no wall treatment acts".into()
+            } else {
+                "no wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0)".into()
+            },
         );
     }
     if case
@@ -540,7 +784,7 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
         push(
             Level::Note,
             diag::TURB_UNBOUNDED_SCHEME,
-            "Crank–Nicolson is not bounded for k and ω: they take BDF2".into(),
+            "Crank–Nicolson is not bounded for the turbulence variables: they take BDF2".into(),
         );
     }
     out
@@ -567,14 +811,23 @@ impl TurbResiduals {
 }
 
 /// The names of the equations, in the order of the residuals.
-pub const EQUATIONS: [&str; 2] = ["k", "omega"];
+pub fn equations(model: TurbulenceModel) -> [&'static str; 2] {
+    if model.is_epsilon() {
+        ["k", "epsilon"]
+    } else {
+        ["k", "omega"]
+    }
+}
 
 /// Host copy of the turbulence state (restart, output).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct TurbState {
+    /// The second variable is ε (the k-ε family): `omega`, `omega_old`
+    /// and `omega_b` hold ε.
+    pub epsilon: bool,
     /// k per cell.
     pub k: Vec<f64>,
-    /// ω per cell.
+    /// ω (SST) or ε (k-ε family, see `epsilon`) per cell.
     pub omega: Vec<f64>,
     /// ν_t per cell.
     pub nu_t: Vec<f64>,
@@ -629,6 +882,8 @@ struct WallDev {
     normal: Buf3,
     y: Buf,
     ks: Buf,
+    cs: Buf,
+    prod_w: Buf,
     u_tau: Buf,
     y_plus: Buf,
     omega: Buf,
@@ -647,14 +902,22 @@ struct Inlets {
     time: bool,
 }
 
-/// The k-ω SST model of a flow on its device.
+/// The two-equation turbulence model of a flow on its device: k-ω SST or
+/// the k-ε family (k and the second variable, ω or ε).
 pub struct Turbulence {
     /// The model settings.
     pub section: TurbulenceSection,
     /// The solver settings.
     pub settings: TurbulenceSettings,
+    model: TurbulenceModel,
+    /// The second variable is ε (the k-ε family).
+    eps: bool,
     c: SstConstants,
     o: SstOptions,
+    ke: KepsConstants,
+    ko: KepsOptions,
+    /// C_μ (β* of SST): inlet values and floors.
+    c_mu: f64,
     treatment: u32,
     nu: f64,
     rho: f64,
@@ -665,6 +928,7 @@ pub struct Turbulence {
     w: Var,
     nu_t: Buf,
     nu_t_prev: Option<Buf>,
+    /// F₁ of SST, C_μ of the k-ε family.
     f1: Buf,
     pk: Buf,
     dk: Buf,
@@ -682,6 +946,7 @@ pub struct Turbulence {
     fix_mask: Buf,
     fix_val: Buf,
     wall_pk: Buf,
+    prod_mask: Buf,
     zero_face: Buf,
     cp: Buf,
     cn: Buf,
@@ -737,13 +1002,16 @@ fn up(dev: &mut dyn FlowDevice, v: &[f64]) -> Result<Buf> {
     Ok(b)
 }
 
-/// The boundary kinds of k and ω per boundary (for the gradient weights)
-/// and the coefficient a per boundary face.
+/// The boundary kinds of k and of the second variable per boundary (for
+/// the gradient weights) and the coefficient a per boundary face. Walls fix
+/// ω of SST, and k with the low-Re treatment or on rough walls; the k-ε
+/// family has zero gradient of k and ε at walls (ε is fixed in the cell).
 fn kinds(
     mesh: &Mesh,
     bcs: &BTreeMap<String, BoundaryCondition>,
     treatment: WallTreatment,
     omega: bool,
+    eps_model: bool,
 ) -> (BTreeMap<String, BoundaryKind>, Vec<f64>) {
     let ni = mesh.n_interior_faces();
     let mut a = vec![1.0; mesh.n_boundary_faces()];
@@ -753,7 +1021,7 @@ fn kinds(
         let fixed = match bc {
             Some(b) if inlet::is_inlet(b) => true,
             Some(b @ BoundaryCondition::Wall { .. }) => {
-                omega || b.roughness() > 0.0 || treatment == WallTreatment::LowRe
+                !eps_model && (omega || b.roughness() > 0.0 || treatment == WallTreatment::LowRe)
             }
             _ => false,
         };
@@ -773,7 +1041,7 @@ fn kinds(
 }
 
 impl Turbulence {
-    /// The SST model of a case on the device `dev` of a flow.
+    /// The turbulence model of a case on the device `dev` of a flow.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         dev: &mut dyn FlowDevice,
@@ -793,8 +1061,21 @@ impl Turbulence {
         let (nc, nf, ni) = (disc.n_cells, disc.n_faces, disc.n_interior);
         let nb = nf - ni;
         let stored = disc.sell.stored();
-        let c = section.sst_constants()?;
+        let model = section.model;
+        let eps = model.is_epsilon();
+        let c = if eps {
+            SstConstants::default()
+        } else {
+            section.sst_constants()?
+        };
         let o = section.sst_options(&settings);
+        let ke = if eps {
+            section.keps_constants()?
+        } else {
+            KepsConstants::default()
+        };
+        let ko = section.keps_options(&settings);
+        let c_mu = section.c_mu()?;
         let treatment = section.treatment();
         let nu = mu / rho;
         // the inlets
@@ -827,9 +1108,9 @@ impl Turbulence {
             faces,
         };
         // the walls
-        let walls = Walls::new(mesh, geo, &case.boundary);
+        let walls = Walls::new(mesh, geo, &case.boundary, eps);
         let var = |dev: &mut dyn FlowDevice, omega: bool| -> Result<Var> {
-            let (points, a) = kinds(mesh, &case.boundary, treatment, omega);
+            let (points, a) = kinds(mesh, &case.boundary, treatment, omega, eps);
             let lsq = crate::simplec::disc_with(mesh, geo, &points)?.lsq;
             let lsq = Buf3 {
                 x: up(dev, &lsq.x)?,
@@ -863,7 +1144,7 @@ impl Turbulence {
         };
         let k = var(dev, false)?;
         let w = var(dev, true)?;
-        let ka_host = kinds(mesh, &case.boundary, treatment, false).1;
+        let ka_host = kinds(mesh, &case.boundary, treatment, false, eps).1;
         let a3 = |dev: &mut dyn FlowDevice| -> Result<Buf3> {
             Ok(Buf3 {
                 x: dev.alloc(nc)?,
@@ -891,6 +1172,8 @@ impl Turbulence {
                 },
                 y: up(dev, &walls.y)?,
                 ks: up(dev, &walls.ks)?,
+                cs: up(dev, &walls.cs)?,
+                prod_w: dev.alloc(nw)?,
                 weight: up(dev, &walls.weight)?,
                 u_tau: dev.alloc(nw)?,
                 y_plus: dev.alloc(nw)?,
@@ -916,12 +1199,14 @@ impl Turbulence {
         let mut t = Self {
             section,
             settings,
+            model,
+            eps,
             c,
             o,
-            treatment: match treatment {
-                WallTreatment::LowRe => kwall::LOW_RE,
-                WallTreatment::Automatic => kwall::AUTOMATIC,
-            },
+            ke,
+            ko,
+            c_mu,
+            treatment: treatment.id(),
             nu,
             rho,
             nc,
@@ -953,6 +1238,7 @@ impl Turbulence {
             fix_mask,
             fix_val: dev.alloc(nc)?,
             wall_pk: up(dev, &vec![0.0; nc])?,
+            prod_mask: up(dev, &vec![0.0; nc])?,
             zero_face: dev.alloc(nf)?,
             cp: dev.alloc(nf)?,
             cn: dev.alloc(nf)?,
@@ -997,7 +1283,12 @@ impl Turbulence {
             .max(t.inlet_k_max(bc_arrays));
         let kref = if kref > 0.0 { kref } else { 1e-6 };
         t.k.floor = 1e-10 * kref;
-        t.w.floor = t.k.floor / (1e-2 * nu);
+        // ω_min and ε_min from k_min and the viscosity ratio 10⁻²
+        t.w.floor = if eps {
+            t.c_mu * t.k.floor * t.k.floor / (1e-2 * nu)
+        } else {
+            t.k.floor / (1e-2 * nu)
+        };
         Ok(t)
     }
 
@@ -1011,7 +1302,7 @@ impl Turbulence {
                 let u = [bc.ub[0][fb], bc.ub[1][fb], bc.ub[2][fb]];
                 let sp = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
                 self.inlets.specs[s]
-                    .at(sp, x, 0.0, self.nu, self.c.beta_star)
+                    .at(sp, x, 0.0, self.nu, self.c_mu, self.eps)
                     .0
             })
             .fold(0.0, f64::max)
@@ -1034,16 +1325,35 @@ impl Turbulence {
         let speed0 = (u0[0] * u0[0] + u0[1] * u0[1] + u0[2] * u0[2]).sqrt();
         let speed0 = if speed0 > 0.0 { speed0 } else { 1.0 };
         let cells = &geo.cell_centroid[..nc];
-        if let (Some(k), Some(w)) = (&i.k, &i.omega) {
+        let second = match (&i.omega, &i.epsilon) {
+            (Some(w), _) => Some((w, "initial.omega", false)),
+            (None, Some(e)) => Some((e, "initial.epsilon", true)),
+            _ => None,
+        };
+        if let (Some(k), Some((w, key, given_eps))) = (&i.k, second) {
             let k = expr::value(k, env, Vars::SPACE, "initial.k")?;
-            let w = expr::value(w, env, Vars::SPACE, "initial.omega")?;
+            let w = expr::value(w, env, Vars::SPACE, key)?;
             let kv: Vec<f64> = cells.iter().map(|&x| k.at(x, 0.0)).collect();
-            let wv: Vec<f64> = cells.iter().map(|&x| w.at(x, 0.0)).collect();
+            let mut wv: Vec<f64> = cells.iter().map(|&x| w.at(x, 0.0)).collect();
+            // ε = C_μ k ω when the model solves the other one
+            if given_eps != self.eps {
+                for (w, &k) in wv.iter_mut().zip(&kv) {
+                    *w = if self.eps {
+                        self.c_mu * k * *w
+                    } else {
+                        *w / (self.c_mu * k).max(1e-300)
+                    };
+                }
+            }
             return Ok((kv, wv));
         }
         let from = |ii: f64, r: f64, sp: f64| {
             let k = 1.5 * (ii * sp) * (ii * sp);
-            (k, k / (r * self.nu))
+            if self.eps {
+                (k, self.c_mu * k * k / (r * self.nu))
+            } else {
+                (k, k / (r * self.nu))
+            }
         };
         let (k, w) = if i.turbulence_intensity.is_some() || i.viscosity_ratio.is_some() {
             from(
@@ -1062,7 +1372,7 @@ impl Turbulence {
                 let u = [bc.ub[0][fb], bc.ub[1][fb], bc.ub[2][fb]];
                 let sp = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
                 let sp = if sp > 0.0 { sp } else { speed0 };
-                let (kk, ww) = self.inlets.specs[s].at(sp, x, 0.0, self.nu, self.c.beta_star);
+                let (kk, ww) = self.inlets.specs[s].at(sp, x, 0.0, self.nu, self.c_mu, self.eps);
                 ks += kk;
                 ws += ww;
                 n += 1.0;
@@ -1235,7 +1545,7 @@ impl Turbulence {
         let mut wb = vec![0.0; self.nb];
         for (i, &(fb, s, x)) in self.inlets.faces.iter().enumerate() {
             let sp = (ux[i] * ux[i] + uy[i] * uy[i] + uz[i] * uz[i]).sqrt();
-            let (k, w) = self.inlets.specs[s].at(sp, x, t, self.nu, self.c.beta_star);
+            let (k, w) = self.inlets.specs[s].at(sp, x, t, self.nu, self.c_mu, self.eps);
             kb[fb as usize] = k.max(self.k.floor);
             wb[fb as usize] = w.max(self.w.floor);
         }
@@ -1271,6 +1581,26 @@ impl Turbulence {
 
     /// The model per cell: with `sources`, also the source split.
     fn cells(&self, dev: &mut dyn FlowDevice, sources: bool) -> Result<()> {
+        if self.eps {
+            return dev.keps_cells(&KepsCellOps {
+                grad_u: self.gu,
+                k: self.k.phi,
+                e: self.w.phi,
+                nu: self.nu,
+                c: self.ke,
+                o: self.ko,
+                add: if sources { self.added } else { None },
+                wall: (sources && self.wd.is_some() && !self.walls.stat.cells.is_empty())
+                    .then_some((self.prod_mask, self.wall_pk)),
+                nu_t: self.nu_t,
+                c_mu: self.f1,
+                pk: self.pk,
+                sources: sources.then_some(self.src),
+                dk: self.dk,
+                de: self.dw,
+                capped: self.capped,
+            });
+        }
         dev.sst_cells(&SstCellOps {
             grad_u: self.gu,
             k: self.k.phi,
@@ -1283,7 +1613,7 @@ impl Turbulence {
             o: self.o,
             add: if sources { self.added } else { None },
             wall: (sources && self.treatment == kwall::AUTOMATIC && self.wd.is_some())
-                .then_some((self.fix_mask, self.wall_pk)),
+                .then_some((self.prod_mask, self.wall_pk)),
             nu_t: self.nu_t,
             f1: self.f1,
             pk: self.pk,
@@ -1307,11 +1637,15 @@ impl Turbulence {
             nu: self.nu,
             treatment: self.treatment,
             c: self.c,
+            ke: self.ke,
+            k: self.k.phi,
+            cs: wd.cs,
             u_tau: wd.u_tau,
             y_plus: wd.y_plus,
             omega: wd.omega,
             blending: wd.blending,
             pk: wd.pk,
+            prod_w: wd.prod_w,
             mu_eff: dev.face_viscosity(),
             k_b: self.k.b_wall,
             w_b: self.w.b_wall,
@@ -1321,9 +1655,12 @@ impl Turbulence {
             weight: wd.weight,
             blending: wd.blending,
             pk: wd.pk,
+            prod_w: wd.prod_w,
             wall_pk: self.wall_pk,
+            prod_mask: self.prod_mask,
             fix_val: self.fix_val,
             fix_mask: self.fix_mask,
+            phi: self.eps.then_some(self.w.phi),
         })
     }
 
@@ -1457,7 +1794,7 @@ impl Turbulence {
                 alpha,
                 time,
                 fix: (e == 1
-                    && self.treatment == kwall::AUTOMATIC
+                    && (self.treatment == kwall::AUTOMATIC || self.eps)
                     && self.wd.is_some()
                     && !self.walls.stat.cells.is_empty())
                 .then_some((self.fix_mask, self.fix_val)),
@@ -1611,6 +1948,7 @@ impl Turbulence {
             }
         }
         Ok(TurbState {
+            epsilon: self.eps,
             nu_t: dev.download(self.nu_t)?,
             k_old: match self.k.old {
                 Some((o1, _, _)) => Some(dev.download(o1)?),
@@ -1640,8 +1978,36 @@ impl Turbulence {
             .collect()
     }
 
-    /// Loads a host state (a restart).
+    /// Loads a host state (a restart). A state of the other family (ω for a
+    /// k-ε case, or ε for SST) is converted with ε = C_μ k ω.
     pub(crate) fn load(&mut self, dev: &mut dyn FlowDevice, s: &TurbState) -> Result<()> {
+        let converted;
+        let s = if s.epsilon == self.eps {
+            s
+        } else {
+            let cm = self.c_mu;
+            let to = |k: &[f64], v: &[f64]| -> Vec<f64> {
+                k.iter()
+                    .zip(v)
+                    .map(|(&k, &v)| {
+                        if self.eps {
+                            cm * k * v
+                        } else {
+                            v / (cm * k).max(1e-300)
+                        }
+                    })
+                    .collect()
+            };
+            let mut c = s.clone();
+            c.epsilon = self.eps;
+            c.omega = to(&s.k, &s.omega);
+            if let (Some(ko), Some(wo)) = (&s.k_old, &s.omega_old) {
+                c.omega_old = Some(to(ko, wo));
+            }
+            c.omega_b = to(&s.k_b, &s.omega_b);
+            converted = c;
+            &converted
+        };
         dev.upload(self.k.phi, &s.k)?;
         dev.upload(self.w.phi, &s.omega)?;
         dev.upload(self.nu_t, &s.nu_t)?;
@@ -1715,7 +2081,12 @@ impl Turbulence {
             // values overpredict C_f of the flat plate by up to 16 %)
             let out = match self.treatment {
                 kwall::LOW_RE => yp[i] > 2.0,
-                _ => yp[i] > 3.0 && yp[i] < 20.0,
+                kwall::AUTOMATIC => yp[i] > 3.0 && yp[i] < 20.0,
+                kwall::SCALABLE => yp[i] < 30.0,
+                kwall::STANDARD => !(30.0..=300.0).contains(&yp[i]),
+                // compound with the high-Re k-ε: below y⁺ 30 the cells of
+                // the buffer layer have no near-wall damping (6c finding)
+                _ => !(30.0..=300.0).contains(&yp[i]),
             };
             if out {
                 e.4 += a;
@@ -1737,6 +2108,27 @@ impl Turbulence {
 
     /// The model's name for the log.
     pub fn label(&self) -> String {
+        if self.eps {
+            return format!(
+                "{} k-epsilon, {} wall treatment{}",
+                if self.model == TurbulenceModel::RealizableKEpsilon {
+                    "realizable"
+                } else {
+                    "standard"
+                },
+                match self.treatment {
+                    kwall::STANDARD => "standard",
+                    kwall::COMPOUND => "compound",
+                    _ => "scalable",
+                },
+                match self.ko.limiter {
+                    kkeps::LIMITER_KATO_LAUNDER => ", Kato-Launder production",
+                    kkeps::LIMITER_DURBIN => ", Durbin-bounded",
+                    kkeps::LIMITER_CLIP => ", production clipped at 10 epsilon",
+                    _ => "",
+                }
+            );
+        }
         format!(
             "k-omega SST (2003), {} wall treatment, {} production",
             match self.treatment {
@@ -1790,6 +2182,8 @@ pub struct WallYPlus {
 pub struct TurbulenceSummary {
     /// Model and options.
     pub model: String,
+    /// The second variable, `omega` or `epsilon`.
+    pub second: &'static str,
     /// First-cell y⁺ per wall.
     pub walls: Vec<WallYPlus>,
     /// Largest ν_t/ν and its cell.
@@ -1813,7 +2207,7 @@ pub fn summary(
     let walls = t.y_plus_summary(dev, mesh)?;
     let (rmax, cell) = t.ratio_max(dev)?;
     let mut finds = Vec::new();
-    for (e, name) in EQUATIONS.iter().enumerate() {
+    for (e, name) in equations(t.model).iter().enumerate() {
         let n = t.health.floor_iterations_late[e];
         if n > 0 {
             finds.push(Diagnostic::new(
@@ -1830,7 +2224,33 @@ pub fn summary(
     }
     for (b, _, _, _, out) in &walls {
         if *out > 0.1 {
-            let text = if t.treatment == kwall::LOW_RE {
+            let text = if t.eps {
+                let (band, advice) = match t.treatment {
+                    kwall::SCALABLE => (
+                        "below 30",
+                        "the scalable wall functions take it without failure, but their \
+                         accuracy is claimed for y⁺ ≥ 30 only (a flat plate at y⁺ 1 to 10 \
+                         stays within 3 %); resolved walls need ζ-f or EB",
+                    ),
+                    kwall::STANDARD => (
+                        "outside 30 … 300",
+                        "the standard wall functions need the first cell in the log layer; \
+                         the scalable treatment takes any y⁺ without failure",
+                    ),
+                    _ => (
+                        "outside 30 … 300",
+                        "with the high-Re k-ε models the compound treatment is claimed for \
+                         30 ≤ y⁺ ≤ 300: below, the cells of the buffer layer have no \
+                         near-wall damping and the wall shear stress is overpredicted (a \
+                         flat plate at y⁺ 10 by 21 %, at y⁺ 1 by 58 %); resolved walls need \
+                         ζ-f or EB",
+                    ),
+                };
+                format!(
+                    "wall `{b}`: first-cell y⁺ {band} on {:.0} % of the area: {advice}",
+                    100.0 * out
+                )
+            } else if t.treatment == kwall::LOW_RE {
                 format!(
                     "wall `{b}`: first-cell y⁺ above 2 on {:.0} % of the area with the low-Re \
                      treatment (it needs y⁺ ≲ 1; the automatic treatment takes any y⁺)",
@@ -1850,6 +2270,7 @@ pub fn summary(
     Ok(Some((
         TurbulenceSummary {
             model: t.label(),
+            second: equations(t.model)[1],
             walls: walls
                 .into_iter()
                 .map(|(boundary, min, mean, max, _)| WallYPlus {

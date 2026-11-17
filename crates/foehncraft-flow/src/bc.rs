@@ -280,6 +280,8 @@ pub struct InletTurbulence {
     pub k: Option<Scalar>,
     /// ω directly.
     pub omega: Option<Scalar>,
+    /// ε directly.
+    pub epsilon: Option<Scalar>,
 }
 
 impl InletTurbulence {
@@ -300,6 +302,9 @@ impl InletTurbulence {
         }
         if self.omega.is_some() {
             v.push("omega");
+        }
+        if self.epsilon.is_some() {
+            v.push("epsilon");
         }
         v
     }
@@ -322,9 +327,14 @@ pub enum BoundaryCondition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mass_flux: Option<Scalar>,
         /// Equivalent sand-grain roughness k_s (m) of the turbulence models
-        /// (stage 6, D134; SST: the wall values of Aupoix 2015).
+        /// (stage 6, D134; SST: the wall values of Aupoix 2015; the k-ε
+        /// family: the log-law shift of Cebeci & Bradshaw 1977).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         roughness: Option<f64>,
+        /// C_s of the roughness shift of Cebeci & Bradshaw (k-ε family;
+        /// default 0.5).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        roughness_constant: Option<f64>,
     },
     /// Prescribed velocity.
     VelocityInlet {
@@ -376,6 +386,9 @@ pub enum BoundaryCondition {
         /// ω (1/s) directly, with `k` (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         omega: Option<Scalar>,
+        /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        epsilon: Option<Scalar>,
     },
     /// Prescribed mass flow (kg/s) into the domain, normal to the faces,
     /// spread by face area.
@@ -398,6 +411,9 @@ pub enum BoundaryCondition {
         /// ω (1/s) directly, with `k` (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         omega: Option<Scalar>,
+        /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        epsilon: Option<Scalar>,
     },
     /// Prescribed static pressure, inflow normal to the face.
     StaticPressureInlet {
@@ -418,6 +434,9 @@ pub enum BoundaryCondition {
         /// ω (1/s) directly, with `k` (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         omega: Option<Scalar>,
+        /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        epsilon: Option<Scalar>,
     },
     /// Prescribed total pressure, inflow normal to the face.
     TotalPressureInlet {
@@ -439,6 +458,9 @@ pub enum BoundaryCondition {
         /// ω (1/s) directly, with `k` (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         omega: Option<Scalar>,
+        /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        epsilon: Option<Scalar>,
     },
     /// Prescribed static pressure, velocity extrapolated.
     StaticPressureOutlet {
@@ -464,6 +486,9 @@ pub enum BoundaryCondition {
         /// ω (1/s) directly, with `k` (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         omega: Option<Scalar>,
+        /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        epsilon: Option<Scalar>,
     },
     /// Prescribed total pressure, velocity extrapolated.
     TotalPressureOutlet {
@@ -487,6 +512,9 @@ pub enum BoundaryCondition {
         /// ω (1/s) directly, with `k` (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         omega: Option<Scalar>,
+        /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        epsilon: Option<Scalar>,
     },
     /// Non-reflecting outlet of a transient run: the velocity is convected
     /// out of the domain, ∂u/∂t + U_c ∂u/∂n = 0.
@@ -571,6 +599,7 @@ impl BoundaryCondition {
                 viscosity_ratio,
                 k,
                 omega,
+                epsilon,
                 ..
             }
             | Self::MassFlowInlet {
@@ -579,6 +608,7 @@ impl BoundaryCondition {
                 viscosity_ratio,
                 k,
                 omega,
+                epsilon,
                 ..
             }
             | Self::StaticPressureInlet {
@@ -587,6 +617,7 @@ impl BoundaryCondition {
                 viscosity_ratio,
                 k,
                 omega,
+                epsilon,
                 ..
             }
             | Self::TotalPressureInlet {
@@ -595,6 +626,7 @@ impl BoundaryCondition {
                 viscosity_ratio,
                 k,
                 omega,
+                epsilon,
                 ..
             }
             | Self::StaticPressureOutlet {
@@ -603,6 +635,7 @@ impl BoundaryCondition {
                 viscosity_ratio,
                 k,
                 omega,
+                epsilon,
                 ..
             }
             | Self::TotalPressureOutlet {
@@ -611,6 +644,7 @@ impl BoundaryCondition {
                 viscosity_ratio,
                 k,
                 omega,
+                epsilon,
                 ..
             } => InletTurbulence {
                 turbulence_intensity: *turbulence_intensity,
@@ -618,6 +652,7 @@ impl BoundaryCondition {
                 viscosity_ratio: *viscosity_ratio,
                 k: k.clone(),
                 omega: omega.clone(),
+                epsilon: epsilon.clone(),
             },
             _ => InletTurbulence::default(),
         }
@@ -628,6 +663,16 @@ impl BoundaryCondition {
         match self {
             Self::Wall { roughness, .. } => roughness.unwrap_or(0.0),
             _ => 0.0,
+        }
+    }
+
+    /// C_s of the roughness shift of a wall (default 0.5).
+    pub fn roughness_constant(&self) -> f64 {
+        match self {
+            Self::Wall {
+                roughness_constant, ..
+            } => roughness_constant.unwrap_or(0.5),
+            _ => 0.5,
         }
     }
 

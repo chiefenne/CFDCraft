@@ -96,7 +96,8 @@ pub enum Spec {
     /// [`Columns::build`]).
     ResScalars(Vec<String>),
     /// `residual.turbulence`: k and ω.
-    ResTurbulence,
+    /// The turbulence residuals; true: the k-ε family (k, ε), else k, ω.
+    ResTurbulence(bool),
     /// `linear.momentum`.
     LinMomentum,
     /// `linear.pressure`.
@@ -175,7 +176,7 @@ impl Spec {
             ("residual", 2) if parts[1] == "momentum" => Self::ResMomentum,
             ("residual", 2) if parts[1] == "continuity" => Self::ResContinuity,
             ("residual", 2) if parts[1] == "scalars" => Self::ResScalars(Vec::new()),
-            ("residual", 2) if parts[1] == "turbulence" => Self::ResTurbulence,
+            ("residual", 2) if parts[1] == "turbulence" => Self::ResTurbulence(false),
             ("linear", 2) if parts[1] == "momentum" => Self::LinMomentum,
             ("linear", 2) if parts[1] == "pressure" => Self::LinPressure,
             ("min", 2) => Self::Min(quantity(parts[1])?),
@@ -367,7 +368,7 @@ impl Columns {
                 .iter()
                 .position(|s| *s == Spec::ResContinuity)
                 .map_or(specs.len(), |i| i + 1);
-            specs.insert(at, Spec::ResTurbulence);
+            specs.insert(at, Spec::ResTurbulence(false));
         }
         let names: Vec<String> = case.scalars.keys().cloned().collect();
         if case.log.columns.is_none() && !names.is_empty() {
@@ -397,6 +398,12 @@ impl Columns {
                     CASE_BAD_VALUE,
                     "[log] columns: a time column needs a transient run"
                 );
+            }
+        }
+        let eps = case.turbulence.model.is_epsilon();
+        for s in &mut specs {
+            if let Spec::ResTurbulence(e) = s {
+                *e = eps;
             }
         }
         let probes = specs
@@ -511,7 +518,7 @@ impl Columns {
                     .extend((0..names.len()).map(|i| {
                         num(ctx.res.scalars.residual.get(i).copied().unwrap_or(f64::NAN))
                     })),
-                Spec::ResTurbulence => out.extend((0..2).map(|i| {
+                Spec::ResTurbulence(_) => out.extend((0..2).map(|i| {
                     num(ctx
                         .res
                         .turbulence
@@ -662,18 +669,25 @@ fn layout(s: &Spec, d: usize, transient: bool) -> Vec<Column> {
                 )
             })
             .collect(),
-        Spec::ResTurbulence => [("k", "ResK"), ("omega", "ResOm")]
-            .iter()
-            .map(|(id, n)| {
-                col(
-                    format!("residual.turbulence.{id}"),
-                    n,
-                    "scaled residuals",
-                    "",
-                    w,
-                )
-            })
-            .collect(),
+        Spec::ResTurbulence(eps) => [
+            ("k", "ResK"),
+            if *eps {
+                ("epsilon", "ResEps")
+            } else {
+                ("omega", "ResOm")
+            },
+        ]
+        .iter()
+        .map(|(id, n)| {
+            col(
+                format!("residual.turbulence.{id}"),
+                n,
+                "scaled residuals",
+                "",
+                w,
+            )
+        })
+        .collect(),
         Spec::LinMomentum => {
             let g = if transient {
                 "solvers"

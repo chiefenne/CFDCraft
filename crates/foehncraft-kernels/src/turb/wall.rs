@@ -23,6 +23,39 @@
 //!   reproduction as eq. (11) of EUCASS2017-372, which names the source).
 //!   With k_w > 0 the eddy viscosity at the wall is k_w/ω_w, so the wall
 //!   shear is (μ + ρ ν_t,w) U_t/y_P.
+//!
+//! The k-ε family (stage 6 PR 6c; specification 4.3) has its own kernel,
+//! [`keps_wall_face`], with the velocity scale u* = C_μ^¼ k_P^½ of the
+//! near-wall cell in all three treatments (the equilibrium scale of
+//! Launder & Spalding 1974): y* = u* y_P/ν, and the wall shear stress
+//! τ_w/ρ = u* U_t/u⁺(y*), i.e. the effective wall viscosity
+//! ν_w = ν y*/u⁺(y*). The viscous limit u⁺ = y* gives ν_w = ν exactly,
+//! for any k; the log limit is the wall function of Launder & Spalding.
+//! No iteration is needed, and u* stays finite where U_t vanishes
+//! (separation and reattachment), unlike u_τ.
+//!
+//! - **`scalable`** (G. Grotjans, F. R. Menter, *Wall functions for general
+//!   application CFD codes*, ECCOMAS 98, 1112–1117 (1998)): the log law at
+//!   ỹ* = max(y*, 11.06), ε_P = u*³/(κ ỹ), P_k,P = (τ_w/ρ) u*/(κ ỹ) with
+//!   ỹ = ỹ* ν/u*;
+//! - **`standard`** (Launder & Spalding 1974): the log law for
+//!   y* ≥ 11.06 and the viscous sublayer u⁺ = y* below (with P_k,P = 0
+//!   there), ε_P = u*³/(κ y_P);
+//! - **`compound`** (M. Popovac, K. Hanjalić, *Compound wall treatment for
+//!   RANS computation of complex turbulent flows and heat transfer*, Flow
+//!   Turbul. Combust. 78, 177–202 (2007)): u⁺ = e^{−Γ} y* + e^{−1/Γ} u⁺_log,
+//!   Γ = 0.01 y*⁴/(1 + 5 y*) (the blending of Kader 1981 with Pr = 1),
+//!   ε_P = e^{−Γ} 2νk_P/y_P² + e^{−1/Γ} u*³/(κ y_P), and the production
+//!   of the cell e^{−Γ} P_k + e^{−1/Γ} (τ_w/ρ) u*/(κ y_P). Γ is evaluated
+//!   with y* (the specification writes y⁺; the two agree in the log layer,
+//!   and in the sublayer, where y* < y⁺, the viscous branch is exact).
+//! - **Rough walls** (all three): u⁺_log = ln(E y*)/κ − ΔB(k_s⁺),
+//!   k_s⁺ = u* k_s/ν, with ΔB of T. Cebeci, P. Bradshaw, *Momentum
+//!   transfer in boundary layers*, Hemisphere (1977): 0 for k_s⁺ < 2.25,
+//!   (1/κ) ln[(k_s⁺ − 2.25)/87.75 + C_s k_s⁺] sin[0.4258 (ln k_s⁺ − 0.811)]
+//!   up to 90, (1/κ) ln(1 + C_s k_s⁺) above (the pieces join
+//!   continuously). The log-law u⁺ is kept at least 1 (a roughness height
+//!   above the first-cell centre would make it vanish; BC027 warns).
 
 use super::sst::SstConstants;
 use foehncraft_core::Real;
@@ -39,6 +72,15 @@ pub const NEWTON_STEPS: usize = 12;
 pub const LOW_RE: u32 = 0;
 /// Wall treatment: the automatic blending of Menter et al. (2003).
 pub const AUTOMATIC: u32 = 1;
+/// Wall treatment (k-ε family): scalable wall functions (Grotjans & Menter
+/// 1998).
+pub const SCALABLE: u32 = 2;
+/// Wall treatment (k-ε family): standard wall functions (Launder &
+/// Spalding 1974).
+pub const STANDARD: u32 = 3;
+/// Wall treatment (k-ε family): the compound treatment (Popovac &
+/// Hanjalić 2007).
+pub const COMPOUND: u32 = 4;
 
 /// The lower end of the log layer, y⁺ = 11.06 (where u⁺ = y⁺ meets the log
 /// law with κ = 0.41, E = 9.793; the limit of the scalable wall functions
@@ -207,6 +249,148 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
     }
 }
 
+/// ΔB(k_s⁺) of Cebeci & Bradshaw (1977) with the roughness constant
+/// C_s (0 below k_s⁺ = 2.25, transitional up to 90, fully rough above).
+#[inline(always)]
+pub fn roughness_shift<T: Real>(ks_plus: T, cs: T, kappa: T) -> T {
+    let f = T::from_f64;
+    let lo = f(2.25);
+    let hi = f(90.0);
+    let k = ks_plus.max_of(lo);
+    // transitional
+    let tr = ((k - lo) / f(87.75) + cs * k).ln_of() * (f(0.4258) * (k.ln_of() - f(0.811))).sin_of();
+    // fully rough
+    let fr = (T::ONE + cs * k).ln_of();
+    let v = if ks_plus < lo {
+        T::ZERO
+    } else if ks_plus < hi {
+        tr
+    } else {
+        fr
+    };
+    v / kappa
+}
+
+/// Γ = 0.01 y⁴/(1 + 5 y) of the compound blending (Kader 1981, Pr = 1).
+#[inline(always)]
+pub fn compound_gamma<T: Real>(y: T) -> T {
+    let y2 = y * y;
+    T::from_f64(0.01) * y2 * y2 / (T::ONE + T::from_f64(5.0) * y)
+}
+
+/// Inputs of [`keps_wall_face`] for one wall face.
+#[derive(Clone, Copy, Debug)]
+pub struct KepsWallInputs<T> {
+    /// Tangential speed of the near-wall cell relative to the wall (m/s).
+    pub ut: T,
+    /// Normal distance y_P of the cell centroid from the face (m).
+    pub y: T,
+    /// ν (m²/s).
+    pub nu: T,
+    /// k of the near-wall cell (m²/s²).
+    pub k: T,
+    /// Equivalent sand-grain roughness k_s (m), 0 for a smooth wall.
+    pub ks: T,
+    /// C_s of Cebeci & Bradshaw.
+    pub cs: T,
+}
+
+/// Results of [`keps_wall_face`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct KepsWallFace<T> {
+    /// u_τ = (τ_w/ρ)^½ (m/s).
+    pub u_tau: T,
+    /// y⁺ = u_τ y_P/ν.
+    pub y_plus: T,
+    /// y* = C_μ^¼ k_P^½ y_P/ν.
+    pub y_star: T,
+    /// ε of the near-wall cell (fixed value) (m²/s³).
+    pub epsilon: T,
+    /// Effective kinematic wall viscosity ν_w = τ_w y_P/(ρ U_t) (m²/s).
+    pub nu_wall: T,
+    /// Weight m_p of the wall production: the cell takes
+    /// (1 − m_p) P_k + `pk_wall`.
+    pub prod_weight: T,
+    /// The wall part of the production (already weighted) (m²/s³).
+    pub pk_wall: T,
+    /// The viscous weight e^{−Γ} of the compound blending (1 in the
+    /// sublayer of the standard wall function, else 0).
+    pub viscous: T,
+}
+
+/// The wall treatment `treatment` ([`SCALABLE`], [`STANDARD`] or
+/// [`COMPOUND`]) of the k-ε family for one wall face.
+#[inline(always)]
+pub fn keps_wall_face<T: Real>(
+    i: &KepsWallInputs<T>,
+    c: &super::keps::KepsConstants,
+    treatment: u32,
+) -> KepsWallFace<T> {
+    let f = T::from_f64;
+    let (ut, y, nu) = (i.ut, i.y, i.nu);
+    let kappa = f(c.kappa);
+    let tiny = f(1e-300);
+    let k = i.k.max_of(T::ZERO);
+    let u_star = f(foehncraft_core::math::sqrt(foehncraft_core::math::sqrt(
+        c.c_mu,
+    ))) * k.sqrt_of();
+    let ys = u_star * y / nu;
+    let shift = if i.ks > T::ZERO {
+        roughness_shift(u_star * i.ks / nu, i.cs, kappa)
+    } else {
+        T::ZERO
+    };
+    let e = f(LOG_LAW_E);
+    let floor = f(Y_PLUS_LOG);
+    let log_plus = |yy: T| ((e * yy).ln_of() / kappa - shift).max_of(T::ONE);
+    let u3 = u_star * u_star * u_star;
+    // ratio r = y*/u⁺ (ν_w = ν r), the length of the log-layer values and
+    // the weights
+    let (r, y_len, viscous, w_log, eps_vis) = if treatment == COMPOUND {
+        let g = compound_gamma(ys).max_of(tiny);
+        let a = (-g).exp_of();
+        let b = (-(T::ONE / g)).exp_of();
+        let yl = ys.max_of(T::ONE);
+        // u⁺/y* = a + b u⁺_log/y* (finite as y* → 0, where b = 0)
+        let r = T::ONE / (a + b * log_plus(yl) / ys.max_of(tiny));
+        (r, y, a, b, a * f(2.0) * nu * k / (y * y))
+    } else if treatment == STANDARD {
+        let log = ys >= floor;
+        if log {
+            (ys / log_plus(ys), y, T::ZERO, T::ONE, T::ZERO)
+        } else {
+            (T::ONE, y, T::ONE, T::ZERO, T::ZERO)
+        }
+    } else {
+        // scalable: the log law at ỹ* = max(y*, 11.06), ỹ = ỹ* ν/u*
+        let yt = ys.max_of(floor);
+        let yl = y.max_of(floor * nu / u_star.max_of(tiny));
+        (ys / log_plus(yt), yl, T::ZERO, T::ONE, T::ZERO)
+    };
+    let nu_wall = nu * r;
+    // τ_w/ρ = ν_w U_t/y_P
+    let tau = nu_wall * ut / y;
+    let u_tau = tau.sqrt_of();
+    let eps = eps_vis + w_log * u3 / (kappa * y_len);
+    let pk_log = tau * u_star / (kappa * y_len);
+    // standard: no production in the sublayer (w_log = 0 there)
+    let (prod_weight, pk_wall) = if treatment == COMPOUND {
+        (T::ONE - viscous, w_log * pk_log)
+    } else {
+        (T::ONE, w_log * pk_log)
+    };
+    KepsWallFace {
+        u_tau,
+        y_plus: u_tau * y / nu,
+        y_star: ys,
+        epsilon: eps.max_of(tiny),
+        nu_wall,
+        prod_weight,
+        pk_wall,
+        viscous,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,5 +464,129 @@ mod tests {
         use foehncraft_core::math as m;
         let exact = m::tanh(m::log10(1e4 / 30.0)) / 0.3;
         assert!((k - exact).abs() < 1e-12, "{k} {exact}");
+    }
+
+    #[test]
+    fn keps_wall_functions_in_the_log_layer() {
+        // equilibrium log layer: k = u_τ²/√C_μ, U = u_τ u⁺_log(y⁺): every
+        // treatment returns u_τ, ε = u_τ³/(κ y), P = u_τ³/(κ y)
+        let c = crate::turb::keps::KepsConstants::standard();
+        let nu = 1e-5;
+        for &yp in &[30.0, 100.0, 300.0] {
+            let y = yp * nu;
+            let u = foehncraft_core::math::ln(LOG_LAW_E * yp) / 0.41;
+            let i = KepsWallInputs {
+                ut: u,
+                y,
+                nu,
+                k: 1.0 / 0.3,
+                ks: 0.0,
+                cs: 0.5,
+            };
+            for t in [SCALABLE, STANDARD, COMPOUND] {
+                let r = keps_wall_face(&i, &c, t);
+                // the compound blend reaches the log law slowly:
+                // e^{−1/Γ} = 0.98 at y⁺ = 30
+                let tol = if t == COMPOUND { 2.5e-2 } else { 1e-12 };
+                assert!((r.u_tau - 1.0).abs() < tol, "{t} {yp}: {}", r.u_tau);
+                assert!((r.y_star - yp).abs() < 1e-9 * yp);
+                let e = 1.0 / (0.41 * y);
+                assert!((r.epsilon - e).abs() < tol * e, "{t}: {} {e}", r.epsilon);
+                assert!((r.pk_wall - e).abs() < 2.0 * tol * e, "{t}: {}", r.pk_wall);
+                assert!((r.prod_weight - 1.0).abs() < tol);
+            }
+        }
+    }
+
+    #[test]
+    fn keps_wall_treatments_in_the_viscous_sublayer() {
+        let c = crate::turb::keps::KepsConstants::standard();
+        let nu = 1e-5;
+        // y⁺ = 0.5 with u_τ = 1, k⁺ = 0.1 y⁺²
+        let y = 0.5 * nu;
+        let k: f64 = 0.1 * 0.25;
+        let i = KepsWallInputs {
+            ut: 0.5,
+            y,
+            nu,
+            k,
+            ks: 0.0,
+            cs: 0.5,
+        };
+        for t in [STANDARD, COMPOUND] {
+            let r = keps_wall_face(&i, &c, t);
+            // the viscous wall shear exactly
+            assert!((r.nu_wall - nu).abs() < 1e-6 * nu, "{t}: {}", r.nu_wall);
+            assert!((r.u_tau - 1.0).abs() < 1e-6);
+        }
+        let r = keps_wall_face(&i, &c, COMPOUND);
+        assert!((r.epsilon - 2.0 * nu * k / (y * y)).abs() < 1e-6 * r.epsilon);
+        assert!(r.prod_weight.abs() < 1e-6 && r.pk_wall == 0.0);
+        // scalable takes the log law at ỹ* = max(y*, 11.06) (it moves the
+        // wall; accurate for y⁺ ≥ 30 only)
+        let r = keps_wall_face(&i, &c, SCALABLE);
+        let m = foehncraft_core::math::sqrt;
+        let ys = m(m(c.c_mu)) * m(k) * y / nu;
+        let up = foehncraft_core::math::ln(LOG_LAW_E * Y_PLUS_LOG) / 0.41;
+        assert!((r.nu_wall - nu * ys / up).abs() < 1e-12 * nu);
+        // no k: still the viscous shear (compound, standard) and finite
+        let i0 = KepsWallInputs::<f64> { k: 0.0, ..i };
+        for t in [SCALABLE, STANDARD, COMPOUND] {
+            let r = keps_wall_face(&i0, &c, t);
+            assert!(r.nu_wall.is_finite() && r.epsilon.is_finite() && r.pk_wall.is_finite());
+        }
+        assert_eq!(keps_wall_face(&i0, &c, COMPOUND).nu_wall, nu);
+    }
+
+    #[test]
+    fn cebeci_bradshaw_shift_is_continuous() {
+        let (cs, kappa) = (0.5, 0.41);
+        assert_eq!(roughness_shift(1.0_f64, cs, kappa), 0.0);
+        let at = |x: f64| roughness_shift(x, cs, kappa);
+        // (to the four digits of the constants 0.811 = ln 2.25)
+        assert!(at(2.25 + 1e-9).abs() < 1e-4);
+        assert!((at(90.0 - 1e-9) - at(90.0)).abs() < 1e-6);
+        // fully rough: u⁺ = (1/κ) ln(E y⁺/(1 + C_s k_s⁺))
+        let v = at(1000.0);
+        assert!((v - foehncraft_core::math::ln(501.0) / 0.41).abs() < 1e-12);
+    }
+
+    #[test]
+    fn keps_wall_face_derivatives_by_dual_numbers() {
+        use foehncraft_core::Dual;
+        let c = crate::turb::keps::KepsConstants::standard();
+        let base = KepsWallInputs {
+            ut: 5.0,
+            y: 2e-4,
+            nu: 1.5e-5,
+            k: 0.08,
+            ks: 1e-4,
+            cs: 0.5,
+        };
+        let lift = |x: f64| Dual::<1>::constant(x);
+        for t in [SCALABLE, STANDARD, COMPOUND] {
+            let di = KepsWallInputs {
+                ut: lift(base.ut),
+                y: lift(base.y),
+                nu: lift(base.nu),
+                k: Dual::<1>::variable(base.k, 0),
+                ks: lift(base.ks),
+                cs: lift(base.cs),
+            };
+            let r = keps_wall_face(&di, &c, t);
+            let h = 1e-7;
+            let at = |k: f64| keps_wall_face(&KepsWallInputs { k, ..base }, &c, t);
+            let (p, m) = (at(base.k + h), at(base.k - h));
+            for (dv, fd) in [
+                (r.epsilon.d[0], (p.epsilon - m.epsilon) / (2.0 * h)),
+                (r.nu_wall.d[0], (p.nu_wall - m.nu_wall) / (2.0 * h)),
+                (r.pk_wall.d[0], (p.pk_wall - m.pk_wall) / (2.0 * h)),
+            ] {
+                assert!(
+                    (dv - fd).abs() <= 1e-5 * fd.abs().max(1e-10),
+                    "{t}: {dv} {fd}"
+                );
+            }
+        }
     }
 }

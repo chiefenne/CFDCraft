@@ -1578,7 +1578,7 @@ pub struct SstCellArgs {
     /// Weight m of the wall production per cell (the automatic wall
     /// treatment, 0 off the near-wall cells); empty: none.
     pub wall_mask: Raw<f64>,
-    /// The wall production per cell (read where `wall_mask` is above 0).
+    /// The weighted wall production per cell, added to (1 − m) P̃_k.
     pub wall_pk: Raw<f64>,
     /// Output ν_t.
     pub nu_t: Raw<f64>,
@@ -1639,10 +1639,11 @@ impl Entry for SstCells {
                 // part explicit, its negative part implicit
                 let (k, w) = (inp.k, inp.w);
                 // near-wall cells of the automatic treatment: the
-                // production (1 − m) P̃_k + m u_τ³/(κ y_P)
+                // production (1 − m) P̃_k + m u_τ³/(κ y_P) (the weighted
+                // wall part comes from [`WallCells`])
                 let su_k = if a.wall_mask.len > 0 {
                     let m = ld(a.wall_mask.get(), c);
-                    r.su_k + m * (ld(a.wall_pk.get(), c) - r.pk)
+                    r.su_k - m * r.pk + ld(a.wall_pk.get(), c)
                 } else {
                     r.su_k
                 };
@@ -1650,6 +1651,101 @@ impl Entry for SstCells {
                 *a.sp_k.out().add(c) = r.sp_k + ak.min(0.0) / k.max(1e-300);
                 *a.su_w.out().add(c) = r.su_w + aw.max(0.0);
                 *a.sp_w.out().add(c) = r.sp_w + aw.min(0.0) / w.max(1e-300);
+            }
+        }
+    }
+}
+
+/// Arguments of [`KepsCells`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct KepsCellArgs {
+    /// Velocity gradient.
+    pub grad_u: RawGrad,
+    /// k.
+    pub k: Raw<f64>,
+    /// ε.
+    pub e: Raw<f64>,
+    /// ν.
+    pub nu: f64,
+    /// Constants.
+    pub c: crate::turb::keps::KepsConstants,
+    /// Options.
+    pub o: crate::turb::keps::KepsOptions,
+    /// Additional explicit sources of k and ε per cell (MMS, D104);
+    /// empty: none.
+    pub add_k: Raw<f64>,
+    /// See `add_k`.
+    pub add_e: Raw<f64>,
+    /// Weight m_p of the wall production per cell (0 off the near-wall
+    /// cells); empty: none.
+    pub wall_mask: Raw<f64>,
+    /// The weighted wall production per cell, added to (1 − m_p) P_k.
+    pub wall_pk: Raw<f64>,
+    /// Output ν_t.
+    pub nu_t: Raw<f64>,
+    /// Output C_μ.
+    pub c_mu: Raw<f64>,
+    /// Output P_k.
+    pub pk: Raw<f64>,
+    /// Output S_u of k (empty: ν_t only).
+    pub su_k: Raw<f64>,
+    /// Output S_p of k.
+    pub sp_k: Raw<f64>,
+    /// Output S_u of ε.
+    pub su_e: Raw<f64>,
+    /// Output S_p of ε.
+    pub sp_e: Raw<f64>,
+    /// Output ν_t/σ_k.
+    pub dk: Raw<f64>,
+    /// Output ν_t/σ_ε.
+    pub de: Raw<f64>,
+    /// Output 1 where the cap of ν_t/ν acted.
+    pub capped: Raw<f64>,
+}
+
+/// The standard or realizable k-ε model per cell
+/// ([`crate::turb::keps::keps_cell`]).
+pub struct KepsCells;
+impl Entry for KepsCells {
+    type Args = KepsCellArgs;
+    const NAME: &'static str = "keps_cells";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &KepsCellArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let g = a.grad_u.v();
+            let inp = crate::turb::keps::KepsCellInputs {
+                k: ld(a.k.get(), c),
+                e: ld(a.e.get(), c),
+                grad_u: [g.x.at(c), g.y.at(c), g.z.at(c)],
+                nu: a.nu,
+            };
+            let r = crate::turb::keps::keps_cell(&inp, &a.c, &a.o);
+            *a.nu_t.out().add(c) = r.nu_t;
+            *a.c_mu.out().add(c) = r.c_mu;
+            *a.pk.out().add(c) = r.pk;
+            *a.dk.out().add(c) = r.dk;
+            *a.de.out().add(c) = r.de;
+            *a.capped.out().add(c) = r.capped;
+            if a.su_k.len > 0 {
+                let (ak, ae) = if a.add_k.len > 0 {
+                    (ld(a.add_k.get(), c), ld(a.add_e.get(), c))
+                } else {
+                    (0.0, 0.0)
+                };
+                let (k, e) = (inp.k, inp.e);
+                // near-wall cells: (1 − m_p) P_k + the wall production
+                let su_k = if a.wall_mask.len > 0 {
+                    let m = ld(a.wall_mask.get(), c);
+                    r.su_k - m * r.pk + ld(a.wall_pk.get(), c)
+                } else {
+                    r.su_k
+                };
+                *a.su_k.out().add(c) = su_k + ak.max(0.0);
+                *a.sp_k.out().add(c) = r.sp_k + ak.min(0.0) / k.max(1e-300);
+                *a.su_e.out().add(c) = r.su_e + ae.max(0.0);
+                *a.sp_e.out().add(c) = r.sp_e + ae.min(0.0) / e.max(1e-300);
             }
         }
     }
@@ -1747,6 +1843,13 @@ pub struct WallFaceArgs {
     pub treatment: u32,
     /// Constants.
     pub c: crate::turb::sst::SstConstants,
+    /// Constants of the k-ε family (treatments `SCALABLE`, `STANDARD`,
+    /// `COMPOUND`).
+    pub ke: crate::turb::keps::KepsConstants,
+    /// k per cell (the k-ε treatments).
+    pub k: Raw<f64>,
+    /// C_s of Cebeci & Bradshaw per wall face (the k-ε treatments).
+    pub cs: Raw<f64>,
     /// u_τ of the last iteration per wall face (rough walls); may be the
     /// output `u_tau` (read before written, same index).
     pub u_tau_old: Raw<f64>,
@@ -1758,8 +1861,12 @@ pub struct WallFaceArgs {
     pub omega: Raw<f64>,
     /// Output: the viscous weight of the blending per wall face.
     pub blending: Raw<f64>,
-    /// Output: the log-layer production u_τ³/(κ y_P) per wall face.
+    /// Output: the weighted wall production per wall face (SST automatic:
+    /// (1 − b) u_τ³/(κ y_P)).
     pub pk: Raw<f64>,
+    /// Output: the weight m_p of the wall production per wall face (the
+    /// cell keeps (1 − m_p) of its own production).
+    pub prod_w: Raw<f64>,
     /// Output (per face): μ_w on the wall faces.
     pub mu_eff: Raw<f64>,
     /// Output (per boundary face): the wall value of k (bc_b of k).
@@ -1787,6 +1894,29 @@ impl Entry for WallFaces {
             let dn = du[0] * n[0] + du[1] * n[1] + du[2] * n[2];
             let t = [du[0] - dn * n[0], du[1] - dn * n[1], du[2] - dn * n[2]];
             let ut = foehncraft_core::math::sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+            if a.treatment >= crate::turb::wall::SCALABLE {
+                // the k-ε family: ε fixed in the cell (weight 1), k and ε
+                // with zero gradient at the wall
+                let inp = crate::turb::wall::KepsWallInputs {
+                    ut,
+                    y: ld(a.y.get(), i),
+                    nu: a.nu,
+                    k: ld(a.k.get(), p),
+                    ks: ld(a.ks.get(), i),
+                    cs: ld(a.cs.get(), i),
+                };
+                let r = crate::turb::wall::keps_wall_face(&inp, &a.ke, a.treatment);
+                *a.u_tau.out().add(i) = r.u_tau;
+                *a.y_plus.out().add(i) = r.y_plus;
+                *a.omega.out().add(i) = r.epsilon;
+                *a.blending.out().add(i) = 0.0;
+                *a.pk.out().add(i) = r.pk_wall;
+                *a.prod_w.out().add(i) = r.prod_weight;
+                *a.mu_eff.out().add(f) = a.rho * r.nu_wall;
+                *a.k_b.out().add(fb) = 0.0;
+                *a.w_b.out().add(fb) = 0.0;
+                return;
+            }
             let inp = crate::turb::wall::WallInputs {
                 ut,
                 y: ld(a.y.get(), i),
@@ -1795,11 +1925,13 @@ impl Entry for WallFaces {
                 u_tau_old: a.u_tau_old.read(i),
             };
             let r = crate::turb::wall::wall_face(&inp, &a.c, a.treatment);
+            let m = 1.0 - r.blending;
             *a.u_tau.out().add(i) = r.u_tau;
             *a.y_plus.out().add(i) = r.y_plus;
             *a.omega.out().add(i) = r.omega;
             *a.blending.out().add(i) = r.blending;
-            *a.pk.out().add(i) = r.pk_wall;
+            *a.pk.out().add(i) = m * r.pk_wall;
+            *a.prod_w.out().add(i) = m;
             *a.mu_eff.out().add(f) = a.rho * r.nu_wall;
             *a.k_b.out().add(fb) = r.k_wall;
             *a.w_b.out().add(fb) = r.omega_wall;
@@ -1823,15 +1955,24 @@ pub struct WallCellArgs {
     pub omega: Raw<f64>,
     /// Viscous weight of the blending per wall face (1: low-Re).
     pub blending: Raw<f64>,
-    /// Log-layer production per wall face.
+    /// Weighted wall production per wall face.
     pub pk: Raw<f64>,
-    /// Output: its area mean per cell.
+    /// Weight of the wall production per wall face.
+    pub prod_w: Raw<f64>,
+    /// Output: the area mean of `pk` per cell.
     pub wall_pk: Raw<f64>,
+    /// Output: the area mean of `prod_w` per cell.
+    pub prod_mask: Raw<f64>,
     /// Output: the fixed value per cell.
     pub fix_val: Raw<f64>,
     /// Output: the weight of the fixed value per cell, the area mean of
     /// 1 − blending over the smooth wall faces.
     pub fix_mask: Raw<f64>,
+    /// The fixed variable, or [`Raw::EMPTY`]: if given, its value in the
+    /// near-wall cells moves to the fixed one by the weight, the start
+    /// value of the solve (the k-ε family: a start far from the fixed ε
+    /// left the solve of the first iteration negative there).
+    pub phi: Raw<f64>,
 }
 
 /// The area-weighted mean of the wall-face values of each near-wall cell,
@@ -1847,7 +1988,7 @@ impl Entry for WallCells {
             let c = ld(a.cells.get(), i) as usize;
             let lo = ld(a.ptr.get(), i) as usize;
             let hi = ld(a.ptr.get(), i + 1) as usize;
-            let (mut v, mut m, mut p) = (0.0, 0.0, 0.0);
+            let (mut v, mut m, mut p, mut q) = (0.0, 0.0, 0.0, 0.0);
             let mut j = lo;
             while j < hi {
                 let s = ld(a.slots.get(), j) as usize;
@@ -1855,11 +1996,17 @@ impl Entry for WallCells {
                 v += w * ld(a.omega.get(), s);
                 m += w * (1.0 - ld(a.blending.get(), s));
                 p += w * ld(a.pk.get(), s);
+                q += w * ld(a.prod_w.get(), s);
                 j += 1;
             }
             *a.fix_val.out().add(c) = v;
             *a.fix_mask.out().add(c) = m;
+            if a.phi.len > 0 {
+                let old = a.phi.read(c);
+                *a.phi.out().add(c) = old + m * (v - old);
+            }
             *a.wall_pk.out().add(c) = p;
+            *a.prod_mask.out().add(c) = q;
         }
     }
 }
@@ -1922,6 +2069,7 @@ send_sync!(
     ScalarRowArgs,
     ScalarScaleArgs,
     SstCellArgs,
+    KepsCellArgs,
     TurbFaceArgs,
     WallFaceArgs,
     WallCellArgs,
@@ -1929,7 +2077,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 40] = [
+pub const NAMES: [&str; 41] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     Fill::NAME,
@@ -1966,6 +2114,7 @@ pub const NAMES: [&str; 40] = [
     ScalarRows::NAME,
     ScalarScale::NAME,
     SstCells::NAME,
+    KepsCells::NAME,
     TurbFaces::NAME,
     WallFaces::NAME,
     WallCells::NAME,
@@ -2007,6 +2156,7 @@ mod tests {
             size_of::<ScalarRowArgs>(),
             size_of::<ScalarScaleArgs>(),
             size_of::<SstCellArgs>(),
+            size_of::<KepsCellArgs>(),
             size_of::<TurbFaceArgs>(),
             size_of::<WallFaceArgs>(),
             size_of::<WallCellArgs>(),
@@ -2067,6 +2217,6 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 40);
+        assert_eq!(NAMES.len(), 41);
     }
 }

@@ -447,6 +447,25 @@ pub fn acos(x: f64) -> f64 {
     atan2(sqrt((1.0 - x) * (1.0 + x)), x)
 }
 
+/// cos(⅓ arccos x) for x in [−1, 1] (NaN outside): the trigonometric
+/// root of the realizable k-ε eddy viscosity (Shih et al. 1995).
+pub fn cos_acos3(x: f64) -> f64 {
+    cos(acos(x) / 3.0)
+}
+
+/// d/dx cos(⅓ arccos x) = sin(θ/3)/(3 sin θ), θ = arccos x: 1/9 at x = 1
+/// (the limit), finite inside (−1, 1]; at x = −1 the bound 1/(3·10⁻³⁰⁰)
+/// of the vanishing denominator.
+pub fn cos_acos3_derivative(x: f64) -> f64 {
+    let t = acos(x);
+    let s = sin(t);
+    if s < 1e-8 && x > 0.0 {
+        // sin(θ/3)/(3 sin θ) = 1/9 (1 + 4θ²/27 + …)
+        return (1.0 + 4.0 * t * t / 27.0) / 9.0;
+    }
+    sin(t / 3.0) / (3.0 * s.max(1e-300))
+}
+
 /// sinh x for |x| < 0.5 (Taylor series to x¹⁷).
 fn sinh_small(x: f64) -> f64 {
     let z = x * x;

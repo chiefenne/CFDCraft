@@ -181,6 +181,10 @@ pub struct InitialSection {
     /// Start ω (1/s): a number or an expression of x, y, z (with `k`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub omega: Option<crate::expr::Scalar>,
+    /// Start ε (m²/s³): a number or an expression of x, y, z (with `k`;
+    /// the k-ε family).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub epsilon: Option<crate::expr::Scalar>,
 }
 
 /// `[pressure]`
@@ -1514,11 +1518,12 @@ pub(crate) fn turbulence_summary<F: FnMut(&str)>(
     }
     let h = &sm.health;
     lg.line(&format!(
-        "  floors: k at most {} cells ({} solves above 0.1 %, {} in the final tenth), ω at \
+        "  floors: k at most {} cells ({} solves above 0.1 %, {} in the final tenth), {} at \
          most {} cells ({}, {}); ν_t capped in at most {} cells",
         h.floor_cells_max[0],
         h.floor_iterations[0],
         h.floor_iterations_late[0],
+        if sm.second == "epsilon" { "ε" } else { "ω" },
         h.floor_cells_max[1],
         h.floor_iterations[1],
         h.floor_iterations_late[1],
@@ -2224,7 +2229,7 @@ pub fn run_steered(
             "iteration,momentum_x,momentum_y,momentum_z,continuity,bicgstab_x,bicgstab_y,bicgstab_z,cg",
         );
         if !case.turbulence.is_laminar() {
-            for s in crate::turbulence::EQUATIONS {
+            for s in crate::turbulence::equations(case.turbulence.model) {
                 let _ = write!(
                     units,
                     ", {s} - (scaled residual), bicgstab_{s} - (iterations)"
@@ -3322,9 +3327,15 @@ pub(crate) fn write_outputs(
     for l in &case.output.lines {
         let mut units = String::from("s m (distance from `from`), x y z m, u v w m/s, p Pa");
         let mut head = String::from("s,x,y,z,u,v,w,p");
-        if fl.state.turbulence.is_some() {
-            units.push_str(", k m2/s2, omega 1/s, nu_t m2/s, wall_distance m (cell values)");
-            head.push_str(",k,omega,nu_t,wall_distance");
+        if let Some(t) = &fl.state.turbulence {
+            if t.epsilon {
+                units
+                    .push_str(", k m2/s2, epsilon m2/s3, nu_t m2/s, wall_distance m (cell values)");
+                head.push_str(",k,epsilon,nu_t,wall_distance");
+            } else {
+                units.push_str(", k m2/s2, omega 1/s, nu_t m2/s, wall_distance m (cell values)");
+                head.push_str(",k,omega,nu_t,wall_distance");
+            }
         }
         for st in &fl.state.scalars {
             let _ = write!(units, ", {} (cell value)", st.name);
@@ -3465,7 +3476,7 @@ pub(crate) fn write_fields(
     if let Some(t) = &fl.state.turbulence {
         for (name, values) in [
             ("k", &t.k),
-            ("omega", &t.omega),
+            (if t.epsilon { "epsilon" } else { "omega" }, &t.omega),
             ("nu_t", &t.nu_t),
             ("turbulence_wall_distance", &t.wall_distance),
             ("modified_pressure", &t.p_modified),
@@ -3493,10 +3504,15 @@ pub(crate) fn write_fields(
     let name = case_name(case);
     let units = format!(
         "{FIELD_UNITS}{}{}",
-        if fl.state.turbulence.is_some() {
-            "; k m2/s2; omega 1/s; nu_t m2/s; turbulence_wall_distance m; modified_pressure Pa"
-        } else {
-            ""
+        match &fl.state.turbulence {
+            Some(t) if t.epsilon => {
+                "; k m2/s2; epsilon m2/s3; nu_t m2/s; turbulence_wall_distance m; \
+                 modified_pressure Pa"
+            }
+            Some(_) => {
+                "; k m2/s2; omega 1/s; nu_t m2/s; turbulence_wall_distance m; modified_pressure Pa"
+            }
+            None => "",
         },
         crate::derived::Fields::units(&case.output.derived)
     );

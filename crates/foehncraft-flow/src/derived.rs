@@ -568,7 +568,8 @@ pub fn compute(
                         "derived field `turbulence-features` needs the turbulence fields",
                     ))
                 })?;
-                let beta_star = case.turbulence.sst_constants()?.beta_star;
+                // the k-ε family: ω = ε/(C_μ k), so that τ = 1/(β* ω) = k/ε
+                let beta_star = case.turbulence.c_mu()?;
                 let nu = fl.phys.mu / fl.phys.rho;
                 let rows: Vec<[f64; 12]> = (0..nc)
                     .map(|c| {
@@ -578,7 +579,11 @@ pub fn compute(
                             fl.u.get(c),
                             gp,
                             t.k[c],
-                            t.omega[c],
+                            if t.epsilon {
+                                t.omega[c] / (beta_star * t.k[c]).max(1e-300)
+                            } else {
+                                t.omega[c]
+                            },
                             t.nu_t[c],
                             t.wall_distance.get(c).copied().unwrap_or(f64::INFINITY),
                             nu,
