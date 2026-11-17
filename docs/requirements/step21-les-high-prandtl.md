@@ -44,9 +44,10 @@ Prandtl number, semi-local wall scaling) but it should not be run as written:
   is named but not specified, and for industrial internal flows it matters
   more than wall-resolved LES; averaging over homogeneous directions and
   spectra are missing; the inlet should be the divergence-free SEM.
-- **High Pr.** The TU Graz work is a good anchor, but its near-wall Pr_t
-  profile has case-tuned constants and the DNS data are not public, so the
-  papers and data must come from the maintainer (O20). A gradient (Clark)
+- **High Pr.** The TU Graz work is a good anchor. The constant-property
+  P-function with a modified Kays–Crawford Pr_t (Irrenfried & Steiner 2016,
+  provided by the maintainer) is now specified and checked (D172, D173); the
+  variable-property form and the DNS data are not available (O20). A gradient (Clark)
   SGS heat flux on its own is unstable and becomes a research item (P16).
 - **Split in three.** High-Pr closures go into the interfaces of stage 7
   (D172, D173). Two small interface items keep LES open without work now
@@ -294,8 +295,10 @@ RANS and on wall-modelled LES, not on resolved conductive sublayers. Two
 effects decide the accuracy of those wall functions:
 
 1. **The turbulent Prandtl number rises near the wall** well above its bulk
-   value at high Pr (Steiner, Irrenfried & Brenn 2017, from DNS at
-   Re_τ = 360 and Pr = 1, 10, 20).
+   value at high Pr: DNS of heated pipe flow at Re_τ = 360 gives
+   Pr_t ≈ 1.0, 1.6 and 2.2 at the wall for Pr = 1, 10 and 20, falling to
+   about 0.9 beyond y⁺ ≈ 10 (Irrenfried & Steiner 2016, figure 5; Steiner,
+   Irrenfried & Brenn 2017).
 2. **Temperature-dependent viscosity** changes the near-wall turbulence:
    at Re_τ,w = 380 and Pr_w = 56 the Nusselt number drops from 98.4 with
    constant properties to 75.9 with variable properties, while the skin
@@ -309,21 +312,78 @@ conductivity (D152) and in the buoyancy production (D155). D172 makes Pr_t a
 field computed by a closure, read by all three:
 
 - `constant` (0.85), `kays-crawford` (Kays 1994), as specified;
+- **`kays-crawford-hp`** (the modified Kays–Crawford model of Irrenfried &
+  Steiner 2016, eq. 23, paper provided by the maintainer on 2026-11-17), with
+  Pe_t = (ν_t/ν) Pr and a = √(2 (1/Pr_t,∞ − γ)):
+
+      Pr_t = { γ + C Pe_t a − (C Pe_t)² [1 − exp(−a/(C Pe_t))] }⁻¹,
+      γ = 1 / (Pr_t,∞ + Pr^0.88 / 10),
+
+  with C = 0.8 and Pr_t,∞ = 0.9. It fixes the one flaw of the original
+  Kays–Crawford form (C = 0.2, Pr_t = 2 Pr_t,∞ at the wall for every Pr): the
+  wall value is 1/γ = Pr_t,∞ + Pr^0.88/10 (1.00, 1.66 and 2.30 for Pr = 1,
+  10 and 20, against 1.0, 1.6 and 2.2 in the DNS) and the limit for large
+  Pe_t is the same 1/Pr_t,∞ (checked by expanding the exponential). The
+  constants are the published ones, so the option has defaults (C, Pr_t,∞
+  from the case file as overrides). It needs no wall distance, only ν_t, so it
+  works in RANS and in the equilibrium wall model of L41. Fitted to one
+  Reynolds number (Re_τ = 360) and Pr ≤ 20: extrapolation to Pr 56 and to
+  other Re_τ is a verification item (H-2);
 - `wall-profile`: the generic DNS-based form
   Pr_t = A + (Pr_t,∞ − A)/(1 + e^{−B y⁺})² of Steiner, Irrenfried & Brenn
   (2017). Their A and B were tuned per case (A 2.7–3.0, B 0.5–2.9 for three
   experimental series), so they are **not** universal constants: the option
-  takes A, B and Pr_t,∞ from the case file and has no defaults until the
-  calibration of the journal papers is checked (O20);
+  takes A, B and Pr_t,∞ from the case file and has no defaults. With
+  `kays-crawford-hp` available it is a secondary option;
 - `sgs` with a constant Pr_sgs for LES (L40).
 
 ### 6.3 Thermal wall function with variable properties (D173)
 
-The prompt's "revised P-function" is the model of Steiner & Irrenfried
-(2019): a P-function-based near-wall model extended to temperature-dependent
-properties by modifying the local mixing length and the turbulent Prandtl
-number. We do not have the exact published form (paywalled; O20), so D173
-specifies the general mechanism, into which their closures plug:
+The prompt's "revised P-function" has two published stages. The
+**constant-property stage** is now in hand: Irrenfried & Steiner (2016, the
+paper provided on 2026-11-17). Its content, which D173 adopts:
+
+- The wall-layer relation dT⁺/dy⁺ = Pr_tot dw⁺/dy⁺ (momentum and heat fluxes
+  constant near the wall) with
+  Pr_tot = (1 + ν_t/ν) / (1/Pr + (ν_t/ν)/Pr_t) and
+  dw⁺/dy⁺ = 1/(1 + ν_t/ν). Integrated to a w⁺ in the log region
+  w⁺ = ln(y⁺)/κ + β this gives T⁺ = Pr_t,∞ (w⁺ + P), with the P-function
+  P = ∫₀^∞ (Pr_tot/Pr_t,∞ − 1) dw⁺, the thermal resistance of the diffusive
+  sublayer. D135's Jayatilleke form is this P with an empirical fit.
+- Spalding's closed form of P rests on two simplifications that fail at high
+  Pr: the leading term of van Driest's form near the wall,
+  ν_t/ν ≈ (κ/A⁺)² w⁺⁴, and a constant Pr_t. (The paper prints eq. 8 as
+  (κ/A⁺) w⁺⁴ and the factor of eq. 9 as (π/4) sin(π/4); both are misprints:
+  the series of l⁺ = κ y⁺ (1 − e^{−y⁺/A⁺}) gives (κ/A⁺)², and integrating
+  ∫₀^∞ dw⁺/(b + c w⁺⁴) gives the (A⁺/κ)^{1/2} and (π/4)/sin(π/4) of eq. 9
+  only with c = (κ/A⁺)²; the product (π/4) sin(π/4) would give half the
+  value of about 91 that figure 4 shows for Spalding at Pr = 20. We use the
+  derived forms.) The paper replaces them by the full van Driest mixing
+  length,
+  ν_t/ν = l⁺² dw⁺/dy⁺ with l⁺ = κ y⁺ (1 − e^{−y⁺/A⁺}), A⁺ = 26, so that
+  dw⁺/dy⁺ = 2 / (1 + √(1 + 4 l⁺²)), and by the Pr_t of `kays-crawford-hp`.
+  (The true near-wall order of ν_t/ν is y⁺³ in DNS; the y⁺⁴ of van Driest
+  does not matter for the integral, as the paper shows.) With κ = 0.34 and
+  β = 4.5 at Re_τ = 360 (low-Re values, as in Wu & Moin 2008 and Durst et al.
+  1995) the profile follows the DNS to the log layer at Pr = 1, 10, 20.
+- The integral is cheap: a fixed number of quadrature points per wall face,
+  or a table in (y⁺, Pr) built on the host (D31).
+
+**Checked by us (2026-11-17), not only taken from the paper:** the integral
+with these formulas, evaluated numerically for κ = 0.34, gives
+P = 1.2, 59.2 and 105.5 for Pr = 1, 10, 20 with `kays-crawford-hp`, and 99.7
+at Pr = 20 with constant Pr_t = 0.9. The paper's figures show, at Pr = 20,
+about 100 (constant Pr_t, figure 4), about 105 (eq. 7 with eq. 23, figure 8)
+and about 106 (DNS). The integrated T⁺ at y⁺ = 100 is 17.5, 69.6 and 111.3
+for Pr = 1, 10, 20, against about 19, 71 and 111 read from figure 9. The
+reconstruction of eq. 23 is therefore right to the accuracy of reading a
+figure (at Pr = 1 our T⁺ is about 1.5 lower), and
+D173's `"integrated"` option gets unit tests with these numbers.
+
+The **variable-property stage** is Steiner & Irrenfried (2019): the same
+mechanism with the local mixing length and Pr_t modified for μ(T) etc. We
+still do not have its published form (O20), so D173 specifies the general
+mechanism, into which their modifications plug:
 
 - The wall-face interface of D134/D135 carries ρ, μ, k and c_p at the wall
   face (at T_w) and in the first cell, from the property database (D94–D103).
@@ -333,12 +393,13 @@ specifies the general mechanism, into which their closures plug:
   coordinate C_μ^{1/4} k^{1/2} y/ν.)
 - **Integrated wall function** `"integrated"`: the 1D wall-layer equations
   for u and T integrated from the wall to the first cell centre on a fixed
-  number of points, with a damped mixing length, the Pr_t closure of D172,
-  and μ(T), k(T), c_p(T) at the local temperature, solved by a fixed number
-  of fixed-point sweeps (no data-dependent branches, deterministic, one body
-  for CPU and GPU). With constant properties and Pr_t = const it must
-  reproduce the Kader profile to within the scatter of Kader's own fit
-  (a test, not an assumption).
+  number of points, with the van Driest mixing length, the Pr_t closure of
+  D172 (default `kays-crawford-hp`) and μ(T), k(T), c_p(T) at the local
+  temperature, solved by a fixed number of fixed-point sweeps (no
+  data-dependent branches, deterministic, one body for CPU and GPU). With
+  constant properties it must reproduce the P values above and, with
+  constant Pr_t, the Kader profile to within the scatter of Kader's own fit
+  (tests, not assumptions).
 - Kader stays the default; Jayatilleke stays the option.
 
 The same kernel, with the exchange point moved off the wall, is the
@@ -407,7 +468,7 @@ Rows in [`requirements.md`](../requirements.md).
 
 | ID | Item | Stage |
 |---|---|---|
-| D172 | Turbulent Prandtl/Schmidt number as a closure field (`constant`, `kays-crawford`, `wall-profile`, later `sgs`), read by D135, D152, D155 | where D135 is implemented (stage 6) for the first two; `wall-profile` with stage 7, pull request 7e |
+| D172 | Turbulent Prandtl/Schmidt number as a closure field (`constant`, `kays-crawford`, `kays-crawford-hp`, `wall-profile`, later `sgs`), read by D135, D152, D155 | where D135 is implemented (stage 6) for the first two; the others with stage 7, pull request 7e |
 | D173 | Wall-face interface with variable properties, semi-local y⁺_sl, integrated thermal wall function `"integrated"` | stage 7, pull request 7e |
 | D174 | Convection blending as a per-face field; modes `constant` (today's results bitwise) and `mesh-quality`; no Ducros sensor | stage 8 with D50 at the latest, earlier if a pull request touches the momentum face kernel |
 | D175 | Algebraic (equation-free) model slot in the turbulence interface; filter width as a derived mesh field; singular values of ∇u in the invariants module | interfaces kept open in stage 6; first model with L40 |
@@ -423,18 +484,22 @@ Rows in [`requirements.md`](../requirements.md).
 
 ## 9. Questions for the maintainer
 
-1. **Papers (O20).** Please provide, if you have access: Irrenfried &
-   Steiner's P-function model for high Pr (the journal version of the
-   analytical P-function model, with its constants), Steiner & Irrenfried
-   (2019, IJHFF 80, 108495) on variable properties, and the journal version
-   of the near-wall Pr_t model. The specification of D172/D173 then fixes
-   the published constants.
-2. **Data (O20).** The TU Graz DNS (pipe, Re_τ 360 with Pr 1, 10, 20;
-   Re_τ 500 with Pr 10, 20; Re_τ,w 380 with Pr_w 56 and variable properties)
-   state no public data. Can you obtain the mean profiles (U⁺, T⁺, u′v′,
-   v′θ′, Nu) with permission to ship them in the repository (D168)? If not,
-   H-1 uses Pirozzoli (2023) up to Pr 16 and H-2 uses Gnielinski with the
-   property-ratio correction plus the published Nu values.
+1. **Papers (O20), partly answered 2026-11-17.** The maintainer provided
+   Irrenfried & Steiner (2016, ETMM11), the constant-property P-function
+   with the modified Kays–Crawford Pr_t: it is built into D172 and D173
+   (sections 6.2 and 6.3). Still missing: Steiner & Irrenfried (2019, IJHFF
+   80, 108495) on variable properties, which D173 needs for the variable-property
+   modifications. The maintainer has nothing more; the variable-property
+   closure then waits, and H-2 checks only the integrated mechanism against
+   Gnielinski with the property ratio and the Nu values of Irrenfried &
+   Steiner (2024).
+2. **Data (O20), unchanged.** The 2016 paper shows DNS only as figures
+   (Pr_t(y⁺), T⁺(y⁺), the P-function integral at Re_τ = 360, Pr = 1, 10, 20),
+   no tables and no data statement. The Pr_t and T⁺ curves can be digitised
+   from the figures as a **qualitative** check (a tolerance of the order of
+   the line width, and only if the maintainer agrees to using figures from a
+   paper, D168). Otherwise H-1 uses Pirozzoli (2023) up to Pr 16 and H-2 uses
+   Gnielinski with the property-ratio correction plus the published Nu values.
 3. **Order after v1.0.** L5 (now L39–L43) stays after L27, L2, L12, L3, L4
    in the order of section 3 of the requirements. Say if LES should move
    up.
@@ -453,6 +518,8 @@ Rows in [`requirements.md`](../requirements.md).
 - F. Ducros, V. Ferrand, F. Nicoud, C. Weber, D. Darracq, C. Gacherieu,
   T. Poinsot, *Large-eddy simulation of the shock/turbulence interaction*,
   J. Comput. Phys. 152, 517–549 (1999)
+- F. Durst, J. Jovanović, J. Sender, *LDA measurements in the near-wall
+  region of a turbulent pipe flow*, J. Fluid Mech. 295, 305–335 (1995)
 - F. N. Felten, T. S. Lund, *Kinetic energy conservation issues associated
   with the collocated mesh scheme for incompressible flow*, J. Comput. Phys.
   215, 465–484 (2006)
@@ -464,6 +531,10 @@ Rows in [`requirements.md`](../requirements.md).
   schemes on unstructured meshes*, CTR Annual Research Briefs, 3–14 (2004)
 - P. G. Huang, G. N. Coleman, P. Bradshaw, *Compressible turbulent channel
   flows: DNS results and modelling*, J. Fluid Mech. 305, 185–218 (1995)
+- C. Irrenfried, H. Steiner, *DNS of a turbulent heated pipe flow at high
+  Prandtl numbers revisiting the P-function model*, 11th ERCOFTAC
+  Symposium on Engineering Turbulence Modelling and Measurements (ETMM11)
+  (2016) (◇ year and proceedings pages)
 - C. Irrenfried, H. Steiner, *Subgrid-scale modeling of turbulent heat
   transport in forced convection at high molecular Prandtl numbers*, HEFAT
   2017, Portorož (2017)
@@ -473,12 +544,17 @@ Rows in [`requirements.md`](../requirements.md).
 - N. Jarrin, S. Benhamadouche, D. Laurence, R. Prosser, *A synthetic-eddy
   method for generating inflow conditions for large-eddy simulations*,
   Int. J. Heat Fluid Flow 27, 585–593 (2006)
+- C. Jayatilleke, *The influence of Prandtl number and surface roughness on
+  the resistance of the laminar sub-layer to momentum and heat transfer*,
+  Prog. Heat Mass Transfer 1, 193–321 (1969)
 - B. A. Kader, *Temperature and concentration profiles in fully turbulent
   boundary layers*, Int. J. Heat Mass Transfer 24, 1541–1544 (1981)
 - S. Kawai, J. Larsson, *Wall-modeling in large eddy simulation: length
   scales, grid resolution, and accuracy*, Phys. Fluids 24, 015105 (2012)
 - W. M. Kays, *Turbulent Prandtl number – where are we?*, J. Heat Transfer
   116, 284–295 (1994)
+- W. M. Kays, M. E. Crawford, *Convective Heat and Mass Transfer*, McGraw-Hill
+  (1980)
 - J. Kim, P. Moin, *Application of a fractional-step method to
   incompressible Navier–Stokes equations*, J. Comput. Phys. 59, 308–323
   (1985)
@@ -529,6 +605,8 @@ Rows in [`requirements.md`](../requirements.md).
   1204–1214 (2007)
 - A. Scotti, C. Meneveau, D. K. Lilly, *Generalized Smagorinsky model for
   anisotropic grids*, Phys. Fluids A 5, 2306–2308 (1993)
+- D. B. Spalding, *Monograph on turbulent boundary layers*, Imperial College
+  Mech. Eng. Dept. TWF/TN/33 (1967)
 - H. Steiner, C. Irrenfried, G. Brenn, *Near-wall determination of the
   turbulent Prandtl number based on experiments, numerical simulation and
   analytical models*, HEFAT 2017, Portorož, 495–500 (2017)
@@ -542,6 +620,8 @@ Rows in [`requirements.md`](../requirements.md).
   upgrades in the detached-eddy simulation of complex turbulent flows*, in
   Advances in LES of Complex Flows, Fluid Mech. Appl. 65, 239–254 (2002;
   colloquium of 2000, cited as Travin et al. 2000 in D25)
+- E. R. van Driest, *On turbulent flow near a wall*, J. Aeronaut. Sci. 23,
+  1007–1011 (1956)
 - W. M. van Rees, A. Leonard, D. I. Pullin, P. Koumoutsakos, *A comparison
   of vortex and pseudo-spectral methods for the simulation of periodic
   vortical flows at high Reynolds numbers*, J. Comput. Phys. 230,
@@ -553,3 +633,5 @@ Rows in [`requirements.md`](../requirements.md).
   (2004)
 - B. Vreman, B. Geurts, H. Kuerten, *Large-eddy simulation of the turbulent
   mixing layer*, J. Fluid Mech. 339, 357–390 (1997)
+- X. Wu, P. Moin, *A direct numerical simulation study on the mean velocity
+  characteristics in turbulent pipe flow*, J. Fluid Mech. 608, 81–112 (2008)
