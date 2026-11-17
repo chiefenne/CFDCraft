@@ -126,6 +126,16 @@ D109 (1), stage 6 part 6p); the keys are on the [key page](flow-keys.md#boundary
 | `flow/channel_heated_periodic.toml` | as `poiseuille_periodic.toml` | the laminar heated channel on one periodic module with the heat-flux jump: observed order of the temperature error 1.8–2.2 required, Nu = 8.2460 against 140/17 = 8.2353 on the finest mesh | [gallery 67](../gallery/boundary-conditions.md#periodic), [recipe 67](../recipes/boundary-conditions.md#periodic) |
 | `flow/pipe_heated_periodic.toml` | generated hex 2D revolved into a 0.5° wedge, perturbed, 64 to 1 024 cells (3 levels) | the short periodic heated pipe (one diameter, D111): Hagen–Poiseuille flow at a fixed mass flow and the heat-flux jump; orders 1.8–2.2 (velocity) and 1.8–2.6 (temperature) required, Nu = 4.3691 against 48/11 = 4.3636 on the finest mesh | [gallery 67](../gallery/boundary-conditions.md#periodic), [recipe 67](../recipes/boundary-conditions.md#periodic) |
 
+## Turbulence models
+
+RANS turbulence models with their wall treatments (stage 6, D129–D139);
+the keys are on the [key page](flow-keys.md#turbulence-d129d139).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/tmr_plate_sst.toml` | generated hex 2D on the TMR grid family (8 + 24 cells along x, plate split from the symmetry plane at x = 0, wall grading 38 000), 3 072 cells (`verification.levels = [0, 1, 2, 3]`: 768 to 49 152) | the TMR zero-pressure-gradient flat plate at Re = 5·10⁶/m with k-ω SST and `low-re`: C_f(0.97) against the TMR value 2.6907e-3 (+0.37 % on the finest mesh), the wall shear along the plate, the profile at x = 0.97, the D166 features | [gallery 68](../gallery/turbulence.md#sst), [recipe 68](../recipes/turbulence.md#sst) |
+| `flow/channel_sst.toml` | generated hex 2D, 2 × 96 cells, graded towards both walls (ratio 60), periodic in x | fully developed channel flow at Re_τ = 395 driven by the DNS bulk velocity: U_b⁺ = 17.43 against 17.55 (Moser, Kim & Mansour), −0.7 % | [gallery 68](../gallery/turbulence.md#sst), [recipe 68](../recipes/turbulence.md#sst) |
+
 ## Derived fields
 
 Fields derived from the solution with the output or afterwards from a

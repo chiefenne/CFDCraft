@@ -824,10 +824,10 @@ implemented):
 | Code | Severity | Title |
 |---|---|---|
 | `BC027` | warning | A wall roughness k_s larger than the first-cell distance on more than 10 % of the wall's area. |
-| `BC028` | warning | A turbulence value that the selected model does not use (`zeta` with SST or k-ε, `omega` with an ε model); BC009 stays for laminar cases. |
+| `BC028` | warning | A turbulence value that the run does not use: `zeta` with SST or k-ε, `omega` with an ε model, or any turbulence value at an outlet (*6b*: the backflow takes k and ω of the cell until the backflow values are implemented); BC009 stays for laminar cases. |
 | `BC029` | error | Two incompatible turbulence specifications on one inlet (for example `turbulence_length_scale` and `viscosity_ratio`, or `k` with intensity). |
-| `TURB001` | warning | First-cell y⁺ outside the claimed range of the wall treatment (section 4.3) on more than 10 % of a wall's area (reported per boundary with the area-weighted min, mean and max). |
-| `TURB002` | warning | A positivity floor or bound acted on more than 0.1 % of the cells in an iteration (equation and cell count). |
+| `TURB001` | warning | First-cell y⁺ outside the claimed range of the wall treatment (section 4.3) on more than 10 % of a wall's area (reported per boundary with the area-weighted min, mean and max). *6b:* above 2 with `low-re`; between 3 and 20 with `automatic`, where the blending overpredicts the wall shear stress (section 9.3). |
+| `TURB002` | warning | A positivity floor or bound acted on more than 0.1 % of the cells in an iteration (equation and cell count). *6b:* reported only for iterations in the final tenth of the solves; the run record counts all of them. |
 | `TURB003` | warning | Inlet turbulence outside the usual range: I > 0.5, or a viscosity ratio below 10⁻² or above 10⁵. |
 | `TURB004` | note | Kato–Launder production in a rotating zone: Ω is the absolute-frame vorticity. |
 | `TURB005` | note | No wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0; the ζ-f and EB near-wall terms vanish). |
@@ -861,7 +861,7 @@ code; the table below is the target.
 | `turbulence.constants.<name>` | number | the paper's | | | Constant override by its literature name (`beta_star`, `a1`, `c_mu`, …); TURB007. |
 | `solver.turbulence.scheme` | "upwind" \| "linear-upwind" \| "central" | `"linear-upwind"` | | | Convection scheme of the turbulence equations. |
 | `solver.turbulence.limiter` | "none" \| "venkatakrishnan" \| "venkatakrishnan-wang" | `"venkatakrishnan"` | | | Limiter. |
-| `solver.turbulence.limiter_k` | number | `5.0` | | | Constant K of the limiter. |
+| `solver.turbulence.limiter_k` | number | `0.0` | | | Relative threshold K of the limiter, ε = K (φ_max − φ_min) (6.1; *6b*: 0 is taken as 10⁻¹², the bounded Venkatakrishnan function). |
 | `solver.turbulence.relaxation` | number | 0.8 steady, 1 transient | | yes | Under-relaxation of k, ε, ω, ζ, φ. |
 | `solver.turbulence.tolerance` | number | 1e-2 steady, 1e-8 transient | | yes | Relative tolerance per solve. |
 | `solver.turbulence.max_iter` | integer | `50` | | yes | BiCGStab iterations per solve. |

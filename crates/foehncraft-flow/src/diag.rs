@@ -111,8 +111,8 @@ codes! {
     // passive scalars (D51, D116)
     SCALAR_BOUNDARY = "SCAL001", Error, "A `[boundary.<name>.scalar.<scalar>]` table for an unknown scalar or boundary, without exactly one of `value` and `flux`, or with a condition its boundary does not take (a flux at an inlet, anything at an outlet, `periodic` away from a periodic pair, the heat-flux mode with fixed values).";
     // turbulence models (stage 6, D137)
-    TURB_Y_PLUS = "TURB001", Warning, "First-cell y⁺ outside the claimed range of the wall treatment on more than 10 % of a wall's area (per boundary with the area-weighted min, mean and max).";
-    TURB_FLOOR = "TURB002", Warning, "A positivity floor or bound acted on more than 0.1 % of the cells in an iteration (equation and cell count).";
+    TURB_Y_PLUS = "TURB001", Warning, "First-cell y⁺ outside the claimed range of the wall treatment on more than 10 % of a wall's area: above 2 with `low-re`, between 3 and 20 (the buffer layer) with `automatic` (per boundary with the area-weighted min, mean and max).";
+    TURB_FLOOR = "TURB002", Warning, "A positivity floor of k or ω acted on more than 0.1 % of the cells in an iteration of the final tenth of the solves (equation and cell count); the run record counts all iterations (`turbulence_floors`).";
     TURB_INLET_RANGE = "TURB003", Warning, "Inlet turbulence outside the usual range: I > 0.5, or a viscosity ratio below 10⁻² or above 10⁵.";
     TURB_KATO_ROTATING = "TURB004", Note, "Kato–Launder production in a rotating zone: Ω is the absolute-frame vorticity.";
     TURB_NO_WALL = "TURB005", Note, "No wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0; the ζ-f and EB near-wall terms vanish).";
@@ -372,7 +372,7 @@ mod tests {
             assert!(
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
-                    "REG", "MESH"
+                    "REG", "MESH", "TURB"
                 ]
                 .contains(&p),
                 "{}",

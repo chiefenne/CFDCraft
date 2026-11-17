@@ -1343,14 +1343,8 @@ impl Turbulence {
 
     /// The velocity gradient of `u` with the boundary values `ub`.
     fn velocity_gradient(&self, dev: &mut dyn FlowDevice, u: Buf3, ub: Buf3) -> Result<()> {
-        for i in 0..3 {
-            dev.gradient(
-                Lsq::Velocity,
-                u.all()[i],
-                Mask::Velocity,
-                ub.all()[i],
-                self.gu[i],
-            )?;
+        for ((ui, bi), g) in u.all().into_iter().zip(ub.all()).zip(self.gu) {
+            dev.gradient(Lsq::Velocity, ui, Mask::Velocity, bi, g)?;
         }
         Ok(())
     }
