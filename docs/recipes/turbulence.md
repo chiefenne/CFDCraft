@@ -289,6 +289,33 @@ target/release/foehn flow examples/studies/backstep/zf0.toml --out output/backst
 target/release/foehn flow examples/studies/backstep/sst.toml --out output/backstep_sst
 ```
 
+Each case starts with the momentum under-relaxation 0.5 while the bubble
+forms and switches to 0.8 at iteration 100:
+
+```toml
+[solver.momentum]
+relaxation = 0.5
+
+[[schedule]]
+at_iteration = 100
+set = { solver.momentum.relaxation = 0.8 }
+```
+
+That halves the iterations: x_r is within 1 % of its final value after
+about 600 iterations on the 8 200-cell mesh and 1 750 on the 32 800-cell
+mesh, for all three models. With 0.5 throughout SST needs more than
+4 000 on the fine mesh; 0.9 stalls the residual at 10⁻⁴. The residual
+is not the measure here: it is still 5·10⁻⁵ to 10⁻⁴ when x_r has
+settled, so the cases run to `max_iterations` (3 000) with
+`require_convergence = false`. To see when a result settles, have the
+run write the fields at a few iterations and compare them:
+
+```
+mkdir -p output/backstep_sst
+for n in 250 500 1000 1500 2000; do touch output/backstep_sst/.result_$n; done
+target/release/foehn flow examples/studies/backstep/sst.toml --out output/backstep_sst
+```
+
 The figures of the gallery, velocity with streamlines and turbulent
 kinetic energy, one panel per model, come from ParaView's Python or from
 matplotlib. Both scripts take an output prefix and `LABEL=DIR` per

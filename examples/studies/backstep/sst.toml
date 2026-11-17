@@ -1,7 +1,8 @@
 # Backward-facing step of Driver & Seegmiller (1985), Re_H = 36 000, with
 # k-ω SST (automatic wall treatment): the case flow/backstep_zeta_f0.toml on the fine mesh (each
 # interval halved, 32 800 cells) with field output and velocity profiles
-# at x/H = 1, 4, 6, 10, for the model comparison of gallery 74.
+# at x/H = 1, 4, 6, 10, for the model comparison of gallery 74;
+# 3 000 iterations with the relaxation schedule below.
 #
 #   target/release/foehn flow examples/studies/backstep/sst.toml --out output/backstep_sst
 #   python3 -m tools.plot.backstep_chart docs/figures/gallery/backstep \
@@ -53,11 +54,18 @@ type = "symmetry"
 
 [solver]
 tolerance = 1e-6
-max_iterations = 4000
+max_iterations = 3000
 log_every = 200
 
 [solver.momentum]
 relaxation = 0.5
+
+# 0.5 while the bubble forms, 0.8 from iteration 100: x_r settles to 1 %
+# in about 1 750 iterations on this mesh, against about 2 900 (ζ-f₀) and
+# more than 4 000 (SST) with 0.5 throughout (verification, stage 6d2)
+[[schedule]]
+at_iteration = 100
+set = { solver.momentum.relaxation = 0.8 }
 
 [verification]
 require_convergence = false
