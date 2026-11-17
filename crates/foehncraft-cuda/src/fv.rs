@@ -360,6 +360,9 @@ pub struct CudaBackend {
     venkat_k: Option<f64>,
     host: Discretisation,
     amg: Option<AmgGpu>,
+    /// The hierarchies of the inactive slots, and the active slot.
+    parked: Vec<Option<AmgGpu>>,
+    slot: usize,
 }
 
 impl CudaBackend {
@@ -446,6 +449,8 @@ impl CudaBackend {
             venkat_k: None,
             host: disc.clone(),
             amg: None,
+            parked: Vec::new(),
+            slot: 0,
         };
         be.upload(V::Psi, &vec![1.0; nc])?;
         be.stream.synchronize()?;
@@ -905,6 +910,19 @@ impl Backend for CudaBackend {
 
     fn discretisation(&self) -> Option<&Discretisation> {
         Some(&self.host)
+    }
+
+    fn amg_slot(&mut self, slot: usize) -> anyhow::Result<()> {
+        if slot != self.slot {
+            let n = slot.max(self.slot) + 1;
+            if self.parked.len() < n {
+                self.parked.resize_with(n, || None);
+            }
+            self.parked[self.slot] = self.amg.take();
+            self.amg = self.parked[slot].take();
+            self.slot = slot;
+        }
+        Ok(())
     }
 
     fn amg_load(&mut self, h: &Hierarchy) -> anyhow::Result<()> {

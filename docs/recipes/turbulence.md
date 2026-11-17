@@ -6,6 +6,7 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 |---|---|
 | 68 | [Run a case with the k-ω SST model](#sst) |
 | 71 | [Run a case with the k-ε family and wall functions](#k-epsilon) |
+| 73 | [Run a case with k-ε-ζ-f and resolved walls](#zeta-f) |
 
 ---
 
@@ -161,5 +162,66 @@ for r in "1 17193.2" "2 7983.56" "5 2859.14" "10 1298.87" "30 361.051" "60 156.8
 done
 python3 -m tools.plot.keps_chart docs/figures/gallery/keps.svg output/plate_keps output/moody/study.csv
 ```
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="zeta-f"></a>
+## 73. Run a case with k-ε-ζ-f and resolved walls
+
+k-ε-ζ-f (`k-epsilon-zeta-f`) for walls resolved to y⁺ ≈ 1, where the
+k-ε family needs wall functions. `compound` (the default) takes any y⁺;
+`low-re` needs y⁺ ≲ 2 (TURB001):
+
+```toml
+[turbulence]
+model = "k-epsilon-zeta-f"
+wall_treatment = "compound"      # or "low-re"
+# ambient = { k = 2.25e-7, epsilon = 2.53125e-6 }   # sustaining terms, external flows
+```
+
+Inlets take k with ε (or ω, converted) as for k-ε, and ζ = v²/k
+(default 2/3, isotropic turbulence); `[initial]` takes `zeta` too:
+
+```toml
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+k = 1.0e-4
+epsilon = 4.5e-5
+zeta = 0.667
+```
+
+A weak free stream (ν_t/ν well below 1) leaves the boundary layer
+laminar with this model: start from a turbulent field (`[initial] k`,
+`epsilon` with ν_t/ν ≈ 10), as the plate of gallery 73 does, or give the
+inlet more turbulence.
+
+The f equation runs CG with its own multigrid hierarchy; the transport
+equations take the multigrid too, which pays on large meshes:
+
+```toml
+[solver.elliptic]
+preconditioner = "amg"           # default; "jacobi"
+tolerance = 1e-2                 # default steady (transient 1e-8)
+
+[solver.turbulence]
+preconditioner = "amg"           # default "jacobi"
+```
+
+Run the channel and the plate of the gallery:
+
+```
+target/release/foehn flow examples/cases/flow/channel_zeta_f.toml
+target/release/foehn flow examples/cases/flow/tmr_plate_zeta_f.toml
+grep -E "wall probe|periodic xmin|first-cell|floors" output/*_zeta_f/flow.log
+```
+
+U_b⁺ of the channel is 17.55/√F with the driving force F; C_f of the plate
+is in the wall probe line. The profile line of the channel
+(`line_profile.csv`) has ζ and f next to k, ε and ν_t; the fields add
+`zeta`, `f`, `turbulent_time_scale` and v² = ζk. A k-ε restart file
+continues with ζ = 2/3 and f = 0.
 
 [↑ back to top](#turbulence-models)

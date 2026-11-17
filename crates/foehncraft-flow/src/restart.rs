@@ -27,7 +27,11 @@
 //!   solver's p̂; `p` is the static pressure), `turb_wall_distance`,
 //!   transient `turb_k_old`, `turb_omega_old`; per face `turb_mu_eff`; per
 //!   boundary face `turb_k_b`, `turb_omega_b`, `turb_u_tau`, `turb_y_plus`,
-//!   `turb_pb_modified`;
+//!   `turb_pb_modified`; k-ε-ζ-f adds per cell `turb_zeta`, `turb_f`,
+//!   `turb_time_scale` (transient `turb_zeta_old`) and per boundary face
+//!   `turb_zeta_b`, `turb_f_b`; `turb_amg_matrix_<slot>` the matrices of
+//!   the last multigrid setups of the turbulence equations (slot 1 f,
+//!   2 k, 3 ε or ω, 4 ζ; with their multigrid only);
 //! - `amg_matrix`: the pressure matrix of the last multigrid setup (the
 //!   hierarchy is rebuilt from it, so the preconditioner is the same);
 //! - optional, for meshes that move (D91, L22): `point_id`,
@@ -230,6 +234,19 @@ mod io {
                 if let Some(o) = &t.omega_old {
                     ds(&g, "turb_omega_old", o)?;
                 }
+                if let Some(z) = &t.zeta {
+                    ds(&g, "turb_zeta", &z.zeta)?;
+                    ds(&g, "turb_f", &z.f)?;
+                    ds(&g, "turb_zeta_b", &z.zeta_b)?;
+                    ds(&g, "turb_f_b", &z.f_b)?;
+                    ds(&g, "turb_time_scale", &z.t)?;
+                    if let Some(o) = &z.zeta_old {
+                        ds(&g, "turb_zeta_old", o)?;
+                    }
+                }
+                for (slot, m) in &t.amg {
+                    ds(&g, &format!("turb_amg_matrix_{slot}"), m)?;
+                }
             }
             if let Some(m) = &r.amg_matrix {
                 ds(&g, "amg_matrix", m)?;
@@ -334,6 +351,24 @@ mod io {
             p_modified: rd(g, "turb_p_modified")?,
             pb_modified: rd(g, "turb_pb_modified")?,
             wall_distance: rd(g, "turb_wall_distance")?,
+            zeta: if g.link_exists("turb_zeta") {
+                Some(crate::turbulence::ZetaState {
+                    zeta: rd(g, "turb_zeta")?,
+                    f: rd(g, "turb_f")?,
+                    zeta_old: opt("turb_zeta_old")?,
+                    zeta_b: rd(g, "turb_zeta_b")?,
+                    f_b: rd(g, "turb_f_b")?,
+                    t: rd(g, "turb_time_scale")?,
+                })
+            } else {
+                None
+            },
+            amg: (1..=4)
+                .filter_map(|s| {
+                    let n = format!("turb_amg_matrix_{s}");
+                    g.link_exists(&n).then(|| rd(g, &n).map(|m| (s, m)))
+                })
+                .collect::<Result<_>>()?,
         }))
     }
 
@@ -617,6 +652,16 @@ impl Restart {
                     p_modified: remap(&t.p_modified, &mc),
                     pb_modified: remap(&t.pb_modified, &mb),
                     wall_distance: remap(&t.wall_distance, &mc),
+                    zeta: t.zeta.as_ref().map(|z| crate::turbulence::ZetaState {
+                        zeta: remap(&z.zeta, &mc),
+                        f: remap(&z.f, &mc),
+                        zeta_old: z.zeta_old.as_ref().map(|o| remap(o, &mc)),
+                        zeta_b: remap(&z.zeta_b, &mb),
+                        f_b: remap(&z.f_b, &mb),
+                        t: remap(&z.t, &mc),
+                    }),
+                    // the matrices follow the old face order: rebuilt
+                    amg: Vec::new(),
                 }),
             };
             if let Some((o, ..)) = &mut self.transient {

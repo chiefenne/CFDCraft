@@ -185,6 +185,9 @@ pub struct InitialSection {
     /// the k-ε family).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub epsilon: Option<crate::expr::Scalar>,
+    /// Start ζ = v²/k (k-ε-ζ-f; default 2/3, isotropy; in (0, 2]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zeta: Option<f64>,
 }
 
 /// `[pressure]`
@@ -1322,6 +1325,7 @@ impl FlowCase {
             transient: self.time.is_some(),
             potential_flow: self.initial.potential_flow,
             body_force: self.uniform_body_force() != Some([0.0; 3]),
+            zeta: self.turbulence.model.has_zeta(),
         }
     }
 
@@ -1517,9 +1521,17 @@ pub(crate) fn turbulence_summary<F: FnMut(&str)>(
         ));
     }
     let h = &sm.health;
+    let zeta = if h.floor_cells_max.len() > 3 {
+        format!(
+            ", ζ at most {} cells ({}, {})",
+            h.floor_cells_max[3], h.floor_iterations[3], h.floor_iterations_late[3]
+        )
+    } else {
+        String::new()
+    };
     lg.line(&format!(
         "  floors: k at most {} cells ({} solves above 0.1 %, {} in the final tenth), {} at \
-         most {} cells ({}, {}); ν_t capped in at most {} cells",
+         most {} cells ({}, {}){zeta}; ν_t capped in at most {} cells",
         h.floor_cells_max[0],
         h.floor_iterations[0],
         h.floor_iterations_late[0],
@@ -3336,6 +3348,10 @@ pub(crate) fn write_outputs(
                 units.push_str(", k m2/s2, omega 1/s, nu_t m2/s, wall_distance m (cell values)");
                 head.push_str(",k,omega,nu_t,wall_distance");
             }
+            if t.zeta.is_some() {
+                units.push_str(", zeta -, f 1/s (cell values)");
+                head.push_str(",zeta,f");
+            }
         }
         for st in &fl.state.scalars {
             let _ = write!(units, ", {} (cell value)", st.name);
@@ -3369,6 +3385,9 @@ pub(crate) fn write_outputs(
                     ",{:e},{:e},{:e},{:e}",
                     t.k[c], t.omega[c], t.nu_t[c], t.wall_distance[c]
                 );
+                if let Some(z) = &t.zeta {
+                    let _ = write!(csv, ",{:e},{:e}", z.zeta[c], z.f[c]);
+                }
             }
             for st in &fl.state.scalars {
                 let _ = write!(csv, ",{:e}", st.phi[c]);
@@ -3472,7 +3491,9 @@ pub(crate) fn write_fields(
     // passive scalars (D51) and, with an exact solution, their error
     let scalar_err: Vec<(String, Vec<f64>)> = crate::scalar::field_errors(case, mesh, geo, fl, at)?;
     // the turbulence model (stage 6): k, ω, ν_t, the wall distance and
-    // the modified pressure p̂ of the solver
+    // the modified pressure p̂ of the solver; k-ε-ζ-f also ζ, f, the time
+    // scale T and v² = ζ k
+    let v2: Vec<f64>;
     if let Some(t) = &fl.state.turbulence {
         for (name, values) in [
             ("k", &t.k),
@@ -3482,6 +3503,17 @@ pub(crate) fn write_fields(
             ("modified_pressure", &t.p_modified),
         ] {
             fields.push(CellField { name, values });
+        }
+        if let Some(z) = &t.zeta {
+            v2 = z.zeta.iter().zip(&t.k).map(|(z, k)| z * k).collect();
+            for (name, values) in [
+                ("zeta", &z.zeta),
+                ("f", &z.f),
+                ("turbulent_time_scale", &z.t),
+                ("v2", &v2),
+            ] {
+                fields.push(CellField { name, values });
+            }
         }
     }
     for st in &fl.state.scalars {
@@ -3505,6 +3537,10 @@ pub(crate) fn write_fields(
     let units = format!(
         "{FIELD_UNITS}{}{}",
         match &fl.state.turbulence {
+            Some(t) if t.zeta.is_some() => {
+                "; k m2/s2; epsilon m2/s3; nu_t m2/s; turbulence_wall_distance m; \
+                 modified_pressure Pa; zeta 1; f 1/s; turbulent_time_scale s; v2 m2/s2"
+            }
             Some(t) if t.epsilon => {
                 "; k m2/s2; epsilon m2/s3; nu_t m2/s; turbulence_wall_distance m; \
                  modified_pressure Pa"

@@ -13,7 +13,7 @@
 use super::{
     BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask, MomentumFaceArgs,
     MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, Setup, SstCellOps, TurbFaceOps, WallCellOps,
-    WallFaceOps, WallStatic,
+    WallFaceOps, WallStatic, ZetaFCellOps,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -57,8 +57,11 @@ pub trait Exec {
         tol: f64,
         max_iter: usize,
     ) -> Result<(usize, f64)>;
-    /// Multigrid setup on the matrix `val`.
-    fn amg_setup(&mut self, val: Buf, s: &AmgSettings) -> Result<()>;
+    /// Multigrid setup on the matrix `val` into the active slot (with
+    /// `symmetric_part` from ½(A + Aᵀ)).
+    fn amg_setup(&mut self, val: Buf, s: &AmgSettings, symmetric_part: bool) -> Result<()>;
+    /// Makes multigrid slot `slot` the active one.
+    fn amg_slot(&mut self, slot: usize) -> Result<()>;
     /// Waits for queued work.
     fn sync(&mut self) -> Result<()>;
 }
@@ -1029,7 +1032,22 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
     }
 
     fn amg_setup(&mut self, val: Buf, s: &AmgSettings) -> Result<()> {
-        self.x.amg_setup(val, s)
+        self.x.amg_setup(val, s, false)
+    }
+
+    fn amg_setup_slot(
+        &mut self,
+        slot: usize,
+        val: Buf,
+        s: &AmgSettings,
+        symmetric_part: bool,
+    ) -> Result<()> {
+        self.x.amg_slot(slot)?;
+        self.x.amg_setup(val, s, symmetric_part)
+    }
+
+    fn amg_select(&mut self, slot: usize) -> Result<()> {
+        self.x.amg_slot(slot)
     }
 
     fn face_viscosity(&self) -> Buf {
@@ -1148,11 +1166,68 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.go::<e::KepsCells>(self.nc, &args)
     }
 
+    fn zeta_f_cells(&mut self, a: &ZetaFCellOps) -> Result<()> {
+        let mut ins = vec![a.k, a.e, a.zeta, a.f];
+        for g in &a.grad_u {
+            ins.extend(g.all());
+        }
+        if let Some(x) = a.add {
+            ins.extend(x);
+        }
+        if let Some((x, y)) = a.wall {
+            ins.push(x);
+            ins.push(y);
+        }
+        let mut outs = vec![a.nu_t, a.t, a.l2, a.pk, a.dk, a.de, a.dz, a.capped];
+        if let Some(s) = a.sources {
+            outs.extend(s);
+        }
+        check(&outs, &ins)?;
+        let src = a.sources.map(|s| s.map(|b| self.r(b)));
+        let add = a.add.map(|s| s.map(|b| self.r(b)));
+        let none = Raw::EMPTY;
+        let args = e::ZetaFCellArgs {
+            grad_u: self.rg(&a.grad_u),
+            k: self.r(a.k),
+            e: self.r(a.e),
+            zeta: self.r(a.zeta),
+            f: self.r(a.f),
+            nu: a.nu,
+            c: a.c,
+            o: a.o,
+            add_k: add.map_or(none, |s| s[0]),
+            add_e: add.map_or(none, |s| s[1]),
+            add_z: add.map_or(none, |s| s[2]),
+            wall_mask: a.wall.map_or(none, |(x, _)| self.r(x)),
+            wall_pk: a.wall.map_or(none, |(_, y)| self.r(y)),
+            nu_t: self.r(a.nu_t),
+            t: self.r(a.t),
+            l2: self.r(a.l2),
+            pk: self.r(a.pk),
+            su_k: src.map_or(none, |s| s[0]),
+            sp_k: src.map_or(none, |s| s[1]),
+            su_e: src.map_or(none, |s| s[2]),
+            sp_e: src.map_or(none, |s| s[3]),
+            su_z: src.map_or(none, |s| s[4]),
+            sp_z: src.map_or(none, |s| s[5]),
+            rhs_f: src.map_or(none, |s| s[6]),
+            dk: self.r(a.dk),
+            de: self.r(a.de),
+            dz: self.r(a.dz),
+            capped: self.r(a.capped),
+        };
+        self.go::<e::ZetaFCells>(self.nc, &args)
+    }
+
     fn turb_faces(&mut self, a: &TurbFaceOps) -> Result<()> {
-        check(
-            &[a.mu_eff, a.gamma_k, a.gamma_w],
-            &[a.nu_t, a.dk, a.dw, a.mu, a.wall],
-        )?;
+        let mut outs = vec![a.mu_eff, a.gamma_k, a.gamma_w];
+        let mut ins = vec![a.nu_t, a.dk, a.dw, a.mu, a.wall];
+        if let Some([dz, l2, gz, gf]) = a.zeta_f {
+            ins.extend([dz, l2]);
+            outs.extend([gz, gf]);
+        }
+        check(&outs, &ins)?;
+        let none = Raw::EMPTY;
         let args = e::TurbFaceArgs {
             m: self.m,
             nu_t: self.r(a.nu_t),
@@ -1164,6 +1239,10 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             mu_eff: self.r(a.mu_eff),
             gamma_k: self.r(a.gamma_k),
             gamma_w: self.r(a.gamma_w),
+            dz: a.zeta_f.map_or(none, |z| self.r(z[0])),
+            l2: a.zeta_f.map_or(none, |z| self.r(z[1])),
+            gamma_z: a.zeta_f.map_or(none, |z| self.r(z[2])),
+            gamma_f: a.zeta_f.map_or(none, |z| self.r(z[3])),
         };
         self.go::<e::TurbFaces>(self.nf, &args)
     }
@@ -1176,12 +1255,14 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         ins.extend(a.normal.all());
         ins.extend(a.u.all());
         ins.extend(a.ub.all());
-        check(
-            &[
-                a.y_plus, a.omega, a.blending, a.mu_eff, a.k_b, a.w_b, a.u_tau, a.pk, a.prod_w,
-            ],
-            &ins,
-        )?;
+        let mut outs = vec![
+            a.y_plus, a.omega, a.blending, a.mu_eff, a.k_b, a.w_b, a.u_tau, a.pk, a.prod_w,
+        ];
+        if let Some((z, fb)) = a.zeta_f {
+            ins.push(z);
+            outs.push(fb);
+        }
+        check(&outs, &ins)?;
         let args = e::WallFaceArgs {
             m: self.m,
             faces,
@@ -1207,16 +1288,31 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             mu_eff: self.r(a.mu_eff),
             k_b: self.r(a.k_b),
             w_b: self.r(a.w_b),
+            zeta: a.zeta_f.map_or(Raw::EMPTY, |(z, _)| self.r(z)),
+            f_b: a.zeta_f.map_or(Raw::EMPTY, |(_, f)| self.r(f)),
         };
         self.go::<e::WallFaces>(faces.len as usize, &args)
     }
 
-    fn floor(&mut self, x: Buf, lo: f64, hi: f64, work: Buf) -> Result<usize> {
+    fn floor(
+        &mut self,
+        x: Buf,
+        lo: f64,
+        hi: f64,
+        rel_old: Option<(Buf, f64)>,
+        work: Buf,
+    ) -> Result<usize> {
         check(&[work], &[x])?;
+        if let Some((old, _)) = rel_old {
+            check(&[work], &[old])?;
+            ensure!(old != x, "flow device: floor with old = x");
+        }
         let args = e::FloorArgs {
             x: self.r(x),
             lo,
             hi,
+            rel: rel_old.map_or(0.0, |r| r.1),
+            old: rel_old.map_or(Raw::EMPTY, |r| self.r(r.0)),
             hit: self.r(work),
         };
         let n = self.r(x).len as usize;

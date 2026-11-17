@@ -203,9 +203,13 @@ impl Exec for CpuExec {
         Ok((it, r0))
     }
 
-    fn amg_setup(&mut self, val: Buf, s: &AmgSettings) -> Result<()> {
+    fn amg_setup(&mut self, val: Buf, s: &AmgSettings, symmetric_part: bool) -> Result<()> {
         self.be.set_matrix(self.bufs[val.0 as usize].slice())?;
-        linear::setup_amg(self.be.as_mut(), s).map(|_| ())
+        linear::setup_amg_with(self.be.as_mut(), s, symmetric_part).map(|_| ())
+    }
+
+    fn amg_slot(&mut self, slot: usize) -> Result<()> {
+        self.be.amg_slot(slot)
     }
 
     fn sync(&mut self) -> Result<()> {

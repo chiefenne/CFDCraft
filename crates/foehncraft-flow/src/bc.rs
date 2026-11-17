@@ -282,6 +282,8 @@ pub struct InletTurbulence {
     pub omega: Option<Scalar>,
     /// ε directly.
     pub epsilon: Option<Scalar>,
+    /// ζ = v²/k (k-ε-ζ-f).
+    pub zeta: Option<f64>,
 }
 
 impl InletTurbulence {
@@ -305,6 +307,9 @@ impl InletTurbulence {
         }
         if self.epsilon.is_some() {
             v.push("epsilon");
+        }
+        if self.zeta.is_some() {
+            v.push("zeta");
         }
         v
     }
@@ -389,6 +394,9 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
+        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zeta: Option<f64>,
     },
     /// Prescribed mass flow (kg/s) into the domain, normal to the faces,
     /// spread by face area.
@@ -414,6 +422,9 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
+        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zeta: Option<f64>,
     },
     /// Prescribed static pressure, inflow normal to the face.
     StaticPressureInlet {
@@ -437,6 +448,9 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
+        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zeta: Option<f64>,
     },
     /// Prescribed total pressure, inflow normal to the face.
     TotalPressureInlet {
@@ -461,6 +475,9 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
+        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zeta: Option<f64>,
     },
     /// Prescribed static pressure, velocity extrapolated.
     StaticPressureOutlet {
@@ -489,6 +506,9 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
+        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zeta: Option<f64>,
     },
     /// Prescribed total pressure, velocity extrapolated.
     TotalPressureOutlet {
@@ -515,6 +535,9 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
+        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zeta: Option<f64>,
     },
     /// Non-reflecting outlet of a transient run: the velocity is convected
     /// out of the domain, ∂u/∂t + U_c ∂u/∂n = 0.
@@ -600,6 +623,7 @@ impl BoundaryCondition {
                 k,
                 omega,
                 epsilon,
+                zeta,
                 ..
             }
             | Self::MassFlowInlet {
@@ -609,6 +633,7 @@ impl BoundaryCondition {
                 k,
                 omega,
                 epsilon,
+                zeta,
                 ..
             }
             | Self::StaticPressureInlet {
@@ -618,6 +643,7 @@ impl BoundaryCondition {
                 k,
                 omega,
                 epsilon,
+                zeta,
                 ..
             }
             | Self::TotalPressureInlet {
@@ -627,6 +653,7 @@ impl BoundaryCondition {
                 k,
                 omega,
                 epsilon,
+                zeta,
                 ..
             }
             | Self::StaticPressureOutlet {
@@ -636,6 +663,7 @@ impl BoundaryCondition {
                 k,
                 omega,
                 epsilon,
+                zeta,
                 ..
             }
             | Self::TotalPressureOutlet {
@@ -645,6 +673,7 @@ impl BoundaryCondition {
                 k,
                 omega,
                 epsilon,
+                zeta,
                 ..
             } => InletTurbulence {
                 turbulence_intensity: *turbulence_intensity,
@@ -653,6 +682,7 @@ impl BoundaryCondition {
                 k: k.clone(),
                 omega: omega.clone(),
                 epsilon: epsilon.clone(),
+                zeta: *zeta,
             },
             _ => InletTurbulence::default(),
         }
@@ -1201,6 +1231,9 @@ pub struct CheckContext {
     pub potential_flow: bool,
     /// A body force acts (`flow.body_force` not zero).
     pub body_force: bool,
+    /// The turbulence model solves ζ = v²/k (k-ε-ζ-f): `zeta` at inlets
+    /// is used.
+    pub zeta: bool,
 }
 
 /// How the flow through a periodic pair is driven (D29).
@@ -1617,6 +1650,27 @@ pub fn check(
                          (backflow values at outlets are not implemented yet)",
                         t.join(", ")
                     ),
+                );
+            }
+            if !ctx.zeta && bc.turbulence().zeta.is_some() && crate::turbulence::inlet::is_inlet(bc)
+            {
+                push(
+                    Level::Warning,
+                    diag::BC_TURBULENCE_UNUSED_VALUE,
+                    Some(name),
+                    "zeta unused: the turbulence model does not solve ζ = v²/k (only \
+                     k-epsilon-zeta-f does)"
+                        .into(),
+                );
+            }
+            if let Some(z) = bc.turbulence().zeta
+                && !(z > 0.0 && z <= 2.0)
+            {
+                push(
+                    Level::Error,
+                    diag::CASE_RANGE,
+                    Some(name),
+                    format!("zeta = {z} must lie in (0, 2] (ζ = v²/k ≤ 2)"),
                 );
             }
             for (error, code, message) in crate::turbulence::inlet::check(bc) {

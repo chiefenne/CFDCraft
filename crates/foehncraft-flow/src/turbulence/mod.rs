@@ -59,11 +59,11 @@ pub mod inlet;
 pub mod wall;
 
 use crate::bc::{BoundaryArrays, BoundaryCondition};
-use crate::device::KepsCellOps;
 use crate::device::{
     Buf, Buf3, Eps2, FlowDevice, Lsq, Mask, ScalarFaceArgs, ScalarRowArgs, ScalarTime, SstCellOps,
     TurbFaceOps, WallCellOps, WallFaceOps,
 };
+use crate::device::{KepsCellOps, ZetaFCellOps};
 use crate::diag::{self, Diagnostic};
 use crate::expr::{self, Env, Scalar, Vars};
 use anyhow::Result;
@@ -72,6 +72,7 @@ use foehncraft_fv::solver::{LimiterKind, Preconditioner, Scheme};
 use foehncraft_kernels::turb::keps::{self as kkeps, KepsConstants, KepsOptions};
 use foehncraft_kernels::turb::sst::{self as ksst, SstConstants, SstOptions};
 use foehncraft_kernels::turb::wall as kwall;
+use foehncraft_kernels::turb::zeta_f::{self as kzf, ZetaFConstants, ZetaFOptions};
 use foehncraft_mesh::{Geometry, Mesh};
 use inlet::InletSpec;
 use serde::{Deserialize, Serialize};
@@ -93,12 +94,28 @@ pub enum TurbulenceModel {
     KEpsilon,
     /// Realizable k-ε (Shih, Liou, Shabbir, Yang & Zhu 1995).
     RealizableKEpsilon,
+    /// k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004).
+    KEpsilonZetaF,
 }
 
 impl TurbulenceModel {
-    /// A model of the k-ε family (its second variable is ε).
+    /// The second variable is ε (the k-ε family and k-ε-ζ-f).
     pub fn is_epsilon(self) -> bool {
+        matches!(
+            self,
+            Self::KEpsilon | Self::RealizableKEpsilon | Self::KEpsilonZetaF
+        )
+    }
+
+    /// The standard or the realizable k-ε model (high-Re, with wall
+    /// functions).
+    pub fn is_keps(self) -> bool {
         matches!(self, Self::KEpsilon | Self::RealizableKEpsilon)
+    }
+
+    /// The model solves ζ = v²/k and the elliptic f (k-ε-ζ-f).
+    pub fn has_zeta(self) -> bool {
+        self == Self::KEpsilonZetaF
     }
 
     /// The name in the case file.
@@ -108,6 +125,7 @@ impl TurbulenceModel {
             Self::KOmegaSst => "k-omega-sst",
             Self::KEpsilon => "k-epsilon",
             Self::RealizableKEpsilon => "realizable-k-epsilon",
+            Self::KEpsilonZetaF => "k-epsilon-zeta-f",
         }
     }
 }
@@ -119,8 +137,9 @@ pub enum WallTreatment {
     /// The y⁺-insensitive blend of the viscous and the logarithmic layer
     /// (the default of SST).
     Automatic,
-    /// The integrated form to the wall: k_w = 0, ω of the viscous sublayer
-    /// in the first cell (first-cell y⁺ ≲ 1).
+    /// The integrated form to the wall (first-cell y⁺ ≲ 1): SST k_w = 0
+    /// and ω_w; k-ε-ζ-f k_w = 0, ζ_w = 0, ε_w = 2νk_P/y_P²,
+    /// f_w = −2νζ_P/y_P².
     LowRe,
     /// k-ε family: the log law at y* = max(y*, 11.06) (Grotjans & Menter
     /// 1998; the default of the k-ε family).
@@ -128,8 +147,9 @@ pub enum WallTreatment {
     /// k-ε family: the wall functions of Launder & Spalding (1974), first
     /// cell at 30 ≤ y⁺ ≤ 300.
     Standard,
-    /// k-ε family: the compound treatment of Popovac & Hanjalić (2007),
-    /// any first-cell y⁺.
+    /// The compound treatment of Popovac & Hanjalić (2007): the default of
+    /// k-ε-ζ-f (any first-cell y⁺), an option of the k-ε family (claimed
+    /// for 30 ≤ y⁺ ≤ 300 there).
     Compound,
 }
 
@@ -292,6 +312,22 @@ pub const KEPS_CONSTANTS: &[&str] = &[
     "kappa",
 ];
 
+/// The names of the k-ε-ζ-f constants that `[turbulence.constants]` takes.
+pub const ZETA_F_CONSTANTS: &[&str] = &[
+    "c_mu",
+    "c_epsilon1",
+    "c_epsilon2",
+    "c_1",
+    "c_2",
+    "sigma_k",
+    "sigma_epsilon",
+    "sigma_zeta",
+    "c_t",
+    "c_l",
+    "c_eta",
+    "kappa",
+];
+
 /// Relative width of the smooth switches with `smooth_limits = true`.
 pub const SMOOTH_WIDTH: f64 = 1e-2;
 
@@ -392,6 +428,68 @@ impl TurbulenceSection {
         Ok(c)
     }
 
+    /// The constants of k-ε-ζ-f with the overrides.
+    pub fn zeta_f_constants(&self) -> Result<ZetaFConstants> {
+        let mut c = ZetaFConstants::paper();
+        for (name, &v) in &self.constants {
+            let slot = match name.as_str() {
+                "c_mu" => &mut c.c_mu,
+                "c_epsilon1" => &mut c.c_e1,
+                "c_epsilon2" => &mut c.c_e2,
+                "c_1" => &mut c.c1,
+                "c_2" => &mut c.c2,
+                "sigma_k" => &mut c.sigma_k,
+                "sigma_epsilon" => &mut c.sigma_e,
+                "sigma_zeta" => &mut c.sigma_z,
+                "c_t" => &mut c.c_t,
+                "c_l" => &mut c.c_l,
+                "c_eta" => &mut c.c_eta,
+                "kappa" => &mut c.kappa,
+                _ => {
+                    let hint = crate::bc::did_you_mean(name, ZETA_F_CONSTANTS.iter().copied())
+                        .map(|h| format!(" (did you mean `{h}`?)"))
+                        .unwrap_or_default();
+                    return Err(diag::err(
+                        Diagnostic::new(
+                            diag::CASE_UNKNOWN_KEY,
+                            format!(
+                                "[turbulence.constants] has no constant `{name}`{hint}; the \
+                                 k-ε-ζ-f constants are {}",
+                                ZETA_F_CONSTANTS.join(", ")
+                            ),
+                        )
+                        .key(format!("turbulence.constants.{name}")),
+                    ));
+                }
+            };
+            crate::need!(
+                v > 0.0 && v.is_finite(),
+                CASE_RANGE,
+                "[turbulence.constants] {name} must be > 0, is {v}"
+            );
+            *slot = v;
+        }
+        Ok(c)
+    }
+
+    /// The run-time options of the k-ε-ζ-f kernel.
+    pub fn zeta_f_options(&self, s: &TurbulenceSettings) -> ZetaFOptions {
+        let (k_amb, e_amb) = self
+            .ambient
+            .map_or((0.0, 0.0), |a| (a.k, a.epsilon.unwrap_or(0.0)));
+        ZetaFOptions {
+            newton: u32::from(s.destruction == Some(Destruction::Newton)),
+            smooth: if self.smooth_limits {
+                SMOOTH_WIDTH
+            } else {
+                0.0
+            },
+            k_amb,
+            e_amb,
+            max_ratio: self.max_viscosity_ratio,
+        }
+    }
+
     /// The run-time options of the k-ε kernel.
     pub fn keps_options(&self, s: &TurbulenceSettings) -> KepsOptions {
         let (k_amb, e_amb) = self
@@ -427,9 +525,12 @@ impl TurbulenceSection {
         }
     }
 
-    /// C_μ of the model (β* of SST; the inlet values and the floors).
+    /// C_μ of the model (β* of SST; the equilibrium 0.09 of k-ε-ζ-f; the
+    /// inlet values and the floors).
     pub fn c_mu(&self) -> Result<f64> {
-        Ok(if self.model.is_epsilon() {
+        Ok(if self.model.has_zeta() {
+            self.zeta_f_constants()?.c_mu_eq
+        } else if self.model.is_epsilon() {
             self.keps_constants()?.c_mu
         } else {
             self.sst_constants()?.beta_star
@@ -463,7 +564,9 @@ impl TurbulenceSection {
 
     /// The wall treatment (the model's default when not set).
     pub fn treatment(&self) -> WallTreatment {
-        self.wall_treatment.unwrap_or(if self.model.is_epsilon() {
+        self.wall_treatment.unwrap_or(if self.model.has_zeta() {
+            WallTreatment::Compound
+        } else if self.model.is_epsilon() {
             WallTreatment::Scalable
         } else {
             WallTreatment::Automatic
@@ -476,7 +579,32 @@ impl TurbulenceSection {
             return Ok(());
         }
         let t = self.treatment();
-        if self.model.is_epsilon() {
+        if self.model.has_zeta() {
+            self.zeta_f_constants()?;
+            crate::need!(
+                matches!(t, WallTreatment::Compound | WallTreatment::LowRe),
+                CASE_INCONSISTENT,
+                "turbulence.wall_treatment = \"{}\" is not a treatment of k-ε-ζ-f; use \
+                 \"compound\" (any y⁺) or \"low-re\" (y⁺ ≲ 1)",
+                t.name()
+            );
+            crate::need!(
+                matches!(
+                    self.production_limiter,
+                    None | Some(ProductionLimiter::None)
+                ),
+                CASE_INCONSISTENT,
+                "turbulence.production_limiter: k-ε-ζ-f bounds its time scale by \
+                 realizability itself and takes no production limiter (use \"none\")"
+            );
+            if let Some(a) = self.ambient {
+                crate::need!(
+                    a.epsilon.is_some() && a.omega.is_none(),
+                    CASE_INCONSISTENT,
+                    "turbulence.ambient of k-ε-ζ-f takes k and epsilon"
+                );
+            }
+        } else if self.model.is_epsilon() {
             self.keps_constants()?;
             crate::need!(
                 matches!(
@@ -574,6 +702,61 @@ pub struct TurbulenceSettings {
     pub destruction: Option<Destruction>,
     /// Relaxation α_νt of ν_t.
     pub viscosity_relaxation: f64,
+    /// Preconditioner of BiCGStab: `jacobi`, or `amg`, the aggregation
+    /// multigrid of the pressure (D36) built from the symmetric part of the
+    /// equation's matrix, for stiff near-wall layers of high aspect ratio
+    /// (its own hierarchy, rebuilt for every solve; the multigrid settings
+    /// are those of `[solver.pressure.amg]`).
+    pub preconditioner: Preconditioner,
+}
+
+/// `[solver.elliptic]`: the elliptic equation of k-ε-ζ-f (f), stage 6
+/// specification 6.3. The matrix of −∇·(L²∇f) + f is symmetric positive
+/// definite: CG with the aggregation multigrid (its own hierarchy, rebuilt
+/// for every solve, since L² changes with k and ε in every outer
+/// iteration; a restart then continues bitwise without a stored matrix).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(default, deny_unknown_fields)]
+pub struct EllipticSettings {
+    /// Relative tolerance per solve (default 1e-2 steady, 1e-8 transient).
+    pub tolerance: Option<f64>,
+    /// Largest number of CG iterations per solve.
+    pub max_iter: usize,
+    /// Preconditioner of CG: `amg` (default) or `jacobi`.
+    pub preconditioner: Preconditioner,
+}
+
+impl Default for EllipticSettings {
+    fn default() -> Self {
+        Self {
+            tolerance: None,
+            max_iter: 100,
+            preconditioner: Preconditioner::Amg,
+        }
+    }
+}
+
+impl EllipticSettings {
+    /// Relative tolerance of a solve.
+    pub fn tol(&self, transient: bool) -> f64 {
+        self.tolerance
+            .unwrap_or(if transient { 1e-8 } else { 1e-2 })
+    }
+
+    /// Checks the ranges.
+    pub fn validate(&self, transient: bool) -> Result<()> {
+        crate::need!(
+            self.tol(transient) > 0.0,
+            CASE_RANGE,
+            "[solver.elliptic] tolerance must be > 0"
+        );
+        crate::need!(
+            self.max_iter >= 1,
+            CASE_RANGE,
+            "[solver.elliptic] max_iter must be >= 1"
+        );
+        Ok(())
+    }
 }
 
 impl Default for TurbulenceSettings {
@@ -587,6 +770,7 @@ impl Default for TurbulenceSettings {
             max_iter: 50,
             destruction: None,
             viscosity_relaxation: 1.0,
+            preconditioner: Preconditioner::Jacobi,
         }
     }
 }
@@ -674,6 +858,17 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
     }
     let transient = case.time.is_some();
     case.solver.turbulence.validate(transient)?;
+    case.solver.elliptic.validate(transient)?;
+    if t.model.has_zeta() {
+        for (name, bc) in &case.boundary {
+            crate::need!(
+                !(t.treatment() == WallTreatment::LowRe && bc.roughness() > 0.0),
+                CASE_INCONSISTENT,
+                "[boundary.{name}] roughness with k-ε-ζ-f needs the compound wall treatment \
+                 (its log-law shift); the integration to the wall has no rough-wall form"
+            );
+        }
+    }
     let i = &case.initial;
     crate::need!(
         !(i.omega.is_some() && i.epsilon.is_some()),
@@ -691,6 +886,13 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
         "[initial]: k with omega or epsilon, or turbulence_intensity and viscosity_ratio, \
          not both"
     );
+    if let Some(z) = i.zeta {
+        crate::need!(
+            z > 0.0 && z <= 2.0,
+            CASE_RANGE,
+            "[initial] zeta = {z} must lie in (0, 2] (ζ = v²/k ≤ 2)"
+        );
+    }
     let env = case.env()?;
     for (key, v) in [
         ("initial.k", &i.k),
@@ -752,7 +954,13 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
             diag::TURB_CONSTANTS,
             format!(
                 "{} constants changed in [turbulence.constants]: {}",
-                if t.model.is_epsilon() { "k-ε" } else { "SST" },
+                if t.model.has_zeta() {
+                    "k-ε-ζ-f"
+                } else if t.model.is_epsilon() {
+                    "k-ε"
+                } else {
+                    "SST"
+                },
                 t.constants
                     .iter()
                     .map(|(k, v)| format!("{k} = {v}"))
@@ -769,7 +977,9 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
         push(
             Level::Note,
             diag::TURB_NO_WALL,
-            if t.model.is_epsilon() {
+            if t.model.has_zeta() {
+                "no wall boundary: no wall treatment acts (ζ-f relaxes ζ to 2/3)".into()
+            } else if t.model.is_epsilon() {
                 "no wall boundary: no wall treatment acts".into()
             } else {
                 "no wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0)".into()
@@ -793,11 +1003,11 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
 /// Results of the turbulence solves of one outer iteration.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TurbResiduals {
-    /// Scaled residuals of k and ω (before the solves).
+    /// Scaled residuals per equation of [`equations`] (before the solves).
     pub residual: Vec<f64>,
-    /// BiCGStab iterations of k and ω.
+    /// Linear iterations per equation (BiCGStab; CG for f).
     pub iterations: Vec<usize>,
-    /// Cells where the positivity floor acted, k and ω.
+    /// Cells where the positivity floor acted, per equation.
     pub floors: Vec<usize>,
     /// Cells where the ν_t cap acted.
     pub capped: usize,
@@ -810,12 +1020,15 @@ impl TurbResiduals {
     }
 }
 
-/// The names of the equations, in the order of the residuals.
-pub fn equations(model: TurbulenceModel) -> [&'static str; 2] {
-    if model.is_epsilon() {
-        ["k", "epsilon"]
+/// The names of the equations, in the order of the solves and of the
+/// residuals.
+pub fn equations(model: TurbulenceModel) -> &'static [&'static str] {
+    if model.has_zeta() {
+        &["k", "epsilon", "f", "zeta"]
+    } else if model.is_epsilon() {
+        &["k", "epsilon"]
     } else {
-        ["k", "omega"]
+        &["k", "omega"]
     }
 }
 
@@ -853,6 +1066,33 @@ pub struct TurbState {
     pub pb_modified: Vec<f64>,
     /// The wall distance per cell.
     pub wall_distance: Vec<f64>,
+    /// k-ε-ζ-f: ζ and f per cell, ζ of the level before (transient), and
+    /// their boundary values per boundary face.
+    pub zeta: Option<ZetaState>,
+    /// The matrices (values in the order of the matrix pattern) of the
+    /// last multigrid setups of the turbulence equations, per hierarchy
+    /// slot (1 f, 2 k, 3 ε or ω, 4 ζ): a continued run rebuilds the same
+    /// hierarchies from them (bit-identical restarts, D42). Empty without
+    /// a multigrid of the turbulence equations; dropped when a restart
+    /// file is mapped to another cell order.
+    pub amg: Vec<(usize, Vec<f64>)>,
+}
+
+/// The ζ-f part of a [`TurbState`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ZetaState {
+    /// ζ per cell.
+    pub zeta: Vec<f64>,
+    /// f per cell.
+    pub f: Vec<f64>,
+    /// ζ of the level before (transient).
+    pub zeta_old: Option<Vec<f64>>,
+    /// ζ per boundary face (inlet values).
+    pub zeta_b: Vec<f64>,
+    /// f per boundary face (wall values).
+    pub f_b: Vec<f64>,
+    /// The time scale T per cell (output).
+    pub t: Vec<f64>,
 }
 
 /// Time terms of a step.
@@ -892,18 +1132,54 @@ struct WallDev {
     weight: Buf,
 }
 
+/// The k-ε-ζ-f part on the device: ζ, f and their coefficients.
+#[derive(Debug, Clone, Copy)]
+struct ZetaFDev {
+    c: ZetaFConstants,
+    o: ZetaFOptions,
+    z: Var,
+    f: Var,
+    /// T and L² per cell.
+    t: Buf,
+    l2: Buf,
+    /// ν_t/σ_ζ per cell.
+    dz: Buf,
+    /// ρ(ν + ν_t/σ_ζ) and ρL² per face.
+    gamma_z: Buf,
+    gamma_f: Buf,
+    /// S_u, S_p of ζ and the right-hand side of f.
+    src: [Buf; 3],
+    /// −1 per cell (S_p of the f equation).
+    minus_one: Buf,
+    /// The values of the transported variable before its solve (the
+    /// relative lower bound, [`ZETA_F_DROP`]).
+    prev: Buf,
+}
+
+/// k-ε-ζ-f: one outer iteration lowers k, ε or ζ of a cell by at most
+/// this factor. An unconverged Krylov iterate of the loose steady
+/// tolerance can be negative where the solution is small; the absolute
+/// floor alone would then put ε near zero, and T = k/ε, L ∝ (ν³/ε)^¼ and
+/// P/ε in the source of f would blow up (stage 6 specification 6.4,
+/// 6d amendment). Inactive at convergence and in transient runs, whose
+/// steps change the fields by small factors.
+pub const ZETA_F_DROP: f64 = 0.1;
+
 /// The inlet faces.
 #[derive(Debug, Clone)]
 struct Inlets {
     specs: Vec<InletSpec>,
+    /// ζ per spec (k-ε-ζ-f; default 2/3).
+    zeta: Vec<f64>,
     /// Per inlet face: boundary face index, spec, centroid.
     faces: Vec<(u32, usize, [f64; 3])>,
     speed: bool,
     time: bool,
 }
 
-/// The two-equation turbulence model of a flow on its device: k-ω SST or
-/// the k-ε family (k and the second variable, ω or ε).
+/// The turbulence model of a flow on its device: k-ω SST or the k-ε
+/// family (k and the second variable, ω or ε), or k-ε-ζ-f (k, ε and ζ
+/// transported, f elliptic).
 pub struct Turbulence {
     /// The model settings.
     pub section: TurbulenceSection,
@@ -957,6 +1233,19 @@ pub struct Turbulence {
     order: Buf,
     work: Buf,
     inlets: Inlets,
+    /// k-ε-ζ-f: ζ and f.
+    zf: Option<ZetaFDev>,
+    /// Multigrid settings of the turbulence and elliptic solves (those of
+    /// the pressure).
+    amg: foehncraft_fv::amg::AmgSettings,
+    /// The elliptic solves (f).
+    elliptic: EllipticSettings,
+    /// Rebuild the multigrid hierarchies of the turbulence equations in
+    /// this outer iteration (set by the caller on the schedule of the
+    /// pressure, `amg_rebuild`).
+    pub(crate) amg_rebuild: bool,
+    /// The matrix of the last setup per hierarchy slot (index = slot).
+    amg_built: std::cell::RefCell<Vec<Option<Vec<f64>>>>,
     /// Host copies of a and of the inlet b of k (for p̂ at the pressure
     /// boundaries).
     ka_host: Vec<f64>,
@@ -965,12 +1254,17 @@ pub struct Turbulence {
     pressure_faces: Vec<u32>,
     pressure_owners: Vec<u32>,
     added: Option<(Buf, Buf)>,
+    /// The added source of ζ (k-ε-ζ-f), if any.
+    added_z: Option<Buf>,
+    /// Zeros per cell.
+    zero_cell: Buf,
     t_set: f64,
     /// The wall distance per cell (host).
     pub wall_distance: Vec<f64>,
-    /// Health (D69): per equation (k, ω) the iterations in which the floor
-    /// acted on more than 0.1 % of the cells, and the most cells floored in
-    /// one iteration; the most cells with a capped ν_t.
+    /// Health (D69): per equation (in the order of [`equations`]) the
+    /// iterations in which the floor acted on more than 0.1 % of the cells,
+    /// and the most cells floored in one iteration; the most cells with a
+    /// capped ν_t.
     pub health: TurbHealth,
 }
 
@@ -980,17 +1274,18 @@ pub type YPlusRow = (String, f64, f64, f64, f64);
 /// Floor and cap counts of a run (D69, TURB002).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TurbHealth {
-    /// Iterations with floors on more than 0.1 % of the cells, k and ω.
-    pub floor_iterations: [usize; 2],
+    /// Iterations with floors on more than 0.1 % of the cells, per
+    /// equation (k and ω or ε; k-ε-ζ-f: k, ε, f (never floored), ζ).
+    pub floor_iterations: Vec<usize>,
     /// Of those, the ones in the final tenth of the solves so far (the
     /// inexact linear solves of the first iterations may undershoot; a
     /// converging run does not need the floor at its end).
-    pub floor_iterations_late: [usize; 2],
+    pub floor_iterations_late: Vec<usize>,
     /// Per solve, a bit per equation: the floor acted on more than 0.1 %.
     #[serde(skip)]
     flags: Vec<u8>,
-    /// Most cells floored in one iteration, k and ω.
-    pub floor_cells_max: [usize; 2],
+    /// Most cells floored in one iteration, per equation.
+    pub floor_cells_max: Vec<usize>,
     /// Most cells with ν_t capped by `max_viscosity_ratio` in one iteration.
     pub capped_max: usize,
 }
@@ -1002,26 +1297,50 @@ fn up(dev: &mut dyn FlowDevice, v: &[f64]) -> Result<Buf> {
     Ok(b)
 }
 
-/// The boundary kinds of k and of the second variable per boundary (for
-/// the gradient weights) and the coefficient a per boundary face. Walls fix
-/// ω of SST, and k with the low-Re treatment or on rough walls; the k-ε
-/// family has zero gradient of k and ε at walls (ε is fixed in the cell).
+/// A transported or elliptic turbulence variable (for its boundary kinds).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VarKind {
+    /// k.
+    K,
+    /// ω or ε.
+    Second,
+    /// ζ (k-ε-ζ-f).
+    Zeta,
+    /// f (k-ε-ζ-f).
+    F,
+}
+
+/// The boundary kinds of a turbulence variable per boundary (for the
+/// gradient weights) and the coefficient a per boundary face. Inlets fix
+/// k, ω or ε and ζ (f has zero gradient there). Walls: SST fixes ω, and k
+/// with the low-Re treatment or on rough walls; the k-ε family has zero
+/// gradient of k and ε (ε is fixed in the cell); k-ε-ζ-f fixes f always,
+/// and k, ε and ζ with the integration to the wall (`low-re`; with the
+/// compound treatment k and ζ have zero gradient, since dk/dy = dζ/dy = 0
+/// at the wall, and ε is fixed in the cell).
 fn kinds(
     mesh: &Mesh,
     bcs: &BTreeMap<String, BoundaryCondition>,
     treatment: WallTreatment,
-    omega: bool,
-    eps_model: bool,
+    var: VarKind,
+    model: TurbulenceModel,
 ) -> (BTreeMap<String, BoundaryKind>, Vec<f64>) {
     let ni = mesh.n_interior_faces();
     let mut a = vec![1.0; mesh.n_boundary_faces()];
     let mut points = BTreeMap::new();
+    let low_re = treatment == WallTreatment::LowRe;
     for p in &mesh.boundaries {
         let bc = bcs.get(&p.name);
         let fixed = match bc {
-            Some(b) if inlet::is_inlet(b) => true,
+            Some(b) if inlet::is_inlet(b) => var != VarKind::F,
             Some(b @ BoundaryCondition::Wall { .. }) => {
-                !eps_model && (omega || b.roughness() > 0.0 || treatment == WallTreatment::LowRe)
+                if model.has_zeta() {
+                    var == VarKind::F || low_re
+                } else if model.is_epsilon() {
+                    false
+                } else {
+                    var == VarKind::Second || b.roughness() > 0.0 || low_re
+                }
             }
             _ => false,
         };
@@ -1069,7 +1388,12 @@ impl Turbulence {
             section.sst_constants()?
         };
         let o = section.sst_options(&settings);
-        let ke = if eps {
+        let zc = section.zeta_f_constants()?;
+        // the wall kernel of the k-ε family serves k-ε-ζ-f with its
+        // equilibrium C_μ (compound treatment)
+        let ke = if model.has_zeta() {
+            zc.wall()
+        } else if eps {
             section.keps_constants()?
         } else {
             KepsConstants::default()
@@ -1080,6 +1404,7 @@ impl Turbulence {
         let nu = mu / rho;
         // the inlets
         let mut specs = Vec::new();
+        let mut zetas = Vec::new();
         let mut faces = Vec::new();
         let mut spec_of = BTreeMap::new();
         for p in &mesh.boundaries {
@@ -1097,6 +1422,7 @@ impl Turbulence {
             )?;
             spec_of.insert(p.name.clone(), specs.len());
             specs.push(s);
+            zetas.push(bc.turbulence().zeta.unwrap_or(2.0 / 3.0));
             for f in p.range() {
                 faces.push(((f - ni) as u32, specs.len() - 1, geo.face_centroid[f]));
             }
@@ -1105,12 +1431,13 @@ impl Turbulence {
             speed: specs.iter().any(InletSpec::speed_dependent),
             time: specs.iter().any(InletSpec::time_dependent),
             specs,
+            zeta: zetas,
             faces,
         };
         // the walls
         let walls = Walls::new(mesh, geo, &case.boundary, eps);
-        let var = |dev: &mut dyn FlowDevice, omega: bool| -> Result<Var> {
-            let (points, a) = kinds(mesh, &case.boundary, treatment, omega, eps);
+        let var = |dev: &mut dyn FlowDevice, vk: VarKind| -> Result<Var> {
+            let (points, a) = kinds(mesh, &case.boundary, treatment, vk, model);
             let lsq = crate::simplec::disc_with(mesh, geo, &points)?.lsq;
             let lsq = Buf3 {
                 x: up(dev, &lsq.x)?,
@@ -1133,7 +1460,7 @@ impl Turbulence {
                 b_in: dev.alloc(nb)?,
                 b_wall: dev.alloc(nb)?,
                 lsq,
-                old: if transient {
+                old: if transient && vk != VarKind::F {
                     Some((dev.alloc(nc)?, dev.alloc(nc)?, dev.alloc(nc)?))
                 } else {
                     None
@@ -1142,9 +1469,29 @@ impl Turbulence {
                 floor: 0.0,
             })
         };
-        let k = var(dev, false)?;
-        let w = var(dev, true)?;
-        let ka_host = kinds(mesh, &case.boundary, treatment, false, eps).1;
+        let k = var(dev, VarKind::K)?;
+        let w = var(dev, VarKind::Second)?;
+        let zf = if model.has_zeta() {
+            let minus_one = dev.alloc(nc)?;
+            dev.fill(minus_one, -1.0)?;
+            Some(ZetaFDev {
+                c: zc,
+                o: section.zeta_f_options(&settings),
+                z: var(dev, VarKind::Zeta)?,
+                f: var(dev, VarKind::F)?,
+                t: dev.alloc(nc)?,
+                l2: dev.alloc(nc)?,
+                dz: dev.alloc(nc)?,
+                gamma_z: dev.alloc(nf)?,
+                gamma_f: dev.alloc(nf)?,
+                src: [dev.alloc(nc)?, dev.alloc(nc)?, dev.alloc(nc)?],
+                minus_one,
+                prev: dev.alloc(nc)?,
+            })
+        } else {
+            None
+        };
+        let ka_host = kinds(mesh, &case.boundary, treatment, VarKind::K, model).1;
         let a3 = |dev: &mut dyn FlowDevice| -> Result<Buf3> {
             Ok(Buf3 {
                 x: dev.alloc(nc)?,
@@ -1249,11 +1596,18 @@ impl Turbulence {
             order: dev.alloc(nc)?,
             work: dev.alloc(nc)?,
             inlets,
+            zf,
+            amg: case.solver.pressure.amg.clone(),
+            elliptic: case.solver.elliptic.clone(),
+            amg_rebuild: true,
+            amg_built: std::cell::RefCell::new(Vec::new()),
             ka_host,
             kin_host: vec![0.0; nb],
             pressure_faces: pressure,
             pressure_owners,
             added: None,
+            added_z: None,
+            zero_cell: dev.alloc(nc)?,
             t_set: f64::NAN,
             wall_distance: Vec::new(),
             health: TurbHealth::default(),
@@ -1276,6 +1630,17 @@ impl Turbulence {
         let (k0, w0) = t.initial_values(dev, case, geo, bc_arrays, &env)?;
         dev.upload(t.k.phi, &k0)?;
         dev.upload(t.w.phi, &w0)?;
+        if let Some(z) = &mut t.zf {
+            // ζ = 2/3 (isotropy) unless given, f = 0 at the start
+            // (specification 7.3)
+            dev.fill(z.z.phi, case.initial.zeta.unwrap_or(2.0 / 3.0))?;
+            dev.fill(z.f.phi, 0.0)?;
+            z.z.floor = kzf::ZETA_MIN;
+        }
+        let ne = equations(model).len();
+        t.health.floor_iterations = vec![0; ne];
+        t.health.floor_iterations_late = vec![0; ne];
+        t.health.floor_cells_max = vec![0; ne];
         let kref = k0
             .iter()
             .copied()
@@ -1551,23 +1916,48 @@ impl Turbulence {
         }
         dev.upload(self.k.b_in, &kb)?;
         dev.upload(self.w.b_in, &wb)?;
+        if let Some(z) = self.zf {
+            let mut zb = vec![0.0; self.nb];
+            for &(fb, s, _) in &self.inlets.faces {
+                zb[fb as usize] = self.inlets.zeta[s];
+            }
+            dev.upload(z.z.b_in, &zb)?;
+        }
         self.kin_host = kb;
         self.t_set = t;
         Ok(())
     }
 
+    /// The transported and elliptic variables: k, ω or ε, and with
+    /// k-ε-ζ-f ζ and f.
+    fn vars(&self) -> Vec<Var> {
+        let mut v = vec![self.k, self.w];
+        if let Some(z) = self.zf {
+            v.extend([z.z, z.f]);
+        }
+        v
+    }
+
     /// bc_b = inlet values + wall values.
     fn boundary_values(&self, dev: &mut dyn FlowDevice) -> Result<()> {
-        for v in [&self.k, &self.w] {
+        for v in self.vars() {
             dev.lincomb(v.bc_b, 1.0, v.b_in, 1.0, v.b_wall)?;
         }
         Ok(())
     }
 
-    /// Gradients and limiters of k and ω.
+    /// Gradients and limiters of the transported variables (f: the gradient
+    /// only, for the non-orthogonal correction).
     fn gradients(&self, dev: &mut dyn FlowDevice) -> Result<()> {
         let s = &self.settings;
-        for v in [&self.k, &self.w] {
+        if let Some(z) = self.zf {
+            dev.gradient_with(z.f.lsq, z.f.phi, z.f.bc_a, z.f.bc_b, None, z.f.grad)?;
+        }
+        let mut tr = vec![self.k, self.w];
+        if let Some(z) = self.zf {
+            tr.push(z.z);
+        }
+        for v in &tr {
             dev.gradient_with(v.lsq, v.phi, v.bc_a, v.bc_b, None, v.grad)?;
             if s.scheme != Scheme::Upwind && s.limiter != LimiterKind::None {
                 let (mn, mx) = dev.min_max(v.phi)?;
@@ -1581,6 +1971,43 @@ impl Turbulence {
 
     /// The model per cell: with `sources`, also the source split.
     fn cells(&self, dev: &mut dyn FlowDevice, sources: bool) -> Result<()> {
+        if let Some(z) = self.zf {
+            return dev.zeta_f_cells(&ZetaFCellOps {
+                grad_u: self.gu,
+                k: self.k.phi,
+                e: self.w.phi,
+                zeta: z.z.phi,
+                f: z.f.phi,
+                nu: self.nu,
+                c: z.c,
+                o: z.o,
+                add: if sources {
+                    self.added
+                        .map(|(a, b)| [a, b, self.added_z.unwrap_or(self.zero_cell)])
+                } else {
+                    None
+                },
+                wall: (sources && self.wd.is_some() && !self.walls.stat.cells.is_empty())
+                    .then_some((self.prod_mask, self.wall_pk)),
+                nu_t: self.nu_t,
+                t: z.t,
+                l2: z.l2,
+                pk: self.pk,
+                sources: sources.then_some([
+                    self.src[0],
+                    self.src[1],
+                    self.src[2],
+                    self.src[3],
+                    z.src[0],
+                    z.src[1],
+                    z.src[2],
+                ]),
+                dk: self.dk,
+                de: self.dw,
+                dz: z.dz,
+                capped: self.capped,
+            });
+        }
         if self.eps {
             return dev.keps_cells(&KepsCellOps {
                 grad_u: self.gu,
@@ -1649,6 +2076,7 @@ impl Turbulence {
             mu_eff: dev.face_viscosity(),
             k_b: self.k.b_wall,
             w_b: self.w.b_wall,
+            zeta_f: self.zf.map(|z| (z.z.phi, z.f.b_wall)),
         })?;
         dev.wall_cells(&WallCellOps {
             omega: wd.omega,
@@ -1675,6 +2103,7 @@ impl Turbulence {
             mu_eff: dev.face_viscosity(),
             gamma_k: self.gamma_k,
             gamma_w: self.gamma_w,
+            zeta_f: self.zf.map(|z| [z.dz, z.l2, z.gamma_z, z.gamma_f]),
         })
     }
 
@@ -1735,6 +2164,10 @@ impl Turbulence {
         let tr = step.is_some();
         let t = step.map_or(0.0, |s| s.time);
         self.set_inlets(dev, ub, t, false)?;
+        // ν_t of the last iteration (relaxation of ν_t)
+        if let Some(prev) = self.nu_t_prev {
+            dev.copy(self.nu_t, prev)?;
+        }
         // 1. velocity gradient of the corrected velocity, the wall
         // treatment, gradients of k and ω
         self.velocity_gradient(dev, u, ub)?;
@@ -1747,82 +2180,48 @@ impl Turbulence {
         let s = self.settings.clone();
         let alpha = s.alpha(tr);
         let mut out = TurbResiduals::default();
+        let fix_second = (self.treatment == kwall::AUTOMATIC || self.eps)
+            && self.wd.is_some()
+            && !self.walls.stat.cells.is_empty();
+        // k, then ω or ε (the near-wall rows of the second take the fixed
+        // value)
         for (e, (v, gamma)) in [(self.k, self.gamma_k), (self.w, self.gamma_w)]
             .into_iter()
             .enumerate()
         {
-            dev.scalar_faces(&ScalarFaceArgs {
-                bc_a: v.bc_a,
-                bc_b: v.bc_b,
-                jump: None,
-                mass_flux,
-                gamma,
-                phi: v.phi,
-                grad: v.grad,
-                psi: v.psi,
-                blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
-                central: if s.scheme == Scheme::Central {
-                    1.0
-                } else {
-                    0.0
-                },
-                beta: 0.1,
-                nonorth: 1.0,
-                cp: self.cp,
-                cn: self.cn,
-                bf: self.bf,
-            })?;
-            let time = match (step, v.old) {
-                (Some(st), Some((o1, o2, _))) => Some(ScalarTime {
-                    inv_dt: 1.0 / st.dt,
-                    a: st.a,
-                    old: o1,
-                    old2: o2,
-                    bounds: (0.0, f64::INFINITY),
-                }),
-                _ => None,
-            };
             let (su, sp) = (self.src[2 * e], self.src[2 * e + 1]);
-            dev.scalar_rows(&ScalarRowArgs {
-                cp: self.cp,
-                cn: self.cn,
-                bf: self.bf,
+            let fix = (e == 1 && fix_second).then_some((self.fix_mask, self.fix_val));
+            let r = self.transport(dev, v, gamma, (su, sp), fix, mass_flux, step, alpha, 2 + e)?;
+            out.residual.push(r.0);
+            out.iterations.push(r.1);
+            out.floors.push(r.2);
+        }
+        if let Some(z) = self.zf {
+            // k-ε-ζ-f (specification 6.4): f from the new k and ε, then ζ
+            // with the new f
+            self.cells(dev, true)?;
+            self.faces(dev)?;
+            let r = self.elliptic(dev, z, tr)?;
+            out.residual.push(r.0);
+            out.iterations.push(r.1);
+            out.floors.push(0);
+            self.cells(dev, true)?;
+            let r = self.transport(
+                dev,
+                z.z,
+                z.gamma_z,
+                (z.src[0], z.src[1]),
+                None,
                 mass_flux,
-                phi: v.phi,
-                su: Some(su),
-                sp: Some(sp),
+                step,
                 alpha,
-                time,
-                fix: (e == 1
-                    && (self.treatment == kwall::AUTOMATIC || self.eps)
-                    && self.wd.is_some()
-                    && !self.walls.stat.cells.is_empty())
-                .then_some((self.fix_mask, self.fix_val)),
-                positive: true,
-                val: self.val,
-                rhs: self.rhs,
-                diag: self.diag,
-                order: self.order,
-            })?;
-            let scale = dev.scalar_scale(v.phi, self.rhs, self.diag, alpha)?;
-            let (it, r0) = dev.solve(
-                self.val,
-                self.rhs,
-                v.phi,
-                Preconditioner::Jacobi,
-                false,
-                s.tol(tr),
-                s.max_iter,
+                4,
             )?;
-            out.residual.push(if scale > 0.0 { r0 / scale } else { r0 });
-            out.iterations.push(it);
-            out.floors
-                .push(dev.floor(v.phi, v.floor, f64::INFINITY, self.work)?);
+            out.residual.push(r.0);
+            out.iterations.push(r.1);
+            out.floors.push(r.2);
         }
         // 3. ν_t from the new fields
-        if let Some(prev) = self.nu_t_prev {
-            dev.copy(self.nu_t, prev)?;
-        }
         self.cells(dev, false)?;
         if let Some(prev) = self.nu_t_prev {
             let a = s.viscosity_relaxation;
@@ -1841,7 +2240,7 @@ impl Turbulence {
         let h = &mut self.health;
         h.flags.push(flag);
         let tail = h.flags.len().div_ceil(10);
-        for e in 0..2 {
+        for e in 0..out.floors.len() {
             h.floor_iterations_late[e] = h.flags[h.flags.len() - tail..]
                 .iter()
                 .filter(|&&f| f & (1 << e) != 0)
@@ -1853,6 +2252,202 @@ impl Turbulence {
         Ok(out)
     }
 
+    /// Assembles and solves one transport equation (k, ω, ε or ζ) with the
+    /// sources `src` (S_u, S_p) and the face diffusivity `gamma`, then
+    /// applies its bounds. Returns (scaled residual, iterations, cells
+    /// bounded).
+    #[allow(clippy::too_many_arguments)]
+    fn transport(
+        &self,
+        dev: &mut dyn FlowDevice,
+        v: Var,
+        gamma: Buf,
+        src: (Buf, Buf),
+        fix: Option<(Buf, Buf)>,
+        mass_flux: Buf,
+        step: Option<StepTime>,
+        alpha: f64,
+        slot: usize,
+    ) -> Result<(f64, usize, usize)> {
+        let s = &self.settings;
+        let tr = step.is_some();
+        dev.scalar_faces(&ScalarFaceArgs {
+            bc_a: v.bc_a,
+            bc_b: v.bc_b,
+            jump: None,
+            mass_flux,
+            gamma,
+            phi: v.phi,
+            grad: v.grad,
+            psi: v.psi,
+            blend: if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 },
+            central: if s.scheme == Scheme::Central {
+                1.0
+            } else {
+                0.0
+            },
+            beta: 0.1,
+            nonorth: 1.0,
+            cp: self.cp,
+            cn: self.cn,
+            bf: self.bf,
+        })?;
+        let time = match (step, v.old) {
+            (Some(st), Some((o1, o2, _))) => Some(ScalarTime {
+                inv_dt: 1.0 / st.dt,
+                a: st.a,
+                old: o1,
+                old2: o2,
+                bounds: (0.0, f64::INFINITY),
+            }),
+            _ => None,
+        };
+        dev.scalar_rows(&ScalarRowArgs {
+            cp: self.cp,
+            cn: self.cn,
+            bf: self.bf,
+            mass_flux,
+            phi: v.phi,
+            su: Some(src.0),
+            sp: Some(src.1),
+            alpha,
+            time,
+            fix,
+            positive: true,
+            val: self.val,
+            rhs: self.rhs,
+            diag: self.diag,
+            order: self.order,
+        })?;
+        let scale = dev.scalar_scale(v.phi, self.rhs, self.diag, alpha)?;
+        let rel_old = match self.zf {
+            Some(z) => {
+                dev.copy(v.phi, z.prev)?;
+                Some((z.prev, ZETA_F_DROP))
+            }
+            None => None,
+        };
+        let pc = s.preconditioner;
+        if pc == Preconditioner::Amg {
+            // its own hierarchy (slot 2 k, 3 ε or ω, 4 ζ), from the
+            // symmetric part
+            self.amg_prepare(dev, slot, true)?;
+        }
+        let solved = dev.solve(self.val, self.rhs, v.phi, pc, false, s.tol(tr), s.max_iter);
+        if pc == Preconditioner::Amg {
+            dev.amg_select(0)?;
+        }
+        let (it, r0) = solved?;
+        let hi = if self.zf.is_some_and(|z| z.z.phi == v.phi) {
+            kzf::ZETA_MAX
+        } else {
+            f64::INFINITY
+        };
+        let n = dev.floor(v.phi, v.floor, hi, rel_old, self.work)?;
+        Ok((if scale > 0.0 { r0 / scale } else { r0 }, it, n))
+    }
+
+    /// Selects the hierarchy slot `slot` of an equation, rebuilt from the
+    /// assembled matrix on the schedule of the pressure (`amg_rebuild`) or
+    /// when the slot has none yet. Between rebuilds a hierarchy of an
+    /// earlier matrix of the same equation preconditions the solve (a
+    /// fixed preconditioner within each solve: the Krylov method stays
+    /// valid, only its rate changes).
+    fn amg_prepare(
+        &self,
+        dev: &mut dyn FlowDevice,
+        slot: usize,
+        symmetric_part: bool,
+    ) -> Result<()> {
+        let mut built = self.amg_built.borrow_mut();
+        if built.len() <= slot {
+            built.resize(slot + 1, None);
+        }
+        if self.amg_rebuild || built[slot].is_none() {
+            dev.amg_setup_slot(slot, self.val, &self.amg, symmetric_part)?;
+            built[slot] = Some(dev.download(self.val)?);
+        } else {
+            dev.amg_select(slot)?;
+        }
+        Ok(())
+    }
+
+    /// Rebuilds the hierarchies of a loaded state from their matrices
+    /// (`TurbState::amg`); the slot of the f equation is not symmetrized,
+    /// the others are (as in [`Self::amg_prepare`]).
+    fn amg_restore(&self, dev: &mut dyn FlowDevice, amg: &[(usize, Vec<f64>)]) -> Result<()> {
+        let mut built = self.amg_built.borrow_mut();
+        built.clear();
+        for (slot, m) in amg {
+            anyhow::ensure!(
+                (1..=4).contains(slot),
+                "turbulence multigrid slot {slot} outside 1..=4"
+            );
+            dev.upload(self.val, m)?;
+            dev.amg_setup_slot(*slot, self.val, &self.amg, *slot != 1)?;
+            if built.len() <= *slot {
+                built.resize(slot + 1, None);
+            }
+            built[*slot] = Some(m.clone());
+        }
+        dev.amg_select(0)
+    }
+
+    /// Assembles and solves the elliptic f equation −∇·(L²∇f) + f = R of
+    /// k-ε-ζ-f (symmetric positive definite: CG, by default with the
+    /// aggregation multigrid on its own hierarchy). Returns (scaled
+    /// residual, iterations).
+    fn elliptic(&self, dev: &mut dyn FlowDevice, z: ZetaFDev, tr: bool) -> Result<(f64, usize)> {
+        let v = z.f;
+        dev.gradient_with(v.lsq, v.phi, v.bc_a, v.bc_b, None, v.grad)?;
+        dev.scalar_faces(&ScalarFaceArgs {
+            bc_a: v.bc_a,
+            bc_b: v.bc_b,
+            jump: None,
+            mass_flux: self.zero_face,
+            gamma: z.gamma_f,
+            phi: v.phi,
+            grad: v.grad,
+            psi: v.psi,
+            blend: 0.0,
+            central: 0.0,
+            beta: 0.1,
+            nonorth: 1.0,
+            cp: self.cp,
+            cn: self.cn,
+            bf: self.bf,
+        })?;
+        dev.scalar_rows(&ScalarRowArgs {
+            cp: self.cp,
+            cn: self.cn,
+            bf: self.bf,
+            mass_flux: self.zero_face,
+            phi: v.phi,
+            su: Some(z.src[2]),
+            sp: Some(z.minus_one),
+            alpha: 1.0,
+            time: None,
+            fix: None,
+            positive: false,
+            val: self.val,
+            rhs: self.rhs,
+            diag: self.diag,
+            order: self.order,
+        })?;
+        let scale = dev.scalar_scale(v.phi, self.rhs, self.diag, 1.0)?;
+        let e = &self.elliptic;
+        let pc = e.preconditioner;
+        if pc == Preconditioner::Amg {
+            self.amg_prepare(dev, 1, false)?;
+        }
+        let solved = dev.solve(self.val, self.rhs, v.phi, pc, true, e.tol(tr), e.max_iter);
+        if pc == Preconditioner::Amg {
+            dev.amg_select(0)?;
+        }
+        let (it, r0) = solved?;
+        Ok((if scale > 0.0 { r0 / scale } else { r0 }, it))
+    }
+
     /// Start of a time step (as the scalars: kⁿ⁻¹ ← kⁿ ← k, with the
     /// extrapolated start value of BDF2).
     pub fn step_start(
@@ -1861,7 +2456,7 @@ impl Turbulence {
         has_old: bool,
         extrapolate: Option<f64>,
     ) -> Result<()> {
-        for v in [&self.k, &self.w] {
+        for v in &self.vars() {
             let Some((o1, o2, keep)) = v.old else {
                 continue;
             };
@@ -1872,7 +2467,7 @@ impl Turbulence {
             dev.copy(v.phi, o1)?;
             if has_old && let Some(w) = extrapolate {
                 dev.lincomb(v.phi, 1.0 + w, o1, -w, o2)?;
-                dev.floor(v.phi, v.floor, f64::INFINITY, self.work)?;
+                dev.floor(v.phi, v.floor, f64::INFINITY, None, self.work)?;
             }
         }
         Ok(())
@@ -1880,7 +2475,7 @@ impl Turbulence {
 
     /// Takes the last step back exactly.
     pub fn step_back(&mut self, dev: &mut dyn FlowDevice) -> Result<()> {
-        for v in [&self.k, &self.w] {
+        for v in &self.vars() {
             let Some((o1, o2, keep)) = v.old else {
                 continue;
             };
@@ -1893,20 +2488,28 @@ impl Turbulence {
 
     /// Keeps a device copy of k and ω as the last valid state (D63).
     pub fn keep_valid(&mut self, dev: &mut dyn FlowDevice) -> Result<()> {
-        for v in [&mut self.k, &mut self.w] {
+        let nc = self.nc;
+        let keep = |dev: &mut dyn FlowDevice, v: &mut Var| -> Result<()> {
             let b = match v.valid {
                 Some(b) => b,
-                None => dev.alloc(self.nc)?,
+                None => dev.alloc(nc)?,
             };
             dev.copy(v.phi, b)?;
             v.valid = Some(b);
+            Ok(())
+        };
+        keep(dev, &mut self.k)?;
+        keep(dev, &mut self.w)?;
+        if let Some(z) = &mut self.zf {
+            keep(dev, &mut z.z)?;
+            keep(dev, &mut z.f)?;
         }
         Ok(())
     }
 
     /// Puts the last valid k and ω back.
     pub fn rewind(&mut self, dev: &mut dyn FlowDevice) -> Result<()> {
-        for v in [&self.k, &self.w] {
+        for v in &self.vars() {
             if let Some(b) = v.valid {
                 dev.copy(b, v.phi)?;
             }
@@ -1916,7 +2519,7 @@ impl Turbulence {
 
     /// After a rewind of a time step: the old level of n−1 back into kⁿ.
     pub fn rewind_levels(&mut self, dev: &mut dyn FlowDevice) -> Result<()> {
-        for v in [&self.k, &self.w] {
+        for v in &self.vars() {
             if let Some((o1, o2, _)) = v.old {
                 dev.copy(o2, o1)?;
             }
@@ -1966,6 +2569,27 @@ impl Turbulence {
             p_modified: p.to_vec(),
             pb_modified: pb.to_vec(),
             wall_distance: self.wall_distance.clone(),
+            zeta: match self.zf {
+                Some(z) => Some(ZetaState {
+                    zeta: dev.download(z.z.phi)?,
+                    f: dev.download(z.f.phi)?,
+                    zeta_old: match z.z.old {
+                        Some((o1, _, _)) => Some(dev.download(o1)?),
+                        None => None,
+                    },
+                    zeta_b: dev.download(z.z.bc_b)?,
+                    f_b: dev.download(z.f.bc_b)?,
+                    t: dev.download(z.t)?,
+                }),
+                None => None,
+            },
+            amg: self
+                .amg_built
+                .borrow()
+                .iter()
+                .enumerate()
+                .filter_map(|(s, m)| m.as_ref().map(|m| (s, m.clone())))
+                .collect(),
             k,
             omega,
         })
@@ -2039,6 +2663,35 @@ impl Turbulence {
         dev.upload(self.k.b_wall, &kw)?;
         dev.upload(self.w.b_wall, &ww)?;
         self.kin_host = kin;
+        if let Some(z) = self.zf {
+            match &s.zeta {
+                Some(zs) => {
+                    dev.upload(z.z.phi, &zs.zeta)?;
+                    dev.upload(z.f.phi, &zs.f)?;
+                    if let (Some((o1, _, _)), Some(o)) = (z.z.old, &zs.zeta_old) {
+                        dev.upload(o1, o)?;
+                    }
+                    let mut zin = vec![0.0; self.nb];
+                    for &(fb, _, _) in &self.inlets.faces {
+                        zin[fb as usize] = zs.zeta_b[fb as usize];
+                    }
+                    let fw: Vec<f64> = (self.walls.mask_b.iter().zip(&zs.f_b))
+                        .map(|(&m, &f)| if m > 0.0 { f } else { 0.0 })
+                        .collect();
+                    dev.upload(z.z.b_in, &zin)?;
+                    dev.upload(z.f.b_wall, &fw)?;
+                }
+                None => {
+                    // a restart of a two-equation model: ζ = 2/3, f = 0
+                    dev.fill(z.z.phi, 2.0 / 3.0)?;
+                    dev.fill(z.f.phi, 0.0)?;
+                    if let Some((o1, _, _)) = z.z.old {
+                        dev.fill(o1, 2.0 / 3.0)?;
+                    }
+                }
+            }
+        }
+        self.amg_restore(dev, &s.amg)?;
         self.boundary_values(dev)?;
         if let Some(wd) = self.wd {
             let ut: Vec<f64> = self
@@ -2081,6 +2734,9 @@ impl Turbulence {
             // values overpredict C_f of the flat plate by up to 16 %)
             let out = match self.treatment {
                 kwall::LOW_RE => yp[i] > 2.0,
+                // ζ-f with the compound treatment: any y⁺ (validated from
+                // 0.5 to 100 on the flat plate)
+                kwall::COMPOUND if self.zf.is_some() => false,
                 kwall::AUTOMATIC => yp[i] > 3.0 && yp[i] < 20.0,
                 kwall::SCALABLE => yp[i] < 30.0,
                 kwall::STANDARD => !(30.0..=300.0).contains(&yp[i]),
@@ -2108,6 +2764,16 @@ impl Turbulence {
 
     /// The model's name for the log.
     pub fn label(&self) -> String {
+        if self.zf.is_some() {
+            return format!(
+                "k-epsilon-zeta-f, {} wall treatment",
+                if self.treatment == kwall::LOW_RE {
+                    "low-Re"
+                } else {
+                    "compound"
+                }
+            );
+        }
         if self.eps {
             return format!(
                 "{} k-epsilon, {} wall treatment{}",
@@ -2224,7 +2890,7 @@ pub fn summary(
     }
     for (b, _, _, _, out) in &walls {
         if *out > 0.1 {
-            let text = if t.eps {
+            let text = if t.eps && t.treatment != kwall::LOW_RE {
                 let (band, advice) = match t.treatment {
                     kwall::SCALABLE => (
                         "below 30",
@@ -2253,8 +2919,13 @@ pub fn summary(
             } else if t.treatment == kwall::LOW_RE {
                 format!(
                     "wall `{b}`: first-cell y⁺ above 2 on {:.0} % of the area with the low-Re \
-                     treatment (it needs y⁺ ≲ 1; the automatic treatment takes any y⁺)",
-                    100.0 * out
+                     treatment (it needs y⁺ ≲ 1; the {} treatment takes any y⁺)",
+                    100.0 * out,
+                    if t.zf.is_some() {
+                        "compound"
+                    } else {
+                        "automatic"
+                    }
                 )
             } else {
                 format!(

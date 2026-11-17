@@ -96,6 +96,45 @@ impl Csr {
             .collect()
     }
 
+    /// The symmetric part ½(A + Aᵀ) (the pattern is the union of the two;
+    /// every entry is the exact mean, so a symmetric matrix is returned
+    /// bitwise unchanged). The multigrid of a non-symmetric transport
+    /// matrix (convection) is built from it (stage 6 PR 6d, D36): the
+    /// V-cycle then preconditions BiCGStab on the full matrix.
+    pub fn symmetric_part(&self) -> Csr {
+        let t = self.transpose();
+        let rows = (0..self.n_rows)
+            .map(|i| {
+                let mut r = Vec::new();
+                let (mut a, mut b) = (self.row(i).peekable(), t.row(i).peekable());
+                loop {
+                    match (a.peek().copied(), b.peek().copied()) {
+                        (None, None) => break,
+                        (Some((ca, va)), Some((cb, vb))) if ca == cb => {
+                            r.push((ca as u32, 0.5 * va + 0.5 * vb));
+                            a.next();
+                            b.next();
+                        }
+                        (Some((ca, va)), Some((cb, _))) if ca < cb => {
+                            r.push((ca as u32, 0.5 * va));
+                            a.next();
+                        }
+                        (Some((ca, va)), None) => {
+                            r.push((ca as u32, 0.5 * va));
+                            a.next();
+                        }
+                        (_, Some((cb, vb))) => {
+                            r.push((cb as u32, 0.5 * vb));
+                            b.next();
+                        }
+                    }
+                }
+                r
+            })
+            .collect();
+        Csr::from_rows(self.n_cols, rows)
+    }
+
     /// The transpose; the entries of a column keep the row order.
     pub fn transpose(&self) -> Csr {
         let mut count = vec![0usize; self.n_cols + 1];
@@ -329,6 +368,29 @@ mod tests {
         let y1 = a2.spmv(&x);
         let y2 = a.spmv(&a.spmv(&x));
         assert_eq!(y1, y2);
+    }
+
+    /// ½(A + Aᵀ) of a convection–diffusion matrix: upwind rows with an
+    /// entry whose transpose is missing (one-sided coupling) keep half of
+    /// it on both sides; the result is symmetric with the diagonal of A.
+    #[test]
+    fn symmetric_part_of_a_convection_matrix() {
+        let rows = vec![
+            vec![(0, 3.0), (1, -1.0)],
+            vec![(0, -2.0), (1, 4.0), (2, -1.5)],
+            vec![(2, 2.0)],
+        ];
+        let a = Csr::from_rows(3, rows);
+        assert!(a.asymmetry() > 0.0);
+        let s = a.symmetric_part();
+        assert_eq!(s.asymmetry(), 0.0);
+        assert_eq!(s.diagonal(), a.diagonal());
+        let r1: Vec<_> = s.row(1).collect();
+        assert_eq!(r1, vec![(0, -1.5), (1, 4.0), (2, -0.75)]);
+        let r2: Vec<_> = s.row(2).collect();
+        assert_eq!(r2, vec![(1, -0.75), (2, 2.0)]);
+        // a symmetric matrix is its own symmetric part
+        assert_eq!(lap1d(5).symmetric_part(), lap1d(5));
     }
 
     #[test]

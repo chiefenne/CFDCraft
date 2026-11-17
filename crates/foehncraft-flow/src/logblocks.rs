@@ -579,18 +579,22 @@ pub fn results(bs: &[crate::case::BoundarySummary]) -> Frame {
 pub fn run_time(t: &crate::simplec::Timings, cells: usize, iterations: usize, unit: &str) -> Frame {
     let total = t.total();
     let mut f = Frame::new("Run time analysis").summary();
-    time_rows(
-        &mut f,
-        &[
-            ("Gradients and limiters", t.gradients),
-            ("Momentum assembly", t.momentum_assembly),
-            ("Momentum solver", t.momentum_solve),
-            ("Pressure assembly", t.pressure_assembly),
-            ("Pressure solver", t.pressure_solve),
-            ("Multigrid setup", t.amg_setup),
-        ],
-        total,
-    );
+    let mut rows = vec![
+        ("Gradients and limiters", t.gradients),
+        ("Momentum assembly", t.momentum_assembly),
+        ("Momentum solver", t.momentum_solve),
+        ("Pressure assembly", t.pressure_assembly),
+        ("Pressure solver", t.pressure_solve),
+        ("Multigrid setup", t.amg_setup),
+    ];
+    // the phases a case without a turbulence model or scalars does not have
+    if t.turbulence > 0.0 {
+        rows.push(("Turbulence model", t.turbulence));
+    }
+    if t.scalars > 0.0 {
+        rows.push(("Passive scalars", t.scalars));
+    }
+    time_rows(&mut f, &rows, total);
     f.push_rule();
     f.push_kv("Total", format!("{total:>10.2} s"));
     f.push_kv(
