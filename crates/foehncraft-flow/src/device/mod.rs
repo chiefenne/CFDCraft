@@ -503,6 +503,11 @@ pub struct WallFaceOps {
     /// k-ε-ζ-f: ζ per cell and the output wall value of f per boundary
     /// face.
     pub zeta_f: Option<(Buf, Buf)>,
+    /// N_ζ of the f wall value (1: ζ-f, 2: ζ-f₀).
+    pub n_zeta: f64,
+    /// The compound treatment of 2023: the velocity gradient and the
+    /// pressure gradient per cell (C_U of the non-equilibrium factor).
+    pub non_eq: Option<([Buf3; 3], Buf3)>,
 }
 
 /// Inputs and outputs of [`FlowDevice::wall_cells`].

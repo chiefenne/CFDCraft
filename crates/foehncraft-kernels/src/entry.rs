@@ -2024,6 +2024,15 @@ pub struct WallFaceArgs {
     pub zeta: Raw<f64>,
     /// Output (per boundary face, with `zeta`): the wall value of f.
     pub f_b: Raw<f64>,
+    /// N_ζ of the ζ-f₀ form (1: the 2004 ζ-f, f_w = −2νζ_P/y_P²; 2: f₀_w
+    /// = 0), with `zeta`.
+    pub n_zeta: f64,
+    /// Velocity gradient per cell (treatment `COMPOUND_2023`; empty: C_U
+    /// = 0).
+    pub grad_u: RawGrad,
+    /// Pressure gradient per cell (treatment `COMPOUND_2023`; empty: no
+    /// pressure part of C_U).
+    pub grad_p: Raw3,
 }
 
 /// The wall treatment per wall face ([`crate::turb::wall::wall_face`]).
@@ -2056,6 +2065,7 @@ impl Entry for WallFaces {
                     y,
                     nu,
                     1.0,
+                    a.n_zeta,
                 );
                 let u_tau = foehncraft_core::math::sqrt(nu * ut / y);
                 *a.u_tau.out().add(i) = u_tau;
@@ -2073,6 +2083,25 @@ impl Entry for WallFaces {
             if a.treatment >= crate::turb::wall::SCALABLE {
                 // the k-ε family: ε fixed in the cell (weight 1), k and ε
                 // with zero gradient at the wall
+                // C_U = t·[(U·∇)U + ∇p/ρ] along the tangential direction t
+                // of the relative velocity (Popovac 2023, eq. (14); steady
+                // part)
+                let mut cu = 0.0;
+                if a.treatment == crate::turb::wall::COMPOUND_2023 && ut > 0.0 {
+                    let inv = 1.0 / ut;
+                    let tn = [t[0] * inv, t[1] * inv, t[2] * inv];
+                    if a.grad_u.g[0].x.len > 0 {
+                        let g = a.grad_u.v();
+                        let gu = [g.x.at(p), g.y.at(p), g.z.at(p)];
+                        for (ti, gi) in tn.iter().zip(gu.iter()) {
+                            cu += ti * (up[0] * gi[0] + up[1] * gi[1] + up[2] * gi[2]);
+                        }
+                    }
+                    if a.grad_p.x.len > 0 {
+                        let gp = a.grad_p.v().at(p);
+                        cu += (tn[0] * gp[0] + tn[1] * gp[1] + tn[2] * gp[2]) / a.rho;
+                    }
+                }
                 let inp = crate::turb::wall::KepsWallInputs {
                     ut,
                     y: ld(a.y.get(), i),
@@ -2080,6 +2109,7 @@ impl Entry for WallFaces {
                     k: ld(a.k.get(), p),
                     ks: ld(a.ks.get(), i),
                     cs: ld(a.cs.get(), i),
+                    cu,
                 };
                 let r = crate::turb::wall::keps_wall_face(&inp, &a.ke, a.treatment);
                 *a.u_tau.out().add(i) = r.u_tau;
@@ -2092,13 +2122,15 @@ impl Entry for WallFaces {
                 *a.k_b.out().add(fb) = 0.0;
                 *a.w_b.out().add(fb) = 0.0;
                 if zf {
-                    // the compound f_w: e^{−Γ} (−2ν ζ_P/y_P²)
+                    // the compound f_w: e^{−Γ} (−2ν ζ_P/y_P²) (2023: Γ =
+                    // dU⁺/dy⁺; f₀_w = 0)
                     let (_, f_w) = crate::turb::wall::zeta_f_wall_values(
                         inp.k,
                         ld(a.zeta.get(), p),
                         inp.y,
                         a.nu,
                         r.viscous,
+                        a.n_zeta,
                     );
                     *a.f_b.out().add(fb) = f_w;
                 }

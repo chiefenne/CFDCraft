@@ -81,6 +81,24 @@ pub const STANDARD: u32 = 3;
 /// Wall treatment (k-ε family): the compound treatment (Popovac &
 /// Hanjalić 2007).
 pub const COMPOUND: u32 = 4;
+/// Wall treatment (k-ε family): the compound treatment of Popovac (2023),
+/// the harmonic blend of the viscous and the logarithmic layer with the
+/// non-equilibrium factor ψ.
+pub const COMPOUND_2023: u32 = 5;
+
+/// E of the log law of the 2023 compound treatment (Popovac 2023,
+/// eq. (11): κ = 0.41, E = 8.9).
+pub const E_2023: f64 = 8.9;
+/// The exponent n_b = 10/3 of the harmonic blend (Popovac 2023, eq. (17)).
+pub const N_BLEND: f64 = 10.0 / 3.0;
+/// The viscous sublayer thickness y_v⁺ = 11 of the non-equilibrium factor
+/// (Popovac 2023, eq. (15)).
+pub const Y_V_PLUS: f64 = 11.0;
+/// Bounds of the non-equilibrium factor ψ (Popovac 2023 bounds ψ but
+/// gives no values; ours, 6d2).
+pub const PSI_MIN: f64 = 0.5;
+/// See [`PSI_MIN`].
+pub const PSI_MAX: f64 = 2.0;
 
 /// The lower end of the log layer, y⁺ = 11.06 (where u⁺ = y⁺ meets the log
 /// law with κ = 0.41, E = 9.793; the limit of the scalable wall functions
@@ -276,14 +294,16 @@ pub fn roughness_shift<T: Real>(ks_plus: T, cs: T, kappa: T) -> T {
 /// f_w = −2ν ζ_P/y_P² (the limits for y → 0 with the first-cell values,
 /// k ~ y² and ζ ~ y² near the wall). With the compound treatment
 /// (Popovac & Hanjalić 2007) f_w is blended towards 0 with the viscous
-/// weight e^{−Γ} (`viscous`, 1 for the integration to the wall). Returns
-/// (ε_w, f_w).
+/// weight e^{−Γ} (`viscous`, 1 for the integration to the wall). The
+/// ζ-f₀ form (Popovac 2023, eq. (21)) generalises f_w to
+/// f₀_w = (N_ζ − 2) 2ν ζ_P/y_P², 0 with its N_ζ = 2; `n_zeta` = 1 is the
+/// 2004 model. Returns (ε_w, f_w).
 #[inline(always)]
-pub fn zeta_f_wall_values<T: Real>(k: T, zeta: T, y: T, nu: T, viscous: T) -> (T, T) {
+pub fn zeta_f_wall_values<T: Real>(k: T, zeta: T, y: T, nu: T, viscous: T, n_zeta: T) -> (T, T) {
     let two_nu_y2 = T::from_f64(2.0) * nu / (y * y);
     (
         two_nu_y2 * k.max_of(T::ZERO),
-        -(viscous * two_nu_y2 * zeta.max_of(T::ZERO)),
+        (n_zeta - T::from_f64(2.0)) * viscous * two_nu_y2 * zeta.max_of(T::ZERO),
     )
 }
 
@@ -309,6 +329,10 @@ pub struct KepsWallInputs<T> {
     pub ks: T,
     /// C_s of Cebeci & Bradshaw.
     pub cs: T,
+    /// The non-equilibrium term C_U = t·[(U·∇)U + ∇p/ρ] of the near-wall
+    /// cell along the wall-tangential flow direction t (m/s²), used by
+    /// [`COMPOUND_2023`] only (0: equilibrium).
+    pub cu: T,
 }
 
 /// Results of [`keps_wall_face`].
@@ -330,8 +354,59 @@ pub struct KepsWallFace<T> {
     /// The wall part of the production (already weighted) (m²/s³).
     pub pk_wall: T,
     /// The viscous weight e^{−Γ} of the compound blending (1 in the
-    /// sublayer of the standard wall function, else 0).
+    /// sublayer of the standard wall function, else 0; the blended
+    /// dU⁺/dy⁺ with [`COMPOUND_2023`]).
     pub viscous: T,
+    /// The non-equilibrium factor ψ ([`COMPOUND_2023`], else 1).
+    pub psi: T,
+}
+
+/// The wall treatment of Popovac (2023) for one wall face, in the
+/// velocity scale u* = C_μ^¼ k_P^½ of the k-ε family (y* = u* y_P/ν).
+///
+/// U⁺ = [(U⁺_vis)^{−n} + (U⁺_log)^{−n}]^{−1/n}, n = 10/3 (eq. (17)), with
+/// U⁺_vis = y*, U⁺_log = ln(E y*)/(κψ) (eq. (15)), E = 8.9. The log value
+/// is taken at max(y*, 1): below y* ≈ 0.12 ln(E y*) would vanish and the
+/// harmonic blend would follow it to 0; with the guard it is ≥ 5.3 there,
+/// and U⁺ = y* to 0.1 % for y* ≤ 1.
+///
+/// ψ = 1 − C_U (y_P − y_v/2)/(U_t κ u*), y_v = 11 ν/u*, bounded to
+/// [ψ_min, ψ_max] (eq. (15)). The paper applies it for y_P > y_v (eq. (14));
+/// it is applied here from y_v/2 on, where it is 1, so that ψ is
+/// continuous in y_P.
+///
+/// Returns (y*/U⁺, Γ = dU⁺/dy⁺, ψ): the effective wall viscosity is
+/// ν_w = ν y*/U⁺ (eq. (16)); Γ (eq. (19), derived from eq. (17)) =
+/// (1 + q^n)^{−(n+1)/n} [1 + q^{n+1}/(κψ y*)], q = y*/U⁺_log, tends to 1
+/// in the sublayer and to 1/(κψ y*) in the log layer.
+#[inline(always)]
+pub fn compound_2023<T: Real>(ys: T, y: T, nu: T, u_star: T, ut: T, cu: T, kappa: T) -> (T, T, T) {
+    let f = T::from_f64;
+    let tiny = f(1e-300);
+    let n = f(N_BLEND);
+    // ψ (1 without a velocity scale or a tangential velocity)
+    let yv = f(Y_V_PLUS) * nu / u_star.max_of(tiny);
+    let den = ut * kappa * u_star;
+    let psi = if den > tiny {
+        (T::ONE - cu * (y - f(0.5) * yv).max_of(T::ZERO) / den)
+            .max_of(f(PSI_MIN))
+            .min_of(f(PSI_MAX))
+    } else {
+        T::ONE
+    };
+    let yl = ys.max_of(T::ONE);
+    let u_log = (f(E_2023) * yl).ln_of() / (kappa * psi);
+    let q = (ys / u_log).max_of(tiny);
+    let lq = q.ln_of();
+    // 1 + q^n
+    let s = T::ONE + (n * lq).exp_of();
+    let ls = s.ln_of();
+    // y*/U⁺ = (1 + q^n)^{1/n}
+    let r = (ls / n).exp_of();
+    // Γ = (1 + q^n)^{−(n+1)/n} [1 + q^{n+1}/(κψ y*)]
+    let tail = ((n + T::ONE) * lq).exp_of() / (kappa * psi * yl);
+    let g = (-(n + T::ONE) / n * ls).exp_of() * (T::ONE + tail);
+    (r, g.min_of(T::ONE), psi)
 }
 
 /// The wall treatment `treatment` ([`SCALABLE`], [`STANDARD`] or
@@ -362,7 +437,13 @@ pub fn keps_wall_face<T: Real>(
     let u3 = u_star * u_star * u_star;
     // ratio r = y*/u⁺ (ν_w = ν r), the length of the log-layer values and
     // the weights
-    let (r, y_len, viscous, w_log, eps_vis) = if treatment == COMPOUND {
+    let mut psi = T::ONE;
+    let (r, y_len, viscous, w_log, eps_vis) = if treatment == COMPOUND_2023 {
+        // Popovac (2023): ε_P = Γ 2νk/y² + (1 − Γ) u*³/(κ y) (eq. (20))
+        let (r, g, ps) = compound_2023(ys, y, nu, u_star, ut, i.cu, kappa);
+        psi = ps;
+        (r, y, g, T::ONE - g, g * f(2.0) * nu * k / (y * y))
+    } else if treatment == COMPOUND {
         let g = compound_gamma(ys).max_of(tiny);
         let a = (-g).exp_of();
         let b = (-(T::ONE / g)).exp_of();
@@ -390,7 +471,12 @@ pub fn keps_wall_face<T: Real>(
     let eps = eps_vis + w_log * u3 / (kappa * y_len);
     let pk_log = tau * u_star / (kappa * y_len);
     // standard: no production in the sublayer (w_log = 0 there)
-    let (prod_weight, pk_wall) = if treatment == COMPOUND {
+    let (prod_weight, pk_wall) = if treatment == COMPOUND_2023 {
+        // Popovac (2023): P = |uv| dU/dy fixed in the cell, |uv| = u*²,
+        // dU/dy = (τ_w/ρ)/ν Γ (Γ = dU⁺/dy⁺; the log limit is
+        // τ_w u*/(ρ κ y), the production of the other treatments)
+        (T::ONE, u_star * u_star * tau / nu * viscous)
+    } else if treatment == COMPOUND {
         (T::ONE - viscous, w_log * pk_log)
     } else {
         (T::ONE, w_log * pk_log)
@@ -404,6 +490,7 @@ pub fn keps_wall_face<T: Real>(
         prod_weight,
         pk_wall,
         viscous,
+        psi,
     }
 }
 
@@ -498,6 +585,7 @@ mod tests {
                 k: 1.0 / 0.3,
                 ks: 0.0,
                 cs: 0.5,
+                cu: 0.0,
             };
             for t in [SCALABLE, STANDARD, COMPOUND] {
                 let r = keps_wall_face(&i, &c, t);
@@ -528,6 +616,7 @@ mod tests {
             k,
             ks: 0.0,
             cs: 0.5,
+            cu: 0.0,
         };
         for t in [STANDARD, COMPOUND] {
             let r = keps_wall_face(&i, &c, t);
@@ -578,9 +667,10 @@ mod tests {
             k: 0.08,
             ks: 1e-4,
             cs: 0.5,
+            cu: 0.0,
         };
         let lift = |x: f64| Dual::<1>::constant(x);
-        for t in [SCALABLE, STANDARD, COMPOUND] {
+        for t in [SCALABLE, STANDARD, COMPOUND, COMPOUND_2023] {
             let di = KepsWallInputs {
                 ut: lift(base.ut),
                 y: lift(base.y),
@@ -588,6 +678,7 @@ mod tests {
                 k: Dual::<1>::variable(base.k, 0),
                 ks: lift(base.ks),
                 cs: lift(base.cs),
+                cu: lift(0.0),
             };
             let r = keps_wall_face(&di, &c, t);
             let h = 1e-7;
@@ -604,5 +695,122 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn compound_2023_tends_to_its_limits() {
+        let c = crate::turb::keps::KepsConstants::standard();
+        let nu = 1e-5;
+        let m = foehncraft_core::math::sqrt;
+        // log layer, k in equilibrium with u_τ = 1 (u* = 1): u⁺ = ln(8.9 y⁺)/κ
+        for &(yp, tol, tg) in &[
+            (30.0, 2.5e-2, 0.3),
+            (100.0, 1e-3, 3e-2),
+            (300.0, 1e-4, 5e-3),
+        ] {
+            let y = yp * nu;
+            let u = foehncraft_core::math::ln(E_2023 * yp) / 0.41;
+            let i = KepsWallInputs {
+                ut: u,
+                y,
+                nu,
+                k: 1.0 / m(c.c_mu),
+                ks: 0.0,
+                cs: 0.5,
+                cu: 0.0,
+            };
+            let r = keps_wall_face(&i, &c, COMPOUND_2023);
+            assert!((r.u_tau - 1.0).abs() < tol, "{yp}: {}", r.u_tau);
+            let e = 1.0 / (0.41 * y);
+            // Γ = dU⁺/dy⁺ → 1/(κ y⁺) decays slowly: ε keeps the weight Γ
+            // of 2νk/y² (eq. (20)), about 9 % at y⁺ = 30
+            let g = 1.0 / (0.41 * yp);
+            assert!((r.viscous - g).abs() < tg * g, "{yp}: {} {g}", r.viscous);
+            let ew = 2.0 * nu * i.k / (y * y);
+            let eb = r.viscous * ew + (1.0 - r.viscous) * e;
+            assert!(
+                (r.epsilon - eb).abs() < 1e-12 * eb,
+                "{yp}: {} {eb}",
+                r.epsilon
+            );
+            // P = u*² (τ_w/ρν) Γ
+            let pk = r.u_tau * r.u_tau / nu * r.viscous;
+            assert!((r.pk_wall - pk).abs() < 1e-12 * pk, "{yp}: {}", r.pk_wall);
+            assert!(
+                (r.pk_wall - e).abs() < (tg + 3.0 * tol) * e,
+                "{yp}: {}",
+                r.pk_wall
+            );
+            assert_eq!(r.prod_weight, 1.0);
+            assert_eq!(r.psi, 1.0);
+        }
+        // viscous sublayer: ν_w = ν, ε = 2νk/y², Γ = 1 (to 0.1 %)
+        for yp in [1e-3, 0.1, 0.5, 1.0] {
+            let y = yp * nu;
+            let k: f64 = 0.1 * yp * yp;
+            let i = KepsWallInputs {
+                ut: yp,
+                y,
+                nu,
+                k,
+                ks: 0.0,
+                cs: 0.5,
+                cu: 0.0,
+            };
+            let r = keps_wall_face(&i, &c, COMPOUND_2023);
+            assert!((r.nu_wall - nu).abs() < 1e-3 * nu, "{yp}: {}", r.nu_wall);
+            assert!(r.viscous > 0.99, "{yp}: {}", r.viscous);
+            let ew = 2.0 * nu * k / (y * y);
+            assert!(
+                (r.epsilon - ew).abs() < 1e-2 * ew,
+                "{yp}: {} {ew}",
+                r.epsilon
+            );
+        }
+        // no k: the viscous shear, finite values
+        let i0 = KepsWallInputs::<f64> {
+            ut: 1.0,
+            y: 1e-4,
+            nu,
+            k: 0.0,
+            ks: 0.0,
+            cs: 0.5,
+            cu: 3.0,
+        };
+        let r = keps_wall_face(&i0, &c, COMPOUND_2023);
+        assert_eq!(r.nu_wall, nu);
+        assert!(r.epsilon.is_finite() && r.pk_wall.is_finite() && r.psi == 1.0);
+    }
+
+    #[test]
+    fn compound_2023_gamma_is_the_derivative_of_the_blend() {
+        // U⁺(y*) = y*/(y*/U⁺) from the kernel; Γ against its derivative
+        let (nu, kappa) = (1.0, 0.41);
+        let u_plus = |ys: f64| ys / compound_2023(ys, ys, nu, 1.0, 10.0, 0.0, kappa).0;
+        for ys in [1.5, 3.0, 8.0, 15.0, 40.0, 200.0] {
+            let h = 1e-6 * ys;
+            let d = (u_plus(ys + h) - u_plus(ys - h)) / (2.0 * h);
+            let g = compound_2023(ys, ys, nu, 1.0, 10.0, 0.0, kappa).1;
+            assert!((g - d).abs() < 1e-6 * d.max(1e-3), "{ys}: {g} {d}");
+        }
+    }
+
+    #[test]
+    fn compound_2023_non_equilibrium_factor() {
+        let (nu, kappa, us, ut) = (1e-5, 0.41, 1.0, 15.0);
+        let at = |yp: f64, cu: f64| compound_2023(yp, yp * nu, nu, us, ut, cu, kappa);
+        // 1 below y_v/2, continuous there, < 1 in an adverse gradient
+        assert_eq!(at(5.0, 1e3).2, 1.0);
+        assert!((at(5.5 + 1e-9, 1e3).2 - 1.0).abs() < 1e-9);
+        let (yp, cu) = (50.0, 1e3);
+        let psi = 1.0 - cu * (yp - 5.5) * nu / (ut * kappa * us);
+        assert!((at(yp, cu).2 - psi).abs() < 1e-12, "{} {psi}", at(yp, cu).2);
+        assert!(
+            at(yp, cu).0 < at(yp, 0.0).0,
+            "smaller wall shear in an adverse gradient"
+        );
+        // bounded
+        assert_eq!(at(yp, 1e9).2, PSI_MIN);
+        assert_eq!(at(yp, -1e9).2, PSI_MAX);
     }
 }
