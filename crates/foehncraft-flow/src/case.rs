@@ -3608,7 +3608,7 @@ pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Re
         },
         case.check_context(),
     );
-    findings.extend(crate::turbulence::setup_findings(&case));
+    findings.extend(crate::turbulence::setup_findings(case));
     for f in &findings {
         log(&f.to_string());
     }

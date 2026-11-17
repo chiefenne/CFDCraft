@@ -186,7 +186,7 @@ pub unsafe fn scalar_row<T: Real>(c: usize, inp: &ScalarRowInputs<T>, val: *mut 
             let mut i = 1;
             while i < j {
                 let at = val.add(inp.layout.pos(c, i));
-                *at = *at * keep;
+                *at *= keep;
                 i += 1;
             }
             b = keep * b + m * dr * ld(inp.fix_val, c);

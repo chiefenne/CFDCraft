@@ -185,7 +185,7 @@ fn sst_results_are_bitwise_equal_on_1_and_4_threads() {
                 .replace("cells = [32, 24, 1]", "cells = [160, 128, 1]")
                 .replace("cells = 8, ratio", "cells = 40, ratio")
                 .replace("cells = 24, ratio", "cells = 120, ratio")
-                .replace("levels = [0, 1, 2, 3]", "levels = [0]")
+                .replace("levels = [1]", "levels = [0]")
                 .replace("max_iterations = 10000", "max_iterations = 8")
                 .replace("derived = [\"turbulence-features\"]", "")
                 + &format!("\n[run]\nthreads = {threads}\n")),
@@ -281,7 +281,7 @@ fn bad_turbulence_input_is_refused() {
 fn inlet_turbulence_checks() {
     let base = text("tmr_plate_sst.toml")
         .replace(
-            "levels = [0, 1, 2, 3]",
+            "levels = [1]\nrequire_convergence = true",
             "levels = [0]\nrequire_convergence = false",
         )
         .replace("max_iterations = 10000", "max_iterations = 1");

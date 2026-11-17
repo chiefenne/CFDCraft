@@ -709,6 +709,9 @@ pub struct Turbulence {
     pub health: TurbHealth,
 }
 
+/// A wall's y⁺ statistics: boundary, min, mean, max, area fraction above 2.
+pub type YPlusRow = (String, f64, f64, f64, f64);
+
 /// Floor and cap counts of a run (D69, TURB002).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct TurbHealth {
@@ -1695,13 +1698,9 @@ impl Turbulence {
         (&s.p_modified, &s.pb_modified)
     }
 
-    /// Per wall boundary: the area-weighted min, mean and max of y⁺, for
-    /// the report and TURB001.
-    pub fn y_plus_summary(
-        &self,
-        dev: &mut dyn FlowDevice,
-        mesh: &Mesh,
-    ) -> Result<Vec<(String, f64, f64, f64, f64)>> {
+    /// Per wall boundary: the area-weighted min, mean and max of y⁺ and
+    /// the area fraction above 2 (low-Re), for the report and TURB001.
+    pub fn y_plus_summary(&self, dev: &mut dyn FlowDevice, mesh: &Mesh) -> Result<Vec<YPlusRow>> {
         let Some(wd) = self.wd else {
             return Ok(Vec::new());
         };

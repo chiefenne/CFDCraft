@@ -308,6 +308,7 @@ impl InletTurbulence {
 /// One boundary condition, `[boundary.<boundary>]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+#[allow(clippy::large_enum_variant)] // case-file data, a few per case
 pub enum BoundaryCondition {
     /// No-slip wall, at rest or moving tangentially.
     Wall {

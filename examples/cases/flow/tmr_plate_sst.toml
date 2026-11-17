@@ -23,8 +23,13 @@
 # drag coefficient of the plate (one side, area 2 m²) C_D = 0.0028488.
 # The wall probe `x097` gives C_f, the force of `plate` the drag:
 # C_D = F_x / (½ ρ U² · 2 m²) = F_x on the 1 m depth of the mesh.
-# Four levels, the uncertainty of the three finest (D67): 25 minutes on
-# one core.
+# Level 1 (64 × 48 cells, 2 minutes); the sweep of the verification page,
+# four levels with the uncertainty of the three finest (D67), takes 25
+# minutes on one core:
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tmr_plate_sst.toml --set 'verification.levels=[0, 1, 2, 3]'
+#
+# Level 1 gives C_f(0.97) = 0.002668 (−0.8 %), level 3 0.002701 (+0.4 %).
 
 case_format = "0.6"
 
@@ -77,7 +82,8 @@ max_iterations = 10000
 log_every = 200
 
 [verification]
-levels = [0, 1, 2, 3]
+levels = [1]
+require_convergence = true
 
 [output]
 vtkhdf = false
