@@ -78,6 +78,32 @@ def safely(what, draw):
         print(f"  skipped {what}: {type(e).__name__}: {e}")
 
 
+# the inferno map of matplotlib as (t, r, g, b): set as a table, because the
+# preset's name differs between ParaView versions
+INFERNO = (
+    (0.0000, 0.001, 0.000, 0.014), (0.0625, 0.042, 0.028, 0.141), (0.1250, 0.129, 0.047, 0.291),
+    (0.1875, 0.238, 0.037, 0.396), (0.2500, 0.342, 0.062, 0.429), (0.3125, 0.441, 0.099, 0.432),
+    (0.3750, 0.541, 0.135, 0.415), (0.4375, 0.640, 0.171, 0.381), (0.5000, 0.736, 0.216, 0.330),
+    (0.5625, 0.822, 0.275, 0.266), (0.6250, 0.894, 0.353, 0.194), (0.6875, 0.947, 0.449, 0.115),
+    (0.7500, 0.978, 0.558, 0.035), (0.8125, 0.988, 0.675, 0.065), (0.8750, 0.975, 0.798, 0.206),
+    (0.9375, 0.948, 0.917, 0.411), (1.0000, 0.988, 0.998, 0.645),
+)
+
+
+def colour_map(lut, preset, rng):
+    """A preset by name, or (preset None) the inferno table above."""
+    if preset:
+        try:
+            lut.ApplyPreset(preset, True)
+        except Exception as e:  # noqa: BLE001
+            print(f"  colour map {preset} not available ({e}); ParaView's default is used")
+    else:
+        lo, hi = rng
+        lut.RGBPoints = [x for t, r, g, b in INFERNO for x in (lo + t * (hi - lo), r, g, b)]
+        opt(lut, "ColorSpace", "RGB")
+    lut.RescaleTransferFunction(*rng)
+
+
 def reattachment(d):
     with open(os.path.join(d, "wall_ymin.csv")) as f:
         rows = [r for r in f if not r.startswith("#")]
@@ -206,14 +232,13 @@ def marker(v, x, colour):
     solid(Show(s, v), colour)
 
 
-def panel(v, data, label, xr, field, lut_name, rng, streamlines):
+def panel(v, data, label, xr, field, preset, rng, streamlines):
     d = Show(data, v)
     ColorBy(d, ("POINTS", field))
     opt(d, "Ambient", 1.0)      # the colours of the map, without shading
     opt(d, "Diffuse", 0.0)
     lut = GetColorTransferFunction(field)
-    lut.ApplyPreset(lut_name, True)
-    lut.RescaleTransferFunction(*rng)
+    colour_map(lut, preset, rng)
     opt(lut, "AutomaticRescaleRangeMode", "Never")
     bar = GetScalarBar(lut, v)
     for name, value in (("Title", text("U/U_ref" if field == "velocity_x" else "k/U_ref²")),
@@ -318,20 +343,20 @@ def main():
         print(f"{label:22s} " + (f"x_r/H {xr:.2f} ({100 * (xr / X_EXP - 1):+.1f} % from {X_EXP})"
                                  if xr else "no reattachment"))
     kmax = max(m[1].PointData["k"].GetRange()[1] for m in models)
-    for field, lut_name, rng, lines, name in (
+    for field, preset, rng, lines, name in (
         ("velocity_x", "Cool to Warm", U_RANGE, True, "velocity"),
-        ("k", "Inferno (matplotlib)", (0.0, kmax), False, "k"),
+        ("k", None, (0.0, kmax), False, "k"),
     ):
         parts = []
         for i, (label, data, xr) in enumerate(models):
             v = view()
-            panel(v, data, label, xr, field, lut_name, rng, lines)
+            panel(v, data, label, xr, field, preset, rng, lines)
             f = f"{prefix}_{name}_{i}.png"
             SaveScreenshot(f, v, ImageResolution=list(PANEL))
             parts.append(f)
             Delete(v)
         stack(parts, f"{prefix}_{name}.png")
-        print("wrote", f"{prefix}_{name}.png")
+        print("wrote", os.path.abspath(f"{prefix}_{name}.png"))
 
 
 if __name__ == "__main__":
