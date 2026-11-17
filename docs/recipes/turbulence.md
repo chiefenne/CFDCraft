@@ -278,4 +278,34 @@ The reattachment length of the step is where the wall shear of `ymin`
 in `wall_ymin.csv` (behind the step, x > 0) changes sign from negative
 to positive.
 
+Compare the models on the step. The three cases in
+`examples/studies/backstep/` are the step on the fine mesh (32 800
+cells) with k-ε and scalable wall functions, k-ε-ζ-f₀ and k-ω SST, each
+with `output.vtkhdf = true`:
+
+```
+target/release/foehn flow examples/studies/backstep/keps.toml --out output/backstep_keps
+target/release/foehn flow examples/studies/backstep/zf0.toml --out output/backstep_zeta_f0
+target/release/foehn flow examples/studies/backstep/sst.toml --out output/backstep_sst
+```
+
+The figures of the gallery, velocity with streamlines and turbulent
+kinetic energy, one panel per model, come from ParaView's Python or from
+matplotlib. Both scripts take an output prefix and `LABEL=DIR` per
+model, write `PREFIX_velocity.png` and `PREFIX_k.png` and print x_r/H:
+
+```
+pvpython tools/plot/backstep_paraview.py docs/figures/gallery/backstep \
+    "k-ε (scalable)=output/backstep_keps" "k-ε-ζ-f₀=output/backstep_zeta_f0" "k-ω SST=output/backstep_sst"
+python3 -m tools.plot.backstep_chart docs/figures/gallery/backstep \
+    "k-ε (scalable)=output/backstep_keps" "k-ε-ζ-f₀=output/backstep_zeta_f0" "k-ω SST=output/backstep_sst"
+```
+
+On macOS `pvpython` is in the application,
+`/Applications/ParaView-6.2.0.app/Contents/bin/pvpython`. The ParaView
+script is a starting point for other 2D cases: it reads `fields.vtkhdf`,
+cuts the mesh at mid-depth, and sets the camera window, the colour map
+and the axis text itself, so the picture does not depend on the ParaView
+version (tested with 5.11 and 6.2).
+
 [↑ back to top](#turbulence-models)

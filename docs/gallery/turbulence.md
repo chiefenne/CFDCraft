@@ -335,13 +335,31 @@ reattachment length x_r/H is 6.38, +2 % from the experiment's 6.26
 separated shear layer, halves ν_t there and the bubble grows to 7.4 H;
 ζ-f of 2004 has the same bound and gives 7.82 (+25 %), and 6.80 with `constants = { a = 0.849 }`.
 
+**Three models on the same step** (`examples/studies/backstep/`, the
+fine mesh of 32 800 cells). k-ε with scalable wall functions reattaches
+at 5.34 H (−15 %), k-ω SST at 5.79 H (−7 %) and k-ε-ζ-f₀ at 6.38 H
+(+2 %). The streamwise velocity with streamlines, the line U = 0 in
+white, the computed reattachment point in red and the experiment's in
+black:
+
+![The streamwise velocity U/U_ref behind the backward-facing step from x/H = −3 to 14 with streamlines, one panel per model: k-ε with scalable wall functions (x_r/H = 5.34), k-ε-ζ-f₀ (6.38) and k-ω SST (5.79). The white line is U = 0, the red dot the computed reattachment point, the black dot the experiment's 6.26](../figures/gallery/backstep_velocity.png)
+
+The turbulent kinetic energy on one scale, with the line U = 0 in
+cyan. SST has the highest peak, k/U_ref² = 0.05 just ahead of
+reattachment, and the fastest decay behind it; k-ε builds k up earliest
+in the shear layer, ζ-f₀ latest, and ζ-f₀ carries it furthest
+downstream:
+
+![The turbulent kinetic energy k/U_ref² behind the backward-facing step, one panel per model on the same colour scale from 0 to 0.053: k-ε with scalable wall functions, k-ε-ζ-f₀ and k-ω SST, with the line U = 0 in cyan and the reattachment points](../figures/gallery/backstep_k.png)
+
 | Check | Result |
 |---|---|
 | Channel Re_τ 395, U_b⁺ at first-cell y⁺ 0.3 / 1 / 10 / 30 | +2.7 / +1.4 / −4.2 / −1.5 % (band ±3 % at y⁺ 1) |
 | Plate C_f(0.97) from White at y⁺ 1 / 10 / 30 | −2.5 / +0.9 / −2.0 %, all converged without a floor (band ±3 %) |
 | Plate from the TMR free stream | turbulent on its own, the same C_f |
 | Step x_r/H, 8 200 / 32 800 cells | 6.38 (+2 %) / 6.38: mesh-independent (band ±10 %) |
-| Step x_r/H with a = 0.6 / ζ-f / SST | 7.44 / 7.82 (6.80 with a = 0.849) / 5.79 |
+| Step x_r/H with a = 0.6 / ζ-f | 7.44 / 7.82 (6.80 with a = 0.849) |
+| Step x_r/H, 32 800 cells: k-ε scalable / ζ-f₀ / SST | 5.34 (−15 %) / 6.38 (+2 %) / 5.79 (−7 %) |
 | 1 against 4 threads (plate, 20 480 cells) | bit-identical |
 | Bad input (wall functions of the k-ε family, `compound-2023` with k-ε, `n_zeta` with ζ-f) | CASE005, CASE005, CASE002 |
 
@@ -349,13 +367,24 @@ separated shear layer, halves ν_t there and the bubble grows to 7.4 H;
 |---|---|
 | Code | kernels `turb::zeta_f` (`FORM_F0`, `ZetaFConstants::popovac_2023`), `turb::wall` (`compound_2023`, `COMPOUND_2023`), `entry` (C_U of `WallFaces`); `foehncraft_flow::turbulence` (model and treatment, the non-equilibrium inputs); `foehncraft_mesh::generate` (`RemoveBox`) |
 | Tests | `tests/zeta_f0.rs`, kernel tests of `turb::zeta_f` and `turb::wall`, `removed_box_builds_a_step` |
-| Case files | `flow/channel_zeta_f0.toml`, `flow/tmr_plate_zeta_f0.toml`, `flow/backstep_zeta_f0.toml` |
+| Case files | `flow/channel_zeta_f0.toml`, `flow/tmr_plate_zeta_f0.toml`, `flow/backstep_zeta_f0.toml`; the model comparison `examples/studies/backstep/{keps,zf0,sst}.toml` |
+| Figures | `tools/plot/backstep_paraview.py` (ParaView), `tools/plot/backstep_chart.py` (matplotlib) |
 | Recipe | [74](../recipes/turbulence.md#zeta-f0) |
 
 ```
 target/release/foehn flow examples/cases/flow/channel_zeta_f0.toml
 target/release/foehn flow examples/cases/flow/tmr_plate_zeta_f0.toml
 target/release/foehn flow examples/cases/flow/backstep_zeta_f0.toml
+```
+
+The model comparison and its two figures (recipe 74):
+
+```
+target/release/foehn flow examples/studies/backstep/keps.toml --out output/backstep_keps
+target/release/foehn flow examples/studies/backstep/zf0.toml --out output/backstep_zeta_f0
+target/release/foehn flow examples/studies/backstep/sst.toml --out output/backstep_sst
+pvpython tools/plot/backstep_paraview.py docs/figures/gallery/backstep \
+    "k-ε (scalable)=output/backstep_keps" "k-ε-ζ-f₀=output/backstep_zeta_f0" "k-ω SST=output/backstep_sst"
 ```
 
 [↑ back to top](#turbulence-models)
