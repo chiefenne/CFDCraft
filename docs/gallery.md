@@ -17,7 +17,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
-| [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71 |
+| [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
@@ -62,6 +62,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="periodic"></a>67 | [Periodic modules: a channel and a short heated pipe](gallery/boundary-conditions.md#periodic) | [Boundary conditions](gallery/boundary-conditions.md) |
 | <a id="sst"></a>68 | [k-ω SST on the TMR flat plate and in a channel](gallery/turbulence.md#sst) | [Turbulence models](gallery/turbulence.md) |
 | <a id="k-epsilon"></a>71 | [k-ε family with wall functions: flat plate, channel, Moody chart](gallery/turbulence.md#k-epsilon) | [Turbulence models](gallery/turbulence.md) |
+| <a id="zeta-f"></a>73 | [k-ε-ζ-f to the wall: channel and flat plate](gallery/turbulence.md#zeta-f) | [Turbulence models](gallery/turbulence.md) |
 
 ## Adding a feature
 
