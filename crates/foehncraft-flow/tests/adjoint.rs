@@ -435,6 +435,7 @@ fn momentum_face_with<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize, central: T
         beta: T::ZERO,
         nonorth: T::ONE,
         convection: T::ONE,
+        transposed: T::ZERO,
     };
     // SAFETY: f is a face of the mesh.
     let (cp, cn, b) = unsafe { k::momentum_face(f, &inp) };

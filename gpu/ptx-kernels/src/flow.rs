@@ -59,4 +59,9 @@ entries! {
     flow_scalar_faces => e::ScalarFaces,
     flow_scalar_rows => e::ScalarRows,
     flow_scalar_scale => e::ScalarScale,
+    flow_sst_cells => e::SstCells,
+    flow_turb_faces => e::TurbFaces,
+    flow_wall_faces => e::WallFaces,
+    flow_wall_cells => e::WallCells,
+    flow_floor => e::Floor,
 }

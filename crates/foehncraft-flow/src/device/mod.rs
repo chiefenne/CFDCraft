@@ -127,6 +127,8 @@ pub struct MomentumFaceArgs {
     pub nonorth: f64,
     /// 1 with convection.
     pub convection: f64,
+    /// 1 with the transposed viscous stress (turbulent flow).
+    pub transposed: f64,
     /// Output c_P.
     pub cp: Buf,
     /// Output c_N.
@@ -279,6 +281,11 @@ pub struct ScalarRowArgs {
     pub alpha: f64,
     /// Time terms (None: steady).
     pub time: Option<ScalarTime>,
+    /// Fixed values: (mask, values) per cell (the ω of SST in the near-wall
+    /// cells), if any.
+    pub fix: Option<(Buf, Buf)>,
+    /// A positive variable: the deferred corrections split by sign (k, ω).
+    pub positive: bool,
     /// Output: matrix values.
     pub val: Buf,
     /// Output: right-hand side.
@@ -287,6 +294,115 @@ pub struct ScalarRowArgs {
     pub diag: Buf,
     /// Output: 1 where the bounded BDF2 fell back to first order.
     pub order: Buf,
+}
+
+/// The static arrays of the wall treatment (stage 6, D134), uploaded once
+/// by [`FlowDevice::wall_setup`].
+#[derive(Debug, Clone, Default)]
+pub struct WallStatic {
+    /// The wall faces (global face index), in face order.
+    pub faces: Vec<u32>,
+    /// The near-wall cells (owners of the wall faces), ascending.
+    pub cells: Vec<u32>,
+    /// Start of each near-wall cell's slots (length cells + 1).
+    pub ptr: Vec<u32>,
+    /// Wall-face slots of the cells (indices into `faces`), in face order.
+    pub slots: Vec<u32>,
+}
+
+/// Inputs and outputs of [`FlowDevice::sst_cells`].
+#[derive(Debug, Clone, Copy)]
+pub struct SstCellOps {
+    /// Velocity gradient.
+    pub grad_u: [Buf3; 3],
+    /// k.
+    pub k: Buf,
+    /// ω.
+    pub w: Buf,
+    /// ∇k.
+    pub grad_k: Buf3,
+    /// ∇ω.
+    pub grad_w: Buf3,
+    /// Wall distance.
+    pub d: Buf,
+    /// ν.
+    pub nu: f64,
+    /// Constants.
+    pub c: foehncraft_kernels::turb::sst::SstConstants,
+    /// Options.
+    pub o: foehncraft_kernels::turb::sst::SstOptions,
+    /// Added sources of k and ω, if any.
+    pub add: Option<(Buf, Buf)>,
+    /// Output ν_t.
+    pub nu_t: Buf,
+    /// Output F₁.
+    pub f1: Buf,
+    /// Output P̃_k.
+    pub pk: Buf,
+    /// Outputs S_u, S_p of k and of ω (None: ν_t, F₁, P̃_k only).
+    pub sources: Option<[Buf; 4]>,
+    /// Output σ_k ν_t.
+    pub dk: Buf,
+    /// Output σ_ω ν_t.
+    pub dw: Buf,
+    /// Output: 1 where the ν_t cap acted.
+    pub capped: Buf,
+}
+
+/// Inputs and outputs of [`FlowDevice::turb_faces`].
+#[derive(Debug, Clone, Copy)]
+pub struct TurbFaceOps {
+    /// ν_t per cell.
+    pub nu_t: Buf,
+    /// σ_k ν_t per cell.
+    pub dk: Buf,
+    /// σ_ω ν_t per cell.
+    pub dw: Buf,
+    /// Laminar viscosity per face.
+    pub mu: Buf,
+    /// 1 on the wall faces (per boundary face).
+    pub wall: Buf,
+    /// Output μ + ρ ν_t per face (the device's face viscosity).
+    pub mu_eff: Buf,
+    /// Output ρ(ν + σ_k ν_t) per face.
+    pub gamma_k: Buf,
+    /// Output ρ(ν + σ_ω ν_t) per face.
+    pub gamma_w: Buf,
+}
+
+/// Inputs and outputs of [`FlowDevice::wall_faces`].
+#[derive(Debug, Clone, Copy)]
+pub struct WallFaceOps {
+    /// Unit normals per wall face.
+    pub normal: Buf3,
+    /// y_P per wall face.
+    pub y: Buf,
+    /// k_s per wall face.
+    pub ks: Buf,
+    /// Cell velocity.
+    pub u: Buf3,
+    /// Boundary velocity.
+    pub ub: Buf3,
+    /// ν.
+    pub nu: f64,
+    /// Treatment.
+    pub treatment: u32,
+    /// Constants.
+    pub c: foehncraft_kernels::turb::sst::SstConstants,
+    /// u_τ per wall face (input of the last iteration and output).
+    pub u_tau: Buf,
+    /// Output y⁺ per wall face.
+    pub y_plus: Buf,
+    /// Output ω per wall face.
+    pub omega: Buf,
+    /// Output viscous weight per wall face.
+    pub blending: Buf,
+    /// Output μ_w into the face viscosity.
+    pub mu_eff: Buf,
+    /// Output wall values of k and ω (bc_b, per boundary face).
+    pub k_b: Buf,
+    /// See `k_b`.
+    pub w_b: Buf,
 }
 
 /// Static data of a device.
@@ -460,6 +576,23 @@ pub trait FlowDevice {
     ) -> Result<(usize, f64)>;
     /// Multigrid setup on the matrix `val`.
     fn amg_setup(&mut self, val: Buf, s: &AmgSettings) -> Result<()>;
+    /// The face viscosity of the momentum equation (a face buffer that a
+    /// turbulence model overwrites with μ + ρ ν_t, stage 6).
+    fn face_viscosity(&self) -> Buf;
+    /// Uploads the static arrays of the wall treatment.
+    fn wall_setup(&mut self, s: &WallStatic) -> Result<()>;
+    /// The k-ω SST model per cell.
+    fn sst_cells(&mut self, a: &SstCellOps) -> Result<()>;
+    /// Face viscosities of a turbulent flow.
+    fn turb_faces(&mut self, a: &TurbFaceOps) -> Result<()>;
+    /// The wall treatment per wall face (after [`wall_setup`](Self::wall_setup)).
+    fn wall_faces(&mut self, a: &WallFaceOps) -> Result<()>;
+    /// The area-weighted wall-face values `omega` of the near-wall cells
+    /// into `fix_val`.
+    fn wall_cells(&mut self, omega: Buf, weight: Buf, fix_val: Buf) -> Result<()>;
+    /// x ← min(max(x, lo), hi); returns the number of entries a bound
+    /// changed (`work` is a scratch buffer of the length of x).
+    fn floor(&mut self, x: Buf, lo: f64, hi: f64, work: Buf) -> Result<usize>;
     /// Waits for queued work (timers).
     fn sync(&mut self) -> Result<()>;
 }

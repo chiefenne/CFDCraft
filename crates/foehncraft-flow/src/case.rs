@@ -156,7 +156,7 @@ impl Default for FlowSection {
 }
 
 /// `[initial]`
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct InitialSection {
     /// Start velocity (m/s).
@@ -168,6 +168,19 @@ pub struct InitialSection {
     /// the pressure boundaries, from one Laplace solve with the pressure
     /// multigrid.
     pub potential_flow: bool,
+    /// Start turbulence intensity (stage 6, with `viscosity_ratio`; default:
+    /// the values of the first inlet by name, else 0.01).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turbulence_intensity: Option<f64>,
+    /// Start ratio ν_t/ν (default 1 with `turbulence_intensity`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub viscosity_ratio: Option<f64>,
+    /// Start k (m²/s²): a number or an expression of x, y, z (with `omega`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub k: Option<crate::expr::Scalar>,
+    /// Start ω (1/s): a number or an expression of x, y, z (with `k`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub omega: Option<crate::expr::Scalar>,
 }
 
 /// `[pressure]`
@@ -416,6 +429,21 @@ pub struct Probe {
     pub point: [f64; 3],
 }
 
+/// A wall probe, `[[output.wall_probes]]`: the wall shear stress and y⁺ on
+/// a wall at the point nearest to `point`, linear between the two nearest
+/// face centroids of `boundary` (stage 6: the skin friction of the flat
+/// plate at x = 0.97).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WallProbe {
+    /// Name (in the report and the uncertainty table).
+    pub name: String,
+    /// The wall boundary.
+    pub boundary: String,
+    /// The point (m).
+    pub point: [f64; 3],
+}
+
 /// Force coefficients, `[output.coefficients]`: C = 2 F / (ρ U² A) of the
 /// sum of the forces on `boundaries`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -541,6 +569,11 @@ pub struct OutputSection {
     pub monitor_interval: Option<f64>,
     /// Point probes: velocity and pressure per step (`probes.csv`).
     pub probes: Vec<Probe>,
+    /// Wall probes: wall shear stress, skin friction (with
+    /// `[output.reference] velocity`) and y⁺ at points of a wall, in the
+    /// report (and its uncertainty table of a level sweep).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub wall_probes: Vec<WallProbe>,
     /// Force coefficients of some boundaries (`forces.csv`, the report).
     pub coefficients: Option<Coefficients>,
     /// Derived fields written with the fields (D72), from the cell
@@ -566,6 +599,7 @@ impl Default for OutputSection {
             monitor_every: 1,
             monitor_interval: None,
             probes: Vec::new(),
+            wall_probes: Vec::new(),
             coefficients: None,
             derived: Vec::new(),
             reference: Default::default(),
@@ -612,6 +646,9 @@ pub struct FlowCase {
     pub initial: InitialSection,
     /// Pressure level.
     pub pressure: PressureSection,
+    /// Turbulence model (stage 6): `[turbulence]`.
+    #[serde(skip_serializing_if = "crate::turbulence::TurbulenceSection::is_default")]
+    pub turbulence: crate::turbulence::TurbulenceSection,
     /// Boundary conditions per boundary.
     pub boundary: BTreeMap<String, BoundaryCondition>,
     /// Passive scalars (D51), transported by the flow: `[scalars.<name>]`.
@@ -1013,6 +1050,7 @@ impl FlowCase {
             &env,
             transient,
         )?;
+        crate::turbulence::validate(self)?;
         let p = self.properties()?;
         let rho = p.density();
         crate::need!(
@@ -1274,7 +1312,7 @@ impl FlowCase {
     /// What the boundary-condition check needs to know about the case.
     pub fn check_context(&self) -> bc::CheckContext {
         bc::CheckContext {
-            laminar: true,
+            laminar: self.turbulence.is_laminar(),
             transient: self.time.is_some(),
             potential_flow: self.initial.potential_flow,
             body_force: self.uniform_body_force() != Some([0.0; 3]),
@@ -1410,6 +1448,138 @@ pub struct Solve {
     /// The periodic pairs (D29): mass flow and driving force.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub periodic: Vec<PeriodicSummary>,
+    /// The wall probes of `[[output.wall_probes]]`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub wall_probes: Vec<WallProbeValue>,
+    /// The turbulence model (stage 6): first-cell y⁺ per wall, ν_t/ν max.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turbulence: Option<crate::turbulence::TurbulenceSummary>,
+}
+
+/// The value of a wall probe at the end of a solve.
+#[derive(Debug, Clone, Serialize)]
+pub struct WallProbeValue {
+    /// Name.
+    pub name: String,
+    /// The point on the wall the values are taken at (m).
+    pub at: [f64; 3],
+    /// Wall shear stress (Pa).
+    pub tau: [f64; 3],
+    /// |τ| (Pa).
+    pub magnitude: f64,
+    /// Skin friction |τ| / (½ ρ_ref U_ref²), with a reference velocity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub skin_friction: Option<f64>,
+    /// First-cell y⁺ there (with a turbulence model: of its wall treatment).
+    pub y_plus: f64,
+}
+
+/// The log line of a wall probe.
+pub(crate) fn wall_probe_line(w: &WallProbeValue) -> String {
+    format!(
+        "wall probe {} at ({:.6e}, {:.6e}, {:.6e}) m: |τ_w| {:.6e} Pa{}, y⁺ {:.3}",
+        w.name,
+        w.at[0],
+        w.at[1],
+        w.at[2],
+        w.magnitude,
+        w.skin_friction
+            .map(|c| format!(", C_f {c:.6e}"))
+            .unwrap_or_default(),
+        w.y_plus
+    )
+}
+
+/// The turbulence summary of a solve, its log lines and findings.
+pub(crate) fn turbulence_summary<F: FnMut(&str)>(
+    fl: &mut Flow,
+    mesh: &Mesh,
+    lg: &mut Log<F>,
+    warnings: &mut Vec<diag::Diagnostic>,
+) -> Result<Option<crate::turbulence::TurbulenceSummary>> {
+    let Some((sm, finds)) = crate::turbulence::summary(fl, mesh)? else {
+        return Ok(None);
+    };
+    lg.line(&format!(
+        "turbulence: {}; largest ν_t/ν {:.4e} in cell {}",
+        sm.model, sm.viscosity_ratio_max, sm.viscosity_ratio_cell
+    ));
+    for w in &sm.walls {
+        lg.line(&format!(
+            "  wall {}: first-cell y⁺ min {:.3}, mean {:.3}, max {:.3}",
+            w.boundary, w.min, w.mean, w.max
+        ));
+    }
+    for d in finds {
+        lg.note(&d.message);
+        warnings.push(d);
+    }
+    Ok(Some(sm))
+}
+
+/// The wall probes of `case` in the solution `fl`.
+pub(crate) fn wall_probes(
+    case: &FlowCase,
+    mesh: &Mesh,
+    geo: &Geometry,
+    fl: &Solution,
+) -> Vec<WallProbeValue> {
+    let ni = mesh.n_interior_faces();
+    let q = case
+        .output
+        .reference
+        .velocity
+        .or(case.output.coefficients.as_ref().map(|c| c.velocity))
+        .map(|u| 0.5 * case.output.reference.density.unwrap_or(case.rho()) * u * u);
+    let mut out = Vec::new();
+    for wp in &case.output.wall_probes {
+        let Some(p) = mesh.boundaries.iter().find(|p| p.name == wp.boundary) else {
+            continue;
+        };
+        // the two nearest face centroids, in face order on ties
+        let mut d: Vec<(f64, usize)> = p
+            .range()
+            .map(|f| (norm(sub(geo.face_centroid[f], wp.point)), f))
+            .collect();
+        d.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let Some(&(_, f1)) = d.first() else { continue };
+        let f2 = d.get(1).map_or(f1, |x| x.1);
+        let (x1, x2) = (geo.face_centroid[f1], geo.face_centroid[f2]);
+        let e = sub(x2, x1);
+        let ee = dot(e, e);
+        let t = if ee > 0.0 {
+            (dot(sub(wp.point, x1), e) / ee).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let val = |f: usize| -> ([f64; 3], f64) {
+            let (_, _, tau) = wall_face_values(fl, geo, f, ni);
+            let yp = match &fl.state.turbulence {
+                Some(ts) => ts.y_plus[f - ni],
+                None => {
+                    let c = fl.disc.owner[f] as usize;
+                    let s = geo.face_area[f];
+                    let y = dot(sub(geo.face_centroid[f], geo.cell_centroid[c]), s).abs() / norm(s);
+                    let ut = (norm(tau) / fl.phys.rho).sqrt();
+                    y * ut * fl.phys.rho / fl.phys.mu_at(f)
+                }
+            };
+            (tau, yp)
+        };
+        let (t1, y1) = val(f1);
+        let (t2, y2) = val(f2);
+        let tau: [f64; 3] = std::array::from_fn(|i| (1.0 - t) * t1[i] + t * t2[i]);
+        let magnitude = norm(tau);
+        out.push(WallProbeValue {
+            name: wp.name.clone(),
+            at: std::array::from_fn(|i| x1[i] + t * e[i]),
+            tau,
+            magnitude,
+            skin_friction: q.map(|q| magnitude / q),
+            y_plus: (1.0 - t) * y1 + t * y2,
+        });
+    }
+    out
 }
 
 /// The flow through one periodic pair at the end of a solve (D29).
@@ -1995,6 +2165,7 @@ pub fn run_steered(
             fl.set_momentum_source(src)?;
         }
         crate::scalar::attach(&mut fl, &case, &mesh, &geo)?;
+        crate::turbulence::attach(&mut fl, &case, &mesh, &geo)?;
         if let Some(path) = case.run.restart.clone() {
             let r = restart::read(&path)?;
             let (r, same) =
@@ -2037,6 +2208,15 @@ pub fn run_steered(
         let mut head = String::from(
             "iteration,momentum_x,momentum_y,momentum_z,continuity,bicgstab_x,bicgstab_y,bicgstab_z,cg",
         );
+        if !case.turbulence.is_laminar() {
+            for s in crate::turbulence::EQUATIONS {
+                let _ = write!(
+                    units,
+                    ", {s} - (scaled residual), bicgstab_{s} - (iterations)"
+                );
+                let _ = write!(head, ",{s},bicgstab_{s}");
+            }
+        }
         for s in case.scalars.keys() {
             let _ = write!(
                 units,
@@ -2161,7 +2341,13 @@ pub fn run_steered(
                     res.momentum_iterations[2],
                     res.pressure_iterations
                 );
-                for (r, n) in res.scalars.residual.iter().zip(&res.scalars.iterations) {
+                for (r, n) in res
+                    .turbulence
+                    .residual
+                    .iter()
+                    .zip(&res.turbulence.iterations)
+                    .chain(res.scalars.residual.iter().zip(&res.scalars.iterations))
+                {
                     let _ = write!(csv, ",{r:e},{n}");
                 }
                 csv.push('\n');
@@ -2175,6 +2361,7 @@ pub fn run_steered(
                         "bicgstab": res.momentum_iterations,
                         "cg": res.pressure_iterations,
                         "scalars": res.scalars.residual,
+                        "turbulence": res.turbulence.residual,
                     }));
                 }
             }
@@ -2375,6 +2562,10 @@ pub fn run_steered(
             );
         }
         let boundaries = boundary_summaries(sol, &mesh, &geo, &case);
+        let wall_probe_values = wall_probes(&case, &mesh, &geo, sol);
+        for w in &wall_probe_values {
+            lg.line(&wall_probe_line(w));
+        }
         let total: f64 = boundaries.iter().map(|p| p.mass_flow).sum();
         // scale: the largest boundary mass flow, or in a closed domain the
         // flow ρ |u|max A through the largest boundary
@@ -2465,6 +2656,7 @@ pub fn run_steered(
             lg.line(&crate::scalar::summary_line(sm));
         }
         let periodic = periodic_summaries(&mut fl, &mesh, &mut lg)?;
+        let turbulence = turbulence_summary(&mut fl, &mesh, &mut lg, &mut rep.warnings)?;
         if single && (case.run.restart_final || stopped) && restart::AVAILABLE {
             let rs = steady_restart(&mut fl, &mesh, name)?;
             restart::write(&out.join("restart.h5"), &rs)?;
@@ -2492,6 +2684,8 @@ pub fn run_steered(
             remediation,
             scalars,
             periodic,
+            wall_probes: wall_probe_values,
+            turbulence,
         });
         if stopped {
             rep.stopped = true;
@@ -2968,7 +3162,7 @@ pub(crate) fn wall_face_values(
     let up = fl.u.get(c);
     let k = fl.disc.k.get(f);
     let dg = fl.disc.dgeo[f];
-    let mu = fl.phys.mu_at(f);
+    let mu = fl.mu_eff_at(f);
     let mut fv = [0.0; 3];
     for i in 0..3 {
         fv[i] = -mu * (dg * (ub[i] - up[i]) + dot(k, fl.grad_u[i].get(c)));
@@ -3068,25 +3262,36 @@ pub(crate) fn write_outputs(
             if !matches!(case.boundary[&p.name], BoundaryCondition::Wall { .. }) {
                 continue;
             }
+            let turb = fl.state.turbulence.as_ref();
             let mut csv = csv_preamble(
                 "wall",
                 &name,
                 at,
-                "x y z m (face centroid), pressure Pa, tau_x tau_y tau_z Pa (wall shear stress)",
+                if turb.is_some() {
+                    "x y z m (face centroid), pressure Pa, tau_x tau_y tau_z Pa (wall shear \
+                     stress), y_plus - (first cell), u_tau m/s (wall treatment)"
+                } else {
+                    "x y z m (face centroid), pressure Pa, tau_x tau_y tau_z Pa (wall shear stress)"
+                },
             );
-            csv.push_str("x,y,z,pressure,tau_x,tau_y,tau_z\n");
+            csv.push_str(if turb.is_some() {
+                "x,y,z,pressure,tau_x,tau_y,tau_z,y_plus,u_tau\n"
+            } else {
+                "x,y,z,pressure,tau_x,tau_y,tau_z\n"
+            });
             let mut rows: Vec<(u64, String)> = p
                 .range()
                 .map(|f| {
                     let x = geo.face_centroid[f];
                     let (pf, _, tau) = wall_face_values(fl, geo, f, ni);
-                    (
-                        mesh.face_id[f],
-                        format!(
-                            "{:e},{:e},{:e},{:e},{:e},{:e},{:e}",
-                            x[0], x[1], x[2], pf, tau[0], tau[1], tau[2]
-                        ),
-                    )
+                    let mut r = format!(
+                        "{:e},{:e},{:e},{:e},{:e},{:e},{:e}",
+                        x[0], x[1], x[2], pf, tau[0], tau[1], tau[2]
+                    );
+                    if let Some(t) = turb {
+                        let _ = write!(r, ",{:e},{:e}", t.y_plus[f - ni], t.u_tau[f - ni]);
+                    }
+                    (mesh.face_id[f], r)
                 })
                 .collect();
             // global face order: independent of the renumbering (R2)
@@ -3101,6 +3306,10 @@ pub(crate) fn write_outputs(
     for l in &case.output.lines {
         let mut units = String::from("s m (distance from `from`), x y z m, u v w m/s, p Pa");
         let mut head = String::from("s,x,y,z,u,v,w,p");
+        if fl.state.turbulence.is_some() {
+            units.push_str(", k m2/s2, omega 1/s, nu_t m2/s, wall_distance m (cell values)");
+            head.push_str(",k,omega,nu_t,wall_distance");
+        }
         for st in &fl.state.scalars {
             let _ = write!(units, ", {} (cell value)", st.name);
             let _ = write!(head, ",{}", st.name);
@@ -3127,6 +3336,13 @@ pub(crate) fn write_outputs(
                 u[2],
                 p
             );
+            if let Some(t) = &fl.state.turbulence {
+                let _ = write!(
+                    csv,
+                    ",{:e},{:e},{:e},{:e}",
+                    t.k[c], t.omega[c], t.nu_t[c], t.wall_distance[c]
+                );
+            }
             for st in &fl.state.scalars {
                 let _ = write!(csv, ",{:e}", st.phi[c]);
             }
@@ -3228,6 +3444,19 @@ pub(crate) fn write_fields(
     }
     // passive scalars (D51) and, with an exact solution, their error
     let scalar_err: Vec<(String, Vec<f64>)> = crate::scalar::field_errors(case, mesh, geo, fl, at)?;
+    // the turbulence model (stage 6): k, ω, ν_t, the wall distance and
+    // the modified pressure p̂ of the solver
+    if let Some(t) = &fl.state.turbulence {
+        for (name, values) in [
+            ("k", &t.k),
+            ("omega", &t.omega),
+            ("nu_t", &t.nu_t),
+            ("turbulence_wall_distance", &t.wall_distance),
+            ("modified_pressure", &t.p_modified),
+        ] {
+            fields.push(CellField { name, values });
+        }
+    }
     for st in &fl.state.scalars {
         fields.push(CellField {
             name: &st.name,
@@ -3247,7 +3476,12 @@ pub(crate) fn write_fields(
         .collect();
     let name = case_name(case);
     let units = format!(
-        "{FIELD_UNITS}{}",
+        "{FIELD_UNITS}{}{}",
+        if fl.state.turbulence.is_some() {
+            "; k m2/s2; omega 1/s; nu_t m2/s; turbulence_wall_distance m; modified_pressure Pa"
+        } else {
+            ""
+        },
         crate::derived::Fields::units(&case.output.derived)
     );
     let mut attrs = vec![

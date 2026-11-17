@@ -21,6 +21,12 @@
 //!   `scalar_<name>` and, transient, `scalar_old_<name>` (the level before);
 //! - the periodic pairs (D29): `periodic_force`, the driving force per
 //!   pair;
+//! - the turbulence model (stage 6): attribute `turbulence` (the model),
+//!   per cell `turb_k`, `turb_omega`, `turb_nu_t`, `turb_p_modified` (the
+//!   solver's p̂; `p` is the static pressure), `turb_wall_distance`,
+//!   transient `turb_k_old`, `turb_omega_old`; per face `turb_mu_eff`; per
+//!   boundary face `turb_k_b`, `turb_omega_b`, `turb_u_tau`, `turb_y_plus`,
+//!   `turb_pb_modified`;
 //! - `amg_matrix`: the pressure matrix of the last multigrid setup (the
 //!   hierarchy is rebuilt from it, so the preconditioner is the same);
 //! - optional, for meshes that move (D91, L22): `point_id`,
@@ -192,6 +198,28 @@ mod io {
             if !s.periodic_force.is_empty() {
                 ds(&g, "periodic_force", &s.periodic_force)?;
             }
+            // the turbulence model (stage 6): `turb_*`, attribute
+            // `turbulence`
+            if let Some(t) = &s.turbulence {
+                sattr(&g, "turbulence", "k-omega-sst")?;
+                ds(&g, "turb_k", &t.k)?;
+                ds(&g, "turb_omega", &t.omega)?;
+                ds(&g, "turb_nu_t", &t.nu_t)?;
+                ds(&g, "turb_mu_eff", &t.mu_eff)?;
+                ds(&g, "turb_k_b", &t.k_b)?;
+                ds(&g, "turb_omega_b", &t.omega_b)?;
+                ds(&g, "turb_u_tau", &t.u_tau)?;
+                ds(&g, "turb_y_plus", &t.y_plus)?;
+                ds(&g, "turb_p_modified", &t.p_modified)?;
+                ds(&g, "turb_pb_modified", &t.pb_modified)?;
+                ds(&g, "turb_wall_distance", &t.wall_distance)?;
+                if let Some(o) = &t.k_old {
+                    ds(&g, "turb_k_old", o)?;
+                }
+                if let Some(o) = &t.omega_old {
+                    ds(&g, "turb_omega_old", o)?;
+                }
+            }
             if let Some(m) = &r.amg_matrix {
                 ds(&g, "amg_matrix", m)?;
             }
@@ -267,6 +295,31 @@ mod io {
             .collect()
     }
 
+    /// The turbulence state of a restart file (none without one).
+    fn read_turbulence(g: &h5::File) -> Result<Option<crate::turbulence::TurbState>> {
+        if g.attr("turbulence").is_err() {
+            return Ok(None);
+        }
+        let opt = |n: &str| -> Result<Option<Vec<f64>>> {
+            Ok(if g.link_exists(n) { Some(rd(g, n)?) } else { None })
+        };
+        Ok(Some(crate::turbulence::TurbState {
+            k: rd(g, "turb_k")?,
+            omega: rd(g, "turb_omega")?,
+            nu_t: rd(g, "turb_nu_t")?,
+            k_old: opt("turb_k_old")?,
+            omega_old: opt("turb_omega_old")?,
+            mu_eff: rd(g, "turb_mu_eff")?,
+            k_b: rd(g, "turb_k_b")?,
+            omega_b: rd(g, "turb_omega_b")?,
+            u_tau: rd(g, "turb_u_tau")?,
+            y_plus: rd(g, "turb_y_plus")?,
+            p_modified: rd(g, "turb_p_modified")?,
+            pb_modified: rd(g, "turb_pb_modified")?,
+            wall_distance: rd(g, "turb_wall_distance")?,
+        }))
+    }
+
     /// Kind and progress of a restart file, from its attributes.
     pub fn progress(path: &Path) -> Result<(bool, u64)> {
         let g = h5::File::open(path).with_context(|| format!("opening {}", path.display()))?;
@@ -319,6 +372,7 @@ mod io {
             } else {
                 Vec::new()
             },
+            turbulence: read_turbulence(&g)?,
         };
         let amg_matrix = if g.link_exists("amg_matrix") {
             Some(rd(&g, "amg_matrix")?)
@@ -531,6 +585,21 @@ impl Restart {
                     })
                     .collect(),
                 periodic_force: s.periodic_force.clone(),
+                turbulence: s.turbulence.as_ref().map(|t| crate::turbulence::TurbState {
+                    k: remap(&t.k, &mc),
+                    omega: remap(&t.omega, &mc),
+                    nu_t: remap(&t.nu_t, &mc),
+                    k_old: t.k_old.as_ref().map(|o| remap(o, &mc)),
+                    omega_old: t.omega_old.as_ref().map(|o| remap(o, &mc)),
+                    mu_eff: remap(&t.mu_eff, &mf),
+                    k_b: remap(&t.k_b, &mb),
+                    omega_b: remap(&t.omega_b, &mb),
+                    u_tau: remap(&t.u_tau, &mb),
+                    y_plus: remap(&t.y_plus, &mb),
+                    p_modified: remap(&t.p_modified, &mc),
+                    pb_modified: remap(&t.pb_modified, &mb),
+                    wall_distance: remap(&t.wall_distance, &mc),
+                }),
             };
             if let Some((o, ..)) = &mut self.transient {
                 *o = OldLevels {

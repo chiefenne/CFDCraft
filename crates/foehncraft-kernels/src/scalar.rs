@@ -71,6 +71,16 @@ pub struct ScalarRowInputs<'a, T> {
     pub lo: T,
     /// Upper bound (+∞: none).
     pub hi: T,
+    /// 1 in the cells whose value is fixed (the ω of SST in the near-wall
+    /// cells, stage 6 specification 4.4), else 0; empty: none.
+    pub fix_mask: &'a [T],
+    /// The fixed values (read where `fix_mask` is 1).
+    pub fix_val: &'a [T],
+    /// A positive variable (k, ω): the sum D of the deferred corrections
+    /// enters as S_u = max(D, 0) and S_p = min(D, 0)/φ* (stage 6
+    /// specification 6.2), so that it cannot make the right-hand side
+    /// negative.
+    pub positive: bool,
 }
 
 /// Outputs of [`scalar_row`] for one cell.
@@ -100,6 +110,7 @@ pub unsafe fn scalar_row<T: Real>(c: usize, inp: &ScalarRowInputs<T>, val: *mut 
         let hi = ld(topo.cell_ptr, c + 1) as usize;
         let mut diag = T::ZERO;
         let mut b = T::ZERO;
+        let mut dc = T::ZERO;
         let mut net = T::ZERO;
         let mut j = 1;
         let mut k = lo;
@@ -108,13 +119,13 @@ pub unsafe fn scalar_row<T: Real>(c: usize, inp: &ScalarRowInputs<T>, val: *mut 
             let m = ld(inp.mass_flux, f);
             if is_nb {
                 diag -= ld(inp.cn, f);
-                b += ld(inp.bf, f);
+                dc += ld(inp.bf, f);
                 net -= m;
                 *val.add(inp.layout.pos(c, j)) = -ld(inp.cp, f);
                 j += 1;
             } else {
                 diag += ld(inp.cp, f);
-                b -= ld(inp.bf, f);
+                dc -= ld(inp.bf, f);
                 net += m;
                 if f < topo.n_interior {
                     *val.add(inp.layout.pos(c, j)) = ld(inp.cn, f);
@@ -125,6 +136,13 @@ pub unsafe fn scalar_row<T: Real>(c: usize, inp: &ScalarRowInputs<T>, val: *mut 
         }
         // bounded form: −φ_P Σ ±ṁ
         diag -= net;
+        if inp.positive {
+            let phi = ld(inp.phi, c).max_of(T::from_f64(1e-300));
+            b += dc.max_of(T::ZERO);
+            diag -= dc.min_of(T::ZERO) / phi;
+        } else {
+            b += dc;
+        }
         let v = ld(inp.volume, c);
         let rv = inp.rho * v;
         if !inp.su.is_empty() {
@@ -154,8 +172,19 @@ pub unsafe fn scalar_row<T: Real>(c: usize, inp: &ScalarRowInputs<T>, val: *mut 
             diag += tau * a0;
             b += tau * rest;
         }
-        let dr = diag / inp.alpha;
+        let mut dr = diag / inp.alpha;
         b += (dr - diag) * ld(inp.phi, c);
+        // a fixed value: the row becomes φ_P = value (a_P = 1, the
+        // off-diagonals 0); the rows of the neighbours keep their coupling
+        if !inp.fix_mask.is_empty() && ld(inp.fix_mask, c) > T::ZERO {
+            let mut i = 1;
+            while i < j {
+                *val.add(inp.layout.pos(c, i)) = T::ZERO;
+                i += 1;
+            }
+            dr = T::ONE;
+            b = ld(inp.fix_val, c);
+        }
         *val.add(inp.layout.pos(c, 0)) = dr;
         ScalarRow {
             diag: dr,

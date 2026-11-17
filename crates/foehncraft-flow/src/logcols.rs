@@ -6,6 +6,7 @@
 //! |---|---|
 //! | `residual.momentum`, `residual.continuity` | `ResU ResV ResW`, `ResM` |
 //! | `residual.scalars` | one column per passive scalar (`Res<name>`) |
+//! | `residual.turbulence` | the turbulence equations (`ResK ResOm`) |
 //! | `linear.momentum`, `linear.pressure` | solver iterations (`U V W`, `P`) |
 //! | `probe.<name>.<q>` | value at an `[[output.probes]]` point |
 //! | `cell.<index>.<q>` | value in one cell (debugging) |
@@ -94,6 +95,8 @@ pub enum Spec {
     /// `residual.scalars`: the names of the case's scalars (filled in by
     /// [`Columns::build`]).
     ResScalars(Vec<String>),
+    /// `residual.turbulence`: k and ω.
+    ResTurbulence,
     /// `linear.momentum`.
     LinMomentum,
     /// `linear.pressure`.
@@ -129,6 +132,7 @@ pub const KINDS: &[&str] = &[
     "residual.momentum",
     "residual.continuity",
     "residual.scalars",
+    "residual.turbulence",
     "linear.momentum",
     "linear.pressure",
     "probe.<name>.<quantity>",
@@ -171,6 +175,7 @@ impl Spec {
             ("residual", 2) if parts[1] == "momentum" => Self::ResMomentum,
             ("residual", 2) if parts[1] == "continuity" => Self::ResContinuity,
             ("residual", 2) if parts[1] == "scalars" => Self::ResScalars(Vec::new()),
+            ("residual", 2) if parts[1] == "turbulence" => Self::ResTurbulence,
             ("linear", 2) if parts[1] == "momentum" => Self::LinMomentum,
             ("linear", 2) if parts[1] == "pressure" => Self::LinPressure,
             ("min", 2) => Self::Min(quantity(parts[1])?),
@@ -357,6 +362,13 @@ impl Columns {
                 Spec::LinPressure,
             ],
         };
+        if case.log.columns.is_none() && !case.turbulence.is_laminar() {
+            let at = specs
+                .iter()
+                .position(|s| *s == Spec::ResContinuity)
+                .map_or(specs.len(), |i| i + 1);
+            specs.insert(at, Spec::ResTurbulence);
+        }
         let names: Vec<String> = case.scalars.keys().cloned().collect();
         if case.log.columns.is_none() && !names.is_empty() {
             let at = specs
@@ -499,6 +511,9 @@ impl Columns {
                     .extend((0..names.len()).map(|i| {
                         num(ctx.res.scalars.residual.get(i).copied().unwrap_or(f64::NAN))
                     })),
+                Spec::ResTurbulence => out.extend((0..2).map(|i| {
+                    num(ctx.res.turbulence.residual.get(i).copied().unwrap_or(f64::NAN))
+                })),
                 Spec::LinMomentum => {
                     out.extend(ctx.res.momentum_iterations.iter().map(|&n| int(n)))
                 }
@@ -635,6 +650,18 @@ fn layout(s: &Spec, d: usize, transient: bool) -> Vec<Column> {
                 col(
                     format!("residual.scalars.{n}"),
                     &short,
+                    "scaled residuals",
+                    "",
+                    w,
+                )
+            })
+            .collect(),
+        Spec::ResTurbulence => [("k", "ResK"), ("omega", "ResOm")]
+            .iter()
+            .map(|(id, n)| {
+                col(
+                    format!("residual.turbulence.{id}"),
+                    n,
                     "scaled residuals",
                     "",
                     w,

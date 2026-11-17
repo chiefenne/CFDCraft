@@ -267,9 +267,21 @@ A code keeps its meaning; a retired code stays in the table.
 | `BC024` | warning | A wedge wider than 10° (the axisymmetric error grows with the angle). |
 | `BC025` | error | A potential-flow start with a convective outlet and no pressure boundary. |
 | `BC026` | error | Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure). |
+| `BC027` | warning | A wall roughness k_s larger than the first-cell distance on more than 10 % of the wall's area. |
+| `BC028` | warning | A turbulence value that the selected model does not use (`zeta` with SST or k-ε, `omega` with an ε model); BC009 stays for laminar cases. |
+| `BC029` | error | Two incompatible turbulence specifications on one inlet (for example `turbulence_length_scale` and `viscosity_ratio`, or `k` with intensity). |
 | `BC030` | error | A periodic boundary without a periodic partner that names it back, a pair whose faces do not match, or a driving given twice. |
 | `BC031` | warning | A periodic pair with no driving (`mass_flow`, `pressure_gradient`) and no body force: the flow decays to rest. |
 | `SCAL001` | error | A `[boundary.<name>.scalar.<scalar>]` table for an unknown scalar or boundary, without exactly one of `value` and `flux`, or with a condition its boundary does not take (a flux at an inlet, anything at an outlet, `periodic` away from a periodic pair, the heat-flux mode with fixed values). |
+| `TURB001` | warning | First-cell y⁺ outside the claimed range of the wall treatment on more than 10 % of a wall's area (per boundary with the area-weighted min, mean and max). |
+| `TURB002` | warning | A positivity floor or bound acted on more than 0.1 % of the cells in an iteration (equation and cell count). |
+| `TURB003` | warning | Inlet turbulence outside the usual range: I > 0.5, or a viscosity ratio below 10⁻² or above 10⁵. |
+| `TURB004` | note | Kato–Launder production in a rotating zone: Ω is the absolute-frame vorticity. |
+| `TURB005` | note | No wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0; the ζ-f and EB near-wall terms vanish). |
+| `TURB006` | error | A convection scheme or time scheme that is not bounded for a turbulence variable (central in a steady run, Crank–Nicolson). |
+| `TURB007` | warning | Model constants changed in `[turbulence.constants]`. |
+| `TURB008` | warning | The ν_t cap `max_viscosity_ratio` acted (cell count). |
+| `TURB009` | note | Inlet turbulence defaulted to I = 0.05, r = 10 (boundary named). |
 | `EXPR001` | error | An expression that cannot be parsed. |
 | `EXPR002` | error | An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint). |
 | `EXPR003` | error | An expression that uses a variable its key does not take (`t` in a steady case or in a property, x, y, z in a value for a whole boundary). |

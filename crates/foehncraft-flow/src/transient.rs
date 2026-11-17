@@ -435,6 +435,9 @@ impl Transient {
             if let Some(sc) = fl.scalars.as_mut() {
                 sc.rewind_levels(fl.dev.as_mut())?;
             }
+            if let Some(t) = fl.turbulence.as_mut() {
+                t.rewind_levels(fl.dev.as_mut())?;
+            }
         }
         // uⁿ⁻² is gone
         self.clock.dt_prev2 = 0.0;
@@ -479,6 +482,9 @@ impl Transient {
         fl.dev.copy(e.x_old, l.x_old)?;
         if let Some(sc) = fl.scalars.as_mut() {
             sc.step_back(fl.dev.as_mut())?;
+        }
+        if let Some(t) = fl.turbulence.as_mut() {
+            t.step_back(fl.dev.as_mut())?;
         }
         set_explicit_buffers(&mut fl.f, e.ids);
         self.l.g_old = e.old_ids;
@@ -613,13 +619,22 @@ impl Transient {
         // the passive scalars: φⁿ⁻¹ ← φⁿ ← φ; BDF2 (also under
         // Crank–Nicolson, which does not keep them bounded) from the second
         // step, BDF1 in the first and with `bdf1`
-        let scalar_step = if let Some(sc) = fl.scalars.as_mut() {
-            let bdf2 = self.scheme != TimeScheme::Bdf1 && self.clock.levels >= 1;
-            sc.step_start(
+        let bdf2 = self.scheme != TimeScheme::Bdf1 && self.clock.levels >= 1;
+        if let Some(t) = fl.turbulence.as_mut() {
+            t.step_start(
                 fl.dev.as_mut(),
                 self.clock.levels >= 1,
                 bdf2.then(|| dt / self.clock.dt_prev),
             )?;
+        }
+        let scalar_step = if fl.scalars.is_some() || fl.turbulence.is_some() {
+            if let Some(sc) = fl.scalars.as_mut() {
+                sc.step_start(
+                    fl.dev.as_mut(),
+                    self.clock.levels >= 1,
+                    bdf2.then(|| dt / self.clock.dt_prev),
+                )?;
+            }
             Some(crate::scalar::StepTime {
                 time: self.clock.time + dt,
                 dt,

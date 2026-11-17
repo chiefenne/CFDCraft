@@ -720,7 +720,7 @@ pub fn wall_exchange(case: &FlowCase, mesh: &Mesh, geo: &Geometry, fl: &Solution
             let dn = dot(sub(geo.face_centroid[f], geo.cell_centroid[c]), s).abs() / norm(s);
             w.faces.push(f);
             w.shear.push(tau);
-            w.momentum.push(fl.phys.mu_at(f) / dn);
+            w.momentum.push(fl.mu_eff_at(f) / dn);
         }
     }
     w
@@ -749,7 +749,12 @@ fn wall_values(
             let y = dot(sub(geo.face_centroid[f], geo.cell_centroid[c]), s).abs() / norm(s);
             let u_tau = (norm(tau) / fl.phys.rho).sqrt();
             let nu = fl.phys.mu_at(f) / fl.phys.rho;
-            v[f - ni] = (tau, y * u_tau / nu);
+            // with a turbulence model: the y⁺ of its wall treatment
+            let yp = match &fl.state.turbulence {
+                Some(t) => t.y_plus[f - ni],
+                None => y * u_tau / nu,
+            };
+            v[f - ni] = (tau, yp);
         }
     }
     v

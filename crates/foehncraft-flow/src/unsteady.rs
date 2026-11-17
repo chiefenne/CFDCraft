@@ -848,6 +848,7 @@ fn run_one<F: FnMut(&str)>(
         fl.set_momentum_source(src)?;
     }
     crate::scalar::attach(&mut fl, &case, mesh, geo)?;
+    crate::turbulence::attach(&mut fl, &case, mesh, geo)?;
     let mut tr = Transient::new(&mut fl, time0.scheme, time0.start_time)?;
     let mut af = AnalyticFaces::new(&case, mesh, &ub0);
     let mut dt = dt0;
@@ -954,6 +955,12 @@ fn run_one<F: FnMut(&str)>(
     );
     let mut hhead =
         String::from("step,time,dt,cfl,momentum_x,momentum_y,momentum_z,continuity,outer,cg");
+    if !case.turbulence.is_laminar() {
+        for s in crate::turbulence::EQUATIONS {
+            let _ = write!(hunits, ", {s} - (scaled residual)");
+            let _ = write!(hhead, ",{s}");
+        }
+    }
     for s in case.scalars.keys() {
         let _ = write!(
             hunits,
@@ -1255,6 +1262,9 @@ fn run_one<F: FnMut(&str)>(
         let r = &rp.residuals;
         if n.is_multiple_of(case.output.history_every) {
             let mut sc = String::new();
+            for x in &r.turbulence.residual {
+                let _ = write!(sc, ",{x:e}");
+            }
             for (x, k) in r.scalars.residual.iter().zip(&r.scalars.first_order) {
                 let _ = write!(sc, ",{x:e},{k}");
             }
@@ -1282,6 +1292,7 @@ fn run_one<F: FnMut(&str)>(
                     "outer": rp.outer,
                     "cg": r.pressure_iterations,
                     "scalars": r.scalars.residual,
+                    "turbulence": r.turbulence.residual,
                 });
                 if let Some(e) = rp.error {
                     row["error"] = e.into();
@@ -1638,6 +1649,7 @@ fn run_one<F: FnMut(&str)>(
         tr.clock.time,
     )?;
     let periodic = crate::case::periodic_summaries(&mut fl, mesh, lg)?;
+    let turbulence = crate::case::turbulence_summary(&mut fl, mesh, lg, warnings)?;
     let sol = Solution {
         state: fl.state()?,
         disc: &fl.disc,
@@ -1674,6 +1686,7 @@ fn run_one<F: FnMut(&str)>(
         }
     }
     let boundaries = boundary_summaries(&sol, mesh, geo, &case);
+    let wall_probe_values = crate::case::wall_probes(&case, mesh, geo, &sol);
     let total: f64 = boundaries.iter().map(|p| p.mass_flow).sum();
     let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);
     let big = boundaries
@@ -1819,6 +1832,8 @@ fn run_one<F: FnMut(&str)>(
     let solve = Solve {
         scalars,
         periodic,
+        wall_probes: wall_probe_values,
+        turbulence,
         remediation,
         balance: Some(balance_summary),
         mesh: desc.into(),

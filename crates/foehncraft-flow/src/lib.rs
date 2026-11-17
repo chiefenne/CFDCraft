@@ -56,5 +56,6 @@ pub mod schedule;
 pub mod schema;
 pub mod simplec;
 pub mod transient;
+pub mod turbulence;
 pub mod uncertainty;
 pub mod unsteady;

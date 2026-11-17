@@ -7,6 +7,8 @@
 //!   rows, Rhie–Chow mass flux, pressure correction, boundary values;
 //! - [`scalar`]: the rows of the generic scalar transport equation
 //!   (stage 6, D116): bounded form, point-implicit sources, bounded BDF2;
+//! - [`turb`]: the turbulence models (stage 6): invariants and the D166
+//!   features, k-ω SST 2003, its wall treatments;
 //! - [`blas`]: vector operations and reproducible block dot products of the
 //!   Krylov solvers;
 //! - [`expr`]: the stack machine of the compiled case-file expressions (D53);
@@ -44,6 +46,7 @@ pub mod flow;
 pub mod fv;
 pub mod scalar;
 pub mod spmv;
+pub mod turb;
 
 use foehncraft_core::index::FLAG_BIT;
 

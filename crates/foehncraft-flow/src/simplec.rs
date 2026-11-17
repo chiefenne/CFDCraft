@@ -205,6 +205,8 @@ pub struct Settings {
     pub pressure: PressureSettings,
     /// The passive scalars (`[solver.scalar]`, D51).
     pub scalar: crate::scalar::ScalarSettings,
+    /// The turbulence equations (`[solver.turbulence]`, stage 6).
+    pub turbulence: crate::turbulence::TurbulenceSettings,
     /// Gradient of the pressure (D24, D50): `least-squares`, or `gauss`,
     /// the face sum of the face pressures (robust on tetrahedra with skewed
     /// faces).
@@ -324,6 +326,7 @@ impl Default for Settings {
             momentum: MomentumSettings::default(),
             pressure: PressureSettings::default(),
             scalar: crate::scalar::ScalarSettings::default(),
+            turbulence: crate::turbulence::TurbulenceSettings::default(),
             pressure_gradient: PressureGradient::LeastSquares,
             remediation: Remediation::Auto,
             skewness_limit: 0.9,
@@ -582,6 +585,12 @@ pub struct Residuals {
         skip_serializing_if = "crate::scalar::ScalarResiduals::is_empty"
     )]
     pub scalars: crate::scalar::ScalarResiduals,
+    /// The turbulence model (stage 6): residuals of k and ω.
+    #[serde(
+        default,
+        skip_serializing_if = "crate::turbulence::TurbResiduals::is_empty"
+    )]
+    pub turbulence: crate::turbulence::TurbResiduals,
 }
 
 impl Residuals {
@@ -591,6 +600,7 @@ impl Residuals {
         self.continuity.is_finite()
             && self.momentum.iter().all(|r| r.is_finite())
             && self.scalars.residual.iter().all(|r| r.is_finite())
+            && self.turbulence.residual.iter().all(|r| r.is_finite())
     }
 
     /// The largest residual.
@@ -598,6 +608,7 @@ impl Residuals {
         self.momentum
             .iter()
             .chain(&self.scalars.residual)
+            .chain(&self.turbulence.residual)
             .copied()
             .fold(self.continuity, f64::max)
     }
@@ -620,6 +631,8 @@ pub struct Timings {
     pub amg_setup: f64,
     /// Passive scalars (all their phases).
     pub scalars: f64,
+    /// Turbulence model (all its phases).
+    pub turbulence: f64,
 }
 
 impl Timings {
@@ -632,6 +645,7 @@ impl Timings {
             + self.pressure_solve
             + self.amg_setup
             + self.scalars
+            + self.turbulence
     }
 }
 
@@ -659,6 +673,10 @@ pub struct State {
     /// The driving force β (N/m³) of each periodic pair (D29), along its
     /// translation; empty without periodic pairs.
     pub periodic_force: Vec<f64>,
+    /// The turbulence model's fields (stage 6); `None` in laminar flow.
+    /// With a model, `p` and `pb` are the static pressure and the solver's
+    /// modified pressure p̂ = p + ⅔ρk is kept here.
+    pub turbulence: Option<crate::turbulence::TurbState>,
 }
 
 /// A host copy of the fields with the discretisation and the physics, for
@@ -670,6 +688,17 @@ pub struct Solution<'a> {
     pub disc: &'a Discretisation,
     /// Physics.
     pub phys: Physics,
+}
+
+impl Solution<'_> {
+    /// The face viscosity of the momentum equation: μ + ρν_t with a
+    /// turbulence model (μ_w of the wall treatment on the walls), else μ.
+    pub fn mu_eff_at(&self, f: usize) -> f64 {
+        match &self.state.turbulence {
+            Some(t) => t.mu_eff[f],
+            None => self.phys.mu_at(f),
+        }
+    }
 }
 
 impl std::ops::Deref for Solution<'_> {
@@ -766,6 +795,8 @@ pub struct Flow {
     /// The passive scalars (D51), solved after the pressure correction of
     /// every outer iteration ([`Flow::add_scalars`]).
     pub(crate) scalars: Option<crate::scalar::Scalars>,
+    /// The turbulence model (stage 6), solved before the scalars.
+    pub(crate) turbulence: Option<crate::turbulence::Turbulence>,
     /// The driving of the periodic pairs (D29), one per pair.
     pub(crate) periodic: Vec<PeriodicDriving>,
     /// Work face buffer of the mass-flow driving (the flux of a unit
@@ -1192,6 +1223,7 @@ impl Flow {
             source: None,
             remediation,
             scalars: None,
+            turbulence: None,
             periodic,
             unit_flux,
         })
@@ -1321,6 +1353,9 @@ impl Flow {
         if let Some(sc) = self.scalars.as_mut() {
             sc.keep_valid(self.dev.as_mut())?;
         }
+        if let Some(t) = self.turbulence.as_mut() {
+            t.keep_valid(self.dev.as_mut())?;
+        }
         Ok(())
     }
 
@@ -1337,6 +1372,9 @@ impl Flow {
         self.dev.copy(m, self.f.mass_flux)?;
         if let Some(sc) = self.scalars.as_mut() {
             sc.rewind(self.dev.as_mut())?;
+        }
+        if let Some(t) = self.turbulence.as_mut() {
+            t.rewind(self.dev.as_mut())?;
         }
         self.iteration = it;
         self.update_boundaries()?;
@@ -1516,6 +1554,24 @@ impl Flow {
     /// Host copy of the fields.
     pub fn state(&mut self) -> Result<State> {
         let f = self.f;
+        let mut p = self.dev.download(f.p)?;
+        let mut pb = self.dev.download(f.pb)?;
+        let turbulence = match &self.turbulence {
+            Some(t) => {
+                let ts = t.state(self.dev.as_mut(), &p, &pb)?;
+                // the static pressure p = p̂ − ⅔ρk
+                let c = 2.0 / 3.0 * self.phys.rho;
+                for (pi, ki) in p.iter_mut().zip(&ts.k) {
+                    *pi -= c * ki;
+                }
+                let kf = t.k_face(&ts.k, &ts.k_b, &self.disc.owner);
+                for (pi, ki) in pb.iter_mut().zip(&kf) {
+                    *pi -= c * ki;
+                }
+                Some(ts)
+            }
+            None => None,
+        };
         let mut v3 = |b: Buf3| -> Result<Soa3> {
             Ok(Soa3 {
                 x: self.dev.download(b.x)?,
@@ -1529,14 +1585,15 @@ impl Flow {
             grad_u: [v3(f.grad_u[0])?, v3(f.grad_u[1])?, v3(f.grad_u[2])?],
             grad_p: v3(f.grad_p)?,
             psi: v3(f.psi)?,
-            p: self.dev.download(f.p)?,
+            p,
             mass_flux: self.dev.download(f.mass_flux)?,
-            pb: self.dev.download(f.pb)?,
+            pb,
             scalars: match &self.scalars {
                 Some(sc) => sc.states(self.dev.as_mut())?,
                 None => Vec::new(),
             },
             periodic_force: self.periodic_force(),
+            turbulence,
         })
     }
 
@@ -1555,9 +1612,19 @@ impl Flow {
         }
         put(f.grad_p, &s.grad_p)?;
         put(f.psi, &s.psi)?;
-        self.dev.upload(f.p, &s.p)?;
         self.dev.upload(f.mass_flux, &s.mass_flux)?;
-        self.dev.upload(f.pb, &s.pb)?;
+        match (&s.turbulence, self.turbulence.as_mut()) {
+            (Some(ts), Some(t)) => {
+                let (p, pb) = crate::turbulence::Turbulence::pressure_of(ts);
+                self.dev.upload(f.p, p)?;
+                self.dev.upload(f.pb, pb)?;
+                t.load(self.dev.as_mut(), ts)?;
+            }
+            _ => {
+                self.dev.upload(f.p, &s.p)?;
+                self.dev.upload(f.pb, &s.pb)?;
+            }
+        }
         if let Some(sc) = self.scalars.as_mut() {
             sc.load(self.dev.as_mut(), &s.scalars)?;
         }
@@ -1791,6 +1858,7 @@ impl Flow {
             beta: s.momentum.central_bounding,
             nonorth: if s.nonorth_correction { 1.0 } else { 0.0 },
             convection: if self.phys.convection { 1.0 } else { 0.0 },
+            transposed: if self.turbulence.is_some() { 1.0 } else { 0.0 },
             cp: w.cp,
             cn: w.cn,
             bf: w.bf,
@@ -1991,6 +2059,59 @@ impl Flow {
         Ok(res)
     }
 
+    /// Adds the turbulence model (stage 6): its start viscosity enters the
+    /// next momentum assembly, its equations are solved after every
+    /// pressure correction.
+    pub fn add_turbulence(&mut self, mut t: crate::turbulence::Turbulence) -> Result<()> {
+        let f = self.f;
+        t.start(self.dev.as_mut(), f.u, f.ub, &self.bc)?;
+        self.turbulence = Some(t);
+        Ok(())
+    }
+
+    /// The turbulence model, if the case has one.
+    pub fn turbulence(&self) -> Option<&crate::turbulence::Turbulence> {
+        self.turbulence.as_ref()
+    }
+
+    /// The turbulence model, mutable (verification set-ups).
+    pub fn turbulence_mut(
+        &mut self,
+    ) -> Option<(&mut crate::turbulence::Turbulence, &mut dyn FlowDevice)> {
+        match self.turbulence.as_mut() {
+            Some(t) => Some((t, self.dev.as_mut())),
+            None => None,
+        }
+    }
+
+    /// The turbulence solves of an outer iteration (after the pressure
+    /// correction), into `res`.
+    pub(crate) fn solve_turbulence(
+        &mut self,
+        step: Option<crate::scalar::StepTime>,
+        res: &mut Residuals,
+    ) -> Result<()> {
+        let Some(t) = self.turbulence.as_mut() else {
+            return Ok(());
+        };
+        let tm = Instant::now();
+        let f = self.f;
+        res.turbulence = t.solve(self.dev.as_mut(), f.u, f.ub, f.mass_flux, &self.bc, step)?;
+        self.dev.sync()?;
+        self.timings.turbulence += tm.elapsed().as_secs_f64();
+        if !res.finite() {
+            self.diverged = Some(res.clone());
+            return Err(crate::diag::err(crate::diag::Diagnostic::new(
+                crate::diag::RUN_DIVERGED,
+                format!(
+                    "the solution diverged in outer iteration {}: turbulence residuals {:?}",
+                    self.iteration, res.turbulence.residual
+                ),
+            )));
+        }
+        Ok(())
+    }
+
     /// Adds the passive scalars (D51); they are solved from the next outer
     /// iteration on.
     pub fn add_scalars(&mut self, s: crate::scalar::Scalars) {
@@ -2009,6 +2130,7 @@ impl Flow {
         step: Option<crate::scalar::StepTime>,
         res: &mut Residuals,
     ) -> Result<()> {
+        self.solve_turbulence(step, res)?;
         if self.scalars.is_none() {
             return Ok(());
         }

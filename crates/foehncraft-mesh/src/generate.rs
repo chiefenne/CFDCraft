@@ -33,6 +33,16 @@
 //! the base mesh, so a refined mesh contains the nodes of the coarser one
 //! (nested refinement for order-of-accuracy studies).
 //!
+//! **Segments.** Instead of one grading, a direction may be a chain of
+//! segments, each with its upper coordinate `to`, its number of base
+//! intervals and its ratio of the last to the first interval (a flat plate:
+//! intervals that shrink towards the leading edge from both sides). The
+//! intervals of a direction sum to `cells`; refinement halves every one.
+//!
+//! **Split boundaries.** `split` cuts a box boundary at a coordinate: the
+//! faces whose centroid lies above `at` along `axis` form the boundary
+//! `name` (the plate after its symmetry stretch).
+//!
 //! **Perturbation.** Each node moves by up to `perturb` times the smaller
 //! adjacent interval in each direction, from a counter-based random number
 //! keyed by the seed and the node position (D47), so it is reproducible.
@@ -174,6 +184,82 @@ pub struct BoxSpec {
     #[serde(skip)]
     #[schemars(skip)]
     pub periodic: [bool; 3],
+    /// Graded segments per direction (replace `grading` in that direction).
+    #[serde(default, skip_serializing_if = "SegmentSpec::is_empty")]
+    pub segments: SegmentSpec,
+    /// Boundaries cut at a coordinate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub split: Vec<Split>,
+}
+
+/// One graded segment of a direction.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Segment {
+    /// Upper coordinate of the segment (m); the last one is `upper`.
+    pub to: f64,
+    /// Base intervals of the segment.
+    pub cells: usize,
+    /// Ratio of the last to the first interval (< 1: smaller at the upper
+    /// end).
+    #[serde(default = "one")]
+    pub ratio: f64,
+}
+
+/// The segments of the three directions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SegmentSpec {
+    /// x direction.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub x: Vec<Segment>,
+    /// y direction.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub y: Vec<Segment>,
+    /// z direction.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub z: Vec<Segment>,
+}
+
+impl SegmentSpec {
+    /// No segments.
+    pub fn is_empty(&self) -> bool {
+        self.x.is_empty() && self.y.is_empty() && self.z.is_empty()
+    }
+
+    /// The segments of direction `d`.
+    pub fn of(&self, d: usize) -> &[Segment] {
+        match d {
+            0 => &self.x,
+            1 => &self.y,
+            _ => &self.z,
+        }
+    }
+}
+
+/// A box boundary cut at a coordinate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Split {
+    /// The box boundary (`xmin`, …, `zmax`).
+    pub boundary: String,
+    /// The direction of the cut: `x`, `y` or `z`.
+    pub axis: String,
+    /// Coordinate of the cut (m).
+    pub at: f64,
+    /// Name of the part above `at`.
+    pub name: String,
+}
+
+impl Split {
+    fn axis_index(&self) -> Option<usize> {
+        match self.axis.as_str() {
+            "x" => Some(0),
+            "y" => Some(1),
+            "z" => Some(2),
+            _ => None,
+        }
+    }
 }
 
 /// Grading of the three directions.
@@ -221,6 +307,8 @@ impl Default for BoxSpec {
             seed: default_seed(),
             wedge: None,
             periodic: [false; 3],
+            segments: SegmentSpec::default(),
+            split: Vec::new(),
         }
     }
 }
@@ -282,6 +370,68 @@ impl BoxSpec {
         {
             if !(g.ratio > 0.0 && g.ratio.is_finite()) {
                 return Err(format!("grading ratio of direction {d} must be positive"));
+            }
+        }
+        for d in 0..3 {
+            let seg = self.segments.of(d);
+            if seg.is_empty() {
+                continue;
+            }
+            let name = ["x", "y", "z"][d];
+            if d == 2 && self.dimension == 2 {
+                return Err("segments in z: a 2D mesh is one layer thick".into());
+            }
+            let total: usize = seg.iter().map(|s| s.cells).sum();
+            if total != self.cells[d] {
+                return Err(format!(
+                    "the segments in {name} have {total} intervals, cells[{d}] is {}",
+                    self.cells[d]
+                ));
+            }
+            let mut lo = self.lower[d];
+            for (i, s) in seg.iter().enumerate() {
+                if s.cells == 0 || !(s.ratio > 0.0 && s.ratio.is_finite()) || s.to <= lo {
+                    return Err(format!(
+                        "segment {i} in {name}: needs cells >= 1, a positive ratio and `to` above \
+                         the segment before"
+                    ));
+                }
+                lo = s.to;
+            }
+            if (lo - self.upper[d]).abs() > 1e-12 * (self.upper[d] - self.lower[d]) {
+                return Err(format!(
+                    "the last segment in {name} must end at upper[{d}] = {}",
+                    self.upper[d]
+                ));
+            }
+        }
+        for s in &self.split {
+            let Some(a) = s.axis_index() else {
+                return Err(format!("split of `{}`: axis must be x, y or z", s.boundary));
+            };
+            if !BOX_BOUNDARIES.contains(&s.boundary.as_str()) {
+                return Err(format!(
+                    "split: `{}` is not a box boundary ({})",
+                    s.boundary,
+                    BOX_BOUNDARIES.join(", ")
+                ));
+            }
+            if s.boundary.starts_with(["x", "y", "z"][a]) {
+                return Err(format!(
+                    "split of `{}`: the axis must lie in the boundary",
+                    s.boundary
+                ));
+            }
+            if BOX_BOUNDARIES.contains(&s.name.as_str())
+                || self.split.iter().filter(|t| t.name == s.name).count() > 1
+            {
+                return Err(format!("split: the name `{}` is taken", s.name));
+            }
+            if !(s.at > self.lower[a] && s.at < self.upper[a]) {
+                return Err(format!(
+                    "split of `{}`: `at` must lie inside the box",
+                    s.boundary
+                ));
             }
         }
         if let Some(a) = self.wedge {
@@ -347,10 +497,29 @@ impl BoxSpec {
                 } else {
                     self.refine
                 };
-                g[d].nodes(n[d], level)
-                    .into_iter()
-                    .map(|s| self.lower[d] + s * (self.upper[d] - self.lower[d]))
-                    .collect()
+                let seg = self.segments.of(d);
+                if seg.is_empty() {
+                    g[d].nodes(n[d], level)
+                        .into_iter()
+                        .map(|s| self.lower[d] + s * (self.upper[d] - self.lower[d]))
+                        .collect()
+                } else {
+                    let f = 1usize << level;
+                    let mut x = vec![self.lower[d]];
+                    let mut lo = self.lower[d];
+                    for s in seg {
+                        let gr = Grading {
+                            ratio: s.ratio,
+                            symmetric: false,
+                        };
+                        let nodes = gr.nodes(s.cells * f, level);
+                        x.extend(nodes[1..].iter().map(|t| lo + t * (s.to - lo)));
+                        lo = s.to;
+                    }
+                    let last = x.len() - 1;
+                    x[last] = self.upper[d];
+                    x
+                }
             })
             .collect();
         let n1 = [n[0] + 1, n[1] + 1, n[2] + 1];
@@ -398,8 +567,23 @@ impl BoxSpec {
         (pts, n1)
     }
 
+    /// The boundary names in face order: the box boundaries, then the
+    /// split parts.
+    fn boundary_names(&self) -> Vec<String> {
+        BOX_BOUNDARIES
+            .iter()
+            .map(|s| s.to_string())
+            .chain(self.split.iter().map(|s| s.name.clone()))
+            .collect()
+    }
+
     fn classifier(&self) -> impl Fn(BoundaryFace) -> String + use<> {
         let (lo, hi) = (self.lower, self.upper);
+        let split: Vec<(String, usize, f64, String)> = self
+            .split
+            .iter()
+            .filter_map(|s| Some((s.boundary.clone(), s.axis_index()?, s.at, s.name.clone())))
+            .collect();
         move |b: BoundaryFace| {
             let d = (0..3)
                 .max_by(|&a, &c| b.normal[a].abs().total_cmp(&b.normal[c].abs()))
@@ -413,7 +597,13 @@ impl BoxSpec {
                 b.centroid,
                 b.normal
             );
-            BOX_BOUNDARIES[2 * d + s].to_string()
+            let name = BOX_BOUNDARIES[2 * d + s];
+            for (bn, a, at, new) in &split {
+                if bn == name && b.centroid[*a] > *at {
+                    return new.clone();
+                }
+            }
+            name.to_string()
         }
     }
 
@@ -497,7 +687,10 @@ impl BoxSpec {
                 }
             }
         }
-        soup.finish(&BOX_BOUNDARIES, self.classifier())
+        soup.finish(
+            &self.boundary_names().iter().map(String::as_str).collect::<Vec<_>>(),
+            self.classifier(),
+        )
     }
 
     /// 2D polygonal prisms: the dual of the triangulation, extruded.
@@ -590,7 +783,10 @@ impl BoxSpec {
             }
             soup.add_cell(faces.iter().map(|f| &f[..]));
         }
-        soup.finish(&BOX_BOUNDARIES, self.classifier())
+        soup.finish(
+            &self.boundary_names().iter().map(String::as_str).collect::<Vec<_>>(),
+            self.classifier(),
+        )
     }
 
     /// 3D polyhedra: the dual of the Kuhn tetrahedral mesh.
@@ -621,7 +817,12 @@ impl BoxSpec {
                 }
             }
         }
-        dual_of_tets(&grid, &tets, &BOX_BOUNDARIES, self.classifier())
+        dual_of_tets(
+            &grid,
+            &tets,
+            &self.boundary_names().iter().map(String::as_str).collect::<Vec<_>>(),
+            self.classifier(),
+        )
     }
 }
 

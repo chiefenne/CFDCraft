@@ -184,6 +184,26 @@ pub fn quantities(solve: &serde_json::Value) -> Vec<(String, f64)> {
             }
         }
     }
+    if let Some(ps) = solve.get("wall_probes").and_then(|p| p.as_array()) {
+        for p in ps {
+            let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+            for k in ["magnitude", "skin_friction"] {
+                if let Some(v) = p.get(k).and_then(num) {
+                    out.push((format!("wall_probes.{name}.{k}"), v));
+                }
+            }
+        }
+    }
+    if let Some(ps) = solve.get("periodic").and_then(|p| p.as_array()) {
+        for p in ps {
+            let name = p.get("from").and_then(|n| n.as_str()).unwrap_or("?");
+            for k in ["mass_flow", "driving_force"] {
+                if let Some(v) = p.get(k).and_then(num) {
+                    out.push((format!("periodic.{name}.{k}"), v));
+                }
+            }
+        }
+    }
     if let Some(vals) = solve
         .get("benchmark")
         .and_then(|b| b.get("values"))

@@ -212,6 +212,28 @@ impl<const N: usize> Real for Dual<N> {
             self
         }
     }
+    #[inline(always)]
+    fn sqrt_of(self) -> Self {
+        let r = crate::math::sqrt(self.v);
+        Self::chain(r, 0.5 / r, &self)
+    }
+
+    #[inline(always)]
+    fn exp_of(self) -> Self {
+        let e = crate::math::exp(self.v);
+        Self::chain(e, e, &self)
+    }
+
+    #[inline(always)]
+    fn ln_of(self) -> Self {
+        Self::chain(crate::math::ln(self.v), 1.0 / self.v, &self)
+    }
+
+    #[inline(always)]
+    fn tanh_of(self) -> Self {
+        let t = crate::math::tanh(self.v);
+        Self::chain(t, 1.0 - t * t, &self)
+    }
 }
 
 #[cfg(test)]
@@ -233,6 +255,23 @@ mod tests {
         assert!((f.d[1] - 9.0).abs() < 1e-14);
         let g = -x + D::from_f64(1.0);
         assert_eq!((g.v, g.d), (-2.0, [-1.0, 0.0]));
+    }
+
+    #[test]
+    fn elementary_functions_carry_derivatives() {
+        let x = D::variable(0.7, 0);
+        let h = 1e-6;
+        for (f, g) in [
+            (x.sqrt_of(), crate::math::sqrt as fn(f64) -> f64),
+            (x.exp_of(), crate::math::exp),
+            (x.ln_of(), crate::math::ln),
+            (x.tanh_of(), crate::math::tanh),
+        ] {
+            let fd = (g(0.7 + h) - g(0.7 - h)) / (2.0 * h);
+            assert_eq!(f.v, g(0.7));
+            assert!((f.d[0] - fd).abs() < 1e-8, "{} vs {}", f.d[0], fd);
+            assert_eq!(f.d[1], 0.0);
+        }
     }
 
     #[test]
