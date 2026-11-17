@@ -26,7 +26,9 @@ from paraview.simple import (
     Render, SaveScreenshot, Show, Slice, Sphere, StreamTracer, Text,
 )
 from vtkmodules.vtkIOImage import vtkPNGReader, vtkPNGWriter
-from vtkmodules.vtkImagingCore import vtkImageAppend
+from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
+import numpy as np
+from vtkmodules.vtkCommonDataModel import vtkImageData
 
 X_EXP = 6.26                 # Driver & Seegmiller (1985), x_r/H
 X0, X1, Y0, Y1 = -3.0, 14.0, 0.0, 3.0
@@ -174,18 +176,26 @@ def panel(v, data, label, xr, field, lut_name, rng, streamlines):
 
 
 def stack(files, out):
-    """One picture of the panels, the first on top."""
-    app = vtkImageAppend()
-    app.SetAppendAxis(1)
-    for f in reversed(files):
+    """One picture of the panels, the first on top (numpy, no VTK filters)."""
+    arrays = []
+    for f in files:
         r = vtkPNGReader()
         r.SetFileName(f)
         r.Update()
-        app.AddInputData(r.GetOutput())
-    app.Update()
+        im = r.GetOutput()
+        nx, ny, _ = im.GetDimensions()
+        nc = im.GetNumberOfScalarComponents()
+        # VTK images start at the lower left: the first row is the bottom
+        arrays.append(vtk_to_numpy(im.GetPointData().GetScalars()).reshape(ny, nx, nc))
+    # the panel to be on top goes last in VTK's bottom-up order
+    big = np.ascontiguousarray(np.concatenate(arrays[::-1], axis=0))
+    img = vtkImageData()
+    img.SetDimensions(big.shape[1], big.shape[0], 1)
+    sc = numpy_to_vtk(big.reshape(-1, big.shape[2]), deep=True)
+    img.GetPointData().SetScalars(sc)
     w = vtkPNGWriter()
     w.SetFileName(out)
-    w.SetInputData(app.GetOutput())
+    w.SetInputData(img)
     w.Write()
     for f in files:
         os.remove(f)
