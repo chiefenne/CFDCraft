@@ -15,7 +15,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28 |
-| [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | |
+| [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | 63 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets | 29 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
@@ -66,6 +66,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="log"></a>37 | [Read the log and upgrade a case file](recipes/runs.md#log) | [Run control and health](recipes/runs.md) |
 | <a id="log-columns"></a>38 | [Choose the columns of the log table](recipes/runs.md#log-columns) | [Run control and health](recipes/runs.md) |
 | <a id="schedule"></a>39 | [Prepare changes of settings before the run](recipes/runs.md#schedule) | [Run control and health](recipes/runs.md) |
+| <a id="passive-scalars"></a>63 | [Carry a passive scalar and compute a Nusselt number](recipes/scalars.md#passive-scalars) | [Passive scalars and the wall distance](recipes/scalars.md) |
 
 ## Adding a feature
 
