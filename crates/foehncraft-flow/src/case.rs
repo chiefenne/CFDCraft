@@ -578,7 +578,9 @@ pub struct OutputSection {
     pub coefficients: Option<Coefficients>,
     /// Derived fields written with the fields (D72), from the cell
     /// gradients: vorticity, q-criterion, lambda2, enstrophy, strain-rate,
-    /// pressure-coefficient, total-pressure, wall-shear-stress, y-plus.
+    /// pressure-coefficient, total-pressure, wall-distance,
+    /// wall-shear-stress, y-plus, turbulence-features (with a turbulence
+    /// model: the invariant features of D166).
     pub derived: Vec<crate::derived::Derived>,
     /// Reference values of the pressure coefficient.
     pub reference: crate::derived::ReferenceValues,

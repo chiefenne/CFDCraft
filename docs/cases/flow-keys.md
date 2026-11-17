@@ -77,7 +77,7 @@ line (recipe 26).
 | `output.monitor_interval` | none | transient: a row of `forces.csv` and `probes.csv` at the multiples of this simulated time (s) instead of every `monitor_every` steps, landed on exactly (equally spaced samples for spectra, D66) |
 | `output.probes` | none | point probes `[[output.probes]]` with `name` and `point`: velocity and pressure in `probes.csv` |
 | `output.coefficients` | none | force coefficients C = 2F/(ρU²A) of the sum over `boundaries`, with `velocity` U, `area` A, `drag_direction` (x), `lift_direction` (y) |
-| `output.derived` | none | derived fields in every `fields*.vtkhdf` (D72): `vorticity`, `q-criterion`, `lambda2`, `enstrophy`, `strain-rate`, `pressure-coefficient`, `total-pressure`, `wall-shear-stress`, `y-plus`; see [Derived fields](#derived-fields-d72) |
+| `output.derived` | none | derived fields in every `fields*.vtkhdf` (D72): `vorticity`, `q-criterion`, `lambda2`, `enstrophy`, `strain-rate`, `pressure-coefficient`, `total-pressure`, `wall-shear-stress`, `y-plus`, `wall-distance`, `turbulence-features`; see [Derived fields](#derived-fields-d72) |
 | `output.reference.velocity`, `.pressure`, `.density` | `[output.coefficients] velocity`, 0, `[fluid] density` | reference state U_ref (m/s), p_ref (Pa), ρ_ref (kg/m³) of `pressure-coefficient` |
 
 Transient cases (stage 5):
@@ -158,6 +158,7 @@ least-squares gradient of the solver), S = ½ (G + Gᵀ), Ω = ½ (G − Gᵀ),
 | `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude`, on the boundary blocks | tangential viscous stress of the fluid on the wall (as `wall_<boundary>.csv`), zero off walls | Pa |
 | `wall-distance` | `wall_distance` | exact distance of the cell centroid to the nearest face of the `wall` boundaries (BVH closest-point search, D48, D108); needs a wall | m |
 | `y-plus` | `y_plus`, on the boundary blocks | d √(τ_w/ρ)/ν, d the wall distance of the cell centroid, zero off walls | - |
+| `turbulence-features` | `feature_lambda1` … `feature_lambda5`, `feature_wall_reynolds`, `feature_time_ratio`, `feature_viscosity_ratio`, `feature_shielding`, `feature_q`, `feature_pressure_gradient`, `feature_curvature` | the invariant inputs of data-driven corrections (D106, D166), with a turbulence model only: the five invariants of Pope (1975) of the normalised Ŝ = S/ω and Ω̂ = Ω/ω (tr Ŝ², tr Ω̂², tr Ŝ³, tr Ω̂²Ŝ, tr Ω̂²Ŝ²), the wall Reynolds number min(√k d/(50 ν), 2), the time-scale ratio ‖S‖/ω, ν_t/ν, the shielding function F₁, (‖Ω‖² − ‖S‖²)/(‖Ω‖² + ‖S‖²), the pressure gradient along the streamline u·∇p/(‖∇p‖‖u‖ + ε) and the streamline curvature of the strain, each bounded to [−1, 1] or [0, …] as in D166 | - |
 
 The datasets are written in the order of this table, whatever the order of
 the list. `output.derived` and `output.reference` may change during a run.
@@ -244,10 +245,12 @@ of θ is a slice of a pipe whose section is a polygon of 360°/θ sides: the
 result differs from the axisymmetric one by about θ²/8 (1e-3 at 5°); the
 check warns above 10° (BC024).
 
-Inlets also take `turbulence_intensity`, `turbulence_length_scale` and
-`viscosity_ratio` for the turbulence models of stage 6, and so do pressure
-outlets for the entering fluid; in laminar flow the check reports them as
-unused.
+Inlets also take the turbulence values of the
+[turbulence models](#turbulence-d129d139): `turbulence_intensity` with
+`turbulence_length_scale` or `viscosity_ratio`, or `k` with `omega`
+directly. Pressure outlets accept them for the backflow, but the backflow
+takes k and ω of the cell for now (BC028 says so); in laminar flow the
+check reports them as unused (BC009). Walls take `roughness`.
 
 # Sensible combinations (D30)
 
@@ -376,3 +379,45 @@ the heat-flux jump. Scalar names may not be
 those of output fields, derived fields or the expression language
 (`T`, `k`, `omega`, `Y`, ... are reserved for the energy equation, the
 turbulence models and the species). Errors in these tables are `SCAL001`.
+
+# Turbulence (D129–D139)
+
+Stage 6 part 6b ([gallery 68](../gallery/turbulence.md#sst),
+[recipe 68](../recipes/turbulence.md#sst)): the k-ω SST model of Menter,
+Kuntz & Langtry (2003) with its production limiter, the wall treatments
+`low-re` (integration to the wall, y⁺ ≲ 1) and `automatic` (any y⁺),
+rough walls after Aupoix (2015). Specification:
+[stage 6](../requirements/stage6-turbulence.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `turbulence.model` | `"laminar"` | `"k-omega-sst"` |
+| `turbulence.wall_treatment` | `"automatic"` | `"automatic"` (Menter, Kuntz & Langtry 2003: blended viscous and log-law u_τ, ω and production in the first cell) or `"low-re"` (k = 0 and ω_w = 60ν/(β₁ d₁²) on the wall face, d₁ the wall-cell height) |
+| `turbulence.production_limiter` | `"menter"` | `"menter"` (P̃ = min(ν_t S², 10 β* k ω)), `"kato-launder"` (ν_t S Ω), `"durbin"` (the realisability bound with `durbin_coefficient`), `"none"` |
+| `turbulence.ambient.k`, `turbulence.ambient.omega` | none | sustaining terms of Spalart & Rumsey (2007): destruction at these free-stream values is balanced, so k and ω do not decay ahead of a body |
+| `turbulence.max_viscosity_ratio` | 1e5 | cap of ν_t/ν; capped cells are counted (TURB008) |
+| `turbulence.smooth_limits` | false | smooth min and max in the model (specification 2.6, for the adjoint) |
+| `turbulence.wall_distance` | `"exact"` | `"exact"` (BVH, D48) or `"pde"` (Poisson distance, one solve at the start) |
+| `turbulence.constants` | literature values | overrides by name: `beta_star`, `a1`, `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`, `sigma_k2`, `sigma_omega1`, `sigma_omega2`; a warning names each changed constant (TURB007) |
+| `initial.k`, `initial.omega` | from the first inlet | start values, numbers or expressions of x, y, z |
+| `initial.turbulence_intensity`, `initial.viscosity_ratio` | 0.01, 1 | start values from the intensity of `initial.velocity` and ν_t/ν |
+| `boundary.<inlet>.turbulence_intensity` | 0.05 | I, k = 1.5 (I U)² with U the inlet speed |
+| `boundary.<inlet>.turbulence_length_scale` or `viscosity_ratio` | ν_t/ν = 10 | ω = √k/(β*^¼ ℓ) or ω = k/(ν · ratio) |
+| `boundary.<inlet>.k`, `omega` | none | k and ω directly, numbers or expressions |
+| `boundary.<wall>.roughness` | 0 | equivalent sand-grain roughness k_s (m); the wall values of k and ω of Aupoix (2015); BC027 when k_s exceeds the first-cell height on more than a tenth of the wall |
+| `solver.turbulence.scheme` | `"linear-upwind"` | convection of k and ω: `upwind`, `linear-upwind`, `central` (transient runs only, TURB006) |
+| `solver.turbulence.limiter`, `limiter_k` | `venkatakrishnan`, 0 | limiter of the gradients of k and ω; the threshold is relative, ε = K (φ_max − φ_min) |
+| `solver.turbulence.relaxation` | 0.8 steady, 1 transient | under-relaxation of k and ω |
+| `solver.turbulence.viscosity_relaxation` | 1 | relaxation of ν_t |
+| `solver.turbulence.tolerance`, `max_iter` | 1e-2 steady, 1e-8 transient; 50 | relative tolerance and iterations of each BiCGStab solve |
+| `solver.turbulence.destruction` | `"newton"` | linearisation of the ω destruction: `newton` (2βω in the diagonal) or `picard` |
+
+The checks: TURB001 (the first-cell y⁺ does not suit the wall treatment
+on more than a tenth of a wall: above 2 with `low-re`, or in the buffer
+layer between 3 and 20 with `automatic`, where C_f of the flat plate is up
+to 16 % high), TURB002 (the floor of k or ω acted in the final tenth of the
+solves), TURB003 and TURB009 (inlet turbulence out of the usual range, or
+defaulted), TURB005 (no wall), TURB006 (a scheme the model does not allow),
+TURB007 (changed constants), TURB008 (ν_t capped).
+The log shows the first-cell y⁺ per wall, the largest ν_t/ν and the floor
+counts; `run.jsonl` adds the rows `turbulence` and `turbulence_floors`.

@@ -7,11 +7,14 @@ with the pull requests of the stage. Part 6a gives every later model its
 transport equation, its wall distance and its solver path
 ([below](#passive-scalars-and-the-wall-distance-part-6a)), part 6p the
 periodic boundaries that the channel cases need
-([below](#periodic-boundaries-part-6p)). The commands are in
-[recipe 63](../recipes/scalars.md#passive-scalars) and
-[recipe 67](../recipes/boundary-conditions.md#periodic), the pictures in
-[gallery 63](../gallery/scalars.md#passive-scalars) and
-[gallery 67](../gallery/boundary-conditions.md#periodic), the generated
+([below](#periodic-boundaries-part-6p)), part 6b the k-ω SST model
+([below](#k-ω-sst-part-6b)). The commands are in
+[recipe 63](../recipes/scalars.md#passive-scalars),
+[recipe 67](../recipes/boundary-conditions.md#periodic) and
+[recipe 68](../recipes/turbulence.md#sst), the pictures in
+[gallery 63](../gallery/scalars.md#passive-scalars),
+[gallery 67](../gallery/boundary-conditions.md#periodic) and
+[gallery 68](../gallery/turbulence.md#sst), the generated
 tables of every case in the [verification manual](manual.md).
 
 ## Passive scalars and the wall distance (part 6a)
@@ -170,3 +173,72 @@ fourth mesh); without it the order is 2.3 and 2.2, and on unperturbed
 meshes 2.0 either way. The first pair of the channel sweep converges
 faster than second order (2.40); the finest pair, which the check uses,
 gives 2.02.
+
+## k-ω SST (part 6b)
+
+**The model** (D130). SST 2003 of Menter, Kuntz & Langtry: k and ω on the
+generic scalar path of 6a with the F₁ blend of the constants, the cross
+diffusion (1 − F₁) 2σ_ω2/ω ∇k·∇ω split by its sign (the positive part
+explicit, the negative part in the diagonal), the eddy viscosity
+ν_t = a₁k/max(a₁ω, S F₂), the production P̃ = min(ν_t S², 10 β* k ω)
+(or Kato–Launder, Durbin, none), the sustaining terms of Spalart & Rumsey
+and a cap of ν_t/ν. The destruction is linearised point-implicitly
+(β*ω in the diagonal of k, 2βω with the Newton option for ω), so both
+stay positive in a converging run; the floors (10⁻¹⁰ of the largest start or
+inlet k, and the ω that gives ν_t/ν = 100 with it) are counted (TURB002 when they act in the final tenth of
+the solves). Without walls the wall distance is infinite and F₁ = 0
+(TURB005). The gradients of k and ω use the Venkatakrishnan limiter with
+a threshold relative to the range of the variable, ε = K (φ_max − φ_min),
+K = 0 by default: the dimensional threshold of the momentum equations is
+far above the differences of k on a flat plate and would switch the
+limiter off.
+
+**The walls** (D134). `low-re`: k = 0 and ω_w = 60ν/(β₁ d₁²) as Dirichlet
+values on the wall face, d₁ = 2 y_P the height of the wall cell, the value
+of the TMR codes (the first-cell value 6ν/(β₁ y_P²) of the draft converged
+at first order to +1.1 %; specification 4.3). `automatic`:
+u_τ = (u_vis⁴ + u_log⁴)^¼ with the log law floored at y⁺ = 11.06, the
+first-cell ω_P = (ω_vis² + ω_log²)^½ imposed with the weight m = 1 − b,
+b = u_vis⁴/u_τ⁴, through a fractional fix of the row,
+(1 − m)·row + m a_P (φ − ω_P), and the production of the first cell
+blended likewise, (1 − m) P̃ + m u_τ³/(κ y_P). Rough walls take the wall
+values of Aupoix (2015). The first-cell height y_P is floored at
+10⁻³ V/A of the wall cell.
+
+### Results
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| TMR flat plate (`tmr_plate_sst.toml`), `low-re`, 768 / 3 072 / 12 288 / 49 152 cells, first-cell y⁺ 0.09 on the finest | C_f(0.970084) on the finest mesh against the TMR value 2.6907e-3 | ±1 % + U_num | 2.7007e-3 (+0.37 %) |
+| | observed order and GCI_fine of C_f (three finest meshes) | p 1.5 – 2.5, GCI ≤ 1 % | p = 0.43, GCI 1.87 %, extrapolated 2.741e-3: **finding** |
+| | C_D (one side) against the TMR value 2.8488e-3 | ±1 % + U_num | 2.8606e-3 (+0.41 %); p = 0.74, GCI 0.84 % |
+| | C_f(Re_x) against White (2006), 10⁶ ≤ Re_x ≤ 10⁷ | ±5 % | −8.7 % to −5.3 % (the TMR value of SST itself is −6.4 % at x = 0.97): **finding**, the model's difference from the correlation |
+| | u⁺(y⁺) at x = 0.97 against Spalding's law, 1 ≤ y⁺ ≤ 300 | ±3 % | 2.3 % largest |
+| The plate with `automatic`, 3 072 cells, first-cell y⁺ 1.7 / 4.6 / 9.3 / 27 / 92 | C_f(0.97) against the TMR value | ±2 % | +2.3 %, +15.6 %, +14.8 %, −0.2 %, −0.7 %: **finding** in the buffer layer, TURB001 warns there |
+| Channel at Re_τ = 395 (`channel_sst.toml`), periodic module, mass flow of the DNS bulk velocity, `low-re`, 96 cells across, first-cell y⁺ 0.28 | U_b⁺ against the DNS of Moser, Kim & Mansour (17.55) | ±3 % | 17.43 (−0.70 %; Dean's correlation 17.24: +1.1 %), Re_τ = 397.8 |
+| | U_c⁺ against the DNS (about 20.1) | ±4 % | 19.64 (about −2.4 %) |
+| | GCI_fine of U_b⁺ (four meshes, 96 to 768 cells across) | ≤ 0.5 % | CHANNEL_GCI |
+| Homogeneous decay in a periodic box, k₀ = 1, ω₀ = 10, t = 0.5, 10 / 20 / 40 steps | BDF2 time order of k and ω against the exact solution (F₁ = 0) | 1.8 – 2.2 | DECAY_ORDERS |
+| Steady plate, restart after half the iterations | fields at the end | bit-identical | bit-identical |
+| Plate on 1 and 4 threads | fields after 8 iterations | bit-identical | bit-identical |
+| Poisson wall distance on a plane wall | d against the exact distance | round-off | passed |
+
+**Findings.** (1) The C_f of the plate converges monotonically but at a
+low observed order on these meshes (0.43); the finest value is within
+0.4 % of the TMR, which reports its values after five grids, and the
+differences between the three finest meshes are below 0.7 %. A fifth mesh
+(512 × 384) or the TMR's own family will show whether the order rises;
+the band stays as it is. (2) The automatic treatment overpredicts C_f by
+up to 16 % with the first cell in the buffer layer: the blended u_τ of the
+original formulation and the log-layer production meet badly there. The
+check TURB001 warns for y⁺ between 3 and 20; an improved blending is an
+item for the wall-function work of 6c. (3) White's correlation is a fit
+to experiments that lies 5 to 9 % above the SST result along the whole
+plate, as does the TMR's SST result: the band of the specification for
+this row was set for the model, and SST does not meet it.
+
+**Not in this part.** The manufactured solution of SST (moved to 6g with
+the other model MMS), the D166 features as named variables of the
+expression language (with their first consumer, D104), turbulence values
+of the backflow at outlets (the cell's values are used; BC028 says so),
+and curvature correction and QCR (D170, part 6h).

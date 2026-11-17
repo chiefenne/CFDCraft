@@ -1699,7 +1699,8 @@ impl Turbulence {
     }
 
     /// Per wall boundary: the area-weighted min, mean and max of y⁺ and
-    /// the area fraction above 2 (low-Re), for the report and TURB001.
+    /// the area fraction outside the claimed band (low-Re: above 2;
+    /// automatic: the buffer layer 3 to 20), for the report and TURB001.
     pub fn y_plus_summary(&self, dev: &mut dyn FlowDevice, mesh: &Mesh) -> Result<Vec<YPlusRow>> {
         let Some(wd) = self.wd else {
             return Ok(Vec::new());
@@ -1716,9 +1717,11 @@ impl Turbulence {
             e.2 = e.2.max(yp[i]);
             e.3 += a;
             // area outside the claimed band
+            // (automatic: the buffer layer, where the blended wall
+            // values overpredict C_f of the flat plate by up to 16 %)
             let out = match self.treatment {
                 kwall::LOW_RE => yp[i] > 2.0,
-                _ => false,
+                _ => yp[i] > 3.0 && yp[i] < 20.0,
             };
             if out {
                 e.4 += a;
@@ -1833,14 +1836,21 @@ pub fn summary(
     }
     for (b, _, _, _, out) in &walls {
         if *out > 0.1 {
-            finds.push(Diagnostic::new(
-                diag::TURB_Y_PLUS,
+            let text = if t.treatment == kwall::LOW_RE {
                 format!(
                     "wall `{b}`: first-cell y⁺ above 2 on {:.0} % of the area with the low-Re \
                      treatment (it needs y⁺ ≲ 1; the automatic treatment takes any y⁺)",
                     100.0 * out
-                ),
-            ));
+                )
+            } else {
+                format!(
+                    "wall `{b}`: first-cell y⁺ between 3 and 20 on {:.0} % of the area; the \
+                     automatic treatment overpredicts the wall shear stress there by up to 16 % \
+                     (flat plate, gallery 68): put the first cell at y⁺ ≲ 1 or y⁺ ≳ 25",
+                    100.0 * out
+                )
+            };
+            finds.push(Diagnostic::new(diag::TURB_Y_PLUS, text));
         }
     }
     Ok(Some((

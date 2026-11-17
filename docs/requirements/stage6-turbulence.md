@@ -945,6 +945,22 @@ scalar with Pr = 0.71, isothermal plate.
 | y⁺ insensitivity: first-cell y⁺ of 0.5, 1, 2, 5, 10, 30, 60, 100 at x = 0.97 | the model's own y⁺ ≈ 1 result (low-re) | – | C_f within ±2 % (SST automatic), ±3 % (ζ-f and EB compound), ±5 % (k-ε compound, and scalable for y⁺ ≥ 30); St within ±5 % (Kader) |
 | Smooth limits against hard limits (2.6) | the hard-limit result | – | C_f within 0.1 % |
 
+**Results of 6b (PR #68, SST; details on the
+[verification page](../verification/stage6.md#k-ω-sst-part-6b)).**
+C_f(0.97) with `low-re` on 256 × 192 cells is 2.7007e-3, +0.37 % from
+the TMR value: the validation row passes. Its convergence over the three
+finest meshes is monotonic with p = 0.43 and GCI_fine = 1.87 %, outside
+the verification band (finding; a fifth mesh decides whether the
+asymptotic range is reached). C_f(Re_x) lies 5 to 9 % below White's
+correlation, as the TMR's SST result does at x = 0.97 (−6.4 %): the row's
+±5 % band does not suit SST and is kept as a finding of the model.
+u⁺ at x = 0.97 follows Spalding's law within 2.3 %. The y⁺ study of
+`automatic` gives +2.3 % (y⁺ 1.7), +15.6 % (4.6), +14.8 % (9.3),
+−0.2 % (27) and −0.7 % (92): the buffer layer misses the ±2 % band
+(finding); TURB001 warns there and the blending is revisited with the
+wall functions of 6c. The temperature rows wait for 6f, the other models
+for 6c–6e.
+
 ### 9.4 Fully developed channel flow
 
 Periodic plane channel driven by a mean pressure gradient that fixes
@@ -963,6 +979,13 @@ Kuroda (1992, Re_τ = 150) and Kawamura et al. (1998, Re_τ = 180; Re_τ = 395 f
 | k⁺ peak value and position; v²⁺ = ζk⁺ or φk⁺ near-wall profile | ζ-f, EB | – | peak position within ±20 %; reported against the model papers' own channel curves (the paper result is the acceptance target for EB at Re_τ = 395, section 3.4) |
 | Nu (heat-flux jump), constant Pr_t and Kays–Crawford | all, Re_τ 150/180/395 | GCI_fine ≤ 1 % | ±7 % |
 | Wall-function insensitivity: first-cell y⁺ from 1 to 100 | compound and automatic | – | wall shear within ±3 % of the y⁺ ≈ 1 result (stage-6 row of the plan) |
+
+**Results of 6b (PR #68, SST, Re_τ = 395 only).** With `low-re`, 96
+cells across and first-cell y⁺ 0.28: Re_τ = 397.8 from the driving force,
+U_b⁺ = 17.43 (−0.7 % from the DNS, +1.1 % from Dean's correlation),
+U_c⁺ = 19.64 (about −2.4 %); both inside their bands. GCI_fine of U_b⁺:
+CHANNEL_GCI. Re_τ = 180 and 590, the profiles and the wall-function
+insensitivity follow with the model comparison of 6g.
 
 ### 9.5 Backward-facing step (Driver & Seegmiller 1985)
 
@@ -1033,7 +1056,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 |---|---|---|---|
 | 6a | Generic scalar transport (D116), passive scalars and their boundary sub-tables (D51), bounded BDF2 (D28 (1)), smooth-limit helpers (2.6), exact wall distance with the BVH (D48, D108 (1)) and the derived field `wall-distance` (done, PR #63) | `foehncraft-kernels/src/scalar.rs`, `foehncraft-mesh/src/query/bvh.rs`, `foehncraft-flow/src/scalar.rs`, `foehncraft-core/src/math.rs` | 9.2 laminar heated channel (developed profile at the inlet, uniform wall flux, zero-gradient outlet; Nu within 0.5 %), wall distance, scalar MMS on hex, poly and tet cells, scalar time order |
 | 6p | Periodic boundaries for the flow and the scalars (translational pairs, mass-flow or pressure-gradient driving, the heat-flux jump of D109 (1) for passive scalars; the wall-temperature map of D109–D111 with the energy stage) (done, PR #67) | `foehncraft-mesh` periodic pairing, `foehncraft-flow/src/bc.rs` | periodic Poiseuille and heated channel equal to the open ones; needed by the 9.4 channel at Re_τ 180/395/590 |
-| 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂; the optional PDE wall distance with the key `turbulence.wall_distance` (the exact distance of 6a is the default); the invariant features of D166 as named expression variables (same definitions as the D106 export) | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 MMS and decay (SST), 9.3 flat plate, 9.4 channel (SST) |
+| 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂; the optional PDE wall distance with the key `turbulence.wall_distance` (the exact distance of 6a is the default); the invariant features of D166 as named expression variables (same definitions as the D106 export) (done, PR #68: the features as the derived field `turbulence-features`; their names in the expression language come with the first consumer, D104; the SST MMS moves to 6g; turbulence values of the backflow at outlets later, BC028) | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 decay (SST), 9.3 flat plate, 9.4 channel (SST) |
 | 6c | Standard and realizable k-ε, scalable and standard wall functions, compound treatment for the k-ε family, Cebeci–Bradshaw roughness | `turb/keps.rs` | 9.2, 9.3, 9.4 for the k-ε family, rough pipe and Moody study |
 | 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG), the AMG preconditioner for the scalar equations (D36; 6a solves them with Jacobi-preconditioned BiCGStab, enough for the laminar cases) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
 | 6e | EB k-ε (D133) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
@@ -1041,6 +1064,12 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports | cases, gallery, `tools/notebooks/stage6_colab.ipynb` | 9.5, 9.6, 9.7, 6.6 |
 | 6h | SST options of D170: curvature and rotation correction (Smirnov & Menter 2009), QCR2000 and QCR2013 with the explicit-stress path in the momentum assembly that D171 reuses | `turb/sst.rs`, `turb/invariants.rs`, `foehncraft-flow/src/turbulence/stress.rs` | 9.8 |
 | release | v0.6: version bump, changelog summary, README, verification manual, Release workflow (dry run first) | | all of section 9 green or findings recorded |
+
+Validation cases shared with pyaeroflow, the maintainer's earlier
+compressible code (it resolves walls, no wall functions), so that the two
+codes can be compared on the same set-ups: the TMR flat plate (6b, done),
+the heated flat plate (6f), the NASA wall-mounted hump (6g, and the
+data-driven work of L37).
 
 Order rationale: 6a gives every later model its transport, wall distance
 and solver path; 6p brings the periodic boundaries that the channel cases
