@@ -240,7 +240,8 @@ Stage 6 (D135) owns the turbulent Prandtl number (constant 0.85 default,
 Kays 1994 variable form as an option) and the thermal wall function. Since
 step 21 (2026-11-17) Pr_t is a field from a closure (D172), read by the
 conductivity below, by G_b (D155) and by the wall function; stage 7 adds the
-`wall-profile` closure and the variable-property wall treatment of D173
+`kays-crawford-hp` (default parameter set `2019`, Steiner & Irrenfried 2019)
+and `wall-profile` closures and the variable-property wall treatment of D173
 ([step 21 page](step21-les-high-prandtl.md) §6). Stage 7
 owns the closure of the turbulent heat flux in the energy equation:
 
@@ -868,7 +869,7 @@ on a new topic page `energy.md` in `docs/gallery/`, `docs/recipes/` and
 | 7b | Gravity, Boussinesq, balanced-force interpolation (D154), wall pressure, reduced pressure at boundaries, BUO codes | `foehncraft-kernels::flow` (`face_mass_flux`, momentum cell rows), `foehncraft-flow::buoyancy` (new), `bc.rs`, `derived.rs` | V7.7, V7.8, V7.9, V7.12, V7.13, V7.15, V7.16 |
 | 7c | Low-Mach variable density, p₀(t), pressure work | `foehncraft-flow::simplec`, `transient`, `energy` | V7.7 (b), V7.17 |
 | 7d | Conjugate heat transfer: domain views (D112), region interfaces, one-sided gradients, contact resistance and thin walls, solids with orthotropic k (D116 tensor), energy sources, D58 imprinting, METIS weights and per-view halo plans (D122 (1)), CHT codes | `foehncraft-mesh` (`view.rs`, `imprint.rs` new, `partition.rs`, `decompose.rs`), `foehncraft-fv::amg` (views), `foehncraft-flow::energy`; `foehncraft-parallel` (halo plans per view) | V7.4–V7.6, V7.10, V7.24; D58 cases of the old stage 7 (Poiseuille and T-junction across a non-conformal interface) |
-| 7e | Turbulent heat transfer: GGDH, G_b in k, ε, ω, ζ/φ, C_ε3, Robin and radiation linearisation with wall functions; the `wall-profile` Pr_t closure (D172) and the wall treatment with variable properties, semi-local y⁺_sl and the integrated thermal wall function (D173, step 21) | `foehncraft-kernels::energy`, stage-6 turbulence modules (hook) | V7.18–V7.21 |
+| 7e | Turbulent heat transfer: GGDH, G_b in k, ε, ω, ζ/φ, C_ε3, Robin and radiation linearisation with wall functions; the `kays-crawford-hp` and `wall-profile` Pr_t closures (D172) and the wall treatment with variable properties, semi-local y⁺_sl and the integrated thermal wall function (D173, step 21; checks H-0 to H-2 of the step 21 page) | `foehncraft-kernels::energy`, stage-6 turbulence modules (hook) | V7.18–V7.21 |
 | 7f | GPU parity of all stage-7 kernels, Jacobian tests, verification manual, release v0.7 | `foehncraft-cuda`, `gpu/ptx-kernels`, `tools/notebooks/stage7_colab.ipynb`, `tools/` | V7.22, V7.23 |
 
 7a can start once stage 6 has merged its field and equation registries (D115,
