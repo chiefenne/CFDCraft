@@ -983,8 +983,10 @@ Kuroda (1992, Re_τ = 150) and Kawamura et al. (1998, Re_τ = 180; Re_τ = 395 f
 **Results of 6b (PR #68, SST, Re_τ = 395 only).** With `low-re`, 96
 cells across and first-cell y⁺ 0.28: Re_τ = 397.8 from the driving force,
 U_b⁺ = 17.43 (−0.7 % from the DNS, +1.1 % from Dean's correlation),
-U_c⁺ = 19.64 (about −2.4 %); both inside their bands. GCI_fine of U_b⁺:
-CHANNEL_GCI. Re_τ = 180 and 590, the profiles and the wall-function
+U_c⁺ = 19.64 (about −2.4 %); both inside their bands. On three meshes (96, 192, 384 cells
+across) U_b⁺ = 17.427, 17.381, 17.346: observed order 0.40, extrapolated
+17.237, GCI_fine 0.78 %, outside the verification band (finding; the
+fourth mesh did not reach its tolerance). Re_τ = 180 and 590, the profiles and the wall-function
 insensitivity follow with the model comparison of 6g.
 
 ### 9.5 Backward-facing step (Driver & Seegmiller 1985)

@@ -217,13 +217,13 @@ values of Aupoix (2015). The first-cell height y_P is floored at
 | The plate with `automatic`, 3 072 cells, first-cell y⁺ 1.7 / 4.6 / 9.3 / 27 / 92 | C_f(0.97) against the TMR value | ±2 % | +2.3 %, +15.6 %, +14.8 %, −0.2 %, −0.7 %: **finding** in the buffer layer, TURB001 warns there |
 | Channel at Re_τ = 395 (`channel_sst.toml`), periodic module, mass flow of the DNS bulk velocity, `low-re`, 96 cells across, first-cell y⁺ 0.28 | U_b⁺ against the DNS of Moser, Kim & Mansour (17.55) | ±3 % | 17.43 (−0.70 %; Dean's correlation 17.24: +1.1 %), Re_τ = 397.8 |
 | | U_c⁺ against the DNS (about 20.1) | ±4 % | 19.64 (about −2.4 %) |
-| | GCI_fine of U_b⁺ (four meshes, 96 to 768 cells across) | ≤ 0.5 % | CHANNEL_GCI |
-| Homogeneous decay in a periodic box, k₀ = 1, ω₀ = 10, t = 0.5, 10 / 20 / 40 steps | BDF2 time order of k and ω against the exact solution (F₁ = 0) | 1.8 – 2.2 | DECAY_ORDERS |
+| | observed order and GCI_fine of U_b⁺ on the three meshes of 96, 192 and 384 cells across (U_b⁺ 17.427, 17.381, 17.346) | p 1.8 – 2.2, GCI ≤ 0.5 % | p = 0.40, extrapolated 17.237, GCI_fine 0.78 %: **finding** (the fourth mesh, 768 cells across, did not reach its tolerance in 30 000 iterations and is left out) |
+| Homogeneous decay in a periodic box, k₀ = 1, ω₀ = 10, t = 0.5, 10 / 20 / 40 steps | BDF2 time order of k and ω against the exact solution (F₁ = 0) | 1.8 – 2.2 | asserted by `tests/turbulence.rs` |
 | Steady plate, restart after half the iterations | fields at the end | bit-identical | bit-identical |
 | Plate on 1 and 4 threads | fields after 8 iterations | bit-identical | bit-identical |
 | Poisson wall distance on a plane wall | d against the exact distance | round-off | passed |
 
-**Findings.** (1) The C_f of the plate converges monotonically but at a
+**Findings.** (0) U_b⁺ of the channel approaches 17.24 (the extrapolated value, Dean's correlation) at the low order 0.40 with the first-cell y⁺ falling from 0.28 to 0.07, like the plate (0.43): the wall value of ω, which grows as 1/d₁² with the mesh, converges slowly in both; a sweep of the wall value is an item for 6c. (1) The C_f of the plate converges monotonically but at a
 low observed order on these meshes (0.43); the finest value is within
 0.4 % of the TMR, which reports its values after five grids, and the
 differences between the three finest meshes are below 0.7 %. A fifth mesh

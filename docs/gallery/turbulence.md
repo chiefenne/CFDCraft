@@ -82,7 +82,7 @@ velocity of the DNS of Moser, Kim & Mansour (1999), 96 cells across,
 first-cell y⁺ 0.28. The driving force gives u_τ and with it
 Re_τ = 397.8 and U_b⁺ = 17.43: −0.7 % from the DNS (17.55) and +1.1 %
 from Dean's correlation C_f = 0.073 Re_b^−¼ (17.24), inside the ±3 %
-band. The centreline velocity U_c⁺ = 19.64 lies about 2.4 % below the DNS
+band. On three meshes (96, 192 and 384 cells across) U_b⁺ is 17.427, 17.381 and 17.346: the observed order is 0.40, the extrapolated value 17.237 (Dean: 17.24) and GCI_fine 0.78 %, outside the verification band of the specification (finding, as for the plate: the convergence is slow). The fourth mesh did not reach its tolerance in 30 000 iterations and is left out. The centreline velocity U_c⁺ = 19.64 lies about 2.4 % below the DNS
 (about 20.1), inside ±4 %.
 
 | Check | Result |
