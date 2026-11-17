@@ -1,0 +1,1023 @@
+# Stage 7 – Energy equation, buoyancy and conjugate heat transfer
+
+Requirements step 19 (2026-11-17), asked for by the maintainer. This page is
+the full specification; `docs/requirements.md` carries the decisions D150 to
+D164 as short rows that point here, the open step O18 (stage order and the
+scope of milestone 1) and the changed rows of the stage plan. No code is
+written before the maintainer's go (project rule).
+
+The rules of the project hold throughout: requirements before code; every
+stage ends with results that can be checked against analytic solutions or
+published data, with the discretisation uncertainty of Celik et al. (2008,
+D67); clean-room numerics (D21): every equation, constant and interface
+treatment below comes from the cited literature, and code from other solvers
+is never copied or ported. Kernels stay `no_std`, float64 (D7), bitwise
+reproducible (D31, D93), the same on CPU and GPU (D8, D60) and
+adjoint-ready (D59).
+
+Contents
+
+1. [Place in the plan](#1-place-in-the-plan)
+2. [What stage 7 builds on](#2-what-stage-7-builds-on)
+3. [Energy equation (D150)](#3-energy-equation-d150)
+4. [Low-Mach variable density (D151)](#4-low-mach-variable-density-d151)
+5. [Turbulent heat flux (D152)](#5-turbulent-heat-flux-d152)
+6. [Buoyancy (D153) and the balanced-force interpolation (D154)](#6-buoyancy-d153-and-the-balanced-force-interpolation-d154)
+7. [Buoyancy in the turbulence models (D155)](#7-buoyancy-in-the-turbulence-models-d155)
+8. [Thermal boundary conditions and their check (D156)](#8-thermal-boundary-conditions-and-their-check-d156)
+9. [Fluid–solid interfaces (D157)](#9-fluidsolid-interfaces-d157)
+10. [Coupling strategy, linear solvers and order of solution (D158)](#10-coupling-strategy-linear-solvers-and-order-of-solution-d158)
+11. [Multi-region partitioning and halos (D159)](#11-multi-region-partitioning-and-halos-d159)
+12. [Kernels: GPU, reproducibility, adjoint (D160)](#12-kernels-gpu-reproducibility-adjoint-d160)
+13. [Energy ledger and second law (D161)](#13-energy-ledger-and-second-law-d161)
+14. [Verification and validation (D162)](#14-verification-and-validation-d162)
+15. [Case-file keys and diagnostics (D163)](#15-case-file-keys-and-diagnostics-d163)
+16. [Implementation plan (D164)](#16-implementation-plan-d164)
+17. [Findings in the code today](#17-findings-in-the-code-today)
+18. [Points for the maintainer](#18-points-for-the-maintainer)
+19. [References](#19-references)
+
+
+## 1. Place in the plan
+
+Until now the energy equation and conjugate heat transfer were L1, the first
+item after milestone 1, and stage 7 was multi-rank MPI with overlapped halos,
+scaling, the internal-flow validation (pipe, diffuser, U-bend, T-junction),
+rotating and non-conformal meshes, the reproducible mode and the tag `v1.0`.
+The maintainer's prompt of 2026-11-16 makes energy, buoyancy and conjugate
+heat transfer stage 7. Proposed new order (open step O18, to be confirmed):
+
+| Stage | Content | Tag |
+|---|---|---|
+| 6 | Turbulence and wall functions, including the thermal wall function and the turbulent Prandtl number with temperature as a passive scalar ([stage 6 page](stage6-turbulence.md), D129–D139) | v0.6 |
+| **7** | **Energy, buoyancy, conjugate heat transfer (this page, D150–D164)**, with the static non-conformal interfaces of D58 moved here from the old stage 7, because fluid and solid meshes made separately (D113) seldom match | v0.7 |
+| 8 | The old stage 7 without D58: multi-rank MPI with overlapped halos (D38), scaling, the internal-flow cases of D45 (now also with heat transfer: heated periodic pipe D111 with every turbulence model, T-junction with hot and cold inflow), cell-quality remediation (D50), tet-to-polyhedra conversion (D54), conformal rotating meshes (D56), the reproducible mode (D93) and its cost, GCI in the validation reports, user documentation | **v1.0** |
+
+What this means for milestone 1: v1.0 moves one stage later, and its scope
+grows from "incompressible flow" to "incompressible and low-Mach
+variable-density flow with heat transfer, buoyancy and conjugate heat
+transfer". Species and reacting flows (L2) stay after milestone 1, and so do
+electric conduction and Joule heating (L27), which L1 had taken along: they
+are the first item after v1.0, because they need nothing beyond the
+temperature domain of this stage. The order after milestone 1 becomes L27,
+L2, L12, L3, L4, L5.
+
+Alternatives considered: (a) keep v1.0 at the end of the old stage 7 and do
+energy as stage 8 (v1.1): a first release without heat transfer, which the
+industrial reference class always has; (b) merge both into one stage 7: too
+large for one verifiable step.
+
+
+## 2. What stage 7 builds on
+
+Agreed decisions that this stage implements or extends, and does not redo:
+
+- **D112** regions and equation domains: one mesh, the temperature solved on
+  the union of fluid and solid regions, so conjugate heat transfer is one
+  matrix. D99: harmonic mean of k across fluid–solid interfaces. D116:
+  generic transport equation with tensor diffusion, thermal boundary
+  conditions as a `thermal` sub-table of `[boundary.<name>]`, periodic pairs
+  and region interfaces in one paired-boundary structure. D117 (1): region to
+  region coupling computed once and booked on both sides. D118: modules,
+  step schedule, multi-rate clocks, frozen flow. D119: ledger as data.
+- **D92** energy as specific sensible enthalpy h_s, c_p in integral form,
+  temperature recovered by a safeguarded Newton inversion; **D88–D90** the
+  conservation ledger, the balance reports and the second-law checks, whose
+  parts 1–3 become active here.
+- **D94–D103** material database, property forms and tables, the property
+  kernel, `[materials]` keys; D102 puts the thermal part (equations of state,
+  k, c_p, solids with orthotropic k, Sutherland and NASA data, IAPWS water)
+  with L1, so into this stage.
+- **D109–D111** streamwise-periodic heat transfer (affine map on periodic
+  pairs, thermal modes, Nu and f evaluation, the heated periodic pipe as the
+  main validation case).
+- **D13** and the stage-6 decisions (D129 exported turbulence fields, D134
+  momentum wall treatment, D135 thermal wall treatment with Kader 1981 as the
+  default and the Jayatilleke P-function as an option, and the turbulent
+  Prandtl number, constant 0.85 or the variable form of Kays 1994): stage 7
+  cites them and does not specify them again. Stage 6 leaves a source hook
+  `buoyancy_production` in the k, ε and ω equations that stage 7 fills (D155).
+- **L15** radiation: the photon Monte Carlo module comes later; this stage
+  gives the radiation boundary condition to a surrounding temperature
+  (D156) and keeps the interface the radiation module will use (a volume
+  source and a wall heat flux per face, both with their linearisation).
+- **D124** W3, W4, W7: wall boundary values as per-face arrays, per-face
+  heat-transfer coefficients from the wall treatment, gravity as a case
+  vector for all modules.
+- **D58** non-conformal interfaces by imprinting: after imprinting the
+  interface is conformal, so the fluid–solid treatment below needs no special
+  case for non-matching meshes.
+
+
+## 3. Energy equation (D150)
+
+### 3.1 Equation
+
+The conserved quantity is the specific sensible enthalpy h = h_s(T) of D92.
+On the energy domain (fluid and solid regions):
+
+    ∂(ρh)/∂t + ∇·(ρ u h) = ∇·(k ∇T) − ∇·q_t + Φ + W_p + S_h
+
+| Term | Meaning | Where |
+|---|---|---|
+| ∂(ρh)/∂t | storage, BDF2 or Crank–Nicolson (D28) | fluid and solid |
+| ∇·(ρ u h) | convection with the mass flux of the flow | fluid (u = 0 in solids; moving solids with D122 (3) later) |
+| ∇·(k ∇T) | Fourier conduction, k scalar or tensor (D116) | fluid and solid |
+| q_t | turbulent heat flux, SGDH or GGDH (D152) | turbulent fluid |
+| Φ | viscous heating, off by default: laminar τ:∇u with τ = μ(∇u + ∇uᵀ − ⅔(∇·u) I); in RANS the mean part τ̄:∇ū plus the dissipation ρε of the turbulent kinetic energy (ε from the model of D129; for SST ε = β* k ω) | fluid |
+| W_p | pressure work, `none` (default), `thermodynamic` (dp₀/dt of a closed volume, D151, L22) or `full` (Dp/Dt = ∂p/∂t + u·∇p) | fluid |
+| S_h | volume heat sources: number, expression (D53) or total power over a region (W, spread by volume), with an optional linear part S_h = S_c + S_T T (S_T ≤ 0) | any region |
+
+For a constant-density liquid h = ∫c_p dT; the pressure part of the enthalpy
+of a liquid is neglected (the usual incompressible form, Bejan 2013 ch. 1).
+Radiation (L15) enters later through S_h and the wall heat flux.
+
+### 3.2 Solved unknown: temperature correction, conservative residual
+
+D92 (1) keeps h as the conserved variable and recovers T by inversion.
+Stage 7 keeps the conservative residual and changes the unknown of the
+linear system: each outer iteration solves for the temperature correction
+δT, with the residual written in h:
+
+    R(T) = conservative finite-volume residual of the h equation above
+    A δT = −R(T*),   T = T* + δT,   h_P = h(T_P) from the D92 coefficients
+
+The matrix A is the linearisation of R about T*: storage ρ_P c_p(T*_P) V_P a₀/Δt
+(a₀ the BDF coefficient), convection with the upwind cell's c_p (first-order
+upwind implicit part, the higher-order face value as deferred correction,
+D25), conduction directly in T. At convergence R = 0, so energy is conserved
+exactly with temperature-dependent c_p and the ledger of D88 closes; c_p
+appears only in A, which changes the speed of convergence, never the result
+(the source-based enthalpy linearisation of Voller & Swaminathan 1991, which
+also carries the latent heat of L35 later).
+
+Why the change: (1) temperature, not enthalpy, is continuous across a
+fluid–solid interface, so one matrix across materials with different c_p is
+only well posed in T; (2) Robin, radiation and wall-function conditions are
+linear or linearised in T; (3) the conduction-dominated solid rows are a
+symmetric positive M-matrix in T, which the AMG handles at conductivity
+ratios of 10⁴ (§10.2); (4) the deferred correction of D92 (3) between
+(k/c_p)∇h and k∇T is no longer needed, because conduction is implicit in T.
+D92 (3) is replaced by this; D92 (1), (2), (4), (5) hold unchanged. The
+Newton inversion of D92 (1) stays for every place where h is given and T is
+wanted: inlet enthalpy, the affine periodic map of D109 (which is written in
+h), restart files, mixing (L2).
+
+Periodic pairs (D109) with the map h_partner = a h + b: in the linear
+system the partner's δT is a c_p(T)/c_p(T_partner) δT, the residual uses the
+mapped h exactly.
+
+### 3.3 Discretisation
+
+- Convection of h: the face value from the cell values of h and the limited
+  least-squares gradient of h (D24, D25), linear upwind by default, bounded
+  central as an option; boundedness of T between its inflow and wall extremes
+  is checked as for the passive scalars (D51).
+- Continuity correction of the implicit part: the implicit operator
+  subtracts c_p,P δT_P times the cell's discrete mass imbalance
+  (∂ρ/∂t + Σ ṁ_f) so that the matrix stays diagonally dominant while the
+  continuity equation is not yet converged (Patankar 1980, §5.2); the
+  residual keeps the conservative form, so the converged result is
+  unchanged.
+- Conduction: over-relaxed non-orthogonal decomposition (D26) with k_f the
+  arithmetic mean inside a region (D99) and the interface conductance of
+  §9 across regions; tensor k by Γ·S in place of Γ S (D116).
+- Steady runs: implicit under-relaxation per row (Patankar 1980), default
+  α_T = 0.95 in fluid rows and 1 in solid rows, or the pseudo-transient
+  local time step of D49 with a diffusion-number time step in solid rows,
+  because a solid has no convective Courant number.
+- Positivity: a correction that would take T to ≤ 0 K or out of the
+  property range is damped by a factor applied to the whole update
+  (a scalar from an exact reduction, so the result stays reproducible) and
+  counted as a health number (D69).
+
+### 3.4 Variable properties
+
+Properties are cell fields evaluated by the property kernel of D99 after
+the temperature update, once per outer iteration: ρ(T, p₀) (D151), μ(T),
+k(T) (scalar or orthotropic tensor with axes per region), c_p(T) with h
+and s° from the same coefficients (D92 (2)). Forms from D95: constant,
+polynomial, NASA-7 and NASA-9, Sutherland and power law for μ and k of
+gases, tables (linear for c_p so that h is exact, monotone cubic for
+transport properties, D96), expressions (D53, also of T now: the
+restriction to x, y, z, t of stage 5 is lifted for properties). The thermal
+part of the database (D102): air, water (IAPWS-95 for the tables of
+c_p, k, μ, ρ at the operating pressure, generated off line under D103),
+the oils and glycols of stage 5 with thermal data, and solids: copper,
+aluminium, steel, stainless steel, glass, a polymer, with sources (D97).
+
+
+## 4. Low-Mach variable density (D151)
+
+Without species, D17's low-Mach form arrives here; L2 adds species to it.
+
+- **Density:** ρ = ρ(T, p₀) from the material's equation of state (ideal gas
+  ρ = p₀ M/(R T), polynomial or table in T for liquids); it does not depend
+  on the dynamic pressure p (the low-Mach expansion, Rehm & Baum 1978;
+  Paolucci 1982), so the pressure equation stays elliptic and the pressure
+  matrix symmetric, solved by AMG-CG as today (D35).
+- **Thermodynamic pressure p₀:** open domains (any pressure boundary): p₀ =
+  `fluid.operating_pressure`, constant. Closed domains: p₀(t) from the
+  conservation of the total mass, M_total = ∫ρ(T, p₀) dV, solved for p₀
+  after each temperature update (for an ideal gas p₀ = M_total R / (M ∫dV/T),
+  an exact reduction, D31); dp₀/dt then enters W_p of the energy equation
+  and the mass balance. This is the p₀(t) of L22, without mesh motion.
+- **Continuity:** ∂ρ/∂t + ∇·(ρu) = 0 with ∂ρ/∂t from the BDF formula and the
+  latest ρ; it is a known source of the pressure-correction equation in each
+  outer iteration.
+- **Face density:** ρ_f = w ρ_P + (1 − w) ρ_N in the mass flux and in the
+  Rhie–Chow coefficient, the same ρ_f in the body force of D154.
+- **Momentum:** ∂(ρu)/∂t + ∇·(ṁ u) = −∇p + ∇·τ + (ρ − ρ_ref) g, with μ(T) a
+  cell field.
+- **Validity check:** the Mach number of the cell velocities against the
+  speed of sound of the material is a health number; above Ma 0.3 a warning
+  (ENE004) says that the low-Mach form loses validity (L10).
+
+
+## 5. Turbulent heat flux (D152)
+
+Stage 6 (D135) owns the turbulent Prandtl number (constant 0.85 default,
+Kays 1994 variable form as an option) and the thermal wall function. Stage 7
+owns the closure of the turbulent heat flux in the energy equation:
+
+- **SGDH** (simple gradient diffusion): q_t = −(μ_t c_p / Pr_t) ∇T, added to
+  the conductivity of the conduction term, k_eff = k + μ_t c_p / Pr_t; with
+  a variable c_p the c_p is the cell's, so the term stays a flux in T.
+- **GGDH** (generalised gradient diffusion, Daly & Harlow 1970):
+  ρ \overline{u′_i h′} = −C_θ ρ c_p T_t \overline{u′_i u′_j} ∂T/∂x_j, i.e. a
+  tensor conductivity K_ij = C_θ ρ c_p T_t \overline{u′_i u′_j}. Inputs from
+  D129: the time scale T_t (k/ε bounded below by the Kolmogorov scale, as the
+  stage-6 models bound it) and the cell field `reynolds_stress` (six
+  components): for ζ-f and the elliptic-blending model the stress with the
+  wall-normal variance v² = ζk (or φk) along the wall-normal direction
+  n = ∇α/|∇α|, for SST and the k-ε models the Boussinesq estimate
+  ⅔kδ_ij − 2ν_t S_ij. Default C_θ = 0.3 (Ince & Launder 1989, GGDH in
+  enclosures), a model constant in the case file; the value and its
+  pairing with each model are checked against the papers before the code
+  is written.
+- **Implicit part of GGDH:** the face-normal component of K (n·K·n |S|) is
+  implicit when positive and its negative part and the cross terms (K·S
+  minus the normal part) are deferred corrections (D26 style); because the
+  Boussinesq stress can be non-realisable, the implicit coefficient is made
+  non-negative with the smooth positive part of D160, so the matrix stays an
+  M-matrix. On walls the wall function of D135 replaces the turbulent flux
+  of the first cell.
+- **Later (P12):** the algebraic flux model (Hanjalić, Kenjereš & Durst 1996;
+  Kenjereš, Gunarjo & Hanjalić 2005) with the temperature variance, for
+  strongly buoyant and mixed convection; not in stage 7.
+
+
+## 6. Buoyancy (D153) and the balanced-force interpolation (D154)
+
+### 6.1 Gravity and the two buoyancy models (D153)
+
+Gravity is one case vector `[gravity] vector` with a reference point x_ref
+(D124 W7), seen by every module. The solved pressure is the reduced
+pressure
+
+    p′ = p − ρ_ref g·(x − x_ref)
+
+so the hydrostatic part of a fluid at the reference density is removed
+exactly and the body force is (ρ − ρ_ref) g. Two models:
+
+- **Boussinesq** (`buoyancy.model = "boussinesq"`): ρ = ρ₀ constant
+  everywhere except in the body force, (ρ − ρ_ref) g = −ρ₀ β (T − T_ref) g,
+  with β from the case or the material (ideal gas: β = 1/T_ref). A
+  check warns when β (T_max − T_min) exceeds 0.1 or the property change
+  over the expected temperature range exceeds the limits of Gray &
+  Giorgini (1976) (BUO002).
+- **Variable density** (`"variable-density"`): ρ(T, p₀) of D151 everywhere,
+  body force (ρ − ρ_ref) g with ρ_ref = ρ(T_ref, p₀) by default.
+
+The form p − ρ g·x with a variable ρ (which gives a force −(g·x)∇ρ) is not
+used: with ρ_ref constant the reduced pressure is exact for the reference
+state and needs no density gradient, which is noisy at sharp density
+changes.
+
+Boundary values of pressure boundaries are values of p′ when gravity is
+set: `pressure = 0` at an opening to an ambient at rest at ρ_ref is then
+the correct hydrostatic outlet. A boundary may instead give the static
+pressure (`pressure_kind = "static"`); it is converted per face by
+p′_b = p_b − ρ_ref g·(x_f − x_ref). The output writes p′ (`pressure`) and the
+static pressure p (`static_pressure`, a derived field of D72). Total
+pressure boundaries use p′ + ½ρ|u|².
+
+### 6.2 Balanced-force face interpolation (D154)
+
+With a large body force the present scheme has spurious velocities near
+walls (documented in docs/verification/stage5.md): the cell rows use
+(b_P − ∇p_P) V with the least-squares ∇p, which is not exact for a
+hydrostatic pressure that is quadratic when ρ varies, and the Rhie–Chow
+face velocity sees only the pressure. The cure is to treat the body force
+exactly as the pressure gradient, from the same face differences
+(Gu 1991; Choi et al. 2003; Mencinger & Žun 2007; Zhang, Zhao & Bayyuk 2014;
+the same principle as the balanced-force surface tension of Francois et al.
+2006, which VOF (L3) will reuse):
+
+1. **Reduced face jump.** For each face, with d = x_N − x_P and the face body
+   force b_f = (ρ_f − ρ_ref) g (ρ_f as in D151, for Boussinesq from the
+   interpolated T):
+
+       J_f = (p′_N − p′_P) − b_f·d
+
+   On a boundary face J_b = (p′_b − p′_P) − b_P·(x_b − x_P).
+2. **Cell net force.** The cell term −∇p + b of the momentum rows is
+   replaced by −G̃_P, where G̃_P is the least-squares gradient operator of
+   D24, with its weights unchanged, applied to the jumps J_f instead of the
+   pressure differences. If the discrete pressure satisfies J_f = 0 on every
+   face (discrete hydrostatics), G̃_P = 0 exactly on every cell, on every mesh.
+   The pressure gradient itself (∇p′ for output, gradients for the limiter
+   and the remediation of D50) is unchanged.
+3. **Rhie–Chow.** In `face_mass_flux` the term (jump − ∇p_f·d) becomes
+   (J_f − G̃_f·d), with G̃_f interpolated from the cells as ∇p_f is today;
+   the time-step-independent form (D27) is unchanged. In discrete
+   hydrostatics the face flux is then exactly zero.
+4. **Wall pressure.** The zero-gradient wall pressure becomes zero gradient
+   of the reduced jump: p′_b = p′_P + b_P·(x_b − x_P) + G̃_P·(x_b − x_P), so
+   that a wall carries the hydrostatic pressure without a jump. The same
+   rule for symmetry, slip and wedge faces.
+5. **Pressure correction.** The correction equation is unchanged (the body
+   force is explicit in each outer iteration); the face body force is
+   updated with T and ρ in every outer iteration and corrector.
+
+The scheme keeps second order (G̃_P = ∇p − b to the accuracy of the
+least-squares gradient on smooth fields) and reduces to the present one
+without gravity, bitwise (the extra term is zero when g = 0, and the code
+path is not entered).
+
+### 6.3 Body force with a density step
+
+For a sharp density change (a hot layer over cold fluid, two regions of
+different fluids, later VOF), b_f from the interpolated ρ_f gives a discrete
+hydrostatic state with J_f = 0 on every face, so a fluid at rest stays at
+rest to round-off (verified in V7.7, §14). Mencinger & Žun (2007) show that
+an interpolation of the cell forces instead of the face form produces the
+spurious currents this avoids.
+
+
+## 7. Buoyancy in the turbulence models (D155)
+
+Stage 6 leaves the hook `buoyancy_production` in the k, ε and ω equations
+with an explicit part S_u ≥ 0 and an implicit part S_p ≤ 0 per cell (D129).
+Stage 7 fills it:
+
+- **Production of k by buoyancy:** G_b = −ρ β g_i \overline{u′_i T′} for
+  Boussinesq and G_b = g_i \overline{ρ′u′_i} for variable density. With
+  SGDH: G_b = β (μ_t / Pr_t) g·∇T (Boussinesq) and
+  G_b = −(μ_t / (ρ Pr_t)) g·∇ρ (variable density); both are negative in a
+  stable stratification (destruction of k).
+  With GGDH: G_b = ρ β C_θ T_t g_i \overline{u′_i u′_j} ∂T/∂x_j; GGDH is required
+  for a vertical boundary layer, where g·∇T ≈ 0 and SGDH gives almost no
+  buoyant production (Ince & Launder 1989; Hanjalić 1994 for the reasoning).
+  The choice follows `energy.turbulent_heat_flux` unless
+  `buoyancy.production` names another form.
+- **Split into the hook:** S_u = P⁺(G_b), S_p = −P⁺(−G_b)/k, with P⁺ the
+  smooth positive part of D160, so that a destructive G_b is implicit and
+  k stays positive (D129 positivity), with no branch per cell.
+- **ε equation:** C_ε1 C_ε3 (ε/k) G_b with C_ε3 = tanh(|v_∥| / |u_⊥|)
+  (Henkes, van der Vlugt & Hoogendoorn 1991): v_∥ the velocity component
+  along g, u_⊥ the component normal to it; written with the smooth absolute
+  value and a small velocity floor so that it is C¹ (D59). C_ε3 = 1 for a
+  vertical plume, 0 in a horizontal shear layer. Option: a constant C_ε3.
+- **ω equation (SST):** from the ε form through ε = β* k ω (the
+  transformation of Wilcox 2006, ch. 4), with the SST coefficient α in place
+  of C_ε1 − 1: S_ω,b = (ω/k) G_b ((α + 1) C_ε3 − 1), split into S_u and S_p as
+  above. Published choices differ (some drop the C_ε3 part); the case file
+  can select `buoyancy.omega_source = "transformed" | "none"`, and the
+  vertical plate and the turbulent cavity (V7.13, V7.14) decide the default.
+- **ζ-f and elliptic blending:** the production in the ζ (or φ) equation
+  uses P_k + G_b in place of P_k (Kenjereš, Gunarjo & Hanjalić 2005).
+- **Constants** are case settings with their sources in the schema (D77).
+
+
+## 8. Thermal boundary conditions and their check (D156)
+
+Each boundary takes a `thermal` sub-table (D116); the flow `type` is
+unchanged. Values are numbers or expressions of x, y, z, t and, for
+Robin and radiation conditions, T (D53).
+
+| Boundary | `thermal.type` | Keys | Discrete form |
+|---|---|---|---|
+| wall | `adiabatic` (default) | – | zero flux |
+| wall | `temperature` | `temperature` (K) | Dirichlet on the face; with a wall function the conductance is h_w of D135 |
+| wall | `heat-flux` | `heat_flux` (W/m², positive into the domain) | Neumann; the face temperature is reconstructed for output |
+| wall | `heat-flow` | `heat_flow` (W over the boundary) | heat flux = heat flow / area |
+| wall | `convection` | `heat_transfer_coefficient`, `ambient_temperature` | Robin: q = U (T_amb − T_w), U the series of h_ext, the optional thin wall and the near-wall conductance; implicit in T |
+| wall | `radiation` | `emissivity`, `ambient_temperature` | q = εσ(T_amb⁴ − T_w⁴), Newton-linearised about the current T_w: h_rad = 4εσT_w*³, implicit; converges to the quartic exactly |
+| wall | `convection-radiation` | all of the above | the sum of both |
+| wall (any) | optional `thin_wall` | `thickness` and `conductivity` or `material` | a 1D resistance t/k in series, no heat capacity (a resolved thin solid with storage is a region) |
+| inlets | – | `temperature` (K, default the initial temperature) | Dirichlet h(T_in) on inflow |
+| outlets | – | `backflow_temperature` (K) | used on faces with reverse flow (D29 backflow) |
+| symmetry, slip wall, wedge | – | – | zero normal flux |
+| periodic | – | `thermal`, `bulk_temperature` of D109 | affine map in h |
+| region interface | (no boundary) | `[interfaces.<name>]` with `contact_resistance` or `thin_wall` (§9) | conductance of §9 |
+
+Every wall value (temperature, heat flux, h_ext, T_amb) is a per-face array
+(D124 W3) that another module can set each step (radiation L15, film D123,
+external system models D105).
+
+**Check of the thermal set-up (D30 extended, codes `THM`):** run before the
+solver, with the guidance of D30 (what to change):
+
+- THM001 error: steady run whose boundaries and sources leave the
+  temperature level undetermined (only adiabatic and heat-flux walls, no
+  inflow, no temperature, Robin or radiation boundary); "add a temperature
+  or convection boundary, an inflow, or run transient".
+- THM002 error: steady run with a net prescribed heat input and no path for
+  heat to leave (as THM001 with non-zero total): the temperature drifts.
+- THM003 error: a thermal value on a boundary that cannot carry it
+  (`heat_flux` on an inlet, `temperature` on a symmetry plane).
+- THM004 error: emissivity outside (0, 1], heat-transfer coefficient ≤ 0,
+  temperature ≤ 0 K.
+- THM005 warning: energy on, a wall without a thermal sub-table (adiabatic
+  assumed), listed once.
+- THM006 warning: inlet or initial temperature outside the validity range of
+  a material (with MAT codes of D98).
+- THM007 error: the D109 classification (wall-temperature mode with mixed
+  thermal walls, heat-flux mode with isothermal walls), as specified there.
+- THM008 warning: viscous heating off although the Brinkman number estimate
+  μU²/(kΔT) exceeds 0.1, or on although it is below 10⁻⁴.
+- THM009 error: thermal sub-table given but `energy.enabled = false`.
+- Regions: REG001 (non-fluid region refused) stays for flow-only runs and is
+  lifted for runs with the energy equation; MAT006–MAT009: a solid without
+  conductivity, specific heat or density, a fluid without thermal data when
+  energy is on, an orthotropic conductivity without axes.
+
+Buoyancy checks (codes `BUO`): BUO001 error, buoyancy without gravity or
+gravity of zero length; BUO002 warning, Boussinesq outside its range (§6.1);
+BUO003 error, Boussinesq with a material whose density form is constant and
+no β given; BUO004 warning, gravity set and buoyancy `none` with a
+temperature range that would give Richardson numbers above 0.1; BUO005
+error, variable density in a closed domain without `energy.thermodynamic_pressure
+= "closed-volume"` (the mass cannot be conserved, like BC026);
+BUO006 warning, a pressure boundary whose height span gives
+ρ_ref g Δz above the dynamic pressure, with `pressure_kind` explained.
+
+
+## 9. Fluid–solid interfaces (D157)
+
+Fluid and solid cells of one energy domain meet at interior faces that the
+domain view of D112 classifies as region interfaces. Conformal interfaces
+come from one mesh or from parts joined with matching nodes (D113);
+non-conformal ones are imprinted by D58 into ordinary faces first. The
+interface treatment below therefore sees only conformal faces.
+
+### 9.1 Conductance and face temperature
+
+For an interface face f between cell P on side a and cell N on side b, with
+unit normal n̂ (from P to N), normal distances δ_P = (x_f − x_P)·n̂ and
+δ_N = (x_N − x_f)·n̂, and the face-normal temperatures
+
+    T̃_P = T_P + ∇T_P·(r_P − δ_P n̂),   r_P = x_f − x_P   (likewise T̃_N)
+
+(the tangential offsets of the non-orthogonal correction, deferred):
+
+    q_f = G_f (T̃_P − T̃_N),   G_f = |S| / (R_P + R″_c + R_N)
+    R_P = δ_P / k_P (conduction side) or 1/h_w,P (fluid side with a wall function, D135)
+
+R″_c is the contact resistance (m²K/W) or t/k of a thin wall, zero by default.
+For R″_c = 0 and conduction on both sides this is the harmonic mean of D99
+(Patankar 1980, §4.2), written with the normal distances to the face rather
+than the line weight, so it stays exact when the face is not halfway. The two
+face temperatures follow from the series: T_f,a = T̃_P − q_f R_P/|S|,
+T_f,b = T̃_N + q_f R_N/|S| (equal when R″_c = 0). With orthotropic k the
+normal conductivity n̂·k·n̂ is used in R and the cross terms are deferred
+(D116).
+
+The flux is one number per face, computed once and added to P and
+subtracted from N (D117 (1)), so heat flux continuity
+−k_a∇T_a·n = −k_b∇T_b·n holds to round-off, at every iteration, not only at
+convergence.
+
+### 9.2 One-sided gradients
+
+∇T is discontinuous across an interface. The least-squares gradient of T in
+a cell next to an interface uses the face temperature T_f of its own side
+at x_f in place of the neighbour cell across the interface (a boundary-type
+point, as at Dirichlet boundaries, D24), so each region's gradient sees only
+its own material. The same for ∇h used by the convection limiter. With
+piecewise-linear T in each region the gradients, the face temperatures and
+the fluxes are then exact on any mesh, at any conductivity ratio (V7.4).
+Because T_f depends on the gradients, the pair is updated once per outer
+iteration (deferred); in a steady run this costs no extra iterations at
+convergence, in a transient run it is converged by the outer correctors.
+
+### 9.3 Large conductivity ratios
+
+At k_s/k_f ≈ 10⁴ (copper and air) the interface conductance is dominated by
+the fluid side and the solid side is nearly isothermal. The scheme above
+loses no accuracy there (R_N ≪ R_P is just a small term in a sum). The
+linear solver is the concern, addressed in §10.2. The interface heat flow
+and the interface temperature are reported per interface in the log and the
+run record.
+
+### 9.4 Turbulent fluid side
+
+With a wall function on the fluid side, R_P = 1/h_w,P with
+h_w = ρ c_p u_τ / T⁺(y⁺, Pr) from D135 (Kader 1981 by default); the solid
+side keeps δ_N/k_N. With the compound wall treatment (D13) the blending is
+inside h_w. y⁺ and T⁺ per interface face are derived fields (D72).
+
+### 9.5 Ledger
+
+Each interface is an exchange pair of the ledger (D119) between the two
+regions' energy balances: one face sum, two entries of opposite sign, which
+cancel to the bit. The entropy produced by a contact resistance,
+q²R″_c/(T_f,a T_f,b) per area, is a part of the second-law check (D90 (1)).
+
+
+## 10. Coupling strategy, linear solvers and order of solution (D158)
+
+### 10.1 One matrix or two solvers
+
+D112 decided that conjugate heat transfer is one temperature matrix. The
+prompt asks for a comparison with partitioned coupling; the comparison
+confirms D112.
+
+| Criterion | Monolithic (one matrix, D112) | Partitioned (Dirichlet–Neumann or Robin–Robin with Aitken or IQN-ILS relaxation) |
+|---|---|---|
+| Conservation at the interface | exact per face at every iteration (one flux per face) | only when the coupling iterations converge; a residual mismatch per step otherwise |
+| Stability | unconditional (implicit) | Dirichlet–Neumann is stable only when the Neumann side is the one with the larger conductance, and loses stability as the ratio approaches the other way (Giles 1997); Robin–Robin needs a well-chosen coefficient |
+| Cost per time step or outer iteration | one linear solve on the energy domain | 5–30 coupling iterations at high ratios even with Aitken (Küttler & Wall 2008) or IQN-ILS (Degroote, Bathe & Vierendeels 2009) |
+| Steady convergence | solid rows converge with the fluid in the same solve | the solid with its long diffusion time slows the coupling unless relaxed carefully |
+| GPU | one AMG-preconditioned solve, no host round trip (D76) | interface exchange and relaxation per coupling iteration, reductions on the host |
+| Different time scales (long thermal transients) | multi-rate with frozen flow (D118): the flow is held, the same energy-domain matrix is marched with large steps; still one matrix | natural, but this case is covered by D118 |
+| Separate codes or external models | not applicable | the only route (P10, D105) |
+
+Decision: monolithic only in stage 7. Partitioned coupling is used only
+where the partner is outside the solver (external system models, P10); no
+partitioned fluid–solid coupling inside the solver is planned.
+
+### 10.2 Linear solver for the energy domain
+
+- **Matrix:** non-symmetric in fluid rows (convection), symmetric in solid
+  rows. BiCGStab (D36) preconditioned by the aggregation AMG (stage 6's
+  AMG-preconditioned BiCGStab for scalars, D36), built on the energy-domain
+  view, rebuilt when the coefficients change by more than a set fraction
+  (`solver.energy.amg_rebuild`), float32 hierarchy (D37).
+- **Coefficient jumps:** the strength of connection is measured on the
+  symmetrically scaled matrix, |a_ij| / √(a_ii a_jj) ≥ θ (Vaněk, Mandel &
+  Brezina 1996). Across a copper–air interface this ratio is about
+  √(k_f/k_s) ≈ 10⁻², below the default θ = 0.04, so aggregates do not cross
+  the interface and the coarse spaces keep the nearly isothermal solid as
+  its own aggregates. Requirement: the iteration count of the composite
+  cylinder (V7.5) at k_s/k_f = 10⁴ is at most 1.5 times that at ratio 1, and
+  grows by at most 30 % per mesh doubling.
+- **Solid-only domains** (pure conduction) take CG with the same AMG.
+
+### 10.3 Order of solution per outer iteration
+
+Steady (SIMPLEC, D19) and transient (PISO with outer correctors, D28):
+
+1. momentum predictor with the body force of the current ρ or T (D154);
+2. pressure correction(s) and flux correction with the balanced-force
+   Rhie–Chow;
+3. turbulence (stage 6) with G_b from the current T and ∇T;
+4. energy on the energy domain (δT form, §3.2), with the interface
+   temperatures of §9 from the previous iteration;
+5. properties (D99), p₀(t) for closed volumes (D151), face densities;
+6. convergence test, ledger at the cadence of D89.
+
+The buoyancy coupling is explicit within one outer iteration and converged
+by the outer iterations. A transient run with strong buoyancy needs outer
+iterations for second order in time (verified by V7.21); without them the
+buoyancy is lagged by one step and the run log says so (ENE005 info).
+Option `solver.energy.position = "after-flow"` (default, order above) or
+`"before-momentum"` (energy first, for flows driven only by buoyancy where
+the temperature leads).
+
+
+## 11. Multi-region partitioning and halos (D159)
+
+Stage 7 runs its acceptance tests on one rank with threads; multi-rank
+acceptance is stage 8. The multi-region data layout is built for ranks now:
+
+- **Partition weights (D122 (1)):** METIS with two constraints, flow work
+  (fluid cells 1, solid cells 0) and energy work (all cells 1), so each rank
+  holds a balanced share of both; results never depend on the partition
+  (D93 (2)).
+- **Views per rank (D112):** each equation domain has a local view per rank
+  with its own halo plan: the flow halo holds fluid cells only, the energy
+  halo fluid and solid cells. A halo cell carries its region id, so the
+  one-sided gradients of §9.2 work at rank boundaries.
+- **Interface faces on rank boundaries** are computed once from the same
+  inputs on both ranks (D93 (3)), as every processor face.
+- **AMG on views:** the aggregation of D93 (5) on the view's global graph;
+  aggregates may cross rank boundaries, never region interfaces with weak
+  connections (by the strength rule, not by a special case).
+- **Non-conformal parts (D58):** imprinting runs before partitioning, so the
+  partitioner sees one conformal mesh.
+- **Tests now:** the decomposition into 1, 2 and 4 parts of a fluid–solid
+  mesh gives the same views, halo plans and assembled energy matrix in global
+  order (a unit test on the decomposition of `foehncraft-mesh`), so stage 8
+  only adds the communication.
+
+
+## 12. Kernels: GPU, reproducibility, adjoint (D160)
+
+- **Kernels:** `no_std` bodies in `foehncraft-kernels` (D60): the energy face
+  flux (convection, conduction, GGDH, interface conductance), the cell terms
+  (storage, sources, viscous heating, pressure work), the thermal boundary
+  faces, the reduced face jump and the cell net force of D154, the buoyancy
+  production of D155. Each a pure function (D59 (1)), generic over the real
+  type (dual numbers for the Jacobians), float64 (D7).
+- **No divergence on the GPU:** interior faces of the same region and region
+  interfaces use one formula (the series conductance; inside a region
+  R″_c = 0 and the arithmetic k of D99 is selected by a per-face factor
+  s ∈ {0, 1} in a product, not a branch); gradient stencils take the
+  neighbour value or the face temperature by a select. Boundary faces carry
+  a kind tag per face as today. No virtual dispatch (D99).
+- **Reproducibility:** gather-based assembly in global face order (D31, D93
+  (1)), no floating-point atomics; the damping factor of §3.3, p₀ of D151
+  and the ledger sums are exact reductions; interface fluxes are computed
+  once (D117 (1)). CPU and GPU bitwise equal on the verification cases
+  (V7.20), 1 and 4 threads bitwise equal, restart bit-identical.
+- **Smooth functions for the adjoint (D59 (3)):** positive part
+  P⁺(x) = ½(x + √(x² + δ²)) with δ relative to the local scale, smooth
+  absolute value √(x² + δ²) in C_ε3, analytic derivatives of the radiation
+  linearisation and of all property forms (D99); the upwind switch and the
+  limiters keep their frozen variants of D59. Dual-number Jacobians of every
+  new kernel against central differences, and ⟨Av, w⟩ = ⟨v, Aᵀw⟩ for the
+  energy matrix, are tests (V7.22).
+
+
+## 13. Energy ledger and second law (D161)
+
+- **Quantities (D88, D119):** thermal energy ∫ρh dV per region with
+  convective boundary flows ṁh, conductive heat flows per boundary and per
+  interface, named sources (S_h, pressure work, radiation later); kinetic
+  energy as in stage 5. Viscous heating Φ (and ρε in RANS) is an exchange
+  pair kinetic → thermal, so the two ledgers close together. Gravity work
+  ∫(ρ − ρ_ref) g·u dV is a named source of the kinetic-energy ledger. With
+  Boussinesq the buoyancy work has no counterpart in the thermal ledger:
+  the approximation is not energy-consistent, so the term is booked as a
+  source without a partner and the report says so (not hidden, D88).
+- **Closure:** steady: heat in = heat out to the solver tolerance (the
+  default tolerance of D89 relative to the largest heat flow); transient:
+  per step to the tolerance of D89.
+- **Second law (D90 parts 1–3 become active):** per cell
+  σ = k|∇T|²/T² + Φ/T, in RANS with the turbulent parts of Kock & Herwig
+  (2004): ρε/T for the dissipation and (μ_t c_p/Pr_t)|∇T|²/T² for the
+  turbulent heat flux (GGDH: ∇T·K·∇T/T², non-negative when K is made
+  positive semi-definite, else a health number); contact resistances as in
+  §9.5. The specific entropy s(T, p) comes from the same coefficients (D92
+  (2)). The numerical entropy production is reported as in D90 (2).
+- **Reports:** `balance.csv` gets the thermal columns per boundary, interface
+  and region; the end-of-run plot shows the heat flows (D89).
+
+
+## 14. Verification and validation (D162)
+
+Every case runs on hexahedral, tetrahedral, polyhedral and mixed meshes
+where it is a verification case (perturbed meshes included), closes the
+energy ledger (§13) and the second-law check, and ships with a gallery
+example, case files and a recipe (D18). The discretisation uncertainty is
+computed as in D67 (Celik et al. 2008): three meshes with refinement ratio
+r ≥ 1.3 (2 where the mesh generator doubles), the observed order p from the
+three solutions, the extrapolated value, GCI_fine with the safety factor
+1.25, and the asymptotic-range check GCI_32/(r^p GCI_21) = 1 ± 0.1.
+
+Pass bands: "order" means the observed order of the L2 error of T (and of
+the named quantity) on the finest pair; "GCI" means GCI_fine of the named
+quantity; "reference" means the extrapolated value against the reference.
+Reference values marked "from the paper" are entered into the case's
+reference file from the publication when the case is built and checked by
+the maintainer; values given here are those of the cited papers.
+
+### 14.1 Verification (exact or analytic solutions)
+
+| # | Case | Checks | Pass band |
+|---|---|---|---|
+| V7.1 | Manufactured solution, energy only, k(T) and c_p(T) polynomial, ρ constant, imposed velocity field, Dirichlet and Robin boundaries | T, wall heat flow | order 1.8–2.2 on all four types; ledger closes to 10⁻¹⁰ relative |
+| V7.2 | Couette flow with viscous heating (one wall isothermal, the other adiabatic): parabolic T profile, Brinkman number 1 | T profile, wall heat flux = μU²/H | order 1.8–2.2; wall heat flux = dissipated power to the solver tolerance |
+| V7.3 | Adiabatic stirred box (lid-driven cavity, all walls adiabatic, transient) | rise of ∫ρh dV against the lid work minus the change of kinetic energy; entropy rise against ∫Φ/T | ledger per step to the tolerance of D89; entropy production ≥ 0 per cell |
+| V7.4 | 1D composite wall of three solids, k ratios 1, 10², 10⁴, with and without contact resistance, on meshes whose cells do not line up with the layers in the transverse direction | T, interface temperatures, heat flux | error ≤ 10⁻⁹ relative to ΔT on every mesh type, perturbed (exact for piecewise-linear T, §9.2) |
+| V7.5 | Composite cylinder, radial conduction through two materials with a curved interface, ratios 1 to 10⁴, Robin outer surface | T, interface heat flow | order 1.8–2.2; heat flow equal on both sides to round-off; AMG iterations as in §10.2 |
+| V7.6 | Two semi-infinite bodies brought into contact (copper and air; and two equal solids): constant interface temperature T_i = (e₁T₁ + e₂T₂)/(e₁ + e₂), e = √(kρc_p), erfc profiles (Carslaw & Jaeger 1959, §2.15) | T_i(t), profiles | T_i within 0.1 % of ΔT after the first 10 steps; time order 1.8–2.2 (BDF2, Crank–Nicolson) and space order 1.8–2.2 |
+| V7.7 | Hydrostatics: closed box at rest, (a) Boussinesq with a stable linear stratification, (b) variable-density isothermal gas column, (c) two regions of different constant densities (a density step), gravity oblique to the mesh axes | velocity, reduced and static pressure | max |u| ≤ 10⁻¹⁰ √(g L) after 1000 iterations on all four types, perturbed; static pressure equals the hydrostatic profile to round-off for (b) and (c) |
+| V7.8 | Rayleigh–Bénard onset between rigid plates: growth rates of a small disturbance at Ra slightly below and above onset, critical Ra by interpolation | Ra_c | reference 1707.76 (Chandrasekhar 1961); within 0.5 % on the finest mesh; GCI(Ra_c) ≤ 0.5 % |
+| V7.9 | Fully developed mixed convection in a vertical channel with walls at different temperatures, aiding and opposing flow, with flow reversal (Aung & Worku 1986) | velocity and temperature profiles | order 1.8–2.2 against the analytic solution |
+| V7.10 | Thick-walled plane channel, laminar, streamwise periodic with the heat-flux mode of D109, k_s/k_f = 1 to 10⁴ | Nu at the interface, outer wall temperature | Nu = 140/17 = 8.235 (D111), outer wall temperature T_i + q t/k_s, order 1.8–2.2 |
+| V7.11 | Slab with a heat source, convection and radiation on the outer face: T_w from the quartic balance | T_w, number of outer iterations | T_w to 10⁻¹² relative; ≤ 10 iterations from a cold start |
+| V7.12 | Laminar free convection along an isothermal vertical plate (Ostrach 1953), Pr 0.71, Gr_x up to 10⁸ | Nu_x/(Gr_x/4)^¼, velocity and temperature profiles in similarity form | reference −θ′(0) from the similarity equations, solved by a shooting script in `tools/` and checked against Ostrach's table (0.505 at Pr 0.72); within 1 % for x more than 5 % of the plate length from the leading edge; GCI ≤ 1 % |
+| V7.13 | Transient Boussinesq manufactured solution with outer correctors | time order of u and T | 1.8–2.2 for BDF2 and Crank–Nicolson at CFL 1 and 10 |
+| V7.14 | Laminar heated periodic pipe with the energy equation (D111): heat-flux and wall-temperature modes | Nu | 48/11 = 4.364 and 3.657; order 1.8–2.2 |
+
+### 14.2 Benchmarks (accurate numerical reference solutions)
+
+| # | Case | Checks | Pass band |
+|---|---|---|---|
+| V7.15 | Differentially heated square cavity, air Pr 0.71, Ra 10³, 10⁴, 10⁵, 10⁶, 2D (one cell layer, D3) | mean Nu, u_max on the vertical midline and v_max on the horizontal midline with positions, Nu_max and Nu_min on the hot wall | de Vahl Davis (1983): mean Nu 1.118, 2.243, 4.519, 8.800; at Ra 10⁶ the more accurate 8.825 of Le Quéré (1991); extrapolated mean Nu within 0.5 % of the reference, velocities within 1 %, GCI(Nu) ≤ 1 % at Ra ≤ 10⁵ and ≤ 2 % at 10⁶ |
+| V7.16 | Differentially heated cubic cavity, Ra 10⁴ to 10⁶ | mean Nu on the hot wall, midplane profiles | Tric, Labrosse & Betrouni (2000) and Fusegi et al. (1991), values from the papers; mean Nu within 1 % of Tric et al., GCI ≤ 2 % |
+| V7.17 | Square cavity with large temperature difference, variable density, closed (p₀(t)), ε = (T_h − T_c)/(T_h + T_c) = 0.6, Ra 10⁶, Sutherland viscosity and conductivity | mean Nu on both walls, p₀/p_initial | Vierendeels, Merci & Dick (2003) and Le Quéré et al. (2005), values from the papers; Nu within 1 %, p₀ ratio within 0.1 %; total mass conserved to round-off |
+
+### 14.3 Validation (experiments, turbulent)
+
+Model error is measured here, so the bands are wider and are given per model
+group; the numerical uncertainty must be small against them (GCI ≤ 2 %
+of each compared quantity before the comparison is made).
+
+| # | Case | Checks | Pass band |
+|---|---|---|---|
+| V7.18 | Turbulent natural convection along a heated vertical plate in air (Tsuji & Nagano 1988), Ra_x up to about 10¹¹, laminar–turbulent transition region excluded | Nu_x(Ra_x) in the turbulent region, mean velocity and temperature profiles | ζ-f and elliptic blending with GGDH, SST at y⁺ ≈ 1 with GGDH: Nu_x within ±10 % of the measurements; SGDH results reported to show its known underprediction, no band |
+| V7.19 | Turbulent differentially heated cavity, air, Ra 1.58 × 10⁹ (Ampofo & Karayiannis 2003), 2D at the midplane | local Nu on the hot wall, mean T and v at mid-height, wall shear | near-wall models with GGDH: mean Nu within ±15 % of the measurement, profiles inside the stated experimental uncertainty in the boundary layers; transition location reported |
+| V7.20 | Backward-facing step with a heated wall at constant heat flux (Vogel & Eaton 1985), Re_H 28 000, expansion ratio 1.25 | Stanton number along the heated wall (peak value and location), C_f, reattachment length | reattachment within ±10 % of the measured value; St peak within ±15 % (ζ-f, elliptic blending with the compound treatment) and ±25 % (wall functions), peak location within ±1 step height |
+| V7.21 | Turbulent heated periodic pipe (D111): Pr 0.71, Re 10⁴ to 10⁶ as a study (D62) | Nu, mean temperature, turbulent heat flux | Gnielinski (1976) ±10 %; DNS of Redjem-Saad, Ould-Rouiss & Lauriat (2007) for profiles at their Re |
+
+### 14.4 Implementation checks
+
+| # | Check | Pass |
+|---|---|---|
+| V7.22 | Dual-number Jacobians of every new kernel against central differences; ⟨Av, w⟩ = ⟨v, Aᵀw⟩ for the energy matrix | 5·10⁻⁷ and round-off, as in stage 5 |
+| V7.23 | CPU against GPU (Colab T4) on V7.5, V7.15 at Ra 10⁵ and V7.20; 1 and 4 threads; restart in the middle of V7.6 | bitwise equal; restart bit-identical |
+| V7.24 | Views, halo plans and energy matrix of a fluid–solid mesh decomposed into 1, 2 and 4 parts (§11) | identical in global order |
+| V7.25 | Runs without energy and gravity | bitwise unchanged against main on every flow case of the catalogue |
+
+Thermal wall functions and turbulent Prandtl numbers are verified in stage 6
+with temperature as a passive scalar (flat plate St, channel Nu, impinging
+jet Nu); stage 7 repeats the channel case with the energy equation as a
+regression check (same result to the solver tolerance when properties are
+constant).
+
+
+## 15. Case-file keys and diagnostics (D163)
+
+`docs/keys.md` is generated from the code (`foehn schema --markdown`, D77)
+and is regenerated when the keys exist; the planned keys are listed here.
+Names follow the existing style (`[fluid]`, `[materials]`, `[regions]`,
+`[boundary.<name>]`, `[solver.<equation>]` of D127).
+
+```toml
+[energy]
+enabled = true                      # default false: flow only, bitwise as before
+reference_temperature = 298.15      # K; h_s = 0 here; default fluid.temperature
+viscous_heating = false             # Φ (and ρε in RANS)
+pressure_work = "none"              # "none" | "thermodynamic" | "full"
+thermodynamic_pressure = "constant" # "constant" (open) | "closed-volume" (p0(t), D151)
+turbulent_heat_flux = "sgdh"        # "sgdh" | "ggdh"
+c_theta = 0.3                       # GGDH constant (D152)
+# the turbulent Prandtl number and its variable form are stage-6 keys (D135)
+
+[[energy.sources]]
+region = "heater"                   # a region of [regions]
+power = 150.0                       # W over the region; or power_density (W/m³, number or expression)
+
+[gravity]
+vector = [0.0, 0.0, -9.81]          # m/s²
+reference_point = [0.0, 0.0, 0.0]   # x_ref of the reduced pressure
+
+[buoyancy]
+model = "boussinesq"                # "none" | "boussinesq" | "variable-density"
+reference_temperature = 298.15      # T_ref; default energy.reference_temperature
+expansion_coefficient = 3.4e-3      # β (1/K); default from the material (ideal gas 1/T_ref)
+reference_density = "auto"          # ρ_ref; "auto" = ρ(T_ref, p0)
+production = "auto"                 # G_b form: "auto" (as turbulent_heat_flux) | "sgdh" | "ggdh" | "none"
+c_eps3 = "henkes"                   # "henkes" (tanh form) | a number
+omega_source = "transformed"        # "transformed" | "none" (SST)
+
+[regions.fin]
+kind = "solid"
+zones = ["fin"]
+material = "aluminium"
+
+[materials.my-steel]
+base = "steel"
+conductivity = { form = "orthotropic", values = [45.0, 45.0, 15.0], axes = [[1,0,0],[0,1,0]] }
+specific_heat = { form = "table", file = "steel_cp.csv" }
+
+[boundary.hot]
+type = "wall"
+thermal = { type = "temperature", temperature = 320.0 }
+
+[boundary.outer]
+type = "wall"
+thermal = { type = "convection-radiation", heat_transfer_coefficient = 10.0,
+            ambient_temperature = 293.15, emissivity = 0.8,
+            thin_wall = { thickness = 0.002, material = "glass" } }
+
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+thermal = { temperature = 300.0 }
+
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0                      # reduced pressure p′ when gravity is set
+pressure_kind = "reduced"           # "reduced" | "static"
+thermal = { backflow_temperature = 300.0 }
+
+[interfaces.fin-air]                # optional: a face set between two regions
+regions = ["fin", "air"]
+contact_resistance = 2.0e-4         # m²K/W; or thin_wall = { ... }
+
+[initial]
+temperature = 300.0                 # K, number or expression
+
+[solver.energy]
+scheme = "linear-upwind"
+limiter = "venkatakrishnan"
+relaxation = 0.95                   # fluid rows; solid rows use relaxation_solid
+relaxation_solid = 1.0
+tolerance = 1e-3
+max_iter = 50
+preconditioner = "amg"
+amg_rebuild = 0.1
+position = "after-flow"             # "after-flow" | "before-momentum"
+
+[output]
+derived = ["static_pressure", "wall_heat_flux", "nusselt", "y_plus_thermal",
+           "heat_transfer_coefficient", "entropy_production", "buoyancy_production"]
+reference = { temperature = 293.15, length = 0.1, conductivity = 0.026 }
+```
+
+Run-time changes (D40, D128): thermal boundary values, source powers and
+the ambient temperature may change during a run; models and regions may not.
+New log columns (D125 kinds): `boundary.<name>.heat_flow`,
+`interface.<name>.heat_flow`, `interface.<name>.temperature`,
+`cell.max.temperature`, `cell.min.temperature`, `run.p0`.
+New field-registry entries (D115): `temperature`, `enthalpy`, `density`,
+`conductivity`, `specific_heat` (cell), face heat flux (boundary face),
+restart with h and T at every time level.
+
+Diagnostic codes (D78): THM001–THM009 and BUO001–BUO006 (§8), CHT001 error
+(interface between regions not in one energy domain), CHT002 warning (gaps or
+overlaps of an imprinted interface above the tolerance of D58), CHT003 info
+(per-interface ratio of conductivities and the expected AMG behaviour),
+CHT004 error (contact resistance on a face that is not a region interface),
+ENE001 error (temperature recovery failed, D92), ENE002 warning (damped
+temperature update, count), ENE003 warning (temperature outside a property
+range, with D96 clamp), ENE004 warning (Mach number above 0.3), ENE005 info
+(transient buoyancy without outer iterations), MAT006–MAT009 (§8). The
+registry and `foehn explain <code>` (D78) carry the guidance text.
+
+
+## 16. Implementation plan (D164)
+
+Six pull requests, each with its tests, its verification page section
+(`docs/verification/stage7.md`), gallery examples, case files and recipes
+on a new topic page `energy.md` in `docs/gallery/`, `docs/recipes/` and
+`docs/cases/`, and a changelog fragment:
+
+| PR | Content | Crates and files | Cases |
+|---|---|---|---|
+| 7a | Energy core: density, μ, k, c_p as cell fields in the flux kernels (finding F1), thermal property forms and database records (D102), energy module on the fluid domain with the δT form, SGDH, thermal boundary conditions without CHT, THM codes, thermal ledger, D90 parts 1–3 | `foehncraft-kernels::energy` (new), `flow.rs` (ρ field); `foehncraft-flow::energy` (new), `bc.rs` (thermal sub-table), `materials.rs`, `balance.rs`, `diag.rs`, `case.rs`; `data/materials/` | V7.1–V7.3, V7.11, V7.14, V7.25 |
+| 7b | Gravity, Boussinesq, balanced-force interpolation (D154), wall pressure, reduced pressure at boundaries, BUO codes | `foehncraft-kernels::flow` (`face_mass_flux`, momentum cell rows), `foehncraft-flow::buoyancy` (new), `bc.rs`, `derived.rs` | V7.7, V7.8, V7.9, V7.12, V7.13, V7.15, V7.16 |
+| 7c | Low-Mach variable density, p₀(t), pressure work | `foehncraft-flow::simplec`, `transient`, `energy` | V7.7 (b), V7.17 |
+| 7d | Conjugate heat transfer: domain views (D112), region interfaces, one-sided gradients, contact resistance and thin walls, solids with orthotropic k (D116 tensor), energy sources, D58 imprinting, METIS weights and per-view halo plans (D122 (1)), CHT codes | `foehncraft-mesh` (`view.rs`, `imprint.rs` new, `partition.rs`, `decompose.rs`), `foehncraft-fv::amg` (views), `foehncraft-flow::energy`; `foehncraft-parallel` (halo plans per view) | V7.4–V7.6, V7.10, V7.24; D58 cases of the old stage 7 (Poiseuille and T-junction across a non-conformal interface) |
+| 7e | Turbulent heat transfer: GGDH, G_b in k, ε, ω, ζ/φ, C_ε3, Robin and radiation linearisation with wall functions | `foehncraft-kernels::energy`, stage-6 turbulence modules (hook) | V7.18–V7.21 |
+| 7f | GPU parity of all stage-7 kernels, Jacobian tests, verification manual, release v0.7 | `foehncraft-cuda`, `gpu/ptx-kernels`, `tools/notebooks/stage7_colab.ipynb`, `tools/` | V7.22, V7.23 |
+
+7a can start once stage 6 has merged its field and equation registries (D115,
+D116) and the source hook; 7b and 7c can run beside 7d. The Python package
+(D61) gets the new keys with each PR (case round trip bitwise, as in stage 5).
+
+
+## 17. Findings in the code today
+
+Read on main at b15a488:
+
+- **F1:** the flux and momentum kernels take the density as one scalar
+  (`FluxInputs::rho`, `MomentumInputs::rho` in `foehncraft-kernels/src/flow.rs`);
+  D102 planned the density field with stage 5 part 6a, which shipped constant
+  density only ("the density must be constant in the domain until L1"). PR 7a
+  turns it into cell and face fields.
+- **F2:** the momentum cell rows use (b − ∇p_P) V with the least-squares ∇p
+  (`flow.rs`, the source term of the momentum cell kernel) and `face_mass_flux`
+  uses the pressure jump only; with gravity this gives the spurious wall
+  velocities noted in docs/verification/stage5.md. PR 7b (D154).
+- **F3:** wall pressure is zero-gradient; with gravity it must follow the
+  reduced jump (D154 (4)).
+- **F4:** the flow solves on every cell and refuses non-fluid regions
+  (REG001); PR 7d needs the flow view on fluid cells and the energy view on
+  all cells (D112).
+- **F5:** METIS gets one constraint and no weights (finding F6 of the
+  multi-physics plan, D122 (1)); PR 7d.
+- **F6:** `balance.rs` has fixed mass and kinetic-energy structs; the ledger
+  as data (D119) is planned for stage 6 and is a prerequisite of 7a.
+
+
+## 18. Points for the maintainer
+
+1. **O18, stage order and milestone 1** (§1): energy, buoyancy and CHT as
+   stage 7, the old stage 7 as stage 8 with v1.0; D58 moves into stage 7.
+   Alternative: v1.0 without heat transfer and energy after it.
+2. **D92 (3) replaced** by the temperature-correction form (§3.2); the
+   conserved variable stays h. My recommendation; the reasons are in §3.2.
+3. **Reduced pressure at pressure boundaries** when gravity is set (§6.1),
+   with `pressure_kind = "static"` as the alternative per boundary.
+4. **L27** (electric conduction and Joule heating) stays after milestone 1,
+   first in the order.
+5. **GGDH constant C_θ = 0.3** and the ω-equation buoyancy source as
+   defaults, both decided by the validation cases.
+
+
+## 19. References
+
+- W. Aung, G. Worku, *Theory of fully developed, combined convection
+  including flow reversal*, J. Heat Transfer 108, 485–488 (1986)
+- F. Ampofo, T. G. Karayiannis, *Experimental benchmark data for turbulent
+  natural convection in an air filled square cavity*, Int. J. Heat Mass
+  Transfer 46, 3551–3572 (2003)
+- A. Bejan, *Convection Heat Transfer*, 4th ed., Wiley (2013)
+- H. S. Carslaw, J. C. Jaeger, *Conduction of Heat in Solids*, 2nd ed.,
+  Oxford University Press (1959)
+- I. B. Celik et al., *Procedure for estimation and reporting of uncertainty
+  due to discretization in CFD applications*, J. Fluids Eng. 130, 078001
+  (2008)
+- S. Chandrasekhar, *Hydrodynamic and Hydromagnetic Stability*, Oxford
+  University Press (1961)
+- S. K. Choi, S. O. Kim, C. H. Lee, H. K. Choi, *Use of the momentum
+  interpolation method for flows with a large body force*, Numer. Heat
+  Transfer B 43, 267–287 (2003)
+- B. J. Daly, F. H. Harlow, *Transport equations in turbulence*, Phys.
+  Fluids 13, 2634–2649 (1970)
+- J. Degroote, K.-J. Bathe, J. Vierendeels, *Performance of a new
+  partitioned procedure versus a monolithic procedure in fluid–structure
+  interaction*, Computers & Structures 87, 793–801 (2009)
+- G. de Vahl Davis, *Natural convection of air in a square cavity: a bench
+  mark numerical solution*, Int. J. Numer. Methods Fluids 3, 249–264 (1983)
+- M. M. Francois, S. J. Cummins, E. D. Dendy, D. B. Kothe, J. M. Sicilian,
+  M. W. Williams, *A balanced-force algorithm for continuous and sharp
+  interfacial surface tension models within a volume tracking framework*,
+  J. Comput. Phys. 213, 141–173 (2006)
+- T. Fusegi, J. M. Hyun, K. Kuwahara, B. Farouk, *A numerical study of
+  three-dimensional natural convection in a differentially heated cubical
+  enclosure*, Int. J. Heat Mass Transfer 34, 1543–1557 (1991)
+- M. B. Giles, *Stability analysis of numerical interface conditions in
+  fluid–structure thermal analysis*, Int. J. Numer. Methods Fluids 25,
+  421–436 (1997)
+- V. Gnielinski, *New equations for heat and mass transfer in turbulent
+  pipe and channel flow*, Int. Chem. Eng. 16, 359–368 (1976)
+- D. D. Gray, A. Giorgini, *The validity of the Boussinesq approximation for
+  liquids and gases*, Int. J. Heat Mass Transfer 19, 545–551 (1976)
+- C. Y. Gu, *Computation of flows with large body forces*, in: Numerical
+  Methods in Laminar and Turbulent Flow 7, Pineridge Press, 294–305 (1991)
+- K. Hanjalić, *Achievements and limitations in modelling and computation
+  of buoyant turbulent flows and heat transfer*, Proc. 10th Int. Heat
+  Transfer Conf., Brighton, vol. 1, 1–18 (1994)
+- K. Hanjalić, S. Kenjereš, F. Durst, *Natural convection in partitioned
+  two-dimensional enclosures at higher Rayleigh numbers*, Int. J. Heat Mass
+  Transfer 39, 1407–1427 (1996)
+- R. A. W. M. Henkes, F. F. van der Vlugt, C. J. Hoogendoorn,
+  *Natural-convection flow in a square cavity calculated with
+  low-Reynolds-number turbulence models*, Int. J. Heat Mass Transfer 34,
+  377–388 (1991)
+- N. Z. Ince, B. E. Launder, *On the computation of buoyancy-driven
+  turbulent flows in rectangular enclosures*, Int. J. Heat Fluid Flow 10,
+  110–117 (1989)
+- B. A. Kader, *Temperature and concentration profiles in fully turbulent
+  boundary layers*, Int. J. Heat Mass Transfer 24, 1541–1544 (1981)
+- W. M. Kays, *Turbulent Prandtl number – where are we?*, J. Heat Transfer
+  116, 284–295 (1994)
+- S. Kenjereš, S. B. Gunarjo, K. Hanjalić, *Contribution to elliptic
+  relaxation modelling of turbulent natural and mixed convection*, Int. J.
+  Heat Fluid Flow 26, 569–586 (2005)
+- F. Kock, H. Herwig, *Local entropy production in turbulent shear flows: a
+  high-Reynolds number model with wall functions*, Int. J. Heat Mass
+  Transfer 47, 2205–2215 (2004)
+- U. Küttler, W. A. Wall, *Fixed-point fluid–structure interaction solvers
+  with dynamic relaxation*, Comput. Mech. 43, 61–72 (2008)
+- P. Le Quéré, *Accurate solutions to the square thermally driven cavity at
+  high Rayleigh number*, Computers & Fluids 20, 29–41 (1991)
+- P. Le Quéré, C. Weisman, H. Paillère, J. Vierendeels, E. Dick, R. Becker,
+  M. Braack, J. Locke, *Modelling of natural convection flows with large
+  temperature differences: a benchmark problem for low Mach number solvers.
+  Part 1. Reference solutions*, ESAIM: M2AN 39, 609–616 (2005)
+- J. Mencinger, I. Žun, *On the finite volume discretization of
+  discontinuous body force field on collocated grids: application to VOF
+  method*, J. Comput. Phys. 221, 524–538 (2007)
+- S. Ostrach, *An analysis of laminar free-convection flow and heat transfer
+  about a flat plate parallel to the direction of the generating body
+  force*, NACA Report 1111 (1953)
+- S. Paolucci, *On the filtering of sound from the Navier–Stokes equations*,
+  Sandia Report SAND82-8257 (1982)
+- S. V. Patankar, *Numerical Heat Transfer and Fluid Flow*, Hemisphere
+  (1980)
+- S. Redjem-Saad, M. Ould-Rouiss, G. Lauriat, *Direct numerical simulation
+  of turbulent heat transfer in pipe flows: effect of Prandtl number*, Int.
+  J. Heat Fluid Flow 28, 847–861 (2007)
+- R. G. Rehm, H. R. Baum, *The equations of motion for thermally driven,
+  buoyant flows*, J. Res. Natl. Bur. Stand. 83, 297–308 (1978)
+- E. Tric, G. Labrosse, M. Betrouni, *A first incursion into the 3D
+  structure of natural convection of air in a differentially heated cubic
+  cavity, from accurate numerical solutions*, Int. J. Heat Mass Transfer 43,
+  4043–4056 (2000)
+- P. Vaněk, J. Mandel, M. Brezina, *Algebraic multigrid by smoothed
+  aggregation for second and fourth order elliptic problems*, Computing 56,
+  179–196 (1996)
+- J. Vierendeels, B. Merci, E. Dick, *Benchmark solutions for the natural
+  convective heat transfer problem in a square cavity with large horizontal
+  temperature differences*, Int. J. Numer. Methods Heat Fluid Flow 13,
+  1057–1078 (2003)
+- J. C. Vogel, J. K. Eaton, *Combined heat transfer and fluid dynamic
+  measurements downstream of a backward-facing step*, J. Heat Transfer 107,
+  922–929 (1985)
+- V. R. Voller, C. R. Swaminathan, *General source-based method for
+  solidification phase change*, Numer. Heat Transfer B 19, 175–189 (1991)
+- T. Tsuji, Y. Nagano, *Characteristics of a turbulent natural convection
+  boundary layer along a vertical flat plate*, Int. J. Heat Mass Transfer
+  31, 1723–1734 (1988)
+- D. C. Wilcox, *Turbulence Modeling for CFD*, 3rd ed., DCW Industries
+  (2006)
+- S. Zhang, X. Zhao, S. Bayyuk, *Generalized formulations for the
+  Rhie–Chow interpolation*, J. Comput. Phys. 258, 880–914 (2014)
