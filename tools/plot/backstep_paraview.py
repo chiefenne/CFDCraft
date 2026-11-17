@@ -40,7 +40,7 @@ def opt(obj, name, value):
     """Set a display property that may not exist in every ParaView version."""
     try:
         setattr(obj, name, value)
-    except (AttributeError, ValueError, TypeError):
+    except Exception:  # noqa: BLE001  (also paraview.NotSupportedException)
         pass
 
 
@@ -49,7 +49,7 @@ def opt_fails(obj, name, value):
     try:
         setattr(obj, name, value)
         return False
-    except (AttributeError, ValueError, TypeError):
+    except Exception:  # noqa: BLE001  (also paraview.NotSupportedException)
         return True
 
 
@@ -115,7 +115,7 @@ def view():
     if g is not None:
         for name, value in (("Visibility", 1), ("XTitle", "x/H"), ("YTitle", "y/H"),
                             ("ZTitle", ""), ("ShowEdges", 1), ("ShowTicks", 1),
-                            ("DataBoundsInflateFactor", 0.0), ("UseCustomBounds", 1),
+                            ("UseCustomBounds", 1),
                             ("CustomBounds", [X0, X1, Y0, Y1, 0.0, 0.0])):
             opt(g, name, value)
         for a in ("XTitleColor", "YTitleColor", "XLabelColor", "YLabelColor",
