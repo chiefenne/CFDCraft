@@ -22,7 +22,7 @@ import sys
 
 from paraview.simple import (
     Box, CellDatatoPointData, Calculator, ColorBy, Contour, CreateView, Delete,
-    ExtractBlock, GetColorTransferFunction, GetScalarBar, OpenDataFile,
+    ExtractBlock, GetColorTransferFunction, GetScalarBar, Hide, OpenDataFile,
     Render, SaveScreenshot, Show, Slice, Sphere, StreamTracer, Text,
 )
 from vtkmodules.vtkIOImage import vtkPNGReader, vtkPNGWriter
@@ -196,16 +196,19 @@ def view():
     opt(v, "InteractionMode", "2D")
     g = getattr(v, "AxesGrid", None)
     if g is not None:
-        # the frame and the ticks only: which numbers and titles the axes grid
-        # shows differs between ParaView versions, so axes() writes them
-        for name, value in (("Visibility", 1), ("XTitle", ""), ("YTitle", ""),
+        # the frame and the ticks; which numbers and titles the axes grid
+        # shows differs between ParaView versions, so axes() writes them and
+        # then hides those of the grid
+        for name, value in (("Visibility", 1), ("XTitle", "x/H"), ("YTitle", "y/H"),
                             ("ZTitle", ""), ("ShowEdges", 1), ("ShowTicks", 1),
-                            ("ShowGrid", 0), ("AxesToLabel", 0), ("UseCustomBounds", 1),
+                            ("ShowGrid", 0), ("AxesToLabel", 3), ("UseCustomBounds", 1),
                             ("CustomBounds", [X0, X1, Y0, Y1, Z_AXES, Z_AXES]),
                             ("XAxisUseCustomLabels", 1), ("XAxisLabels", X_TICKS),
-                            ("YAxisUseCustomLabels", 1), ("YAxisLabels", Y_TICKS),
-                            ("GridColor", [0.0, 0.0, 0.0])):
+                            ("YAxisUseCustomLabels", 1), ("YAxisLabels", Y_TICKS)):
             opt(g, name, value)
+        for a in ("XTitleColor", "YTitleColor", "XLabelColor", "YLabelColor",
+                  "GridColor"):
+            opt(g, a, [0.0, 0.0, 0.0])
     return v
 
 
@@ -221,8 +224,13 @@ def write(v, s, x, y, dx=0.0, dy=0.0, size=13, align=0.5):
     opt(td, "Color", [0.0, 0.0, 0.0])
     opt(td, "FontSize", size)
     opt(td, "Bold", 0)
-    opt(td, "WindowLocation", "Any Location")
-    opt(td, "Position", [px / PANEL[0], py / PANEL[1]])
+    # placed freely, or not shown at all: this raises if ParaView refuses
+    try:
+        td.WindowLocation = "Any Location"
+        td.Position = [px / PANEL[0], py / PANEL[1]]
+    except Exception:
+        Hide(t, v)
+        raise
 
 
 def axes(v):
@@ -233,6 +241,13 @@ def axes(v):
         write(v, f"{y:g}", X0, y, dx=-12, dy=-8, align=1.0)
     write(v, "x/H", 0.5 * (X0 + X1), Y0, dy=-46, size=14)
     write(v, "y/H", X0, 0.5 * (Y0 + Y1), dx=-34, dy=-8, size=14, align=1.0)
+    # our text is in place: no numbers and titles from the axes grid
+    g = getattr(v, "AxesGrid", None)
+    if g is not None:
+        for name, value in (("XTitle", ""), ("YTitle", ""), ("XLabelOpacity", 0.0),
+                            ("YLabelOpacity", 0.0), ("XTitleOpacity", 0.0),
+                            ("YTitleOpacity", 0.0)):
+            opt(g, name, value)
 
 
 def frame(v):
