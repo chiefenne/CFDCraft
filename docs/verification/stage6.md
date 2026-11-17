@@ -218,7 +218,7 @@ values of Aupoix (2015). The first-cell height y_P is floored at
 | Channel at Re_τ = 395 (`channel_sst.toml`), periodic module, mass flow of the DNS bulk velocity, `low-re`, 96 cells across, first-cell y⁺ 0.28 | U_b⁺ against the DNS of Moser, Kim & Mansour (17.55) | ±3 % | 17.43 (−0.70 %; Dean's correlation 17.24: +1.1 %), Re_τ = 397.8 |
 | | U_c⁺ against the DNS (about 20.1) | ±4 % | 19.64 (about −2.4 %) |
 | | observed order and GCI_fine of U_b⁺ on the three meshes of 96, 192 and 384 cells across (U_b⁺ 17.427, 17.381, 17.346) | p 1.8 – 2.2, GCI ≤ 0.5 % | p = 0.40, extrapolated 17.237, GCI_fine 0.78 %: **finding** (the fourth mesh, 768 cells across, did not reach its tolerance in 30 000 iterations and is left out) |
-| Homogeneous decay in a periodic box, k₀ = 1, ω₀ = 10, t = 0.5, 10 / 20 / 40 steps | BDF2 time order of k and ω against the exact solution (F₁ = 0) | 1.8 – 2.2 | asserted by `tests/turbulence.rs` |
+| Homogeneous decay in a periodic box, k₀ = 1, ω₀ = 10, t = 0.5, 10 / 20 / 40 steps | BDF2 time order of k and ω against the exact solution (F₁ = 0) | 1.8 – 2.2 | k 1.92, 1.96 and ω 2.07, 2.03 (two pairs of meshes) |
 | Steady plate, restart after half the iterations | fields at the end | bit-identical | bit-identical |
 | Plate on 1 and 4 threads | fields after 8 iterations | bit-identical | bit-identical |
 | Poisson wall distance on a plane wall | d against the exact distance | round-off | passed |

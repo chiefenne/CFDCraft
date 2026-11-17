@@ -87,7 +87,7 @@ band. On three meshes (96, 192 and 384 cells across) U_b⁺ is 17.427, 17.381 an
 
 | Check | Result |
 |---|---|
-| Homogeneous decay of k and ω (periodic box, no walls) against the exact ODE solution | BDF2 time order of k and ω between 1.8 and 2.2 (asserted) |
+| Homogeneous decay of k and ω (periodic box, no walls) against the exact ODE solution | BDF2 time order of k 1.92 and 1.96, of ω 2.07 and 2.03 (band 1.8–2.2) |
 | Restart in the middle of a steady SST run | bit-identical to the run without restart |
 | 1 against 4 threads on the flat plate | bit-identical |
 | Wall distance by the Poisson PDE on a plane wall | exact to round-off |
