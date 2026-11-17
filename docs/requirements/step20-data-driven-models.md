@@ -257,7 +257,7 @@ bands fixed **before** the runs, as D139 does:
 **Decisions of the maintainer (2026-11-17):** D165 and D168 adopted (Q1);
 D166 adopted for stage 6, pull request 6b (Q2); D167 adopted (Q3); L37
 adopted with both targets (diffuser and U-bend) and both models (SST 2003 and
-ζ-f) (Q4); P13 kept as a watch item with the 30 % threshold (Q5). D169, L38,
+ζ-f) (Q4); P13 kept as a watch item with the 30 % threshold (Q5). D169 adopted in a second round (2026-11-17). L38,
 P14 and P15 remain proposals. The adopted rows are in `docs/requirements.md`.
 
 Items as proposed:
