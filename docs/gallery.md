@@ -17,7 +17,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
-| [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21 |
+| [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25 |
@@ -58,6 +58,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="log-columns"></a>28 | [A table with the columns you choose](gallery/runs.md#log-columns) | [Run control, health and adjoint readiness](gallery/runs.md) |
 | <a id="schedule"></a>29 | [Settings that change during the run](gallery/runs.md#schedule) | [Run control, health and adjoint readiness](gallery/runs.md) |
 | <a id="passive-scalars"></a>63 | [A heated channel and a bounded front](gallery/scalars.md#passive-scalars) | [Passive scalars and the wall distance](gallery/scalars.md) |
+| <a id="periodic"></a>67 | [Periodic modules: a channel and a short heated pipe](gallery/boundary-conditions.md#periodic) | [Boundary conditions](gallery/boundary-conditions.md) |
 
 ## Adding a feature
 
