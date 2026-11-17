@@ -267,7 +267,7 @@ pub fn boundary_extent(mesh: &Mesh, p: &foehncraft_mesh::Boundary) -> Extent {
 }
 
 /// Turbulence values at an inlet (used from stage 6 on).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct InletTurbulence {
     /// Turbulence intensity (fraction, e.g. 0.05).
@@ -276,10 +276,15 @@ pub struct InletTurbulence {
     pub turbulence_length_scale: Option<f64>,
     /// Ratio of the eddy viscosity to the molecular one.
     pub viscosity_ratio: Option<f64>,
+    /// k directly.
+    pub k: Option<Scalar>,
+    /// ω directly.
+    pub omega: Option<Scalar>,
 }
 
 impl InletTurbulence {
-    fn given(&self) -> Vec<&'static str> {
+    /// The keys that are given.
+    pub fn given(&self) -> Vec<&'static str> {
         let mut v = Vec::new();
         if self.turbulence_intensity.is_some() {
             v.push("turbulence_intensity");
@@ -290,6 +295,12 @@ impl InletTurbulence {
         if self.viscosity_ratio.is_some() {
             v.push("viscosity_ratio");
         }
+        if self.k.is_some() {
+            v.push("k");
+        }
+        if self.omega.is_some() {
+            v.push("omega");
+        }
         v
     }
 }
@@ -297,6 +308,7 @@ impl InletTurbulence {
 /// One boundary condition, `[boundary.<boundary>]`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "kebab-case", deny_unknown_fields)]
+#[allow(clippy::large_enum_variant)] // case-file data, a few per case
 pub enum BoundaryCondition {
     /// No-slip wall, at rest or moving tangentially.
     Wall {
@@ -309,6 +321,10 @@ pub enum BoundaryCondition {
         /// coupled module (the wall film of D123) sets it per face.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mass_flux: Option<Scalar>,
+        /// Equivalent sand-grain roughness k_s (m) of the turbulence models
+        /// (stage 6, D134; SST: the wall values of Aupoix 2015).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        roughness: Option<f64>,
     },
     /// Prescribed velocity.
     VelocityInlet {
@@ -354,6 +370,12 @@ pub enum BoundaryCondition {
         /// Viscosity ratio (stage 6).
         #[serde(default)]
         viscosity_ratio: Option<f64>,
+        /// k (m²/s²) directly: a number or an expression (D53) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        k: Option<Scalar>,
+        /// ω (1/s) directly, with `k` (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        omega: Option<Scalar>,
     },
     /// Prescribed mass flow (kg/s) into the domain, normal to the faces,
     /// spread by face area.
@@ -370,6 +392,12 @@ pub enum BoundaryCondition {
         /// Viscosity ratio (stage 6).
         #[serde(default)]
         viscosity_ratio: Option<f64>,
+        /// k (m²/s²) directly: a number or an expression (D53) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        k: Option<Scalar>,
+        /// ω (1/s) directly, with `k` (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        omega: Option<Scalar>,
     },
     /// Prescribed static pressure, inflow normal to the face.
     StaticPressureInlet {
@@ -384,6 +412,12 @@ pub enum BoundaryCondition {
         /// Viscosity ratio (stage 6).
         #[serde(default)]
         viscosity_ratio: Option<f64>,
+        /// k (m²/s²) directly: a number or an expression (D53) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        k: Option<Scalar>,
+        /// ω (1/s) directly, with `k` (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        omega: Option<Scalar>,
     },
     /// Prescribed total pressure, inflow normal to the face.
     TotalPressureInlet {
@@ -399,6 +433,12 @@ pub enum BoundaryCondition {
         /// Viscosity ratio (stage 6).
         #[serde(default)]
         viscosity_ratio: Option<f64>,
+        /// k (m²/s²) directly: a number or an expression (D53) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        k: Option<Scalar>,
+        /// ω (1/s) directly, with `k` (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        omega: Option<Scalar>,
     },
     /// Prescribed static pressure, velocity extrapolated.
     StaticPressureOutlet {
@@ -418,6 +458,12 @@ pub enum BoundaryCondition {
         /// Viscosity ratio of the backflow (stage 6).
         #[serde(default)]
         viscosity_ratio: Option<f64>,
+        /// k (m²/s²) directly: a number or an expression (D53) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        k: Option<Scalar>,
+        /// ω (1/s) directly, with `k` (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        omega: Option<Scalar>,
     },
     /// Prescribed total pressure, velocity extrapolated.
     TotalPressureOutlet {
@@ -435,6 +481,12 @@ pub enum BoundaryCondition {
         /// Viscosity ratio of the backflow (stage 6).
         #[serde(default)]
         viscosity_ratio: Option<f64>,
+        /// k (m²/s²) directly: a number or an expression (D53) (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        k: Option<Scalar>,
+        /// ω (1/s) directly, with `k` (stage 6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        omega: Option<Scalar>,
     },
     /// Non-reflecting outlet of a transient run: the velocity is convected
     /// out of the domain, ∂u/∂t + U_c ∂u/∂n = 0.
@@ -510,49 +562,72 @@ impl BoundaryCondition {
         )
     }
 
-    fn turbulence(&self) -> InletTurbulence {
-        match *self {
+    /// The turbulence values of an inlet or of the backflow of an outlet.
+    pub fn turbulence(&self) -> InletTurbulence {
+        match self {
             Self::VelocityInlet {
                 turbulence_intensity,
                 turbulence_length_scale,
                 viscosity_ratio,
+                k,
+                omega,
                 ..
             }
             | Self::MassFlowInlet {
                 turbulence_intensity,
                 turbulence_length_scale,
                 viscosity_ratio,
+                k,
+                omega,
                 ..
             }
             | Self::StaticPressureInlet {
                 turbulence_intensity,
                 turbulence_length_scale,
                 viscosity_ratio,
+                k,
+                omega,
                 ..
             }
             | Self::TotalPressureInlet {
                 turbulence_intensity,
                 turbulence_length_scale,
                 viscosity_ratio,
+                k,
+                omega,
                 ..
             }
             | Self::StaticPressureOutlet {
                 turbulence_intensity,
                 turbulence_length_scale,
                 viscosity_ratio,
+                k,
+                omega,
                 ..
             }
             | Self::TotalPressureOutlet {
                 turbulence_intensity,
                 turbulence_length_scale,
                 viscosity_ratio,
+                k,
+                omega,
                 ..
             } => InletTurbulence {
-                turbulence_intensity,
-                turbulence_length_scale,
-                viscosity_ratio,
+                turbulence_intensity: *turbulence_intensity,
+                turbulence_length_scale: *turbulence_length_scale,
+                viscosity_ratio: *viscosity_ratio,
+                k: k.clone(),
+                omega: omega.clone(),
             },
             _ => InletTurbulence::default(),
+        }
+    }
+
+    /// The roughness k_s of a wall (m; 0 for other conditions).
+    pub fn roughness(&self) -> f64 {
+        match self {
+            Self::Wall { roughness, .. } => roughness.unwrap_or(0.0),
+            _ => 0.0,
         }
     }
 
@@ -714,6 +789,7 @@ impl BoundaryCondition {
             BoundaryCondition::Wall {
                 velocity,
                 mass_flux,
+                ..
             } => {
                 v.velocity = Some(crate::expr::vector_value(
                     velocity,
@@ -1480,10 +1556,71 @@ pub fn check(
                 diag::BC_TURBULENCE_UNUSED,
                 Some(name),
                 format!(
-                    "{} unused: the flow is laminar (turbulence models come with stage 6)",
+                    "{} unused: the flow is laminar (set `model` in [turbulence] for a \
+                     turbulence model)",
                     t.join(", ")
                 ),
             );
+        } else if !laminar {
+            if !t.is_empty() && !crate::turbulence::inlet::is_inlet(bc) {
+                push(
+                    Level::Warning,
+                    diag::BC_TURBULENCE_UNUSED_VALUE,
+                    Some(name),
+                    format!(
+                        "{} unused: backflow at an outlet takes k and ω of the cell \
+                         (backflow values at outlets are not implemented yet)",
+                        t.join(", ")
+                    ),
+                );
+            }
+            for (error, code, message) in crate::turbulence::inlet::check(bc) {
+                let level = if error {
+                    Level::Error
+                } else if code == diag::TURB_INLET_DEFAULT {
+                    Level::Note
+                } else {
+                    Level::Warning
+                };
+                push(level, code, Some(name), message);
+            }
+        }
+    }
+    // rough walls: k_s beyond the first cell centre (BC027)
+    if !laminar {
+        for p in &mesh.boundaries {
+            let Some(bc) = bcs.get(&p.name) else { continue };
+            let ks = bc.roughness();
+            if !matches!(bc, BoundaryCondition::Wall { .. }) || ks <= 0.0 {
+                continue;
+            }
+            let (mut total, mut beyond) = (0.0, 0.0);
+            for f in p.range() {
+                let s = geo.face_area[f];
+                let a = norm(s);
+                let c = mesh.owner[f] as usize;
+                let y = (0..3)
+                    .map(|i| (geo.face_centroid[f][i] - geo.cell_centroid[c][i]) * s[i] / a)
+                    .sum::<f64>()
+                    .abs();
+                total += a;
+                if ks > y {
+                    beyond += a;
+                }
+            }
+            if total > 0.0 && beyond > 0.1 * total {
+                push(
+                    Level::Warning,
+                    diag::BC_ROUGHNESS,
+                    Some(&p.name),
+                    format!(
+                        "roughness = {ks} m exceeds the first-cell distance on {:.0} % of \
+                         the wall's area: the roughness elements reach beyond the first \
+                         cell centre (coarsen the wall cells or check k_s)",
+                        100.0 * beyond / total
+                    ),
+                );
+            }
         }
     }
     // wall velocity normal to the wall, velocity inlets with outflow,

@@ -191,6 +191,10 @@ pub struct MomentumInputs<'a, T> {
     pub nonorth: T,
     /// 1 with convection, 0 for Stokes flow.
     pub convection: T,
+    /// 1 with the transposed part ∇·[μ (∇u)ᵀ] of the viscous stress as a
+    /// deferred term (variable eddy viscosity, stage 6 specification 2.4),
+    /// 0 without (laminar flow: it vanishes for constant μ).
+    pub transposed: T,
 }
 
 /// Momentum flux out of the owner through face `f` for the three velocity
@@ -286,6 +290,21 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
                 b[i] = conv - inp.nonorth * (mu * dot(kf, gf) + dd * skew);
                 i += 1;
             }
+            if inp.transposed > T::ZERO {
+                // −μ Σ_j (∂u_j/∂x_i)_f S_j with the interpolated gradients
+                let s = g.area.at(f);
+                let mut i = 0;
+                while i < 3 {
+                    let mut t = T::ZERO;
+                    let mut jj = 0;
+                    while jj < 3 {
+                        t += (w * gp[jj][i] + wn * gn[jj][i]) * s[jj];
+                        jj += 1;
+                    }
+                    b[i] -= mu * t;
+                    i += 1;
+                }
+            }
             (mp + dd, mm - dd, b)
         } else {
             let fb = f - t.n_interior;
@@ -321,10 +340,14 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
                 }
                 (dd, T::ZERO, b)
             } else {
+                let s = g.area.at(f);
                 while i < 3 {
                     b[i] = lud * mp * psi_p[i] * dot(gp[i], rp) + mm * ub[i]
                         - dd * ub[i]
                         - inp.nonorth * mu * dot(kf, gp[i]);
+                    if inp.transposed > T::ZERO {
+                        b[i] -= mu * (gp[0][i] * s[0] + gp[1][i] * s[1] + gp[2][i] * s[2]);
+                    }
                     if inp.central > T::ZERO {
                         b[i] += inp.central * mp * (ub[i] - up[i]);
                     }

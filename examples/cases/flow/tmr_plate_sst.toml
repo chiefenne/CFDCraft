@@ -1,0 +1,94 @@
+# Turbulent flat plate of the NASA Turbulence Modeling Resource (TMR,
+# 2D zero-pressure-gradient case), k-ω SST 2003 (stage 6 part 6b, D130,
+# specification 9.3).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tmr_plate_sst.toml
+#
+# Incompressible form of the TMR case at M = 0.2: plate from x = 0 to
+# x = 2 m (reference length 1 m), inflow at x = −1/3 m with a symmetry
+# stretch ahead of the plate, top at y = 1 m, Re = U L/ν = 5·10⁶ with
+# U = 1 m/s, ν = 2·10⁻⁷ m²/s. Free stream of the TMR SST page:
+# k = 2.25·10⁻⁷ U² (9·10⁻⁹ a² at M = 0.2), ω = 125 U/L, so ν_t/ν = 0.009
+# (no sustaining terms). Low-Re wall treatment (y⁺ of the first cell
+# 0.9 on level 0 down to 0.09 on level 3).
+#
+# The mesh: 32 × 24 cells on level 0, refined twice per level; in x
+# 8 cells ahead of the plate (graded towards the leading edge) and 24 on
+# the plate (ratio 20 from the leading edge), in y a ratio of 38 000
+# between the top and the wall cell; the bottom boundary splits at x = 0
+# into the symmetry stretch `ymin` and the wall `plate`.
+#
+# Reference (TMR flatplate_sst page, SST-V, finest grid 545 × 385, mean of
+# CFL3D and FUN3D, retrieved for pyaeroflow): C_f(0.970084) = 0.0026907,
+# drag coefficient of the plate (one side, area 2 m²) C_D = 0.0028488.
+# The wall probe `x097` gives C_f, the force of `plate` the drag:
+# C_D = F_x / (½ ρ U² · 2 m²) = F_x on the 1 m depth of the mesh.
+# Level 1 (64 × 48 cells, 2 minutes); the sweep of the verification page,
+# four levels with the uncertainty of the three finest (D67), takes 25
+# minutes on one core:
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tmr_plate_sst.toml --set 'verification.levels=[0, 1, 2, 3]'
+#
+# Level 1 gives C_f(0.97) = 0.002668 (−0.8 %), level 3 0.002701 (+0.4 %).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-0.3333333333333333, 0.0, 0.0]
+upper = [2.0, 1.0, 1.0]
+cells = [32, 24, 1]
+grading = { y = { ratio = 38000.0 } }
+segments = { x = [ { to = 0.0, cells = 8, ratio = 0.1 }, { to = 2.0, cells = 24, ratio = 20.0 } ] }
+split = [ { boundary = "ymin", axis = "x", at = 0.0, name = "plate" } ]
+
+[fluid]
+density = 1.0
+viscosity = 2.0e-7
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+k = 2.25e-7
+omega = 125.0
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+k = 2.25e-7
+omega = 125.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "symmetry"
+[boundary.plate]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 10000
+log_every = 200
+
+[verification]
+levels = [1]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = true
+derived = ["turbulence-features"]
+wall_probes = [ { name = "x097", boundary = "plate", point = [0.970084, 0.0, 0.5] } ]
+reference = { velocity = 1.0 }
+lines = [ { name = "x097", from = [0.97, 0.0, 0.5], to = [0.97, 0.05, 0.5], points = 400 } ]

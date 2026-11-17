@@ -54,6 +54,19 @@ pub trait Real:
 
     /// Smaller of two values, branch-free (IEEE 754 minNum).
     fn min_of(self, other: Self) -> Self;
+
+    /// √x from the in-house routine of [`crate::math`] (the same bits on
+    /// every CPU and GPU, D93 (6)); dual numbers carry the derivative.
+    fn sqrt_of(self) -> Self;
+
+    /// eˣ ([`crate::math::exp`]).
+    fn exp_of(self) -> Self;
+
+    /// ln x ([`crate::math::ln`]).
+    fn ln_of(self) -> Self;
+
+    /// tanh x ([`crate::math::tanh`]).
+    fn tanh_of(self) -> Self;
 }
 
 impl Real for f64 {
@@ -78,6 +91,22 @@ impl Real for f64 {
     fn min_of(self, other: Self) -> Self {
         f64::min(self, other)
     }
+    #[inline(always)]
+    fn sqrt_of(self) -> Self {
+        crate::math::sqrt(self)
+    }
+    #[inline(always)]
+    fn exp_of(self) -> Self {
+        crate::math::exp(self)
+    }
+    #[inline(always)]
+    fn ln_of(self) -> Self {
+        crate::math::ln(self)
+    }
+    #[inline(always)]
+    fn tanh_of(self) -> Self {
+        crate::math::tanh(self)
+    }
 }
 
 impl Real for f32 {
@@ -101,6 +130,22 @@ impl Real for f32 {
     #[inline(always)]
     fn min_of(self, other: Self) -> Self {
         f32::min(self, other)
+    }
+    #[inline(always)]
+    fn sqrt_of(self) -> Self {
+        crate::math::sqrt(self as f64) as f32
+    }
+    #[inline(always)]
+    fn exp_of(self) -> Self {
+        crate::math::exp(self as f64) as f32
+    }
+    #[inline(always)]
+    fn ln_of(self) -> Self {
+        crate::math::ln(self as f64) as f32
+    }
+    #[inline(always)]
+    fn tanh_of(self) -> Self {
+        crate::math::tanh(self as f64) as f32
     }
 }
 

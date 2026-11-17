@@ -79,8 +79,8 @@ The limits may change during a run (a re-read of the case file, D40).
 | `type` | Fields |
 |---|---|
 | `header` | `format`, `format_version`, `case`, `date`, `provenance`, `threads`, `overrides`, `case_file`, `settings` (the resolved case) |
-| `iteration` | `iteration`, `momentum` (3), `continuity`, `bicgstab` (3), `cg` |
-| `step` | `step`, `time`, `dt`, `cfl`, `momentum` (3), `continuity`, `outer`, `cg`; with the error estimate of the time step (D65) also `error`, the estimated local error over the tolerance |
+| `iteration` | `iteration`, `momentum` (3), `continuity`, `bicgstab` (3), `cg`, `scalars` (one residual per passive scalar), `turbulence` (residuals of k and ω, empty when laminar), `turbulence_floors` (cells where the positivity floor of k and ω acted) |
+| `step` | `step`, `time`, `dt`, `cfl`, `momentum` (3), `continuity`, `outer`, `cg`, `scalars`, `turbulence`, `turbulence_floors`; with the error estimate of the time step (D65) also `error`, the estimated local error over the tolerance |
 | `columns` | (1.1) `table` (`iteration` or `step`), `first` (name of the counter column), `columns`: per column `id`, `name`, `group`, `unit`; one row per table, before its first `table_row` |
 | `table_row` | (1.1) `table`, `index` (iteration or step), `values`: column id to value (a number, `null` for a column without a value, a string for NaN or Inf; an extreme carries `{"cell", "x"}`) |
 | `section` | (1.1) `title`, `rows` with `label`, `value`, `unit`: one framed block of the log (files, run control, mesh, fluid, settings, boundaries, balances, results, run time) |
@@ -267,9 +267,21 @@ A code keeps its meaning; a retired code stays in the table.
 | `BC024` | warning | A wedge wider than 10° (the axisymmetric error grows with the angle). |
 | `BC025` | error | A potential-flow start with a convective outlet and no pressure boundary. |
 | `BC026` | error | Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure). |
+| `BC027` | warning | A wall roughness k_s larger than the first-cell distance on more than 10 % of the wall's area. |
+| `BC028` | warning | A turbulence value that the run does not use (at an outlet, whose backflow takes k and ω of the cell; later `zeta` with SST or k-ε, `omega` with an ε model); BC009 stays for laminar cases. |
+| `BC029` | error | Two incompatible turbulence specifications on one inlet (for example `turbulence_length_scale` and `viscosity_ratio`, or `k` with intensity). |
 | `BC030` | error | A periodic boundary without a periodic partner that names it back, a pair whose faces do not match, or a driving given twice. |
 | `BC031` | warning | A periodic pair with no driving (`mass_flow`, `pressure_gradient`) and no body force: the flow decays to rest. |
 | `SCAL001` | error | A `[boundary.<name>.scalar.<scalar>]` table for an unknown scalar or boundary, without exactly one of `value` and `flux`, or with a condition its boundary does not take (a flux at an inlet, anything at an outlet, `periodic` away from a periodic pair, the heat-flux mode with fixed values). |
+| `TURB001` | warning | First-cell y⁺ outside the claimed range of the wall treatment on more than 10 % of a wall's area: above 2 with `low-re`, between 3 and 20 (the buffer layer) with `automatic` (per boundary with the area-weighted min, mean and max). |
+| `TURB002` | warning | A positivity floor of k or ω acted on more than 0.1 % of the cells in an iteration of the final tenth of the solves (equation and cell count); the run record counts all iterations (`turbulence_floors`). |
+| `TURB003` | warning | Inlet turbulence outside the usual range: I > 0.5, or a viscosity ratio below 10⁻² or above 10⁵. |
+| `TURB004` | note | Kato–Launder production in a rotating zone: Ω is the absolute-frame vorticity. |
+| `TURB005` | note | No wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0; the ζ-f and EB near-wall terms vanish). |
+| `TURB006` | error | A convection scheme or time scheme that is not bounded for a turbulence variable (central in a steady run, Crank–Nicolson). |
+| `TURB007` | warning | Model constants changed in `[turbulence.constants]`. |
+| `TURB008` | warning | The ν_t cap `max_viscosity_ratio` acted (cell count). |
+| `TURB009` | note | Inlet turbulence defaulted to I = 0.05, r = 10 (boundary named). |
 | `EXPR001` | error | An expression that cannot be parsed. |
 | `EXPR002` | error | An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint). |
 | `EXPR003` | error | An expression that uses a variable its key does not take (`t` in a steady case or in a property, x, y, z in a value for a whole boundary). |

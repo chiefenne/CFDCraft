@@ -1,0 +1,64 @@
+# Fully developed turbulent channel flow at Re_τ ≈ 395, k-ω SST 2003
+# (stage 6 part 6b, D130, specification 9.4).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_sst.toml
+#
+# Plane channel 0 < y < 2h, h = 1 m, one periodic module of 0.1 m
+# (two cells; the solution does not depend on x), depth 0.1 m, ν = 1/395
+# m²/s. The flow is driven by the mass flow 3.51 kg/s through the
+# periodic pair, the bulk velocity U_b = 17.55 m/s of the DNS of Moser,
+# Kim & Mansour (1999) at Re_τ = 395 with u_τ = 1 m/s; the solver adjusts
+# the uniform body force, which equals the wall shear stress over h, so
+# u_τ = √(F h/ρ), Re_τ = u_τ h/ν and U_b⁺ = U_b/u_τ follow from the
+# driving force in the log. References: the DNS (U_b⁺ = 17.55 at
+# Re_τ = 395) and Dean's correlation C_f = 0.073 Re_b^(−1/4) with
+# Re_b = 2 h U_b/ν (U_b⁺ = 17.24). Low-Re wall treatment, 96 cells across
+# the channel graded symmetrically (ratio 60 between the centre and the
+# wall cell; first-cell y⁺ 0.28). Validation band ±3 % (specification
+# 9.4).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 2.0, 0.1]
+cells = [2, 96, 1]
+grading = { y = { ratio = 60.0, symmetric = true } }
+
+[fluid]
+density = 1.0
+viscosity = 0.0025316455696202532   # 1/395
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+
+[initial]
+velocity = [15.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 3.51
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 3000
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.0, 0.05], to = [0.05, 1.0, 0.05], points = 200 } ]

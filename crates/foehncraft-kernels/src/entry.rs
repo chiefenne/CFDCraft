@@ -745,6 +745,8 @@ pub struct MomentumFaceArgs {
     pub nonorth: f64,
     /// 1 with convection.
     pub convection: f64,
+    /// 1 with the transposed viscous stress (turbulent flow).
+    pub transposed: f64,
     /// Output c_P.
     pub cp: Raw<f64>,
     /// Output c_N.
@@ -778,6 +780,7 @@ impl Entry for MomentumFaces {
                 beta: a.beta,
                 nonorth: a.nonorth,
                 convection: a.convection,
+                transposed: a.transposed,
             };
             let (cp, cn, b) = k::momentum_face(f, &inp);
             *a.cp.out().add(f) = cp;
@@ -1448,6 +1451,12 @@ pub struct ScalarRowArgs {
     pub lo: f64,
     /// Upper bound.
     pub hi: f64,
+    /// 1 in the cells with a fixed value (empty: none).
+    pub fix_mask: Raw<f64>,
+    /// The fixed values.
+    pub fix_val: Raw<f64>,
+    /// 1: a positive variable (the deferred corrections split by sign).
+    pub positive: u32,
     /// Output: matrix values.
     pub val: Raw<f64>,
     /// Output: right-hand side.
@@ -1487,6 +1496,9 @@ impl Entry for ScalarRows {
                 old2: a.old2.get(),
                 lo: a.lo,
                 hi: a.hi,
+                fix_mask: a.fix_mask.get(),
+                fix_val: a.fix_val.get(),
+                positive: a.positive != 0,
             };
             let r = crate::scalar::scalar_row(c, &inp, a.val.out());
             *a.rhs.out().add(c) = r.rhs;
@@ -1536,6 +1548,355 @@ impl Entry for ScalarScale {
     }
 }
 
+/// Arguments of [`SstCells`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SstCellArgs {
+    /// Velocity gradient.
+    pub grad_u: RawGrad,
+    /// k.
+    pub k: Raw<f64>,
+    /// ω.
+    pub w: Raw<f64>,
+    /// ∇k.
+    pub grad_k: Raw3,
+    /// ∇ω.
+    pub grad_w: Raw3,
+    /// Wall distance.
+    pub d: Raw<f64>,
+    /// ν.
+    pub nu: f64,
+    /// Constants.
+    pub c: crate::turb::sst::SstConstants,
+    /// Options.
+    pub o: crate::turb::sst::SstOptions,
+    /// Additional explicit sources of k and ω per cell (MMS, D104);
+    /// empty: none.
+    pub add_k: Raw<f64>,
+    /// See `add_k`.
+    pub add_w: Raw<f64>,
+    /// Weight m of the wall production per cell (the automatic wall
+    /// treatment, 0 off the near-wall cells); empty: none.
+    pub wall_mask: Raw<f64>,
+    /// The wall production per cell (read where `wall_mask` is above 0).
+    pub wall_pk: Raw<f64>,
+    /// Output ν_t.
+    pub nu_t: Raw<f64>,
+    /// Output F₁.
+    pub f1: Raw<f64>,
+    /// Output P̃_k.
+    pub pk: Raw<f64>,
+    /// Output S_u of k (empty: ν_t only).
+    pub su_k: Raw<f64>,
+    /// Output S_p of k.
+    pub sp_k: Raw<f64>,
+    /// Output S_u of ω.
+    pub su_w: Raw<f64>,
+    /// Output S_p of ω.
+    pub sp_w: Raw<f64>,
+    /// Output σ_k ν_t.
+    pub dk: Raw<f64>,
+    /// Output σ_ω ν_t.
+    pub dw: Raw<f64>,
+    /// Output 1 where the cap of ν_t/ν acted.
+    pub capped: Raw<f64>,
+}
+
+/// The k-ω SST model per cell ([`crate::turb::sst::sst_cell`]).
+pub struct SstCells;
+impl Entry for SstCells {
+    type Args = SstCellArgs;
+    const NAME: &'static str = "sst_cells";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &SstCellArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let g = a.grad_u.v();
+            let gu = [g.x.at(c), g.y.at(c), g.z.at(c)];
+            let inp = crate::turb::sst::SstCellInputs {
+                k: ld(a.k.get(), c),
+                w: ld(a.w.get(), c),
+                grad_k: a.grad_k.v().at(c),
+                grad_w: a.grad_w.v().at(c),
+                grad_u: gu,
+                d: ld(a.d.get(), c),
+                nu: a.nu,
+            };
+            let r = crate::turb::sst::sst_cell(&inp, &a.c, &a.o);
+            *a.nu_t.out().add(c) = r.nu_t;
+            *a.f1.out().add(c) = r.f1;
+            *a.pk.out().add(c) = r.pk;
+            *a.dk.out().add(c) = r.dk;
+            *a.dw.out().add(c) = r.dw;
+            *a.capped.out().add(c) = r.capped;
+            if a.su_k.len > 0 {
+                let (ak, aw) = if a.add_k.len > 0 {
+                    (ld(a.add_k.get(), c), ld(a.add_w.get(), c))
+                } else {
+                    (0.0, 0.0)
+                };
+                // an added source splits like the others: its positive
+                // part explicit, its negative part implicit
+                let (k, w) = (inp.k, inp.w);
+                // near-wall cells of the automatic treatment: the
+                // production (1 − m) P̃_k + m u_τ³/(κ y_P)
+                let su_k = if a.wall_mask.len > 0 {
+                    let m = ld(a.wall_mask.get(), c);
+                    r.su_k + m * (ld(a.wall_pk.get(), c) - r.pk)
+                } else {
+                    r.su_k
+                };
+                *a.su_k.out().add(c) = su_k + ak.max(0.0);
+                *a.sp_k.out().add(c) = r.sp_k + ak.min(0.0) / k.max(1e-300);
+                *a.su_w.out().add(c) = r.su_w + aw.max(0.0);
+                *a.sp_w.out().add(c) = r.sp_w + aw.min(0.0) / w.max(1e-300);
+            }
+        }
+    }
+}
+
+/// Arguments of [`TurbFaces`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct TurbFaceArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// ν_t per cell.
+    pub nu_t: Raw<f64>,
+    /// σ_k ν_t per cell.
+    pub dk: Raw<f64>,
+    /// σ_ω ν_t per cell.
+    pub dw: Raw<f64>,
+    /// Laminar viscosity per face.
+    pub mu: Raw<f64>,
+    /// 1 on the wall faces (per boundary face): no turbulent diffusion
+    /// through a smooth wall.
+    pub wall: Raw<f64>,
+    /// Density.
+    pub rho: f64,
+    /// Output μ + ρ ν_t per face.
+    pub mu_eff: Raw<f64>,
+    /// Output ρ(ν + σ_k ν_t) per face.
+    pub gamma_k: Raw<f64>,
+    /// Output ρ(ν + σ_ω ν_t) per face.
+    pub gamma_w: Raw<f64>,
+}
+
+/// Face viscosities of the turbulent flow: linear interpolation of the
+/// cell values on interior and periodic faces, the owner value on boundary
+/// faces, none on walls.
+pub struct TurbFaces;
+impl Entry for TurbFaces {
+    type Args = TurbFaceArgs;
+    const NAME: &'static str = "turb_faces";
+    #[inline(always)]
+    unsafe fn run(f: usize, a: &TurbFaceArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let ni = a.m.n_interior as usize;
+            let p = ld(a.m.owner.get(), f) as usize;
+            let mu = ld(a.mu.get(), f);
+            let wall = f >= ni && ld(a.wall.get(), f - ni) > 0.0;
+            let (nt, gk, gw) = if f < ni {
+                let n = ld(a.m.neighbour.get(), f) as usize;
+                let w = ld(a.m.weight.get(), f);
+                let wn = 1.0 - w;
+                let at = |b: Raw<f64>| w * ld(b.get(), p) + wn * ld(b.get(), n);
+                (at(a.nu_t), at(a.dk), at(a.dw))
+            } else {
+                let s = 1.0 - ld(a.wall.get(), f - ni);
+                (
+                    s * ld(a.nu_t.get(), p),
+                    s * ld(a.dk.get(), p),
+                    s * ld(a.dw.get(), p),
+                )
+            };
+            // wall faces: μ_w of the wall treatment ([`WallFaces`])
+            if !wall {
+                *a.mu_eff.out().add(f) = mu + a.rho * nt;
+            }
+            *a.gamma_k.out().add(f) = mu + a.rho * gk;
+            *a.gamma_w.out().add(f) = mu + a.rho * gw;
+        }
+    }
+}
+
+/// Arguments of [`WallFaces`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct WallFaceArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// The wall faces (global face index).
+    pub faces: Raw<u32>,
+    /// Unit normal of each wall face (outward).
+    pub normal: Raw3,
+    /// y_P of each wall face.
+    pub y: Raw<f64>,
+    /// k_s of each wall face.
+    pub ks: Raw<f64>,
+    /// Cell velocity.
+    pub u: Raw3,
+    /// Boundary face velocity (per boundary face).
+    pub ub: Raw3,
+    /// ν.
+    pub nu: f64,
+    /// Density.
+    pub rho: f64,
+    /// Treatment ([`crate::turb::wall::LOW_RE`], `AUTOMATIC`).
+    pub treatment: u32,
+    /// Constants.
+    pub c: crate::turb::sst::SstConstants,
+    /// u_τ of the last iteration per wall face (rough walls); may be the
+    /// output `u_tau` (read before written, same index).
+    pub u_tau_old: Raw<f64>,
+    /// Output u_τ per wall face.
+    pub u_tau: Raw<f64>,
+    /// Output y⁺ per wall face.
+    pub y_plus: Raw<f64>,
+    /// Output ω per wall face.
+    pub omega: Raw<f64>,
+    /// Output: the viscous weight of the blending per wall face.
+    pub blending: Raw<f64>,
+    /// Output: the log-layer production u_τ³/(κ y_P) per wall face.
+    pub pk: Raw<f64>,
+    /// Output (per face): μ_w on the wall faces.
+    pub mu_eff: Raw<f64>,
+    /// Output (per boundary face): the wall value of k (bc_b of k).
+    pub k_b: Raw<f64>,
+    /// Output (per boundary face): the wall value of ω (bc_b of ω).
+    pub w_b: Raw<f64>,
+}
+
+/// The wall treatment per wall face ([`crate::turb::wall::wall_face`]).
+pub struct WallFaces;
+impl Entry for WallFaces {
+    type Args = WallFaceArgs;
+    const NAME: &'static str = "wall_faces";
+    #[inline(always)]
+    unsafe fn run(i: usize, a: &WallFaceArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let f = ld(a.faces.get(), i) as usize;
+            let fb = f - a.m.n_interior as usize;
+            let p = ld(a.m.owner.get(), f) as usize;
+            let n = a.normal.v().at(i);
+            let up = a.u.v().at(p);
+            let uw = a.ub.v().at(fb);
+            let du = [up[0] - uw[0], up[1] - uw[1], up[2] - uw[2]];
+            let dn = du[0] * n[0] + du[1] * n[1] + du[2] * n[2];
+            let t = [du[0] - dn * n[0], du[1] - dn * n[1], du[2] - dn * n[2]];
+            let ut = foehncraft_core::math::sqrt(t[0] * t[0] + t[1] * t[1] + t[2] * t[2]);
+            let inp = crate::turb::wall::WallInputs {
+                ut,
+                y: ld(a.y.get(), i),
+                nu: a.nu,
+                ks: ld(a.ks.get(), i),
+                u_tau_old: a.u_tau_old.read(i),
+            };
+            let r = crate::turb::wall::wall_face(&inp, &a.c, a.treatment);
+            *a.u_tau.out().add(i) = r.u_tau;
+            *a.y_plus.out().add(i) = r.y_plus;
+            *a.omega.out().add(i) = r.omega;
+            *a.blending.out().add(i) = r.blending;
+            *a.pk.out().add(i) = r.pk_wall;
+            *a.mu_eff.out().add(f) = a.rho * r.nu_wall;
+            *a.k_b.out().add(fb) = r.k_wall;
+            *a.w_b.out().add(fb) = r.omega_wall;
+        }
+    }
+}
+
+/// Arguments of [`WallCells`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct WallCellArgs {
+    /// The near-wall cells.
+    pub cells: Raw<u32>,
+    /// Start of the wall-face list of each near-wall cell (length + 1).
+    pub ptr: Raw<u32>,
+    /// Wall-face slots (indices into the wall-face arrays).
+    pub slots: Raw<u32>,
+    /// Area weight of each slot (the weights of a cell sum to 1).
+    pub weight: Raw<f64>,
+    /// ω per wall face.
+    pub omega: Raw<f64>,
+    /// Viscous weight of the blending per wall face (1: low-Re).
+    pub blending: Raw<f64>,
+    /// Log-layer production per wall face.
+    pub pk: Raw<f64>,
+    /// Output: its area mean per cell.
+    pub wall_pk: Raw<f64>,
+    /// Output: the fixed value per cell.
+    pub fix_val: Raw<f64>,
+    /// Output: the weight of the fixed value per cell, the area mean of
+    /// 1 − blending over the smooth wall faces.
+    pub fix_mask: Raw<f64>,
+}
+
+/// The area-weighted mean of the wall-face values of each near-wall cell,
+/// in the stored order of its wall faces (stage 6 specification 4.1).
+pub struct WallCells;
+impl Entry for WallCells {
+    type Args = WallCellArgs;
+    const NAME: &'static str = "wall_cells";
+    #[inline(always)]
+    unsafe fn run(i: usize, a: &WallCellArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let c = ld(a.cells.get(), i) as usize;
+            let lo = ld(a.ptr.get(), i) as usize;
+            let hi = ld(a.ptr.get(), i + 1) as usize;
+            let (mut v, mut m, mut p) = (0.0, 0.0, 0.0);
+            let mut j = lo;
+            while j < hi {
+                let s = ld(a.slots.get(), j) as usize;
+                let w = ld(a.weight.get(), s);
+                v += w * ld(a.omega.get(), s);
+                m += w * (1.0 - ld(a.blending.get(), s));
+                p += w * ld(a.pk.get(), s);
+                j += 1;
+            }
+            *a.fix_val.out().add(c) = v;
+            *a.fix_mask.out().add(c) = m;
+            *a.wall_pk.out().add(c) = p;
+        }
+    }
+}
+
+/// Arguments of [`Floor`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct FloorArgs {
+    /// Values (input and output).
+    pub x: Raw<f64>,
+    /// Lower bound.
+    pub lo: f64,
+    /// Upper bound.
+    pub hi: f64,
+    /// Output: 1 where a bound acted, else 0.
+    pub hit: Raw<f64>,
+}
+
+/// x ← min(max(x, lo), hi), and where a bound acted (the positivity floors
+/// of the turbulence variables, stage 6 specification 6.2; counted in the
+/// health section).
+pub struct Floor;
+impl Entry for Floor {
+    type Args = FloorArgs;
+    const NAME: &'static str = "floor";
+    #[inline(always)]
+    unsafe fn run(i: usize, a: &FloorArgs) {
+        // SAFETY: guaranteed by the caller; x is read before it is written.
+        unsafe {
+            let v = a.x.read(i);
+            let r = v.max(a.lo).min(a.hi);
+            *a.hit.out().add(i) = if r != v { 1.0 } else { 0.0 };
+            *a.x.out().add(i) = r;
+        }
+    }
+}
+
 send_sync!(
     LinArgs,
     BlockArgs,
@@ -1559,11 +1920,16 @@ send_sync!(
     ProductArgs,
     ScalarFaceArgs,
     ScalarRowArgs,
-    ScalarScaleArgs
+    ScalarScaleArgs,
+    SstCellArgs,
+    TurbFaceArgs,
+    WallFaceArgs,
+    WallCellArgs,
+    FloorArgs
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 35] = [
+pub const NAMES: [&str; 40] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     Fill::NAME,
@@ -1599,6 +1965,11 @@ pub const NAMES: [&str; 35] = [
     ScalarFaces::NAME,
     ScalarRows::NAME,
     ScalarScale::NAME,
+    SstCells::NAME,
+    TurbFaces::NAME,
+    WallFaces::NAME,
+    WallCells::NAME,
+    Floor::NAME,
 ];
 
 #[cfg(test)]
@@ -1635,6 +2006,11 @@ mod tests {
             size_of::<ScalarFaceArgs>(),
             size_of::<ScalarRowArgs>(),
             size_of::<ScalarScaleArgs>(),
+            size_of::<SstCellArgs>(),
+            size_of::<TurbFaceArgs>(),
+            size_of::<WallFaceArgs>(),
+            size_of::<WallCellArgs>(),
+            size_of::<FloorArgs>(),
         ];
         for s in sizes {
             assert!(s + 8 <= 4096, "argument block of {s} bytes");
@@ -1691,6 +2067,6 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 35);
+        assert_eq!(NAMES.len(), 40);
     }
 }

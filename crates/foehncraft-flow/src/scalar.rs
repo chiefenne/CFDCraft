@@ -1056,6 +1056,8 @@ impl Scalars {
                     sp: None,
                     alpha,
                     time,
+                    fix: None,
+                    positive: false,
                     val: self.val,
                     rhs: self.rhs,
                     diag: self.diag,

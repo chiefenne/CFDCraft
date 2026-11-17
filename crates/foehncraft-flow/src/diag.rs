@@ -103,10 +103,23 @@ codes! {
     BC_WEDGE_ANGLE = "BC024", Warning, "A wedge wider than 10° (the axisymmetric error grows with the angle).";
     BC_POTENTIAL_CONVECTIVE = "BC025", Error, "A potential-flow start with a convective outlet and no pressure boundary.";
     BC_WALL_MASS_CLOSED = "BC026", Error, "Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure).";
+    BC_ROUGHNESS = "BC027", Warning, "A wall roughness k_s larger than the first-cell distance on more than 10 % of the wall's area.";
+    BC_TURBULENCE_UNUSED_VALUE = "BC028", Warning, "A turbulence value that the run does not use (at an outlet, whose backflow takes k and ω of the cell; later `zeta` with SST or k-ε, `omega` with an ε model); BC009 stays for laminar cases.";
+    TURB_INLET_CONFLICT = "BC029", Error, "Two incompatible turbulence specifications on one inlet (for example `turbulence_length_scale` and `viscosity_ratio`, or `k` with intensity).";
     BC_PERIODIC = "BC030", Error, "A periodic boundary without a periodic partner that names it back, a pair whose faces do not match, or a driving given twice.";
     BC_PERIODIC_UNDRIVEN = "BC031", Warning, "A periodic pair with no driving (`mass_flow`, `pressure_gradient`) and no body force: the flow decays to rest.";
     // passive scalars (D51, D116)
     SCALAR_BOUNDARY = "SCAL001", Error, "A `[boundary.<name>.scalar.<scalar>]` table for an unknown scalar or boundary, without exactly one of `value` and `flux`, or with a condition its boundary does not take (a flux at an inlet, anything at an outlet, `periodic` away from a periodic pair, the heat-flux mode with fixed values).";
+    // turbulence models (stage 6, D137)
+    TURB_Y_PLUS = "TURB001", Warning, "First-cell y⁺ outside the claimed range of the wall treatment on more than 10 % of a wall's area: above 2 with `low-re`, between 3 and 20 (the buffer layer) with `automatic` (per boundary with the area-weighted min, mean and max).";
+    TURB_FLOOR = "TURB002", Warning, "A positivity floor of k or ω acted on more than 0.1 % of the cells in an iteration of the final tenth of the solves (equation and cell count); the run record counts all iterations (`turbulence_floors`).";
+    TURB_INLET_RANGE = "TURB003", Warning, "Inlet turbulence outside the usual range: I > 0.5, or a viscosity ratio below 10⁻² or above 10⁵.";
+    TURB_KATO_ROTATING = "TURB004", Note, "Kato–Launder production in a rotating zone: Ω is the absolute-frame vorticity.";
+    TURB_NO_WALL = "TURB005", Note, "No wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0; the ζ-f and EB near-wall terms vanish).";
+    TURB_UNBOUNDED_SCHEME = "TURB006", Error, "A convection scheme or time scheme that is not bounded for a turbulence variable (central in a steady run, Crank–Nicolson).";
+    TURB_CONSTANTS = "TURB007", Warning, "Model constants changed in `[turbulence.constants]`.";
+    TURB_CAP = "TURB008", Warning, "The ν_t cap `max_viscosity_ratio` acted (cell count).";
+    TURB_INLET_DEFAULT = "TURB009", Note, "Inlet turbulence defaulted to I = 0.05, r = 10 (boundary named).";
     // expressions (D53)
     EXPR_SYNTAX = "EXPR001", Error, "An expression that cannot be parsed.";
     EXPR_NAME = "EXPR002", Error, "An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint).";
@@ -359,7 +372,7 @@ mod tests {
             assert!(
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
-                    "REG", "MESH"
+                    "REG", "MESH", "TURB"
                 ]
                 .contains(&p),
                 "{}",

@@ -471,7 +471,9 @@ face):
 
 - y_P = (x_P − x_f)·n_f, the normal distance of the cell centroid from the
   face plane, with n_f the outward unit normal; a floor of 10⁻³ of the
-  cell's characteristic length guards degenerate cells (counted in health).
+  cell thickness V_P/A_f normal to the face guards degenerate cells
+  (counted in health); not 10⁻³ V_P^⅓, which on the thin wall cells of a
+  unit-depth 2D mesh exceeds y_P itself (*6b*).
 - U_t = |u_P − u_w − ((u_P − u_w)·n_f) n_f|, the tangential velocity
   relative to the wall velocity (D29 moving walls), and its direction t_f.
 - Inputs: k_P, ν (face value), roughness k_s (section 4.5), the model's
@@ -508,11 +510,22 @@ bitwise reproducible.
 
 | Treatment | Models | Wall shear | First-cell turbulence values | Claimed y⁺ range |
 |---|---|---|---|---|
-| `low-re` (integration to the wall) | SST, ζ-f, EB | τ_w = μ U_t/y_P | SST: ω_P = 6ν/(β₁ y_P²) fixed in the first cell (Menter 1994; the limit y⁺ → 0 of the automatic treatment); ζ-f, EB: ε_w, f_w or α_w of section 3 | y⁺ ≲ 1 |
-| `automatic` (Menter, Kuntz & Langtry 2003) | SST (default) | u_τ = (u_τ,vis⁴ + u_τ,log⁴)^{1/4}, u_τ,vis = (ν U_t/y_P)^½, u_τ,log = κ U_t/ln(E y⁺) (fixed number of Newton steps, as for Spalding's law) | ω_P = (ω_vis² + ω_log²)^½, ω_vis = 6ν/(β₁ y_P²), ω_log = u_τ/(√β* κ y_P) | any; validated 0.5 ≤ y⁺ ≤ 100 |
+| `low-re` (integration to the wall) | SST, ζ-f, EB | τ_w = μ U_t/y_P | SST: k_w = 0 and the wall-face value ω_w = 10·6ν/(β₁ d₁²) with d₁ = 2 y_P, the wall-cell height (Menter 1994), as Dirichlet values (*6b*: replaces the first-cell value ω_P = 6ν/(β₁ y_P²) of the draft, see the note below); ζ-f, EB: ε_w, f_w or α_w of section 3 | y⁺ ≲ 1 |
+| `automatic` (Menter, Kuntz & Langtry 2003) | SST (default) | u_τ = (u_τ,vis⁴ + u_τ,log⁴)^{1/4}, u_τ,vis = (ν U_t/y_P)^½, u_τ,log = κ U_t/ln(E y⁺) (fixed number of Newton steps, as for Spalding's law) | ω_P = (ω_vis² + ω_log²)^½, ω_vis = 6ν/(β₁ y_P²), ω_log = u_τ/(√β* κ y_P), imposed with the weight 1 − b, b = u_τ,vis⁴/u_τ⁴ (4.4), on top of the wall-face ω_w of `low-re`; the log law takes y⁺ ≥ 11.06 (its lower end with κ = 0.41, E = 9.793), so that u_τ,log has no spurious root in the sublayer and b → 1 there (*6b*) | any; validated 0.5 ≤ y⁺ ≤ 100 |
 | `compound` (Popovac & Hanjalić 2007) | ζ-f, EB (default), k-ε family (option) | τ_w from the blended profile: u⁺ = e^{−Γ} y⁺ + e^{−1/Γ} u⁺_log, Γ = 0.01 (y⁺)⁴/(1 + 5 y⁺) ◇ | ε_P = e^{−Γ} 2νk_P/y_P² + e^{−1/Γ} C_μ^{3/4} k_P^{3/2}/(κ y_P); P_k,P blended likewise between the integrated and the log-law value τ_w u_τ/(κ y_P); f_w (ζ-f) blended between −2νζ_P/y_P² and 0 | any; validated 0.5 ≤ y⁺ ≤ 100 |
 | `scalable` (Grotjans & Menter 1998) | k-ε family (default) | log law evaluated at ỹ* = max(y*, 11.06) | ε_P = C_μ^{3/4} k_P^{3/2}/(κ y_P) (with ỹ*), P_k,P = τ_w u_τ/(κ y_P) | y⁺ ≥ 1 without failure; accuracy claimed for y⁺ ≥ 30 |
 | `standard` (Launder & Spalding 1974) | k-ε family | log law with u_τ = C_μ^{1/4} k_P^{1/2} | as scalable, without the floor | 30 ≤ y⁺ ≤ 300 |
+
+**Wall value of ω in `low-re` (*6b*, from the flat-plate runs).** Fixing
+ω_P = 6ν/(β₁ y_P²) in the first cell, as the draft had it, made C_f(0.97)
+of the TMR plate converge at first order (p ≈ 0.9: −3.1 %, −1.2 %, −0.1 %
+on 64 × 48 to 256 × 192 cells) towards about +1.1 % of the TMR value: the
+1/y² profile of ω is not resolved by the linear flux between the first
+two cells. The wall-face value 10·6ν/(β₁ d₁²) with d₁ the wall-cell
+height, which the TMR codes and pyaeroflow use, gives −0.8 % already on
+64 × 48 cells; pyaeroflow found the same (d₁ = the centroid distance, four
+times larger ω_w, gives 2 % less). d₁ = 2 y_P is the wall-cell height of
+hexahedra and prisms.
 
 The exponentials e^{−Γ} and e^{−1/Γ} are evaluated for every face (no
 branch on the regime); Γ is floored at 10⁻³⁰⁰ before 1/Γ, and the in-house
@@ -526,11 +539,15 @@ the paper (◇).
 
 ### 4.4 Imposing first-cell values
 
-ω_P (SST) and ε_P (wall-function treatments) are fixed values in the
-near-wall cell: the matrix row of that cell is replaced by a_P = 1, b = value,
-off-diagonals 0, through a per-cell mask applied with select instructions
-in the row-assembly kernel (no branch); the neighbour rows keep their
-coupling. For P_k,P the cell's production is replaced by the area-weighted
+ω_P (SST automatic) and ε_P (wall-function treatments) are fixed values in
+the near-wall cell, with a weight m ∈ [0, 1] per cell: the row becomes
+(1 − m)·(transport row) + m a_P (φ_P − value), so the off-diagonals are
+scaled by 1 − m and b becomes (1 − m) b + m a_P·value (m = 1: the value is
+fixed; the row stays diagonally dominant for every m). m is the area mean
+of the faces' weights over the cell's wall faces (SST automatic: 1 − b of
+4.3; 1 for the fixed values of the wall functions), applied without a
+branch in the row-assembly kernel; the neighbour rows keep their
+coupling (*6b*: the draft had the hard replacement only). For P_k,P the cell's production is replaced by the area-weighted
 wall-face value. The compound treatment of ζ-f also blends the f wall
 value. These replacements are part of the assembly, so the dual-number
 Jacobian (D59) sees them.
@@ -612,7 +629,14 @@ zero flux (default). Robin conditions and conjugate interfaces are stage 7.
 
 - **Convection:** linear upwind as a deferred correction on implicit
   upwind (D25) with the Venkatakrishnan limiter on by default for the
-  turbulence variables (K = 5); first-order upwind as an option and for
+  turbulence variables, its threshold scaled with the variable:
+  ε = K (φ_max − φ_min) over the domain (Wang 2000) with K = 0 by default
+  (taken as 10⁻¹², the bounded Venkatakrishnan function). *6b:* the
+  dimensional threshold (K h)³ with K = 5 of the draft is far above the
+  differences of k (10⁻⁸ to 10⁻³ m²/s² on the TMR plate), switches the
+  limiter off at the boundary-layer edge and left k floored in about 100
+  cells with the residual stalled at 10⁻⁴; K = 10⁻³ still stalls at 10⁻⁶;
+  first-order upwind as an option and for
   the first N iterations by the ramp of D49 (2). The bounded central
   scheme is refused for turbulence variables in steady runs (TURB006) and
   allowed in transient runs with β ≥ 0.1. The deferred correction is
@@ -665,7 +689,9 @@ viscosity ratio 10⁻², where k_ref is the largest inlet k (or the initial
 k). With the splits above the floors should never act on a converging
 run. Each activation is counted per equation in the health section
 (D69) and gives TURB002 when more than 0.1 % of the cells needed it in an
-iteration. ζ, φ are bounded to [0, 2] and α to [0, 1] the same way.
+iteration of the final tenth of the run (*6b*: in the first iterations the
+inexact linear solves, relative tolerance 10⁻², can undershoot; this is
+counted, not reported). ζ, φ are bounded to [0, 2] and α to [0, 1] the same way.
 
 **Eddy-viscosity floor and bound:** ν_t ≥ 0 by construction; an optional
 maximum viscosity ratio (`turbulence.max_viscosity_ratio`, default 10⁵)
@@ -798,10 +824,10 @@ implemented):
 | Code | Severity | Title |
 |---|---|---|
 | `BC027` | warning | A wall roughness k_s larger than the first-cell distance on more than 10 % of the wall's area. |
-| `BC028` | warning | A turbulence value that the selected model does not use (`zeta` with SST or k-ε, `omega` with an ε model); BC009 stays for laminar cases. |
+| `BC028` | warning | A turbulence value that the run does not use: `zeta` with SST or k-ε, `omega` with an ε model, or any turbulence value at an outlet (*6b*: the backflow takes k and ω of the cell until the backflow values are implemented); BC009 stays for laminar cases. |
 | `BC029` | error | Two incompatible turbulence specifications on one inlet (for example `turbulence_length_scale` and `viscosity_ratio`, or `k` with intensity). |
-| `TURB001` | warning | First-cell y⁺ outside the claimed range of the wall treatment (section 4.3) on more than 10 % of a wall's area (reported per boundary with the area-weighted min, mean and max). |
-| `TURB002` | warning | A positivity floor or bound acted on more than 0.1 % of the cells in an iteration (equation and cell count). |
+| `TURB001` | warning | First-cell y⁺ outside the claimed range of the wall treatment (section 4.3) on more than 10 % of a wall's area (reported per boundary with the area-weighted min, mean and max). *6b:* above 2 with `low-re`; between 3 and 20 with `automatic`, where the blending overpredicts the wall shear stress (section 9.3). |
+| `TURB002` | warning | A positivity floor or bound acted on more than 0.1 % of the cells in an iteration (equation and cell count). *6b:* reported only for iterations in the final tenth of the solves; the run record counts all of them. |
 | `TURB003` | warning | Inlet turbulence outside the usual range: I > 0.5, or a viscosity ratio below 10⁻² or above 10⁵. |
 | `TURB004` | note | Kato–Launder production in a rotating zone: Ω is the absolute-frame vorticity. |
 | `TURB005` | note | No wall boundary: the wall distance is infinite (F₁ = 0, F₂ = 0; the ζ-f and EB near-wall terms vanish). |
@@ -835,7 +861,7 @@ code; the table below is the target.
 | `turbulence.constants.<name>` | number | the paper's | | | Constant override by its literature name (`beta_star`, `a1`, `c_mu`, …); TURB007. |
 | `solver.turbulence.scheme` | "upwind" \| "linear-upwind" \| "central" | `"linear-upwind"` | | | Convection scheme of the turbulence equations. |
 | `solver.turbulence.limiter` | "none" \| "venkatakrishnan" \| "venkatakrishnan-wang" | `"venkatakrishnan"` | | | Limiter. |
-| `solver.turbulence.limiter_k` | number | `5.0` | | | Constant K of the limiter. |
+| `solver.turbulence.limiter_k` | number | `0.0` | | | Relative threshold K of the limiter, ε = K (φ_max − φ_min) (6.1; *6b*: 0 is taken as 10⁻¹², the bounded Venkatakrishnan function). |
 | `solver.turbulence.relaxation` | number | 0.8 steady, 1 transient | | yes | Under-relaxation of k, ε, ω, ζ, φ. |
 | `solver.turbulence.tolerance` | number | 1e-2 steady, 1e-8 transient | | yes | Relative tolerance per solve. |
 | `solver.turbulence.max_iter` | integer | `50` | | yes | BiCGStab iterations per solve. |
@@ -919,6 +945,22 @@ scalar with Pr = 0.71, isothermal plate.
 | y⁺ insensitivity: first-cell y⁺ of 0.5, 1, 2, 5, 10, 30, 60, 100 at x = 0.97 | the model's own y⁺ ≈ 1 result (low-re) | – | C_f within ±2 % (SST automatic), ±3 % (ζ-f and EB compound), ±5 % (k-ε compound, and scalable for y⁺ ≥ 30); St within ±5 % (Kader) |
 | Smooth limits against hard limits (2.6) | the hard-limit result | – | C_f within 0.1 % |
 
+**Results of 6b (PR #68, SST; details on the
+[verification page](../verification/stage6.md#k-ω-sst-part-6b)).**
+C_f(0.97) with `low-re` on 256 × 192 cells is 2.7007e-3, +0.37 % from
+the TMR value: the validation row passes. Its convergence over the three
+finest meshes is monotonic with p = 0.43 and GCI_fine = 1.87 %, outside
+the verification band (finding; a fifth mesh decides whether the
+asymptotic range is reached). C_f(Re_x) lies 5 to 9 % below White's
+correlation, as the TMR's SST result does at x = 0.97 (−6.4 %): the row's
+±5 % band does not suit SST and is kept as a finding of the model.
+u⁺ at x = 0.97 follows Spalding's law within 2.3 %. The y⁺ study of
+`automatic` gives +2.3 % (y⁺ 1.7), +15.6 % (4.6), +14.8 % (9.3),
+−0.2 % (27) and −0.7 % (92): the buffer layer misses the ±2 % band
+(finding); TURB001 warns there and the blending is revisited with the
+wall functions of 6c. The temperature rows wait for 6f, the other models
+for 6c–6e.
+
 ### 9.4 Fully developed channel flow
 
 Periodic plane channel driven by a mean pressure gradient that fixes
@@ -937,6 +979,15 @@ Kuroda (1992, Re_τ = 150) and Kawamura et al. (1998, Re_τ = 180; Re_τ = 395 f
 | k⁺ peak value and position; v²⁺ = ζk⁺ or φk⁺ near-wall profile | ζ-f, EB | – | peak position within ±20 %; reported against the model papers' own channel curves (the paper result is the acceptance target for EB at Re_τ = 395, section 3.4) |
 | Nu (heat-flux jump), constant Pr_t and Kays–Crawford | all, Re_τ 150/180/395 | GCI_fine ≤ 1 % | ±7 % |
 | Wall-function insensitivity: first-cell y⁺ from 1 to 100 | compound and automatic | – | wall shear within ±3 % of the y⁺ ≈ 1 result (stage-6 row of the plan) |
+
+**Results of 6b (PR #68, SST, Re_τ = 395 only).** With `low-re`, 96
+cells across and first-cell y⁺ 0.28: Re_τ = 397.8 from the driving force,
+U_b⁺ = 17.43 (−0.7 % from the DNS, +1.1 % from Dean's correlation),
+U_c⁺ = 19.64 (about −2.4 %); both inside their bands. On three meshes (96, 192, 384 cells
+across) U_b⁺ = 17.427, 17.381, 17.346: observed order 0.40, extrapolated
+17.237, GCI_fine 0.78 %, outside the verification band (finding; the
+fourth mesh did not reach its tolerance). Re_τ = 180 and 590, the profiles and the wall-function
+insensitivity follow with the model comparison of 6g.
 
 ### 9.5 Backward-facing step (Driver & Seegmiller 1985)
 
@@ -1007,7 +1058,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 |---|---|---|---|
 | 6a | Generic scalar transport (D116), passive scalars and their boundary sub-tables (D51), bounded BDF2 (D28 (1)), smooth-limit helpers (2.6), exact wall distance with the BVH (D48, D108 (1)) and the derived field `wall-distance` (done, PR #63) | `foehncraft-kernels/src/scalar.rs`, `foehncraft-mesh/src/query/bvh.rs`, `foehncraft-flow/src/scalar.rs`, `foehncraft-core/src/math.rs` | 9.2 laminar heated channel (developed profile at the inlet, uniform wall flux, zero-gradient outlet; Nu within 0.5 %), wall distance, scalar MMS on hex, poly and tet cells, scalar time order |
 | 6p | Periodic boundaries for the flow and the scalars (translational pairs, mass-flow or pressure-gradient driving, the heat-flux jump of D109 (1) for passive scalars; the wall-temperature map of D109–D111 with the energy stage) (done, PR #67) | `foehncraft-mesh` periodic pairing, `foehncraft-flow/src/bc.rs` | periodic Poiseuille and heated channel equal to the open ones; needed by the 9.4 channel at Re_τ 180/395/590 |
-| 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂; the optional PDE wall distance with the key `turbulence.wall_distance` (the exact distance of 6a is the default); the invariant features of D166 as named expression variables (same definitions as the D106 export) | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 MMS and decay (SST), 9.3 flat plate, 9.4 channel (SST) |
+| 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂; the optional PDE wall distance with the key `turbulence.wall_distance` (the exact distance of 6a is the default); the invariant features of D166 as named expression variables (same definitions as the D106 export) (done, PR #68: the features as the derived field `turbulence-features`; their names in the expression language come with the first consumer, D104; the SST MMS moves to 6g; turbulence values of the backflow at outlets later, BC028) | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 decay (SST), 9.3 flat plate, 9.4 channel (SST) |
 | 6c | Standard and realizable k-ε, scalable and standard wall functions, compound treatment for the k-ε family, Cebeci–Bradshaw roughness | `turb/keps.rs` | 9.2, 9.3, 9.4 for the k-ε family, rough pipe and Moody study |
 | 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG), the AMG preconditioner for the scalar equations (D36; 6a solves them with Jacobi-preconditioned BiCGStab, enough for the laminar cases) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
 | 6e | EB k-ε (D133) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
@@ -1015,6 +1066,12 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports | cases, gallery, `tools/notebooks/stage6_colab.ipynb` | 9.5, 9.6, 9.7, 6.6 |
 | 6h | SST options of D170: curvature and rotation correction (Smirnov & Menter 2009), QCR2000 and QCR2013 with the explicit-stress path in the momentum assembly that D171 reuses | `turb/sst.rs`, `turb/invariants.rs`, `foehncraft-flow/src/turbulence/stress.rs` | 9.8 |
 | release | v0.6: version bump, changelog summary, README, verification manual, Release workflow (dry run first) | | all of section 9 green or findings recorded |
+
+Validation cases shared with pyaeroflow, the maintainer's earlier
+compressible code (it resolves walls, no wall functions), so that the two
+codes can be compared on the same set-ups: the TMR flat plate (6b, done),
+the heated flat plate (6f), the NASA wall-mounted hump (6g, and the
+data-driven work of L37).
 
 Order rationale: 6a gives every later model its transport, wall distance
 and solver path; 6p brings the periodic boundaries that the channel cases

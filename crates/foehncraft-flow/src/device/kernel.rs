@@ -12,7 +12,8 @@
 
 use super::{
     BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, Lsq, Mask, MomentumFaceArgs,
-    MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, Setup,
+    MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, Setup, SstCellOps, TurbFaceOps, WallCellOps,
+    WallFaceOps, WallStatic,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -90,6 +91,10 @@ pub struct KernelFlow<E: Exec> {
     beta: Buf,
     /// Prescribed pressures per boundary face (time-dependent values, D53).
     pset: Buf,
+    /// The face viscosity (the buffer behind `m.mu_face`).
+    mu_buf: Buf,
+    /// The wall arrays of the turbulence models: faces, cells, ptr, slots.
+    wall: Option<[Raw<u32>; 4]>,
 }
 
 impl<E: Exec> KernelFlow<E> {
@@ -128,10 +133,12 @@ impl<E: Exec> KernelFlow<E> {
 
         // the viscosity per face: one value, or the property program's
         // values (D94; stage 6 adds the eddy viscosity)
-        let mu_face = match s.mu_face {
-            Some(m) => f64s(m)?,
-            None => f64s(&vec![s.mu; nf])?,
-        };
+        let mu_buf = x.alloc(nf)?;
+        match s.mu_face {
+            Some(m) => x.upload(mu_buf, m)?,
+            None => x.upload(mu_buf, &vec![s.mu; nf])?,
+        }
+        let mu_face = x.raw(mu_buf);
         let pset_buf = x.alloc(nb)?;
         x.upload(pset_buf, &s.bc.pset)?;
         let pset = x.raw(pset_buf);
@@ -208,6 +215,8 @@ impl<E: Exec> KernelFlow<E> {
             conv,
             beta,
             pset: pset_buf,
+            mu_buf,
+            wall: None,
             lsq_u,
             lsq_p,
             rho: s.rho,
@@ -654,6 +663,10 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         let mut ins = vec![a.cp, a.cn, a.bf, a.mass_flux, a.phi];
         ins.extend(a.su);
         ins.extend(a.sp);
+        if let Some((m, v)) = a.fix {
+            ins.push(m);
+            ins.push(v);
+        }
         if let Some(t) = &a.time {
             ins.push(t.old);
             ins.push(t.old2);
@@ -700,6 +713,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             old2,
             lo,
             hi,
+            fix_mask: a.fix.map_or(Raw::EMPTY, |(m, _)| self.r(m)),
+            fix_val: a.fix.map_or(Raw::EMPTY, |(_, v)| self.r(v)),
+            positive: u32::from(a.positive),
             val: self.r(a.val),
             rhs: self.r(a.rhs),
             diag: self.r(a.diag),
@@ -790,6 +806,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             beta: a.beta,
             nonorth: a.nonorth,
             convection: a.convection,
+            transposed: a.transposed,
             cp: self.r(a.cp),
             cn: self.r(a.cn),
             bf: self.r3(a.bf),
@@ -1013,6 +1030,172 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
 
     fn amg_setup(&mut self, val: Buf, s: &AmgSettings) -> Result<()> {
         self.x.amg_setup(val, s)
+    }
+
+    fn face_viscosity(&self) -> Buf {
+        self.mu_buf
+    }
+
+    fn wall_setup(&mut self, w: &WallStatic) -> Result<()> {
+        ensure!(
+            w.ptr.len() == w.cells.len() + 1 && w.slots.len() == w.faces.len(),
+            "flow device: inconsistent wall arrays"
+        );
+        let mut up = |v: &[u32]| -> Result<Raw<u32>> {
+            if v.is_empty() {
+                Ok(Raw::EMPTY)
+            } else {
+                self.x.alloc_u32(v)
+            }
+        };
+        let arrays = [up(&w.faces)?, up(&w.cells)?, up(&w.ptr)?, up(&w.slots)?];
+        self.wall = Some(arrays);
+        Ok(())
+    }
+
+    fn sst_cells(&mut self, a: &SstCellOps) -> Result<()> {
+        let mut ins = vec![a.k, a.w, a.d];
+        for g in &a.grad_u {
+            ins.extend(g.all());
+        }
+        ins.extend(a.grad_k.all());
+        ins.extend(a.grad_w.all());
+        if let Some((x, y)) = a.add {
+            ins.push(x);
+            ins.push(y);
+        }
+        if let Some((x, y)) = a.wall {
+            ins.push(x);
+            ins.push(y);
+        }
+        let mut outs = vec![a.nu_t, a.f1, a.pk, a.dk, a.dw, a.capped];
+        if let Some(s) = a.sources {
+            outs.extend(s);
+        }
+        check(&outs, &ins)?;
+        let src = a.sources.map(|s| s.map(|b| self.r(b)));
+        let none = Raw::EMPTY;
+        let args = e::SstCellArgs {
+            grad_u: self.rg(&a.grad_u),
+            k: self.r(a.k),
+            w: self.r(a.w),
+            grad_k: self.r3(a.grad_k),
+            grad_w: self.r3(a.grad_w),
+            d: self.r(a.d),
+            nu: a.nu,
+            c: a.c,
+            o: a.o,
+            add_k: a.add.map_or(none, |(x, _)| self.r(x)),
+            add_w: a.add.map_or(none, |(_, y)| self.r(y)),
+            wall_mask: a.wall.map_or(none, |(x, _)| self.r(x)),
+            wall_pk: a.wall.map_or(none, |(_, y)| self.r(y)),
+            nu_t: self.r(a.nu_t),
+            f1: self.r(a.f1),
+            pk: self.r(a.pk),
+            su_k: src.map_or(none, |s| s[0]),
+            sp_k: src.map_or(none, |s| s[1]),
+            su_w: src.map_or(none, |s| s[2]),
+            sp_w: src.map_or(none, |s| s[3]),
+            dk: self.r(a.dk),
+            dw: self.r(a.dw),
+            capped: self.r(a.capped),
+        };
+        self.go::<e::SstCells>(self.nc, &args)
+    }
+
+    fn turb_faces(&mut self, a: &TurbFaceOps) -> Result<()> {
+        check(
+            &[a.mu_eff, a.gamma_k, a.gamma_w],
+            &[a.nu_t, a.dk, a.dw, a.mu, a.wall],
+        )?;
+        let args = e::TurbFaceArgs {
+            m: self.m,
+            nu_t: self.r(a.nu_t),
+            dk: self.r(a.dk),
+            dw: self.r(a.dw),
+            mu: self.r(a.mu),
+            wall: self.r(a.wall),
+            rho: self.rho,
+            mu_eff: self.r(a.mu_eff),
+            gamma_k: self.r(a.gamma_k),
+            gamma_w: self.r(a.gamma_w),
+        };
+        self.go::<e::TurbFaces>(self.nf, &args)
+    }
+
+    fn wall_faces(&mut self, a: &WallFaceOps) -> Result<()> {
+        let Some([faces, ..]) = self.wall else {
+            anyhow::bail!("flow device: wall_faces before wall_setup");
+        };
+        let mut ins = vec![a.y, a.ks];
+        ins.extend(a.normal.all());
+        ins.extend(a.u.all());
+        ins.extend(a.ub.all());
+        check(
+            &[
+                a.y_plus, a.omega, a.blending, a.mu_eff, a.k_b, a.w_b, a.u_tau,
+            ],
+            &ins,
+        )?;
+        let args = e::WallFaceArgs {
+            m: self.m,
+            faces,
+            normal: self.r3(a.normal),
+            y: self.r(a.y),
+            ks: self.r(a.ks),
+            u: self.r3(a.u),
+            ub: self.r3(a.ub),
+            nu: a.nu,
+            rho: self.rho,
+            treatment: a.treatment,
+            c: a.c,
+            u_tau_old: self.r(a.u_tau),
+            u_tau: self.r(a.u_tau),
+            y_plus: self.r(a.y_plus),
+            omega: self.r(a.omega),
+            blending: self.r(a.blending),
+            pk: self.r(a.pk),
+            mu_eff: self.r(a.mu_eff),
+            k_b: self.r(a.k_b),
+            w_b: self.r(a.w_b),
+        };
+        self.go::<e::WallFaces>(faces.len as usize, &args)
+    }
+
+    fn floor(&mut self, x: Buf, lo: f64, hi: f64, work: Buf) -> Result<usize> {
+        check(&[work], &[x])?;
+        let args = e::FloorArgs {
+            x: self.r(x),
+            lo,
+            hi,
+            hit: self.r(work),
+        };
+        let n = self.r(x).len as usize;
+        self.go::<e::Floor>(n, &args)?;
+        Ok(self.sum_sq(work)?.round() as usize)
+    }
+
+    fn wall_cells(&mut self, a: &WallCellOps) -> Result<()> {
+        let Some([_, cells, ptr, slots]) = self.wall else {
+            anyhow::bail!("flow device: wall_cells before wall_setup");
+        };
+        check(
+            &[a.fix_val, a.fix_mask, a.wall_pk],
+            &[a.omega, a.weight, a.blending, a.pk],
+        )?;
+        let args = e::WallCellArgs {
+            cells,
+            ptr,
+            slots,
+            weight: self.r(a.weight),
+            omega: self.r(a.omega),
+            blending: self.r(a.blending),
+            pk: self.r(a.pk),
+            wall_pk: self.r(a.wall_pk),
+            fix_val: self.r(a.fix_val),
+            fix_mask: self.r(a.fix_mask),
+        };
+        self.go::<e::WallCells>(cells.len as usize, &args)
     }
 
     fn sync(&mut self) -> Result<()> {

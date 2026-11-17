@@ -31,11 +31,11 @@ FLOW = {
         "cavity_re100", "cavity_re100_columns", "cavity_re100_energy", "cavity_re100_schedule", "cavity_re1000_poly3d", "couette_hex",
         "couette_mixed", "couette_poly", "couette_tet", "channel_slip", "poiseuille_table",
         "couette_derived", "couette_viscosity", "couette_transpiration", "poiseuille_water",
-        "pipe_gmsh_raw", "channel_heated",
+        "pipe_gmsh_raw", "channel_heated", "channel_sst",
     ],
     "linux-2": [
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
-        "poiseuille_hex", "poiseuille_poly",
+        "poiseuille_hex", "poiseuille_poly", "tmr_plate_sst",
     ],
     "linux-3": [
         "taylor_green_error", "cylinder_potential", "cavity_re100_budget", "taylor_green_bdf2",

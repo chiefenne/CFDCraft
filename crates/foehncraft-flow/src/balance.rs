@@ -257,7 +257,7 @@ pub fn rates(
             xf[2] - 0.5 * (xn[2] + xf[2] - rp[2]),
         ];
         let k = d.k.get(fc);
-        let mu = sol.phys.mu_at(fc);
+        let mu = sol.mu_eff_at(fc);
         let dd = mu * d.dgeo[fc];
         let mut e = 0.0;
         for i in 0..3 {
@@ -304,7 +304,7 @@ pub fn rates(
             let kind = mom_kind[fb];
             let c = d.owner[fc] as usize;
             let up = sol.u.get(c);
-            let mu = sol.phys.mu_at(fc);
+            let mu = sol.mu_eff_at(fc);
             let dd = mu * d.dgeo[fc];
             if kind == MOM_FIXED {
                 // the diffusive flux of the momentum rows
