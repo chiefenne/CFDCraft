@@ -163,7 +163,10 @@ fn heated_channel_meets_the_dns_nusselt_number() {
             "turbulent_prandtl = 0.85\n",
             &format!("turbulent_prandtl = 0.85\n{extra}"),
         );
-        let r = run_case(&FlowCase::from_toml(&t, &cases()).unwrap(), name);
+        let r = run_case(
+            &FlowCase::from_toml(&t, &cases()).unwrap(),
+            &format!("channel_{name}"),
+        );
         assert!(r.failures.is_empty(), "{name}: {:?}", r.failures);
         let sc = &r.solves.last().unwrap().scalars[0];
         let b = |n: &str| sc.boundaries.iter().find(|b| b.boundary == n).unwrap();
