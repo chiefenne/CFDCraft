@@ -36,9 +36,9 @@ Contents
   from replacing under-relaxation, which is a local time step that shrinks
   with the cell, by pseudo-time steps on physical scales: one step for all
   cells in the momentum equations and the time scale of the turbulence
-  model in the turbulence equations. Together: 65 to 85 iterations on the
-  coarse step for the three models instead of 525 to 675, 170 to 180 on
-  the fine mesh instead of 1 750, 452 instead of 1 397 on the cavity at
+  model in the turbulence equations. Together: 65 to 80 iterations on the
+  coarse step for the three models instead of 525 to 675, 175 on
+  the fine mesh instead of 1 600, 452 instead of 1 397 on the cavity at
   Re = 1000.
 - **Same equations, same result.** The coupled algorithm solves the
   discrete equations of SIMPLEC in increment form. The converged result is
@@ -53,8 +53,8 @@ Contents
   (BiCGStab with a diagonal preconditioner): it sets the cap on the local
   step, and the cap sets the count on fine meshes. It also makes a
   coupled iteration cost five to seven SIMPLEC iterations, so the run
-  time of the step case gains a factor of about 1.5 where the iteration
-  count gains 8 to 10 (section 7.5). A multigrid for
+  time of the step case gains a factor of 1.4 to 1.5 where the iteration
+  count gains 8 to 9 (section 7.5). A multigrid for
   convection-dominated matrices removes it (L44).
 
 ## 2. Why SIMPLEC needs so many iterations
@@ -285,13 +285,13 @@ final value. Coarse: 8 200 cells; fine: 32 800 cells.
 |---|---|---|---|
 | k-ε-ζ-f₀, coarse | 525 | 300 | 65 |
 | k-ε, coarse | 600 | | 75 |
-| k-ω SST, coarse | 675 | | 85 |
-| k-ε-ζ-f₀, fine | 1 750 | 700 to 800 | 170 to 180 |
+| k-ω SST, coarse | 675 | | 80 |
+| k-ε-ζ-f₀, fine | 1 600 | 700 to 800 | 175 |
 | Channel Re_τ = 395, k-ε-ζ-f₀, residual 10⁻⁶ | about 2 100 | | 323 |
 | Cavity Re = 1000, 128², residual 10⁻⁸ | 1 397 (α = 0.9) | | 452 |
 
 The final x_r is the one of SIMPLEC (6.385, 5.287, 6.81 H on the coarse
-mesh), the bulk velocity of the channel too (U_b⁺ = 17.79). The fine mesh
+mesh, 6.352 H on the fine one), the bulk velocity of the channel too (U_b⁺ = 17.79). The fine mesh
 needs more than twice the count of the coarse one because of the cap on
 the local step (section 7.2). The counts are good to about 10 %
 (section 7.6).
@@ -361,13 +361,13 @@ x_r stays within 1 %:
 | Mesh | SIMPLEC (0.5, then 0.8) | Coupled | Time per outer iteration |
 |---|---|---|---|
 | Coarse, 8 200 cells | 525 iterations, 31 s | 65 iterations, 21 s | 0.06 s and 0.32 s |
-| Fine, 32 800 cells | 1 750 iterations, 342 s | 175 iterations, 235 s | 0.20 s and 1.35 s |
+| Fine, 32 800 cells | 1 600 iterations, 327 s | 175 iterations, 235 s | 0.20 s and 1.35 s |
 
 A coupled iteration costs five to seven SIMPLEC iterations: it takes 10
 (coarse) and 14 (fine) Krylov iterations, each with a momentum sweep that
 runs into its limit of 10 iterations and with a pressure solve. So the
-run time gains a factor of about 1.5 where the iteration count gains 8 to
-10. The sweep is where the run time is to be won: it decides the number
+run time gains a factor of 1.4 to 1.5 where the iteration count gains 8 to
+9. The sweep is where the run time is to be won: it decides the number
 of Krylov iterations and the cap on the local step (sections 7.2 and
 7.3), and L44 replaces it.
 
@@ -378,7 +378,7 @@ and across a restart. But the count reacts to the last digit of an
 input. The cavity needs 423 iterations with Δτ = 0.25 s given and 452
 with the automatic step, which is 0.25 s less one unit in the 17th
 digit; the fine step needed 145 iterations with a slightly shorter step
-(a velocity scale that counted the symmetry planes) and needs 170 to 180
+(a velocity scale that counted the symmetry planes) and needs 175
 at 7.3 H/U. The cause: the coupled solve stops at a tolerance of 0.1,
 its momentum sweep is cut off after 10 iterations and the multigrid
 cycle of its pressure solve runs in single precision, so two runs
@@ -408,9 +408,9 @@ Published reference points for pressure-based coupled solvers:
 
 Where Foehncraft stands after this step: the iteration counts are in the
 published range on the coarse mesh (7 to 9 times fewer iterations than
-SIMPLEC), the count still grows with the mesh (170 to 180 on the fine
+SIMPLEC), the count still grows with the mesh (175 on the fine
 mesh against 65), and the gain in run time is far smaller than the gain in
-iterations (a factor of about 1.5 on the step, section 7.5, where the
+iterations (a factor of 1.4 to 1.5 on the step, section 7.5, where the
 published coupled solvers with a block multigrid report 8 to 40) because
 of the momentum sweeps. The turbulence step from the model time scale is our own
 addition; the published solvers leave the turbulence equations on the

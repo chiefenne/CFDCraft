@@ -14,12 +14,12 @@
   a velocity scale; `[solver.pseudo_time]`) and the relaxation (default
   0.98) only caps the local Courant number; the turbulence equations take
   the step min(Δτ, 0.5 T) with the time scale T of the model. The
-  backward-facing step settles in 65 (k-ε-ζ-f₀), 75 (k-ε) and 85 (SST)
-  iterations instead of 525 to 675, on 32 800 cells in 170 to 180 instead
-  of 1 750; the channel with k-ε-ζ-f₀ converges in 323 instead of about
+  backward-facing step settles in 65 (k-ε-ζ-f₀), 75 (k-ε) and 80 (SST)
+  iterations instead of 525 to 675, on 32 800 cells in 175 instead
+  of 1 600; the channel with k-ε-ζ-f₀ converges in 323 instead of about
   2 100, the cavity at Re = 1000 in 452 instead of 1 397 (counts good to
   about 10 %: they react to the last digit of the step). In run time the
-  step gains a factor of about 1.5 so far, because a coupled iteration
+  step gains a factor of 1.4 to 1.5 so far, because a coupled iteration
   costs five to seven SIMPLEC iterations; small laminar cases do not gain
   yet (L44, a multigrid for the momentum sweep, is the next step). The
   turbulence step is available with SIMPLEC too

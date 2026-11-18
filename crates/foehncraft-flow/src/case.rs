@@ -2449,9 +2449,10 @@ pub fn run_steered(
                 converged = true;
                 break;
             }
-            // the ledger of the current state (D88, D89); the next
-            // iteration recomputes the boundary values and gradients
+            // the ledger of the current state (D88, D89), with its boundary
+            // values and gradients; the run goes on from those it had (D31)
             if case.balance.every > 0 && it.is_multiple_of(case.balance.every) {
+                let lagged = fl.lagged()?;
                 fl.update_boundaries()?;
                 fl.gradients()?;
                 let sol = Solution {
@@ -2468,6 +2469,7 @@ pub fn run_steered(
                     &geo.cell_volume,
                     nonorth,
                 );
+                fl.set_lagged(&lagged)?;
                 let b = balance::steady(&r, it);
                 bcsv.push_str(&balance::csv_row(&b));
                 bcsv.push('\n');
@@ -2483,6 +2485,9 @@ pub fn run_steered(
             // control files (D40), signals and limits (D64, D83)
             let req = control.check(it, case.run.reread_every);
             if req.result && li == last {
+                // as for the ledger: the run goes on from the boundary
+                // values and gradients it had (D31)
+                let lagged = fl.lagged()?;
                 fl.update_boundaries()?;
                 fl.gradients()?;
                 let sol = Solution {
@@ -2499,6 +2504,7 @@ pub fn run_steered(
                     analytic.as_ref(),
                     Some((it, None)),
                 )?;
+                fl.set_lagged(&lagged)?;
                 lg.note(&format!(
                     "fields of iteration {it} written (fields_{it:06}.vtkhdf)"
                 ));

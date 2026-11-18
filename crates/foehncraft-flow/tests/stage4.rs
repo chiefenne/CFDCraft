@@ -144,6 +144,84 @@ fn results_are_bitwise_equal_on_1_and_4_threads() {
     }
 }
 
+/// D31: an observer does not change the run. An intermediate result
+/// (`.result_N`) and the balance table of an iteration bring the boundary
+/// values and gradients up to date for their output; the run goes on from
+/// those it had, so its residuals and forces are the ones of a run without
+/// them, bit by bit. The duct has an inlet and an outlet: there the face
+/// values and the gradients depend on each other, and one more update
+/// between two iterations changes both.
+#[test]
+fn intermediate_results_and_balances_do_not_change_the_run() {
+    let duct = |solver: &str, extra: &str| {
+        let text = format!(
+            r#"
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [4.0, 1.0, 0.1]
+cells = [24, 8, 1]
+[fluid]
+viscosity = 0.01
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[output]
+vtkhdf = false
+wall_csv = false
+[solver]
+max_iterations = 12
+{solver}
+[verification]
+require_convergence = false
+{extra}
+"#
+        );
+        FlowCase::from_toml(&text, Path::new(".")).unwrap()
+    };
+    let bits = |rep: &FlowReport| {
+        let s = &rep.solves[0];
+        let mut b: Vec<u64> = s.residuals.momentum.iter().map(|v| v.to_bits()).collect();
+        b.push(s.residuals.continuity.to_bits());
+        for p in &s.boundaries {
+            b.extend(p.force.iter().map(|v| v.to_bits()));
+        }
+        b
+    };
+    for (alg, solver) in [("simplec", ""), ("coupled", "algorithm = \"coupled\"")] {
+        let plain = bits(&run_case(
+            &duct(solver, ""),
+            &format!("observer_plain_{alg}"),
+        ));
+        let dir = out(&format!("observer_result_{alg}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        for n in [5, 9] {
+            std::fs::write(dir.join(format!(".result_{n}")), "").unwrap();
+        }
+        let rep = run(&duct(solver, ""), "observer_result", &dir, |_| {}).unwrap();
+        let log = std::fs::read_to_string(dir.join("flow.log")).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(log.contains("fields of iteration 5 written"), "{log}");
+        assert_eq!(bits(&rep), plain, "{alg}: intermediate results");
+        let balance = run_case(
+            &duct(solver, "[balance]\nevery = 4\n"),
+            &format!("observer_balance_{alg}"),
+        );
+        assert_eq!(bits(&balance), plain, "{alg}: balance tables");
+    }
+}
+
 #[test]
 fn unknown_keys_and_values_get_a_hint() {
     let e = FlowCase::from_toml("[fluid]\nviscosty = 1.0\n", Path::new(".")).unwrap_err();

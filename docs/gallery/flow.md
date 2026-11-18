@@ -243,15 +243,15 @@ python3 -m tools.mesh.render_mesh output/cylinder_potential/fields.vtkhdf potent
 <a id="coupled"></a>
 ## 78. Coupled algorithm and pseudo-time steps: the step case in 65 iterations
 
-![The reattachment length x_r/H of the backward-facing step against the outer iteration on a logarithmic axis, one panel per turbulence model (k-ε-ζ-f₀, k-ε, k-ω SST), each with SIMPLEC and with the coupled algorithm. The grey band is ±1 % of the final value. The coupled runs enter it after 65, 75 and 85 iterations, the SIMPLEC runs after 525, 600 and 675](../figures/gallery/coupled_step.svg)
+![The reattachment length x_r/H of the backward-facing step against the outer iteration on a logarithmic axis, one panel per turbulence model (k-ε-ζ-f₀, k-ε, k-ω SST), each with SIMPLEC and with the coupled algorithm. The grey band is ±1 % of the final value. The coupled runs enter it after 65, 75 and 80 iterations, the SIMPLEC runs after 525, 600 and 675](../figures/gallery/coupled_step.svg)
 
 **Why SIMPLEC needs hundreds of iterations.** Under-relaxation is a time
 step in disguise: with the factor α a cell advances by α/(1 − α) of its
 own transit time per outer iteration, 4 transit times at α = 0.8. The
 step shrinks with the cell, but the recirculation zone behind a step
 needs a fixed physical time to form. So the backward-facing step of
-gallery 74 takes about 600 iterations on 8 200 cells and 1 750 on
-32 800.
+gallery 74 takes about 600 iterations on 8 200 cells and 1 600 to 1 750
+on 32 800.
 
 **The coupled algorithm.** `algorithm = "coupled"` solves the momentum
 equations and the continuity equation of an outer iteration as one linear
@@ -287,12 +287,12 @@ within 1 % of its final value:
 |---|---|---|---|
 | k-ε-ζ-f₀ | 525 | 65 | 6.385 |
 | k-ε, scalable wall functions | 600 | 75 | 5.287 |
-| k-ω SST | 675 | 85 | 6.82 |
-| k-ε-ζ-f₀, 32 800 cells | 1 750 | 170 to 180 | 6.36, 6.38 |
+| k-ω SST | 675 | 80 | 6.82 |
+| k-ε-ζ-f₀, 32 800 cells | 1 600 | 175 | 6.352 |
 
 The gain in run time is smaller, because a coupled iteration costs five
 to seven SIMPLEC iterations: on one thread the coarse step settles in
-21 s instead of 31 s, the fine one in about 235 s instead of 342 s. That
+21 s instead of 31 s, the fine one in about 235 s instead of 327 s. That
 cost is the momentum sweep of the preconditioner (last paragraph). The
 counts are good to about 10 %: they repeat exactly for the same input,
 but a change in the last digit of the step can move them

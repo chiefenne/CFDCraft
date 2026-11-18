@@ -49,7 +49,10 @@ A re-read applies the output and restart schedule, the stop criteria, the
 relaxation, the linear-solver tolerances and the time-step settings; the
 log lists each change (`key: old -> new`) and each change it cannot apply
 during a run. `run.reread_every = N` re-reads every N steps without a
-control file.
+control file. An intermediate result only looks at the run: with or
+without `.result_N` files (and with any `[balance] every`) the residuals
+and the final result are the same bit by bit, so a history of a
+monitored value taken from such files is the history of the plain run.
 
 [↑ back to top](#run-control-and-health)
 

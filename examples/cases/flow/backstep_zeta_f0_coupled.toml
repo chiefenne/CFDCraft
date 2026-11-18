@@ -17,7 +17,7 @@
 # relaxation ramp, and ends at the same x_r/H = 6.385 (+2 % from the
 # experiment's 6.26). The case runs 150 iterations. With
 # `model = "k-epsilon"` (and `wall_treatment = "scalable"`) it takes 75
-# to 80 iterations, with `"k-omega-sst"` 85 to 90. The residual stalls
+# to 80 iterations, with `"k-omega-sst"` 80 to 85. The residual stalls
 # near 10⁻⁴ as with SIMPLEC, so the run has a fixed budget (recipe 78
 # shows how to see that x_r has settled).
 

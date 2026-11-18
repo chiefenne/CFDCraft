@@ -40,7 +40,7 @@ case in the [verification manual](manual.md), the case files in the
 | Cylinder 2D-1, Re 20 (C_D, C_L, Δp) | on 24 576 cells C_D and Δp inside the reference ranges, C_L 0.4 % below; on 98 304 cells all three inside | case `cylinder_re20` (fails above 0.5 %), test `cylinder_re20_on_the_coarse_mesh` |
 | Cylinder 2D-2, Re 100 (C_D,max, C_L,max, St) | on 6 144 cells C_D,max, St and Δp inside the ranges, C_L,max 1.9 % below; on 24 576 cells C_L,max 0.5 % below, the others inside | case `cylinder_re100` (fails above 2.5 %) |
 | A restart continues bit-identically (D42) | BDF2 with the adaptive step, and Crank–Nicolson with outer iterations: every field, old level, the clock and the multigrid matrix of the continued run equal those of the run without the interruption | tests `restart_continues_bit_identically`, `restart_crank_nicolson_outer` |
-| Control files and re-reading (D40) | `.stop` ends a run with its restart file and results; `.result_N` writes the fields at step N; `.read_toml_N` and `reread_every` apply the changed run-time keys and list the rest as not applied | tests `stop_file_ends_the_run`, `result_and_reread_files` |
+| Control files and re-reading (D40) | `.stop` ends a run with its restart file and results; `.result_N` writes the fields at step N and leaves the run unchanged, as does a balance table (bit by bit, SIMPLEC and coupled); `.read_toml_N` and `reread_every` apply the changed run-time keys and list the rest as not applied | tests `stop_file_ends_the_run`, `result_and_reread_files`, `intermediate_results_and_balances_do_not_change_the_run` |
 | Steady state of the time stepping | the lid-driven cavity at Re 100, time-stepped with BDF2 or Crank–Nicolson at Courant number 6 to the steady state, equals the SIMPLEC solution to 2e-12 (relative); the Rhie–Chow time-step term does not depend on Δt (D27) | case `cavity_re100_transient` (Ghia et al. to 0.44 % / 0.95 %, as stage 4), test `steady_state_of_the_time_stepping_is_the_simplec_solution` |
 
 ### Taylor–Green vortex
@@ -203,7 +203,17 @@ outer iteration of a steady case). A re-read applies only the keys that
 may change during a run (output schedule, restart and re-read schedule,
 stop criteria, relaxation, linear-solver tolerances, time-step settings),
 lists every change in the log and writes `case.read_toml_N.toml`; the
-rest is reported as not applied.
+rest is reported as not applied. An intermediate result and a balance
+table of a steady run only look at the solution (D31): they update the
+boundary values and gradients for their output and put the values of the
+iteration back (`Flow::lagged`, `Flow::set_lagged`), because the face
+values and the gradients at inlets and outlets depend on each other and
+the next iteration starts from them. Before this (found with the step
+case of stage 6e) the iteration after a result started from values that
+had seen one more update: the momentum residual of a duct with 24 × 8
+cells differed by 7 % in that iteration, and the path of a run depended
+on its output schedule, though not its converged result. The transient
+loop was not affected (its results are written from the finished step).
 
 **Monitors** (D43, `monitor.rs`): `history.csv` per step (time, Δt,
 Courant number, residuals, outer and CG iterations), `forces.csv` (force
