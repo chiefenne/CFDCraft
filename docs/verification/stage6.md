@@ -1146,7 +1146,7 @@ Specification: [requirements stage
 `examples/cases/flow/jet_pipe_profile.toml`,
 `examples/cases/flow/impinging_jet.toml`,
 `examples/studies/impinging_jet.py`, `tests/impinging_jet.rs`,
-`tests/inlet_table.rs`.
+`tests/inlet_table.rs`, `tests/symmetry_stress.rs`.
 
 **The case.** A round jet from a long pipe of diameter D hits a heated
 plate at H = 2 D, Re = U D/ν = 23 750: the heat transfer of Baughn &
@@ -1177,9 +1177,9 @@ probe `stag` at the axis, that is of the face next to it (r/D = 0.06,
 0.1. Wall probes now report the wall value and the flux of every scalar,
 and these are D67 quantities of a level sweep
 (`wall_probes.stag.theta_wall`), so both get an observed order and a GCI
-(that of Nu is the same to first order). The study reports both because
-the axis cells of the wedge lower Nu of the faces next to the axis with
-every turbulence model (finding 2). The excess k of the stagnation-point
+(that of Nu is the same to first order). The study reports both: before
+the fix of finding 2 the faces next to the axis were low with every
+turbulence model. The excess k of the stagnation-point
 anomaly is the largest k on the axis within x/D ≤ 0.25 of the plate
 above that of k-ε-ζ-f₀ on the same mesh. The secondary maximum is the
 largest local maximum of Nu for 0.8 ≤ r/D ≤ 4 at least 1 % above the
@@ -1203,64 +1203,76 @@ that compare with the experiment are open.
 
 | Test | Check | Band | Result |
 |---|---|---|---|
-| Jet (`impinging_jet.toml`), k-ε-ζ-f₀, `compound-2023`, coupled, 2 600 / 10 400 / 41 600 cells | Nu₀ (axis face) on the three meshes, GCI_fine | GCI ≤ 3 % | 167.2, 155.4, 141.5: divergent, no GCI (**finding** 2) |
-| | Nu at r/D = 0.1, GCI_fine, p | GCI ≤ 3 % | 165.1, 156.8, 152.4: monotonic, p 0.78, GCI 4.9 % (**finding** 4; extrapolated 146.7) |
-| | secondary maximum; Nu at r/D 1, 2, 3, 4 | present | 128.8 at r/D 1.95 after the minimum 115.2 at 1.45 (10 400 cells: 130.2 at 1.97); 129.9, 128.6, 96.0, 69.4 |
-| | iterations | – | 610, 873, 2 989 (converged; θ the last) |
-| The jet, k-ε-ζ-f, `compound`, SIMPLEC | Nu₀ on the three meshes | GCI ≤ 3 % | 179.3, 173.0, 167.2: equal steps, p 0.01, no usable GCI (**finding** 2) |
-| | Nu at r/D = 0.1 | GCI ≤ 3 % | 178.4, 174.7, 174.2: p 2.87, GCI 0.06 % |
-| | secondary maximum; Nu at r/D 1, 2, 3, 4 | present | 118.5 at r/D 2.27; 139.3, 117.5, 106.6, 81.1 |
-| | iterations | – | 460, 1 310, 4 409 (converged) |
-| The jet, elliptic-blending k-ε, `compound`, SIMPLEC (relaxation 0.3, tolerance 2·10⁻⁵) | Nu₀ on the three meshes | GCI ≤ 3 % | 234.2, 247.9, 244.2: oscillatory, GCI 0.66 % (p 1.95); Nu peaks at the axis (about 245 for r/D < 0.05, 205 at 0.1, 147 at 0.5) |
-| | Nu at r/D = 0.1 | GCI ≤ 3 % | 205.3, 204.6, 204.2: p 1.06, GCI 0.19 % |
-| | secondary maximum; Nu at r/D 1, 2, 3, 4 | present | 93.6 at r/D 2.31 (weak); 113.9, 87.5, 79.2, 58.4 |
-| | iterations | – | 434, 926, 2 129 (converged at 2·10⁻⁵; finding 5) |
-| The jet, k-ω SST with `kato-launder`, `automatic`, coupled | Nu₀ on the three meshes | GCI ≤ 3 % | 152.2, 143.0, 134.8: equal steps, no usable GCI (**finding** 2) |
-| | Nu at r/D = 0.1 | GCI ≤ 3 % | 149.9, 142.6, 141.1: p 2.22, GCI 0.35 % |
-| | secondary maximum; Nu at r/D 1, 2, 3, 4 | reported | 111.7 at r/D 1.84; 121.6, 110.3, 82.9, 61.8 |
-| | iterations | – | 763, 977, 2 988 (converged) |
-| The jet, standard k-ε (Durbin bound), `scalable`, coupled | Nu₀; Nu at r/D = 0.1 | reported | 157.0, 156.0, 155.2; 155.7, 155.9, 156.4: within 0.5 % on the three meshes (the sweep at r/D = 0.1 counts as divergent, steps of 0.2 and 0.5) |
-| | secondary maximum; Nu at r/D 1, 2, 3, 4 | reported | 143.7 at r/D 1.55; 143.5, 129.2, 87.8, 64.4 |
-| | iterations | – | 425, 1 063, 3 698 (converged) |
-| The jet, realizable k-ε, `scalable`, coupled (tolerance 10⁻⁴) | Nu₀; Nu at r/D = 0.1 | reported | 208.5, 209.2, 209.3; 207.5, 208.3, 208.8 (p 0.48, GCI 0.81 %); the anomaly: k on the axis 0.0568, 4.7 times that of ζ-f₀ |
-| | secondary maximum; Nu at r/D 1, 2, 3, 4 | reported | 142.2 at r/D 1.65; 162.8, 136.1, 96.8, 71.3 |
-| | iterations | – | 4 000 and 4 000 (stalled, **finding** 5), 782 (converged) |
-| Stagnation-point anomaly, 10 400 cells, standard k-ε | Nu₀ with `none` | > +50 % of the experiment | 209.9 (+35 % above ζ-f₀'s 155.4; the experiment is not in the repository yet); k_max on the axis 0.0813 against 0.0121 of ζ-f₀ |
-| | excess k removed by `durbin` (default), `kato-launder` | ≥ 70 % | 72 % (Nu₀ 156.0), 109 % (Nu₀ 83.9: below ζ-f₀, k on the axis 0.0057) |
-| Stagnation-point anomaly, 10 400 cells, SST | Nu₀ with `none` | > +50 % | 160.0 (+3 % above ζ-f₀); k_max on the axis 0.0104, below the 0.0121 of ζ-f₀: no excess (**finding** 3) |
-| | excess k removed by `menter`, `kato-launder`, `durbin` | ≥ 70 % | `menter` and `durbin` 160.0, the same field (k 0.0104); `kato-launder` 143.0 (k 0.0038); no excess to remove |
+| Jet (`impinging_jet.toml`), k-ε-ζ-f₀, `compound-2023`, coupled, 2 600 / 10 400 / 41 600 cells | Nu₀ (axis face) on the three meshes, GCI_fine | GCI ≤ 3 % | 166.1, 156.9, 151.6: monotonic, p 0.67, GCI 7.2 % (**finding** 4; before the fix of **finding** 2 167.2, 155.4, 141.5, divergent) |
+| | Nu at r/D = 0.1, GCI_fine, p | GCI ≤ 3 % | 164.2, 156.1, 151.7: monotonic, p 0.74, GCI 5.3 % (**finding** 4; extrapolated 145.5) |
+| | secondary maximum; Nu at r/D 1, 2, 3, 4 | present | 128.7 at r/D 1.95 after the minimum 115.1 at 1.45 (10 400 cells: 130.1 at 1.97); 129.8, 128.4, 95.8, 69.2 |
+| | iterations | – | 613, 862, 2 959 (converged; θ the last) |
+| The jet, k-ε-ζ-f, `compound`, SIMPLEC | Nu₀ on the three meshes | GCI ≤ 3 % | 178.6, 174.6, 173.8: p 2.45, GCI 0.12 % (before the fix 179.3, 173.0, 167.2: no usable GCI) |
+| | Nu at r/D = 0.1 | GCI ≤ 3 % | 177.7, 174.3, 173.9: p 3.17, GCI 0.03 % |
+| | secondary maximum; Nu at r/D 1, 2, 3, 4 | present | 118.4 at r/D 2.27; 139.3, 117.4, 106.6, 81.1 |
+| | iterations | – | 450, 1 254, 4 179 (converged) |
+| The jet, elliptic-blending k-ε, `compound`, SIMPLEC (relaxation 0.3, tolerance 2·10⁻⁵) | Nu₀ on the three meshes | GCI ≤ 3 % | 236.7, 247.3, 249.2: monotonic, p 2.58, GCI 0.19 %; Nu peaks at the axis (249 at the axis face, 238 at r/D 0.055, 205 at 0.1, 147 at 0.5) |
+| | Nu at r/D = 0.1 | GCI ≤ 3 % | 206.8, 205.6, 205.0: p 0.95, GCI 0.40 % |
+| | secondary maximum; Nu at r/D 1, 2, 3, 4 | present | 93.4 at r/D 2.31 (weak); 113.9, 87.3, 79.1, 58.3 |
+| | iterations | – | 456, 943, 2 123 (converged at 2·10⁻⁵; finding 5) |
+| The jet, k-ω SST with `kato-launder`, `automatic`, coupled | Nu₀ on the three meshes | GCI ≤ 3 % | 151.9, 144.6, 141.2: p 1.01, GCI 2.9 % (before the fix 152.2, 143.0, 134.8: no usable GCI) |
+| | Nu at r/D = 0.1 | GCI ≤ 3 % | 149.5, 142.4, 141.1: p 2.28, GCI 0.31 % |
+| | secondary maximum; Nu at r/D 1, 2, 3, 4 | reported | 111.6 at r/D 1.84; 121.6, 110.2, 82.8, 61.7 |
+| | iterations | – | 756, 978, 2 947 (converged) |
+| The jet, standard k-ε (Durbin bound), `scalable`, coupled | Nu₀; Nu at r/D = 0.1 | reported | 155.0, 154.7, 155.0; 154.7, 155.2, 155.6: within 0.6 % on the three meshes (Nu₀ counts as divergent, steps of −0.3 and +0.3; at r/D = 0.1 p 0.52, GCI 0.67 %) |
+| | secondary maximum; Nu at r/D 1, 2, 3, 4 | reported | 143.2 at r/D 1.55; 143.3, 128.8, 87.4, 64.1 |
+| | iterations | – | 424, 1 063, 3 699 (converged) |
+| The jet, realizable k-ε, `scalable`, coupled (tolerance 10⁻⁴) | Nu₀; Nu at r/D = 0.1 | reported | 208.3, 205.1, 207.2; 208.6, 205.4, 207.8 (oscillatory: the two coarser meshes stall); the anomaly: k on the axis 0.0552, 4.6 times that of ζ-f₀ |
+| | secondary maximum; Nu at r/D 1, 2, 3, 4 | reported | 141.1 at r/D 1.65; 162.3, 135.3, 96.4, 71.0 |
+| | iterations | – | 4 000 and 4 000 (stalled, **finding** 5), 783 (converged) |
+| Stagnation-point anomaly, 10 400 cells, standard k-ε | Nu₀ with `none` | > +50 % of the experiment | 210.7 (+34 % above ζ-f₀'s 156.9; the experiment is not in the repository yet); k_max on the axis 0.0787 against 0.0120 of ζ-f₀ |
+| | excess k removed by `durbin` (default), `kato-launder` | ≥ 70 % | 71 % (Nu₀ 154.7), 111 % (Nu₀ 74.5: below ζ-f₀, k on the axis 0.0045) |
+| Stagnation-point anomaly, 10 400 cells, SST | Nu₀ with `none` | > +50 % | 160.5 (+2 % above ζ-f₀); k_max on the axis 0.0104, below the 0.0120 of ζ-f₀: no excess (**finding** 3) |
+| | excess k removed by `menter`, `kato-launder`, `durbin` | ≥ 70 % | `menter` and `durbin` 160.5, the same field (k 0.0104); `kato-launder` 144.6 (k 0.0038); no excess to remove |
 | Nu(r/D), wall-jet profiles at r/D = 0.5 … 3 | against the experiment | RMS ≤ 15 %; secondary maximum within ±0.5 D; reported | open: the data are not in the repository (`examples/studies/impinging_jet/data`); the models' profiles are in `summary.md` of the study and in the gallery |
 | Wall probe with scalars (`tests/thermal.rs`, heated plate) | θ_w at the probe against the wall faces; flux; GCI quantities | interpolated between the two nearest faces; `wall_probes.<p>.theta_wall`, `_flux` | asserted |
 | Inlet table with turbulence columns (`tests/inlet_table.rs`, the ζ-f₀ plate) | a table of constant columns (`u_x`, `u_y`, `u_z`, `k`, `epsilon`, `zeta`, in any order) against the constant inlet; ten times its k; turbulence values (`turbulence_intensity`, `zeta`) next to such a table; an unknown column | bit for bit; another run; refused | asserted; BC029, BC019 |
 | `foehncraft.profiles` (`python/tests/test_profiles.py`) | one row per cell, the wall row; a laminar line | as specified; refused | asserted |
-| The coarse jet (`tests/impinging_jet.rs`, 2 600 cells) | ζ-f₀ converged, probes against the wall table, Nu₀, secondary maximum; k-ε Nu₀ against Nu(r/D = 0.5) | to 10⁻⁹ and 10⁻³; 150 to 185; r/D 1.5 to 2.5, 3 % above the minimum; > 0.9 | 167.2, maximum 128.4 at 2.01 above 116.9; k-ε 157.3 against 164.3 |
+| The coarse jet (`tests/impinging_jet.rs`, 2 600 cells) | ζ-f₀ converged, probes against the wall table, Nu₀, secondary maximum; k-ε Nu₀ against Nu(r/D = 0.5) | to 10⁻⁹ and 10⁻³; 150 to 185; r/D 1.5 to 2.5, 3 % above the minimum; > 0.9 | 166.1, maximum 128.2 at 2.01 above 116.8; k-ε 155.4 against 164.2 |
+| The stress on symmetry and wedge planes (`tests/symmetry_stress.rs`) | a linear flow with constant stress, the viscous operator of the momentum rows per cell, without and with the transposed part: a radial flow v = a r, u = −2a x on a 5° wedge of perturbed cells; a stagnation flow onto a symmetry plane | 10⁻¹⁰ of a face flux | 8·10⁻¹⁶ and 1·10⁻¹⁴ (without the fix of finding 2: 3.6 % and 65 %) |
 
 **Findings.** (1) The thermal law of the k-ε family (6f) took u_τ, which
 vanishes with the wall shear: the k-ε Nu₀ of this jet was 37. It now
 takes u* = C_μ^¼ k_P^½ as section 5.2 asks (the k-ε Nu₀ is 157 on 10 400
 cells; the effect on the 6f cases is in the [6f
 section](#thermal-wall-function-and-turbulent-prandtl-number-part-6f)).
-(2) The axis cells. With every turbulence model Nu of the faces next to
-the axis is low, and more so on finer meshes: ζ-f₀ 1 % below the plateau
-on 10 400 cells, 7 % (first face) and 2 % (second face) on 41 600; ζ-f 1
-% and 4 %; SST 4 % on 41 600; EB, whose Nu peaks at the axis, 1 %. The
-first cell is in the sublayer (y* < 1), so the wall law is pure
-conduction and the dip is in θ of the axis cells (1 % above the next row
-on 10 400 cells). The velocity of these cells is off as well (ζ-f₀, 10
-400 cells): in the jet core above the plate the hoop strain ∂w/∂z = v/r
-of the axis row is up to 10 % above that of the next two rows, where v/r
-must tend to a constant towards the axis, and its ratio to the radial
-strain ∂v/∂y is 1.13 to 1.19 there against 0.98 to 1.04 in the next
-rows. S of the axis row is high, its ν_t 1 to 3 % below that of the next
-row, and less heat leaves it. The laminar jet (Re = 500, the same
-meshes, uniform inflow) has neither: the ratio of the two strains in its
-axis row is 1.02 to 1.04 on 10 400 cells and 1.01 on 41 600, and its Nu
-is flat to the axis within 0.1 % (θ to 3·10⁻⁵ after 3 000 iterations).
-The error comes from a turbulence term of the axis cells of the wedge
-(the least-squares stencil already takes the wedge faces at their normal
-projection, which gives ∂w/∂z = v/r_c exactly); it is an open item for
-the next 6g PR. Nu₀ is therefore reported at the axis, as the stagnation
-value, and at r/D = 0.1, where the dip has gone. (3) The
+(2) The axis cells, and the stress on symmetry faces (fixed in PR #91).
+In the first runs Nu of the faces next to the axis was low with every
+turbulence model, and more so on finer meshes: ζ-f₀ 1 % below the
+plateau on 10 400 cells, 7 % (first face) and 2 % (second face) on
+41 600; ζ-f 1 % and 4 %; SST 4 % on 41 600. In the axis row v/r was up
+to 10 % above that of the next two rows and ν_t 1 to 3 % below, while
+the laminar jet (Re = 500, the same meshes) was flat to the axis within
+0.1 %. The cause: with a turbulence model the momentum rows take the
+transposed part ∇·[μ_eff (∇u)ᵀ] of the stress (section 2.4 of the
+specification) on the interior faces, but the symmetry faces (symmetry
+planes, slip walls, the planes of a wedge) did not have it. On such a
+face u_n = 0, so the transposed traction μ_eff (∇u)ᵀ·S has only the
+normal part μ_eff |S| ∂u_n/∂n, and the normal stress on the face is
+2μ_eff ∂u_n/∂n. On the two planes of a wedge that part is half of the
+hoop stress −2μ_eff v/r², largest in the cells next to the axis and
+growing as the mesh is refined (v/r² ≈ (∂v/∂r)/r). Laminar runs leave
+the transposed part out on every face, so their operator was consistent.
+The coefficient of a symmetry face now doubles with the transposed part
+(2μ_eff D, implicit as before); `tests/symmetry_stress.rs` checks that a
+linear flow with constant stress balances in every cell, a radial flow
+on a wedge and a stagnation flow on a symmetry plane (the residual was
+3.6 % and 65 % of a face flux, now 10⁻¹⁵ and 10⁻¹⁴). With the fix Nu is
+flat to the axis on every mesh: on 41 600 cells ζ-f₀ 151.6 at the face
+next to the axis and 151.7 at r/D = 0.1 (before 141.5 and 152.4), ζ-f
+173.8 and 173.9 (167.2 and 174.2), SST 141.2 and 141.1 (134.8 and
+141.1); beyond r/D = 0.25 Nu moved by less than 0.2 % (k-ε 0.4 %,
+realizable k-ε 0.7 %), the wall jet by less than 0.01 U. Nu₀ at the
+axis now converges for ζ-f (GCI 0.12 %) and SST (2.9 %). The symmetry
+planes of the other turbulent cases (the z planes of the 2D cases, the
+upstream plane of the flat plate, the top of the step) carry little
+∂u_n/∂n, and their tests did not move outside their bands.
+(3) The
 stagnation-point anomaly and SST. SST's own bound of the eddy viscosity,
 ν_t = a₁k/(F₂S), holds along the whole jet axis near the plate (with
 `none` on 10 400 cells ν_t ω/k equals a₁ω/S within 4 % for x/D ≤ 0.6,
@@ -1270,24 +1282,26 @@ within 1 % from x/D = 0.06 on), so the production is a₁ k S there: the
 `durbin` give the same field. Only Kato–Launder changes it. The anomaly
 that 9.6 asks SST without a limiter to show is not there to remove. (4)
 ζ-f₀ near the stagnation point does not reach its asymptotic range on
-these meshes: Nu at r/D = 0.1 falls by 8.3 and 4.4 (p = 0.78, GCI 4.9 %,
-above the band of 3 %); ζ-f, EB and SST converge there with p of 1.1 to
-2.9 and GCIs below 0.4 %, and the two k-ε models change by less than 0.7
-% over the three meshes. (5) Steady states that stall. EB holds k at its
+these meshes: Nu at r/D = 0.1 falls by 8.1 and 4.4 (p = 0.74, GCI 5.3 %,
+above the band of 3 %), at the axis by 9.2 and 5.3 (p 0.67, GCI 7.2 %);
+ζ-f, EB and SST converge at r/D = 0.1 with p of 0.95 to 3.2 and GCIs
+below 0.4 %, the standard k-ε changes by less than 0.6 % over the three
+meshes, the realizable k-ε by 1.6 % (its coarser meshes stall). (5) Steady states that stall. EB holds k at its
 floor in a few cells: the residuals of k and φ stay at 9.7·10⁻⁶ and
 1.1·10⁻⁵ on the coarse mesh, unchanged to eight digits from iteration 2
 000 to 20 000, every other residual below 10⁻⁸; the study takes 2·10⁻⁵
 for EB. The realizable k-ε stalls on the two coarser meshes with the
 coupled algorithm: on the coarse mesh its residuals stay at 1.2·10⁻⁴
-(momentum) and 3.6·10⁻⁴ (k) from iteration 1 000 to 4 000, unchanged to
-eight digits, so the iteration has reached a state it no longer changes
-but that does not satisfy the equations to the tolerance; the finest
-mesh converges to 10⁻⁴ in 782 iterations. Its variable C_μ does not
-prevent the anomaly here (Nu₀ 209, the axis k 4.7 times that of ζ-f₀).
+(momentum) and 3.6·10⁻⁴ (k) from iteration 1 000 to 4 000, changing by
+less than 1 % (before the fix of finding 2 unchanged to eight digits),
+so the iteration has reached a state it no longer changes but that does
+not satisfy the equations to the tolerance; the finest mesh converges
+to 10⁻⁴ in 783 iterations. Its variable C_μ does not
+prevent the anomaly here (Nu₀ 207, the axis k 4.6 times that of ζ-f₀).
 (6) The passive scalar sets the iteration count. On 41 600 cells the
 flow and turbulence residuals of the coupled runs are below the
-tolerance 10⁻⁶ after 472 (ζ-f₀), 545 (k-ε) and 726 (SST) iterations, θ
-only after 2 989, 3 698 and 2 988: four fifths of the iterations of the
+tolerance 10⁻⁶ after 472 (ζ-f₀), 546 (k-ε) and 720 (SST) iterations, θ
+only after 2 959, 3 699 and 2 947: four fifths of the iterations of the
 finest mesh go to the passive scalar (one solve per outer iteration with
 the relaxation 0.9 and the limited linear-upwind correction, each solve
 two to nine BiCGStab iterations; the laminar jet still had 3·10⁻⁵ after
@@ -1295,5 +1309,5 @@ two to nine BiCGStab iterations; the laminar jet still had 3·10⁻⁵ after
 faster scalar path is solver work for later. (7) Run time, two runs of
 two threads sharing four cores, the three meshes in one run: EB 8 min,
 ζ-f 13, SST 11, k-ε 12, realizable k-ε 15, ζ-f₀ 16; the eight limiter
-cases on 10 400 cells about a minute each; the study 40 min with the
+cases on 10 400 cells about a minute each; the study 42 min with the
 pipes.

@@ -7,14 +7,13 @@
   secondary maximum, the stagnation-point anomaly with and without the
   production limiters, and the wall-jet velocity profiles; it compares
   with the experiment once the data are in
-  `examples/studies/impinging_jet/data`. On 41 600 cells Nu at
-  r/D = 0.1: ζ-f 174.2, EB 204.2, SST 141.1 (GCIs 0.06 to 0.35 %), ζ-f₀
-  152.4 (GCI 4.9 %); the face next to the axis is low with every
-  turbulence model, more so on finer meshes (an error of the axis cells,
-  open), so the case has a second probe `r01`. The k-ε without a limiter
-  has the anomaly (Nu₀ 210), its Durbin default removes 72 % of the
-  excess k; SST has none (its ν_t bound holds on the axis). Gallery and
-  recipe 90.
+  `examples/studies/impinging_jet/data`. On 41 600 cells (with the
+  fix of #91) Nu₀ at the axis: ζ-f 173.8 (GCI 0.12 %), SST 141.2
+  (2.9 %), EB 249.2 (0.19 %); Nu at r/D = 0.1, the second probe `r01`:
+  ζ-f 173.9, EB 205.0, SST 141.1 (GCIs 0.03 to 0.40 %), ζ-f₀ 151.7
+  (GCI 5.3 %). The k-ε without a limiter has the anomaly (Nu₀ 211), its
+  Durbin default removes 71 % of the excess k; SST has none (its ν_t
+  bound holds on the axis). Gallery and recipe 90.
 - **Inlet tables with the turbulence of the profile (specification 7.1).**
   The header of a `profile = "table"` file names its columns: `u_n` or
   `u_x`, `u_y`, `u_z`, and `k` with `epsilon` or `omega`, and `zeta`.

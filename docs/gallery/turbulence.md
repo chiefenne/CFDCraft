@@ -623,31 +623,34 @@ others coupled. Nu₀ is the probe `stag` at the axis, with the probe
 
 | Model | Nu₀ (axis) on 2 600 / 10 400 / 41 600 cells | Nu at r/D = 0.1 | GCI_fine at r/D = 0.1 | secondary maximum, r/D: Nu |
 |---|---|---|---|---|
-| k-ε-ζ-f₀ (`compound-2023`) | 167.2, 155.4, 141.5 | 165.1, 156.8, 152.4 | 4.9 %, p 0.78 | 1.95: 128.8 |
-| k-ε-ζ-f (`compound`, SIMPLEC) | 179.3, 173.0, 167.2 | 178.4, 174.7, 174.2 | 0.06 %, p 2.9 | 2.27: 118.5 |
-| elliptic-blending k-ε (`compound`, SIMPLEC) | 234.2, 247.9, 244.2 | 205.3, 204.6, 204.2 | 0.19 %, p 1.1 | 2.31: 93.6 |
-| k-ω SST, Kato–Launder (`automatic`) | 152.2, 143.0, 134.8 | 149.9, 142.6, 141.1 | 0.35 %, p 2.2 | 1.84: 111.7 |
-| k-ε, Durbin bound (`scalable`) | 157.0, 156.0, 155.2 | 155.7, 155.9, 156.4 | within 0.5 % | 1.55: 143.7 |
-| realizable k-ε (`scalable`) | 208.5, 209.2, 209.3 | 207.5, 208.3, 208.8 | 0.81 %, p 0.48 (the two coarser meshes stall) | 1.65: 142.2 |
+| k-ε-ζ-f₀ (`compound-2023`) | 166.1, 156.9, 151.6 | 164.2, 156.1, 151.7 | 5.3 %, p 0.74 | 1.95: 128.7 |
+| k-ε-ζ-f (`compound`, SIMPLEC) | 178.6, 174.6, 173.8 | 177.7, 174.3, 173.9 | 0.03 %, p 3.2 | 2.27: 118.4 |
+| elliptic-blending k-ε (`compound`, SIMPLEC) | 236.7, 247.3, 249.2 | 206.8, 205.6, 205.0 | 0.40 %, p 0.95 | 2.31: 93.4 |
+| k-ω SST, Kato–Launder (`automatic`) | 151.9, 144.6, 141.2 | 149.5, 142.4, 141.1 | 0.31 %, p 2.3 | 1.84: 111.6 |
+| k-ε, Durbin bound (`scalable`) | 155.0, 154.7, 155.0 | 154.7, 155.2, 155.6 | 0.67 %, p 0.52 | 1.55: 143.2 |
+| realizable k-ε (`scalable`) | 208.3, 205.1, 207.2 | 208.6, 205.4, 207.8 | oscillatory (the two coarser meshes stall) | 1.65: 141.1 |
 
 ![Nu(r/D) on the plate for the six models on 41 600 cells, and the stagnation-point anomaly on 10 400 cells: k-ε and SST with each production limiter](../figures/gallery/impinging_jet_nusselt.svg)
 
-**What the runs show.** The face next to the axis is low with every
-turbulence model, and more so on finer meshes (ζ-f₀ 7 % below the
-plateau on 41 600 cells), while the laminar jet on the same meshes is
-flat to the axis: the axis cells of the wedge carry an error in a
-turbulence term (their v/r is up to 10 % above that of the next rows).
-That is the next thing to fix; until then Nu at r/D = 0.1 is the
-mesh-converged stagnation value for all but ζ-f₀, whose Nu there still
-falls 2.8 % from the middle to the finest mesh. EB's Nu peaks sharply at
-the axis (about 245 for r/D < 0.05) because its k does. Without a limiter
-the standard k-ε shows the stagnation-point anomaly, Nu₀ 210 and nearly
-seven times the k of ζ-f₀ on the axis; its default Durbin bound removes 72 % of
-the excess k (Nu₀ 156) and Kato–Launder 109 % (Nu₀ 84). The realizable
-k-ε has the anomaly as well (Nu₀ 209, 4.7 times the axis k of ζ-f₀). SST has no
+**What the runs show.** Nu is flat towards the axis with every model
+except EB, and the stagnation value converges: Nu₀ at the axis has a GCI
+of 0.12 % for ζ-f and 2.9 % for SST, and Nu at r/D = 0.1 of 0.03 to
+0.40 % for ζ-f, EB and SST. ζ-f₀ is not yet in its asymptotic range
+there (it falls 2.8 % from the middle to the finest mesh, GCI 5.3 %).
+The first runs of this study had Nu of the face next to the axis low on
+the finest mesh with every turbulence model (ζ-f₀ 7 %, ζ-f and SST 4 %): the symmetry
+faces lacked the transposed part of the stress, which on the planes of
+a wedge is half of the hoop stress (fixed in PR #91, finding 2 of the
+verification page). EB's Nu peaks sharply at
+the axis (249 at the face next to it, 238 at r/D 0.055) because its k
+does. Without a limiter
+the standard k-ε shows the stagnation-point anomaly, Nu₀ 211 and 6.6
+times the k of ζ-f₀ on the axis; its default Durbin bound removes 71 % of
+the excess k (Nu₀ 155) and Kato–Launder 111 % (Nu₀ 75). The realizable
+k-ε has the anomaly as well (Nu₀ 207, 4.6 times the axis k of ζ-f₀). SST has no
 anomaly to remove: its own bound ν_t = a₁k/(F₂S) holds along the whole
-axis, so `none`, `menter` and `durbin` give the same Nu₀ (160.0) and
-only Kato–Launder changes it (143.0). The experiment of Baughn et al. is
+axis, so `none`, `menter` and `durbin` give the same Nu₀ (160.5) and
+only Kato–Launder changes it (144.6). The experiment of Baughn et al. is
 not in the repository yet; the study compares with it once its data are
 in `examples/studies/impinging_jet/data`.
 
@@ -657,13 +660,14 @@ The radial velocity of the wall jet at the stations of Cooper et al.:
 
 | Check | Result |
 |---|---|
-| Nu₀ at the axis, three meshes (band GCI ≤ 3 %) | ζ-f₀ divergent, ζ-f and SST equal steps (no GCI), EB oscillatory 0.66 %: the axis cells (finding) |
-| Nu at r/D = 0.1, three meshes | ζ-f 0.06 %, EB 0.19 %, SST 0.35 %; ζ-f₀ 4.9 % (finding) |
-| Secondary maximum (ζ-f, EB) | ζ-f 118.5 at r/D 2.27, EB 93.6 at 2.31 (weak); ζ-f₀ 128.8 at 1.95 |
-| Anomaly, k-ε `none` / `durbin` / `kato-launder` (10 400 cells) | Nu₀ 209.9 / 156.0 / 83.9; excess k removed 72 % / 109 % |
-| Anomaly, SST `none` / `menter` / `durbin` / `kato-launder` | Nu₀ 160.0 / 160.0 / 160.0 / 143.0; k on the axis below that of ζ-f₀, no excess |
+| Nu₀ at the axis, three meshes (band GCI ≤ 3 %) | ζ-f 0.12 %, SST 2.9 %, EB 0.19 %; ζ-f₀ 7.2 %, p 0.67 (finding) |
+| Nu at r/D = 0.1, three meshes | ζ-f 0.03 %, EB 0.40 %, SST 0.31 %; ζ-f₀ 5.3 % (finding) |
+| Secondary maximum (ζ-f, EB) | ζ-f 118.4 at r/D 2.27, EB 93.4 at 2.31 (weak); ζ-f₀ 128.7 at 1.95 |
+| Anomaly, k-ε `none` / `durbin` / `kato-launder` (10 400 cells) | Nu₀ 210.7 / 154.7 / 74.5; excess k removed 71 % / 111 % |
+| Anomaly, SST `none` / `menter` / `durbin` / `kato-launder` | Nu₀ 160.5 / 160.5 / 160.5 / 144.6; k on the axis below that of ζ-f₀, no excess |
+| Symmetry and wedge planes with the full stress (`tests/symmetry_stress.rs`) | a linear flow with constant stress balances in every cell to 10⁻¹⁴ (without the transposed part on the planes 3.6 % and 65 % of a face flux) |
 | Thermal law of the k-ε family in u* (section 5.2) | k-ε Nu₀ 37 with u_τ, 157 with u* |
-| The coarse jet in CI (`tests/impinging_jet.rs`) | ζ-f₀ Nu₀ 167.2, secondary maximum 128.4 at r/D 2.01 |
+| The coarse jet in CI (`tests/impinging_jet.rs`) | ζ-f₀ Nu₀ 166.1, secondary maximum 128.2 at r/D 2.01 |
 | Inlet table with turbulence columns | constant columns = constant inlet bit for bit; BC029, BC019 |
 
 | | |
