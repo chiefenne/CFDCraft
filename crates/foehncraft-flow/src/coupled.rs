@@ -421,7 +421,7 @@ impl Flow {
         let w = self.w;
         let s = self.settings.coupled.clone();
         let tm = Instant::now();
-        for i in 0..3 {
+        for (i, count) in n.momentum.iter_mut().enumerate() {
             self.momentum_matrix(i, sym)?;
             self.dev.fill(z.u.all()[i], 0.0)?;
             let (it, _) = self.dev.solve(
@@ -433,7 +433,7 @@ impl Flow {
                 s.momentum_tolerance,
                 s.momentum_max_iter,
             )?;
-            n.momentum[i] += it;
+            *count += it;
         }
         self.dev.sync()?;
         self.timings.momentum_solve += tm.elapsed().as_secs_f64();
@@ -692,12 +692,12 @@ impl Flow {
         });
         let scale = self.momentum_assembly(f.mass_flux, alpha, 1.0, time)?;
         let sym = self.bc.mom_kind.contains(&k::MOM_SYMMETRY);
-        for i in 0..3 {
+        for (i, residual) in res.momentum.iter_mut().enumerate() {
             self.momentum_matrix(i, sym)?;
             self.dev.matrix_product(w.val, f.u.all()[i], t)?;
             self.dev
                 .lincomb(r.u.all()[i], 1.0, w.rhs.all()[i], -1.0, t)?;
-            res.momentum[i] = self.dev.sum_sq(r.u.all()[i])?.sqrt() / scale;
+            *residual = self.dev.sum_sq(r.u.all()[i])?.sqrt() / scale;
         }
         self.dev.sync()?;
         self.timings.momentum_assembly += tm.elapsed().as_secs_f64();
