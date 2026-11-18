@@ -578,6 +578,7 @@ pub fn analyse(
                     crate::simplec::Algorithm::Simplec => "SIMPLEC",
                     crate::simplec::Algorithm::Simple => "SIMPLE",
                     crate::simplec::Algorithm::Piso => "PISO",
+                    crate::simplec::Algorithm::Coupled => "coupled",
                 }
             ),
             advice,
