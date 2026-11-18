@@ -1185,6 +1185,24 @@ struct ZetaFDev {
     prev: Buf,
 }
 
+/// The pseudo-time step of the turbulence transport equations in a steady
+/// iteration (`[solver.pseudo_time]`): Δτ = min(Δτ_max, c_T T) per cell.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct PseudoStep {
+    /// 1/Δτ_max.
+    pub inv_dt: f64,
+    /// 1/c_T.
+    pub rate_factor: f64,
+}
+
+/// Default under-relaxation of the transport equations with a pseudo-time
+/// step: the step takes the place of the relaxation, which only caps the
+/// local Courant number at α/(1 − α) = 49, as for the momentum equations.
+/// (Measured on the backward-facing step: without the cap k-ε diverges in
+/// the first iterations from a uniform start; with 0.9 the turbulence lags
+/// the momentum equations and the run needs several times the iterations.)
+pub const PSEUDO_RELAXATION: f64 = 0.98;
+
 /// k-ε-ζ-f: one outer iteration lowers k, ε or ζ of a cell by at most
 /// this factor. An unconverged Krylov iterate of the loose steady
 /// tolerance can be negative where the solution is small; the absolute
@@ -1273,10 +1291,12 @@ pub struct Turbulence {
     /// this outer iteration (set by the caller on the schedule of the
     /// pressure, `amg_rebuild`).
     pub(crate) amg_rebuild: bool,
-    /// Prototype: pseudo-time step of the transport equations in a steady run.
-    pub(crate) pseudo_dt: Option<f64>,
-    /// Prototype: the pseudo-time step per cell is min(pseudo_dt, c T).
-    pub(crate) pseudo_ct: Option<f64>,
+    /// The pseudo-time step of the transport equations in the steady
+    /// iteration that follows (set by the flow loop; None: relaxation
+    /// alone).
+    pub(crate) pseudo: Option<PseudoStep>,
+    /// ρ V/Δτ per cell of that step.
+    pseudo_coef: Buf,
     /// The matrix of the last setup per hierarchy slot (index = slot).
     amg_built: std::cell::RefCell<Vec<Option<Vec<f64>>>>,
     /// Host copies of a and of the inlet b of k (for p̂ at the pressure
@@ -1633,8 +1653,8 @@ impl Turbulence {
             amg: case.solver.pressure.amg.clone(),
             elliptic: case.solver.elliptic.clone(),
             amg_rebuild: true,
-            pseudo_dt: None,
-            pseudo_ct: None,
+            pseudo: None,
+            pseudo_coef: dev.alloc(nc)?,
             amg_built: std::cell::RefCell::new(Vec::new()),
             ka_host,
             kin_host: vec![0.0; nb],
@@ -1867,6 +1887,7 @@ impl Turbulence {
                 time: None,
                 fix: None,
                 positive: false,
+                pseudo: None,
                 val: self.val,
                 rhs: self.rhs,
                 diag: self.diag,
@@ -2226,7 +2247,26 @@ impl Turbulence {
         self.cells(dev, true)?;
         self.faces(dev)?;
         let s = self.settings.clone();
-        let alpha = s.alpha(tr);
+        // the pseudo-time step of a steady iteration: per cell
+        // min(Δτ_max, c_T T) with the time scale T of the model (k/ε,
+        // 1/(β* ω), T of k-ε-ζ-f), from the fields at the start
+        let pseudo = match self.pseudo.filter(|_| !tr) {
+            Some(p) => {
+                let (factor, num, den) = match self.zf {
+                    Some(z) => (p.rate_factor, None, Some(z.t)),
+                    None if self.eps => (p.rate_factor, Some(self.w.phi), Some(self.k.phi)),
+                    None => (p.rate_factor * self.c.beta_star, Some(self.w.phi), None),
+                };
+                dev.pseudo_coefficient(self.pseudo_coef, p.inv_dt, factor, num, den)?;
+                Some(self.pseudo_coef)
+            }
+            None => None,
+        };
+        let alpha = if pseudo.is_some() {
+            s.relaxation.unwrap_or(PSEUDO_RELAXATION)
+        } else {
+            s.alpha(tr)
+        };
         let mut out = TurbResiduals::default();
         let fix_second = (self.treatment == kwall::AUTOMATIC || self.eps)
             && self.wd.is_some()
@@ -2239,7 +2279,18 @@ impl Turbulence {
         {
             let (su, sp) = (self.src[2 * e], self.src[2 * e + 1]);
             let fix = (e == 1 && fix_second).then_some((self.fix_mask, self.fix_val));
-            let r = self.transport(dev, v, gamma, (su, sp), fix, mass_flux, step, alpha, 2 + e)?;
+            let r = self.transport(
+                dev,
+                v,
+                gamma,
+                (su, sp),
+                fix,
+                mass_flux,
+                step,
+                alpha,
+                2 + e,
+                pseudo,
+            )?;
             out.residual.push(r.0);
             out.iterations.push(r.1);
             out.floors.push(r.2);
@@ -2264,6 +2315,7 @@ impl Turbulence {
                 step,
                 alpha,
                 4,
+                pseudo,
             )?;
             out.residual.push(r.0);
             out.iterations.push(r.1);
@@ -2316,6 +2368,7 @@ impl Turbulence {
         step: Option<StepTime>,
         alpha: f64,
         slot: usize,
+        pseudo: Option<Buf>,
     ) -> Result<(f64, usize, usize)> {
         let s = &self.settings;
         let tr = step.is_some();
@@ -2350,29 +2403,6 @@ impl Turbulence {
             }),
             _ => None,
         };
-        let local = self.pseudo_ct.zip(self.zf).filter(|_| !tr && self.pseudo_dt.is_some());
-        if let (Some((ct, z)), Some(dt_max)) = (local, self.pseudo_dt) {
-            // prototype (host): the pseudo-time term per cell through the
-            // sources, S_u += φ/Δτ, S_p −= 1/Δτ, Δτ = min(Δτ_max, c_T T)
-            let t = dev.download(z.t)?;
-            let phi = dev.download(v.phi)?;
-            let mut a = dev.download(src.0)?;
-            let mut b = dev.download(src.1)?;
-            for i in 0..t.len() {
-                let dt = (ct * t[i]).min(dt_max);
-                a[i] += phi[i] / dt;
-                b[i] -= 1.0 / dt;
-            }
-            dev.upload(src.0, &a)?;
-            dev.upload(src.1, &b)?;
-        }
-        let time = time.or(self.pseudo_dt.filter(|_| !tr && local.is_none()).map(|dt| ScalarTime {
-            inv_dt: 1.0 / dt,
-            a: [1.0, -1.0, 0.0],
-            old: v.phi,
-            old2: v.phi,
-            bounds: (0.0, f64::INFINITY),
-        }));
         dev.scalar_rows(&ScalarRowArgs {
             cp: self.cp,
             cn: self.cn,
@@ -2385,12 +2415,13 @@ impl Turbulence {
             time,
             fix,
             positive: true,
+            pseudo,
             val: self.val,
             rhs: self.rhs,
             diag: self.diag,
             order: self.order,
         })?;
-        let scale = dev.scalar_scale(v.phi, self.rhs, self.diag, alpha)?;
+        let scale = dev.scalar_scale(v.phi, self.rhs, self.diag, alpha, pseudo)?;
         let rel_old = match self.zf {
             Some(z) => {
                 dev.copy(v.phi, z.prev)?;
@@ -2499,13 +2530,14 @@ impl Turbulence {
             alpha: 1.0,
             time: None,
             fix: None,
+            pseudo: None,
             positive: false,
             val: self.val,
             rhs: self.rhs,
             diag: self.diag,
             order: self.order,
         })?;
-        let scale = dev.scalar_scale(v.phi, self.rhs, self.diag, 1.0)?;
+        let scale = dev.scalar_scale(v.phi, self.rhs, self.diag, 1.0, None)?;
         let e = &self.elliptic;
         let pc = e.preconditioner;
         if pc == Preconditioner::Amg {

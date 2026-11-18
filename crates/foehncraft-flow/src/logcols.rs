@@ -8,6 +8,7 @@
 //! | `residual.scalars` | one column per passive scalar (`Res<name>`) |
 //! | `residual.turbulence` | the turbulence equations (`ResK ResOm`) |
 //! | `linear.momentum`, `linear.pressure` | solver iterations (`U V W`, `P`) |
+//! | `linear.coupled` | Krylov iterations of the coupled algorithm (`K`) |
 //! | `probe.<name>.<q>` | value at an `[[output.probes]]` point |
 //! | `cell.<index>.<q>` | value in one cell (debugging) |
 //! | `min.<q>`, `max.<q>` | extreme over the domain and the cell it occurs in |
@@ -103,6 +104,8 @@ pub enum Spec {
     LinMomentum,
     /// `linear.pressure`.
     LinPressure,
+    /// `linear.coupled`.
+    LinCoupled,
     /// `probe.<name>.<q>`.
     Probe(String, Quantity),
     /// `cell.<index>.<q>`.
@@ -136,6 +139,7 @@ pub const KINDS: &[&str] = &[
     "residual.scalars",
     "residual.turbulence",
     "linear.momentum",
+    "linear.coupled",
     "linear.pressure",
     "probe.<name>.<quantity>",
     "cell.<index>.<quantity>",
@@ -180,6 +184,7 @@ impl Spec {
             ("residual", 2) if parts[1] == "turbulence" => Self::ResTurbulence(Vec::new()),
             ("linear", 2) if parts[1] == "momentum" => Self::LinMomentum,
             ("linear", 2) if parts[1] == "pressure" => Self::LinPressure,
+            ("linear", 2) if parts[1] == "coupled" => Self::LinCoupled,
             ("min", 2) => Self::Min(quantity(parts[1])?),
             ("max", 2) => Self::Max(quantity(parts[1])?),
             ("probe", n) if n >= 3 => Self::Probe(target(), quantity(parts[n - 1])?),
@@ -357,6 +362,13 @@ impl Columns {
                 }
                 v
             }
+            None if case.solver.algorithm(false) == crate::simplec::Algorithm::Coupled => vec![
+                Spec::ResMomentum,
+                Spec::ResContinuity,
+                Spec::LinCoupled,
+                Spec::LinMomentum,
+                Spec::LinPressure,
+            ],
             None => vec![
                 Spec::ResMomentum,
                 Spec::ResContinuity,
@@ -532,6 +544,7 @@ impl Columns {
                     out.extend(ctx.res.momentum_iterations.iter().map(|&n| int(n)))
                 }
                 Spec::LinPressure => out.push(int(ctx.res.pressure_iterations)),
+                Spec::LinCoupled => out.push(int(ctx.res.coupled_iterations)),
                 Spec::Probe(name, q) => {
                     let v = ctx.sol.zip(self.probes.as_ref()).and_then(|(sol, p)| {
                         let i = p.index(name)?;
@@ -718,6 +731,17 @@ fn layout(s: &Spec, d: usize, transient: bool) -> Vec<Column> {
                 )]
             }
         }
+        Spec::LinCoupled => vec![col(
+            "linear.coupled".into(),
+            "K",
+            if transient {
+                "solvers"
+            } else {
+                "linear iterations"
+            },
+            "",
+            4,
+        )],
         Spec::Probe(n, q) => vec![col(
             format!("probe.{n}.{}", name_of(*q)),
             q.short(),

@@ -360,6 +360,63 @@ impl Entry for ScaledDifference {
     }
 }
 
+/// out = min(y, 1/(a/x + b)): D̂ of the coupled preconditioner
+/// ([`crate::flow::schur_diagonal`], x = D^s, y = D^C).
+pub struct SchurDiagonal;
+impl Entry for SchurDiagonal {
+    type Args = LinArgs;
+    const NAME: &'static str = "schur_diagonal";
+    #[inline(always)]
+    unsafe fn run(i: usize, a: &LinArgs) {
+        // SAFETY: guaranteed by the caller; index i only.
+        unsafe {
+            *a.out.out().add(i) = crate::flow::schur_diagonal(a.a, a.b, a.x.read(i), a.y.read(i))
+        }
+    }
+}
+
+/// Arguments of [`PseudoCoefficient`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct PseudoArgs {
+    /// Mesh (cell volumes).
+    pub m: Mesh,
+    /// Density.
+    pub rho: f64,
+    /// 1/Δτ_max.
+    pub inv_dt: f64,
+    /// Factor f of the rate f · num / den.
+    pub factor: f64,
+    /// Numerator per cell (empty: 1).
+    pub num: Raw<f64>,
+    /// Denominator per cell (empty: 1).
+    pub den: Raw<f64>,
+    /// Output: ρ V/Δτ per cell.
+    pub out: Raw<f64>,
+}
+
+/// Pseudo-time coefficient of a cell
+/// ([`crate::scalar::pseudo_coefficient`]).
+pub struct PseudoCoefficient;
+impl Entry for PseudoCoefficient {
+    type Args = PseudoArgs;
+    const NAME: &'static str = "pseudo_coefficient";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &PseudoArgs) {
+        // SAFETY: guaranteed by the caller; index c only.
+        unsafe {
+            let (num, den) = (a.num.get(), a.den.get());
+            *a.out.out().add(c) = crate::scalar::pseudo_coefficient(
+                a.rho * ld(a.m.volume.get(), c),
+                a.inv_dt,
+                a.factor,
+                if num.is_empty() { 1.0 } else { ld(num, c) },
+                if den.is_empty() { 1.0 } else { ld(den, c) },
+            );
+        }
+    }
+}
+
 /// out = a (every entry).
 pub struct Fill;
 impl Entry for Fill {
@@ -1455,6 +1512,8 @@ pub struct ScalarRowArgs {
     pub fix_mask: Raw<f64>,
     /// The fixed values.
     pub fix_val: Raw<f64>,
+    /// Pseudo-time coefficient ρ V/Δτ per cell (empty: none).
+    pub pseudo: Raw<f64>,
     /// 1: a positive variable (the deferred corrections split by sign).
     pub positive: u32,
     /// Output: matrix values.
@@ -1499,6 +1558,7 @@ impl Entry for ScalarRows {
                 fix_mask: a.fix_mask.get(),
                 fix_val: a.fix_val.get(),
                 positive: a.positive != 0,
+                pseudo: a.pseudo.get(),
             };
             let r = crate::scalar::scalar_row(c, &inp, a.val.out());
             *a.rhs.out().add(c) = r.rhs;
@@ -1520,6 +1580,8 @@ pub struct ScalarScaleArgs {
     pub diag: Raw<f64>,
     /// α.
     pub alpha: f64,
+    /// Pseudo-time coefficient ρ V/Δτ per cell (empty: none).
+    pub pseudo: Raw<f64>,
     /// Output a φ.
     pub v: Raw<f64>,
     /// Output b − (a/α − a) φ.
@@ -1536,11 +1598,13 @@ impl Entry for ScalarScale {
     unsafe fn run(c: usize, a: &ScalarScaleArgs) {
         // SAFETY: guaranteed by the caller.
         unsafe {
+            let ps = a.pseudo.get();
             let (v, w) = crate::scalar::residual_parts(
                 ld(a.phi.get(), c),
                 ld(a.rhs.get(), c),
                 ld(a.diag.get(), c),
                 a.alpha,
+                if ps.is_empty() { 0.0 } else { ld(ps, c) },
             );
             *a.v.out().add(c) = v;
             *a.w.out().add(c) = w;
@@ -2275,6 +2339,7 @@ impl Entry for Floor {
 
 send_sync!(
     LinArgs,
+    PseudoArgs,
     BlockArgs,
     DotArgs,
     CloseArgs,
@@ -2307,9 +2372,11 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 42] = [
+pub const NAMES: [&str; 44] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
+    SchurDiagonal::NAME,
+    PseudoCoefficient::NAME,
     Fill::NAME,
     Subtract::NAME,
     ScaleEntry::NAME,
@@ -2364,6 +2431,7 @@ mod tests {
     fn argument_blocks_fit_the_kernel_parameter_limit() {
         let sizes = [
             size_of::<LinArgs>(),
+            size_of::<PseudoArgs>(),
             size_of::<BlockArgs>(),
             size_of::<DotArgs>(),
             size_of::<CloseArgs>(),
@@ -2449,6 +2517,6 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 42);
+        assert_eq!(NAMES.len(), 44);
     }
 }

@@ -196,6 +196,12 @@ pub fn gauss_weights(d: &Discretisation) -> Soa3 {
     out
 }
 
+/// Default α_u of the coupled algorithm: a local Courant number of at most
+/// α/(1 − α) = 49. (A larger cap saves outer iterations, but the momentum
+/// sweeps of the preconditioner, BiCGStab with a diagonal preconditioner,
+/// then need more than they save.)
+pub const COUPLED_RELAXATION: f64 = 0.98;
+
 /// `[solver]` settings of a flow case.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -209,6 +215,8 @@ pub struct Settings {
     pub pressure: PressureSettings,
     /// The linear solve of the coupled algorithm (`[solver.coupled]`).
     pub coupled: crate::coupled::CoupledSettings,
+    /// The pseudo-time steps of a steady run (`[solver.pseudo_time]`).
+    pub pseudo_time: crate::coupled::PseudoTimeSettings,
     /// The passive scalars (`[solver.scalar]`, D51).
     pub scalar: crate::scalar::ScalarSettings,
     /// The turbulence equations (`[solver.turbulence]`, stage 6).
@@ -335,6 +343,7 @@ impl Default for Settings {
             momentum: MomentumSettings::default(),
             pressure: PressureSettings::default(),
             coupled: crate::coupled::CoupledSettings::default(),
+            pseudo_time: crate::coupled::PseudoTimeSettings::default(),
             scalar: crate::scalar::ScalarSettings::default(),
             turbulence: crate::turbulence::TurbulenceSettings::default(),
             elliptic: crate::turbulence::EllipticSettings::default(),
@@ -382,11 +391,16 @@ impl Settings {
             .unwrap_or(if transient { 1e-8 } else { 1e-2 })
     }
 
-    /// α_u.
+    /// α_u. With the coupled algorithm it only caps the local Courant
+    /// number of the pseudo-time step at α/(1 − α).
     pub fn alpha_u(&self, transient: bool) -> f64 {
-        self.momentum
-            .relaxation
-            .unwrap_or(if transient { 1.0 } else { 0.7 })
+        self.momentum.relaxation.unwrap_or(if transient {
+            1.0
+        } else if self.algorithm(false) == Algorithm::Coupled {
+            COUPLED_RELAXATION
+        } else {
+            0.7
+        })
     }
 
     /// α_p.
@@ -474,13 +488,15 @@ impl Settings {
                 CASE_INCONSISTENT,
                 "[solver] algorithm = \"piso\" is transient and needs a [time] table"
             );
+            self.pseudo_time.validate()?;
             if alg == Algorithm::Coupled {
                 self.coupled.validate()?;
                 crate::need!(
                     au < 1.0,
                     CASE_RANGE,
                     "[solver.momentum] the coupled algorithm needs relaxation < 1 \
-                     (the pseudo time step of the momentum rows); try 0.9"
+                     (it caps the local Courant number of the pseudo-time step at \
+                     α/(1 − α)); try 0.98"
                 );
             }
             crate::diag::check_fix(
@@ -833,6 +849,9 @@ pub struct Flow {
     unit_flux: Option<Buf>,
     /// Buffers of the coupled algorithm (allocated at its first iteration).
     pub(crate) coupled: Option<crate::coupled::CoupledWork>,
+    /// The length of the automatic pseudo-time step (computed at its first
+    /// use).
+    pub(crate) pseudo_length: Option<f64>,
 }
 
 /// The driving of one periodic pair: a uniform body force β t̂ along the
@@ -1258,6 +1277,7 @@ impl Flow {
             periodic,
             unit_flux,
             coupled: None,
+            pseudo_length: None,
         })
     }
 
@@ -2105,6 +2125,7 @@ impl Flow {
         if let Some(t) = self.turbulence.as_mut() {
             t.amg_rebuild = rebuild;
         }
+        self.turbulence_step(None)?;
         self.solve_scalars(None, &mut res)?;
         Ok(res)
     }

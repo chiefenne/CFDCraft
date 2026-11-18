@@ -410,6 +410,41 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         )
     }
 
+    fn schur_diagonal(&mut self, out: Buf, a: f64, b: f64, ds: Buf, dc: Buf) -> Result<()> {
+        let r = self.r(out);
+        let args = e::LinArgs {
+            a,
+            b,
+            x: self.r(ds),
+            y: self.r(dc),
+            out: r,
+        };
+        self.lin::<e::SchurDiagonal>(r.len as usize, args)
+    }
+
+    fn pseudo_coefficient(
+        &mut self,
+        out: Buf,
+        inv_dt: f64,
+        factor: f64,
+        num: Option<Buf>,
+        den: Option<Buf>,
+    ) -> Result<()> {
+        let ins: Vec<Buf> = num.into_iter().chain(den).collect();
+        check(&[out], &ins)?;
+        let opt = |b: Option<Buf>| b.map_or(Raw::EMPTY, |b| self.r(b));
+        let args = e::PseudoArgs {
+            m: self.m,
+            rho: self.rho,
+            inv_dt,
+            factor,
+            num: opt(num),
+            den: opt(den),
+            out: self.r(out),
+        };
+        self.go::<e::PseudoCoefficient>(self.nc, &args)
+    }
+
     fn scaled_difference(&mut self, out: Buf, a: f64, x: Buf, y: Buf) -> Result<()> {
         let r = self.r(out);
         let args = e::LinArgs {
@@ -674,6 +709,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             ins.push(t.old);
             ins.push(t.old2);
         }
+        ins.extend(a.pseudo);
         check(&[a.val, a.rhs, a.diag, a.order], &ins)?;
         let opt = |b: Option<Buf>| b.map_or(Raw::EMPTY, |b| self.r(b));
         let (transient, inv_dt, coef, old, old2, (lo, hi)) = match &a.time {
@@ -718,6 +754,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             hi,
             fix_mask: a.fix.map_or(Raw::EMPTY, |(m, _)| self.r(m)),
             fix_val: a.fix.map_or(Raw::EMPTY, |(_, v)| self.r(v)),
+            pseudo: opt(a.pseudo),
             positive: u32::from(a.positive),
             val: self.r(a.val),
             rhs: self.r(a.rhs),
@@ -727,7 +764,14 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.go::<e::ScalarRows>(self.nc, &args)
     }
 
-    fn scalar_scale(&mut self, phi: Buf, rhs: Buf, diag: Buf, alpha: f64) -> Result<f64> {
+    fn scalar_scale(
+        &mut self,
+        phi: Buf,
+        rhs: Buf,
+        diag: Buf,
+        alpha: f64,
+        pseudo: Option<Buf>,
+    ) -> Result<f64> {
         let nc = self.nc;
         let mut v = self.r(self.rs_v);
         let mut w = self.r(self.rs_w);
@@ -738,6 +782,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             rhs: self.r(rhs),
             diag: self.r(diag),
             alpha,
+            pseudo: pseudo.map_or(Raw::EMPTY, |b| self.r(b)),
             v,
             w,
         };
