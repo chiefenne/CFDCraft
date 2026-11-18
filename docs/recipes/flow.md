@@ -13,6 +13,7 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 78 | [Converge a steady case in fewer iterations with the coupled algorithm](#coupled) |
 | 80 | [Choose and tune the momentum sweep of the coupled algorithm](#momentum-multigrid) |
 | 81 | [Use the multigrid of the turbulence equations and its larger steps](#turbulence-multigrid) |
+| 83 | [See and tune the pressure hierarchy of the coupled preconditioner](#pressure-hierarchy) |
 
 ---
 
@@ -536,8 +537,7 @@ target/release/foehn flow examples/cases/flow/backstep_zeta_f0_coupled.toml
 ```
 
 The step settles in about 40 outer iterations and converges to its
-tolerance in about 110 (120 with the pressure tolerance 0.1 of the
-coupled preconditioner before #82).
+tolerance in about 115 (recipe 83).
 
 **Reading the report.** `flow.md` counts the hierarchies built for the
 turbulence equations after those of the momentum sweeps:
@@ -609,5 +609,85 @@ python3 -m tools.plot.settling_chart docs/figures/gallery/turbulence_multigrid.s
     "8 200 cells:part 6f (relaxations 0.98)=coarse_6f.csv" "8 200 cells:part 6g (0.995, multigrid)=coarse_6g.csv" \
     "32 800 cells:part 6f (relaxations 0.98)=fine_6f.csv" "32 800 cells:part 6g (0.995, multigrid)=fine_6g.csv"
 ```
+
+[↑ back to top](#incompressible-flow)
+
+---
+
+<a id="pressure-hierarchy"></a>
+## 83. See and tune the pressure hierarchy of the coupled preconditioner
+
+With the coupled algorithm (recipe 78) each Krylov iteration solves the
+pressure matrix of the SIMPLE-type preconditioner with CG and the
+aggregation multigrid of `[solver.pressure]`. Its hierarchy is built
+anew when that matrix has changed by more than 5 % since the setup,
+besides every `solver.amg_rebuild` iterations, and the solve stops at
+the relative tolerance 0.3 ([gallery 83](../gallery/flow.md#pressure-hierarchy)).
+A case needs no key:
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0_coupled.toml --threads 1
+```
+
+The step settles in about 40 outer iterations and converges to its
+tolerance in about 115, with every check passed.
+
+**Reading the report.** The first count under `multigrid setup` in
+`flow.md` is the number of pressure hierarchies built:
+
+```
+multigrid setup 1.29 (10 setups, 76 of the momentum sweeps, 113 of the turbulence equations)
+```
+
+With the periodic rebuild alone it is one per `amg_rebuild` iterations
+(4 in 40). The CG iterations of the pressure solves of an outer
+iteration are in `residuals.csv` (column `cg`), the Krylov iterations in
+`krylov`; with the hierarchy following its matrix the fine step needs
+about 8 CG iterations per Krylov iteration instead of 16.
+
+**Compare with the periodic rebuild** of the runs before #83, or with
+the pressure tolerance 0.1 of the runs before #82:
+
+```
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0_coupled.toml --threads 1 \
+    --set solver.coupled.pressure_reuse=1 --out output/step_periodic
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0_coupled.toml --threads 1 \
+    --set solver.coupled.pressure_reuse=1 --set solver.coupled.pressure_tolerance=0.1 \
+    --out output/step_before_82
+```
+
+The converged results are the same. To its tolerance this coarse case
+takes 12.4 s with the defaults (115 iterations), 12.5 s with the
+periodic rebuild (106) and 14.6 s with both settings of before #82
+(117), on one thread. The new rule pays where the pressure solves are a
+larger part of the run: on finer meshes and to the settled result
+(gallery 83).
+
+**The keys.**
+
+```toml
+[solver.coupled]
+pressure_tolerance = 0.3   # relative tolerance of the pressure solve of the preconditioner
+pressure_max_iter = 20     # CG iterations at most
+pressure_reuse = 0.05      # new hierarchy when the matrix has changed by more;
+                           # 0: whenever it has changed; 1: only every amg_rebuild iterations
+
+[solver]
+amg_rebuild = 10           # the periodic rebuild, as before
+```
+
+- `pressure_reuse` uses the measure of `momentum_reuse` (recipe 80): the
+  sum of the absolute changes of the matrix since the setup over the sum
+  of its absolute values. Smaller values build more hierarchies; on the
+  step 0.05 was the best of 0.02, 0.05 and 0.2, and laminar cases do not
+  reach it.
+- A tighter `pressure_tolerance` costs CG iterations without saving
+  Krylov iterations; a much looser solve (at most two CG iterations)
+  costs Krylov iterations (requirements step 22, section 7.9).
+
+**Restart.** The restart file holds the matrix of the last pressure
+setup, as before; the continued run decides the next rebuild from it
+and stays bit-identical.
 
 [↑ back to top](#incompressible-flow)

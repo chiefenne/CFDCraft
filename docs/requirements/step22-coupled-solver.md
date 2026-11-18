@@ -380,6 +380,8 @@ momentum_tolerance = 0.01    # a BiCGStab sweep
 momentum_max_iter = 10
 pressure_tolerance = 0.3     # pressure solve of the preconditioner (section 7.9)
 pressure_max_iter = 20
+pressure_reuse = 0.05        # new pressure hierarchy when Ŝ has changed by more
+                             # (section 7.10); besides every amg_rebuild iterations
 
 [solver.coupled.multigrid]   # the multigrid of the momentum sweeps (D179)
 strength = 0.3               # θ of the splitting and the interpolation
@@ -760,9 +762,41 @@ cavity in 442 instead of 449, the step case file in 106 instead of
 nothing: there the pressure solves stop at their limit of 20 CG
 iterations with either tolerance (21 and 16 CG iterations per Krylov
 iteration, the final pressure correction included), and they take 30 to
-35 % of the run. The stale hierarchy is the cause, so a numeric refresh
-in every outer iteration (the aggregates kept, the coarse matrices
-recomputed) is the next step (section 8).
+35 % of the run. The stale hierarchy is the cause (section 7.10).
+
+### 7.10 The pressure hierarchy follows its matrix (D181)
+
+The hierarchy of Ŝ was built every `amg_rebuild` = 10 outer iterations,
+while Ŝ changes with D̂ in every one. Building it in every iteration
+costs what it saves (section 7.9), so it is now built anew when Ŝ has
+changed by more than `pressure_reuse` = 5 % since its setup, with the
+measure of `momentum_reuse` (the sum of the absolute changes of the
+entries over the sum of their absolute values), besides the periodic
+rebuild. The test costs one download and one pass over the entries of
+Ŝ per outer iteration. One thread, quiet machine, to the settled result
+(tolerance 0.3 of section 7.9 in both columns):
+
+| Case | Iterations | Run time (periodic rebuild only) | Pressure solves | Pressure setups |
+|---|---|---|---|---|
+| Step, k-ε-ζ-f₀, 8 200 cells | 40 | 6.2 s (7.4 s) | 0.69 s (1.31 s) | 10 (4) |
+| Step, k-ε-ζ-f₀, 32 800 cells | 65 | 39.8 s (57.1 s) | 5.81 s (17.3 s) | 20 (7) |
+| Step, k-ε, 8 200 cells | 45 | 4.7 s (5.9 s) | 0.85 s (1.45 s) | 12 (5) |
+| Step, k-ω SST, 8 200 cells | 80 | 5.4 s (6.0 s) | 0.82 s (1.28 s) | 20 (8) |
+
+The fine step needs 71 CG iterations per outer iteration instead of
+160 (8 instead of 16 per Krylov iteration) and 8.5 Krylov iterations
+instead of 9.7; its pressure solves fall from 30 % of the run to 15 %,
+and it is 6.1 times faster than SIMPLEC (243 s), the coarse step 3.0
+times (18.7 s). The extra setups cost little: the multigrid setups of
+the coarse step take 1.29 s either way, those of the fine one 6.94 s
+instead of 6.87 s (momentum and turbulence hierarchies included). The
+settle counts do not change and x_r stays within 1 % of its final value
+from the same iteration (6.370 H at iteration 40, 6.307 H at 65 on the
+fine mesh, 5.282 H with k-ε, 6.767 H with SST); the step case file
+converges to its tolerance in 115 iterations instead of 106, in the
+same time, with every check passed. Laminar cases do not trigger the
+rule, since the pseudo-time term holds D̂: the cavity at Re = 1000
+builds the same 45 hierarchies in 442 iterations either way.
 
 ## 8. State of the art and what comes next
 
@@ -782,11 +816,11 @@ Published reference points for pressure-based coupled solvers:
   factor near 1 (3 to 10 can speed a run up), the turbulence equations on
   the same step.
 
-Where Foehncraft stands after part 6g: the iteration counts are in the
+Where Foehncraft stands after part 6h: the iteration counts are in the
 published range (13 to 25 times fewer iterations than SIMPLEC), the
 count grows less with the mesh (40 and 65 on 8 200 and 32 800 cells,
-65 and 150 before part 6g), and the gain in run time is a factor of 2.5
-on the coarse step and 4.3 on the fine one (sections 7.7 and 7.8),
+65 and 150 before part 6g), and the gain in run time is a factor of 3.0
+on the coarse step and 6.1 on the fine one (sections 7.8 to 7.10),
 where the published coupled solvers with a block multigrid report 8 to
 40 on meshes of 12 000 to 195 000 cells. The gain grows with the mesh
 here too, but the comparison is not closed. The turbulence step from the model time scale is our own
@@ -795,16 +829,13 @@ global step.
 
 What closes the gap, in this order:
 
-- **L44, the rest.** First the pressure hierarchy of the preconditioner:
-  it is up to nine outer iterations old while its matrix changes in every
-  one, and a fresh one needs two CG iterations where the kept one needs
-  9 to 20 (section 7.9); a numeric refresh in every outer iteration (the
-  aggregates kept) removes most of the pressure solves, the largest
-  single part of a fine coupled run. Then a cheaper setup in general
-  (flat row builders; a numeric refresh on a kept splitting for the
-  momentum and turbulence hierarchies) and a multigrid with a
+- **L44, the rest.** The pressure hierarchy of the preconditioner now
+  follows its matrix (D181, section 7.10). Next a cheaper setup in
+  general (flat row builders; a numeric refresh on a kept splitting for
+  the momentum and turbulence hierarchies) and a multigrid with a
   coarse–fine splitting for the pressure (2 to 5 iterations per solve in
-  the prototype). By estimate each removes 5 to 15 % of the run time.
+  the prototype). By estimate each removes 5 to 15 % of the run time;
+  the turbulence model is now the largest part of a fine run (42 %).
 - **The Schur complement** (section 7.9): measured, SIMPLER and the
   least-squares commutator do not pay; the SIMPLE-type sweep stays. The
   spread of its eigenvalues with the cap comes from approximating A⁻¹ by
@@ -833,6 +864,7 @@ Rows in [`requirements.md`](../requirements.md).
 | D178 | Pseudo-time step of the turbulence equations from the model time scale, min(Δτ, c_T T) | stage 6 part 6e |
 | D179 | Reduction multigrid (approximate ideal restriction) as the momentum sweep of the coupled preconditioner; `momentum_sweep`, `momentum_cycles`, `momentum_reuse`, `[solver.coupled.multigrid]` | stage 6 part 6f |
 | D180 | The reduction multigrid as the preconditioner of the turbulence equations of the k-ε family, kept hierarchies; the relaxations 0.995 with it; `[solver.turbulence] preconditioner = "reduction"`, `reuse` | stage 6 part 6g |
+| D181 | The pressure hierarchy of the coupled preconditioner rebuilt when its matrix has changed; the pressure solve to 0.3; `pressure_reuse`, `pressure_tolerance` | stage 6 part 6h |
 | L44 | A cheaper setup, a splitting-based multigrid for the pressure, a Schur complement without the cap | the next solver steps |
 | L45 | Automatic step control (switched evolution relaxation) and a stop on monitored values | after L44 |
 | L46 | Newton–Krylov on the coupled system | after L45 |

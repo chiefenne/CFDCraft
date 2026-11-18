@@ -12,6 +12,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 78 | [Coupled algorithm and pseudo-time steps: the step case in 65 iterations](#coupled) | 6 | `solver.algorithm = "coupled"`, `[solver.coupled]`, `[solver.pseudo_time]`, log column `K` |
 | 80 | [A multigrid for the momentum sweep of the coupled algorithm](#momentum-multigrid) | 6 | `solver.coupled.momentum_sweep`, `momentum_cycles`, `momentum_reuse`, `[solver.coupled.multigrid]` |
 | 81 | [A multigrid for the turbulence equations: the step settles in 40 and 65 iterations](#turbulence-multigrid) | 6 | `solver.turbulence.preconditioner`, `solver.turbulence.reuse`, relaxations 0.995 |
+| 83 | [The pressure hierarchy follows its matrix: the fine step 6 times faster than SIMPLEC](#pressure-hierarchy) | 6 | `solver.coupled.pressure_reuse`, `solver.coupled.pressure_tolerance` |
 
 ---
 
@@ -508,5 +509,61 @@ on the coarse step), and laminar cases keep the cap 0.98.
 The commands are in [recipe 81](../recipes/flow.md#turbulence-multigrid),
 the method and the tests in the
 [verification page](../verification/stage6.md#multigrid-for-the-turbulence-equations-part-6g).
+
+[↑ back to top](#incompressible-flow)
+
+---
+
+<a id="pressure-hierarchy"></a>
+## 83. The pressure hierarchy follows its matrix: the fine step 6 times faster than SIMPLEC
+
+**Where the time went.** After [gallery 81](#turbulence-multigrid) the
+fine step (32 800 cells) settled in 65 outer iterations, but each one
+cost about 9.7 Krylov iterations of the coupled solve, each with a
+pressure solve in the SIMPLE-type preconditioner, and those pressure
+solves took 30 to 35 % of the run. Two published improvements of the
+Schur complement were measured first (SIMPLER and the least-squares
+commutator, [requirements step 22](../requirements/step22-coupled-solver.md)
+section 7.9): neither pays on the step. The cost was elsewhere: the
+multigrid hierarchy of the pressure matrix was built every 10 outer
+iterations, while the matrix changes in every one with the momentum
+coefficients. An old hierarchy needed 9 to 20 CG iterations per solve,
+a fresh one two.
+
+**The fix.** The hierarchy is built anew when the pressure matrix has
+changed by more than 5 % since its setup (`pressure_reuse`, the measure
+of the momentum sweeps of gallery 80), and the pressure solve of the
+preconditioner stops at the relative tolerance 0.3 instead of 0.1 (#82;
+the Krylov iteration corrects what it leaves). A case needs no key.
+
+**The step case** (one thread, quiet machine; outer iterations and run
+time until x_r stays within 1 % of its final value):
+
+| Case | Iterations | SIMPLEC | Gallery 81 | Now | Pressure solves (before) |
+|---|---|---|---|---|---|
+| Step, k-ε-ζ-f₀, 8 200 cells | 40 | 18.7 s | 8.0 s | 6.2 s | 0.69 s (2.02 s) |
+| Step, k-ε-ζ-f₀, 32 800 cells | 65 | 243 s | 56.9 s | 39.8 s | 5.81 s (20.0 s) |
+| Step, k-ε, 8 200 cells | 45 | – | 6.4 s | 4.7 s | 0.85 s (2.03 s) |
+
+The fine step needs 71 CG iterations per outer iteration instead of 160
+and runs 6.1 times faster than SIMPLEC, the coarse one 3.0 times: the
+gain grows with the mesh. The iteration counts and the final values do
+not change (x_r = 6.385 H and 6.353 H, 5.287 H with k-ε). Laminar cases
+do not trigger the rule (the cavity builds the same 45 hierarchies in
+442 iterations). The report counts the pressure hierarchies first
+(fine step, 65 iterations; 7 setups before):
+
+```
+Seconds per phase (R6): gradients 0.21, momentum assembly 0.74, momentum solve 2.45, pressure assembly 4.03, pressure solve 5.81, multigrid setup 6.94 (20 setups, 118 of the momentum sweeps, 172 of the turbulence equations), turbulence model 16.66
+```
+
+The turbulence model is now the largest part of a fine run (42 %), the
+pressure solves 15 %. The published coupled solvers report 8 to 40
+times on 12 000 to 195 000 cells; closing that is the work of the next
+steps (step 22, section 8).
+
+The commands are in [recipe 83](../recipes/flow.md#pressure-hierarchy),
+the tests in the
+[verification page](../verification/stage6.md#the-pressure-solve-of-the-coupled-preconditioner-part-6h).
 
 [↑ back to top](#incompressible-flow)
