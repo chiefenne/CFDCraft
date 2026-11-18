@@ -92,7 +92,7 @@
 //!   6.26 measured; with 0.849 it is 6.38 (the bound no longer acts there:
 //!   a = 1.2 gives the same). The channel moves by 0.1 %, C_f of the flat
 //!   plate by +1.5 % (within 3 % of White's correlation from y⁺ 1 to 30).
-
+//!
 //! The elliptic-blending k-ε (D133) shares the fields, the solvers and
 //! these constants ([`FORM_EB`], [`ZetaFConstants::billard_laurence_2012`]);
 //! its cell body is [`super::eb::eb_cell`].

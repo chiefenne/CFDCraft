@@ -8,6 +8,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | 71 | [k-ε family with wall functions: flat plate, channel, Moody chart](#k-epsilon) | 6 | `model = "k-epsilon"`, `"realizable-k-epsilon"`, `wall_treatment = "scalable"`, `"standard"`, `"compound"`, `epsilon` at inlets, `roughness_constant` |
 | 73 | [k-ε-ζ-f to the wall: channel and flat plate](#zeta-f) | 6 | `model = "k-epsilon-zeta-f"`, `wall_treatment = "compound"`, `"low-re"`, `zeta` at inlets and in `[initial]`, `[solver.elliptic]`, `solver.turbulence.preconditioner = "amg"` |
 | 74 | [k-ε-ζ-f₀ at any y⁺: channel, flat plate, backward-facing step](#zeta-f0) | 6 | `model = "k-epsilon-zeta-f0"`, `wall_treatment = "compound-2023"`, `constants.n_zeta`, `a`, `mesh.generate.remove` |
+| 88 | [Elliptic-blending k-ε: channel at three Re_τ, flat plate, backward-facing step](#elliptic-blending) | 6 | `model = "elliptic-blending-k-epsilon"`, `constants.c_epsilon4`, `zeta` as φ |
 
 ---
 
@@ -385,6 +386,81 @@ target/release/foehn flow examples/studies/backstep/zf0.toml --out output/backst
 target/release/foehn flow examples/studies/backstep/sst.toml --out output/backstep_sst
 pvpython tools/plot/backstep_paraview.py docs/figures/gallery/backstep \
     "k-ε (scalable)=output/backstep_keps" "k-ε-ζ-f₀=output/backstep_zeta_f0" "k-ω SST=output/backstep_sst"
+```
+
+[↑ back to top](#turbulence-models)
+
+<a id="elliptic-blending"></a>
+## 88. Elliptic-blending k-ε: channel at three Re_τ, flat plate, backward-facing step
+
+**The model.** Billard & Laurence (2012), the BL-v²/k model: k, ε,
+φ = v²/k and the blending parameter α, which solves α − L²∇²α = 1 with
+α = 0 at walls and tends to 1 away from them. α³ blends the near-wall
+and the homogeneous source of the φ equation, (1 − α³) f_w + α³ f_h, and
+switches on two terms of the paper: the E term in the k equation, from
+the second derivatives of the velocity near walls, and the variable
+C*_ε2 = C_ε2 + α³(C_ε4 − C_ε2) tanh(|∇·(ν_t/σ_k ∇k)/ε|^{3/2}), which
+lowers C_ε2 where the turbulent transport of k is large against ε. The
+equations, the wall values (k = φ = α = 0, ε_w = νk/y²) and every
+constant are those of the paper's Appendix A; the model runs on the
+fields, solvers and wall treatments of k-ε-ζ-f (gallery 73), with φ in
+the place of ζ and α in the place of f.
+
+```toml
+[turbulence]
+model = "elliptic-blending-k-epsilon"
+wall_treatment = "compound"   # default; "low-re"
+```
+
+**The channel** (`channel_eb.toml`). At the fixed mass flow of each DNS,
+the driving force F is C_f over the C_f of the DNS (Moser, Kim & Mansour
+1999). The paper's own channel results (its Table 6) are the acceptance
+target:
+
+| Re_τ | Cells, first-cell y⁺ | C_f / C_f,DNS | Paper | U_b⁺ |
+|---|---|---|---|---|
+| 180 | 96, 0.13 | 97.8 % | 100 % | +1.1 % |
+| 395 | 96 / 192, 0.28 / 0.14 | 99.0 % / 98.8 % | 98 % | +0.5 % / +0.6 % |
+| 590 | 128, 0.25 | 99.1 % | 100 % | +0.5 % |
+
+At Re_τ 180 the start of the case (I = 0.05, ν_t/ν = 100) lets the
+channel turn laminar; I = 0.15 and ν_t/ν = 20 keep it turbulent.
+
+**The flat plate** (`tmr_plate_eb.toml`). C_f(0.97) = 2.889·10⁻³,
++0.5 % from White's correlation, from the turbulent start of the ζ-f
+plate. From the TMR free stream the layer turns turbulent on its own at
+x ≈ 0.25 (ζ-f stays laminar) and C_f(0.97) is +2.5 %.
+
+**The backward-facing step** (`backstep_eb.toml`, the case of gallery 74
+with the model changed). x_r/H = 7.59, +21 % from the experiment's 6.26:
+outside the band of ±10 %, close to ζ-f of 2004 (7.82). The variable
+C*_ε2 makes the bubble long; with `constants = { c_epsilon4 = 1.83 }`
+(C*_ε2 = C_ε2) x_r/H = 6.24, but the plate is then +4.9 % from White
+and the channel C_f at Re_τ 395 101 % of the DNS. The paper reports the
+same tendency for its periodic hill (a bubble 9 % longer than the
+reference).
+
+| Check | Result |
+|---|---|
+| Channel C_f / C_f,DNS at Re_τ 180 / 395 / 590 (paper 100 / 98 / 100 %) | 97.8 / 99.0 / 99.1 % (band ±3 % on U_b⁺) |
+| Plate C_f(0.97) from White: turbulent start / TMR free stream / C*_ε2 constant | +0.5 / +2.5 / +4.9 % (band ±3 %) |
+| Step x_r/H, 8 200 cells, SIMPLEC / C*_ε2 constant | 7.59 (+21 %, finding) / 6.24 (−0.3 %) |
+| Step x_r/H on 32 800 cells, coupled algorithm (not converged) | 7.84 |
+| Homogeneous decay: k, ε (C_ε2 = 1.83) and the return of φ to 2/3, BDF2 | second order (asserted 1.8 to 2.2) |
+| k-ε restart continued with the elliptic blending; 1 against 4 threads | φ = 2/3, α = 1 at the start; bit-identical |
+| Bad input (`compound-2023`, wall functions, a production limiter, `sigma_zeta`) | CASE005, CASE005, CASE002 |
+
+| | |
+|---|---|
+| Code | kernels `turb::eb` (`eb_cell`, `eb_scales`), `turb::zeta_f` (`FORM_EB`, `ZetaFConstants::billard_laurence_2012`), `entry` (`squares_add`, `scale_vector`); `foehncraft_flow::turbulence` (the inputs of the E term and of C*_ε2) |
+| Tests | `tests/eb.rs`, kernel tests of `turb::eb` |
+| Case files | `flow/channel_eb.toml`, `flow/tmr_plate_eb.toml`, `flow/backstep_eb.toml` |
+| Recipe | [88](../recipes/turbulence.md#elliptic-blending) |
+
+```
+target/release/foehn flow examples/cases/flow/channel_eb.toml
+target/release/foehn flow examples/cases/flow/tmr_plate_eb.toml
+target/release/foehn flow examples/cases/flow/backstep_eb.toml
 ```
 
 [↑ back to top](#turbulence-models)

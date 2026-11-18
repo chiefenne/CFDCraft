@@ -185,7 +185,8 @@ pub struct InitialSection {
     /// the k-ε family).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub epsilon: Option<crate::expr::Scalar>,
-    /// Start ζ = v²/k (k-ε-ζ-f; default 2/3, isotropy; in (0, 2]).
+    /// Start ζ = v²/k (k-ε-ζ-f; φ of the elliptic-blending k-ε; default
+    /// 2/3, isotropy; in (0, 2]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zeta: Option<f64>,
 }

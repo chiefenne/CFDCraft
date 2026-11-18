@@ -1,29 +1,24 @@
 # Turbulent flat plate of the NASA Turbulence Modeling Resource (TMR,
-# 2D zero-pressure-gradient case), k-ε-ζ-f with the compound wall
-# treatment (stage 6 part 6d, D132, D134, specification 9.3).
+# 2D zero-pressure-gradient case), the elliptic-blending k-ε of Billard &
+# Laurence (2012) with the compound wall treatment (stage 6 part 6e, D133,
+# D134, specification 9.3).
 #
-#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tmr_plate_zeta_f.toml
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tmr_plate_eb.toml
 #
-# The geometry and the free stream of tmr_plate_keps.toml (Re = 5·10⁶ per
-# metre, k = 2.25·10⁻⁷ U², ε = 2.53125·10⁻⁶ m²/s³ held by the sustaining
-# terms), on 64 × 48 cells graded so that the first-cell y⁺ at x = 0.97
-# is 1: the compound treatment integrates to the wall there.
+# The geometry, the mesh (64 × 48 cells, first-cell y⁺ 1 at x = 0.97),
+# the free stream and the turbulent start of tmr_plate_zeta_f.toml
+# (k = 10⁻⁴, ε = 4.5·10⁻⁵); the inlet keeps the TMR values.
 #
-# The start: from the free-stream values (ν_t/ν = 0.009) ζ-f keeps the
-# boundary layer laminar over the whole plate (C_f = 3.0·10⁻⁴, Blasius):
-# its length scale L ≥ C_L C_η (ν³/ε)^¼ of the weak free stream is larger
-# than the laminar layer, and f drives ζ, and with it ν_t, to zero across
-# it. The case therefore starts from a turbulent field (k = 10⁻⁴,
-# ε = 4.5·10⁻⁵, ν_t/ν = 10); the inlet keeps the TMR values.
-#
-# Result: C_f(0.97) = 3.023·10⁻³, +5.1 % from White's correlation
-# (2.875·10⁻³; 96 cells across: +4.7 %, mesh-independent); finding, the
-# band of the specification is ±3 %. Every field converges to round-off
-# except k: in the laminar part near the leading edge (x < 0.2, the cell
-# rows 2 to 10) the published sink −ε of the k equation has no positive
-# steady solution once T sits at its Kolmogorov bound, the positivity
-# floor holds k there and its residual stays at 7·10⁻⁶ (TURB002;
-# finding, hence `require_convergence = false`).
+# Result: C_f(0.97) = 2.889·10⁻³, +0.5 % from White's correlation
+# (2.875·10⁻³, band ±3 %); the boundary layer is laminar to x ≈ 0.12.
+# From the TMR free stream instead (`--set initial.k=2.25e-7 --set
+# initial.epsilon=2.53125e-6`) it turns turbulent on its own at x ≈ 0.25,
+# which ζ-f does not do, and C_f(0.97) is +2.5 %. With the variable C*_ε2
+# switched off (`constants = { c_epsilon4 = 1.83 }`) C_f(0.97) is +4.9 %,
+# as with ζ-f. As with ζ-f, the positivity floors hold k and φ in the
+# laminar part near the leading edge, so their residuals stay at 5·10⁻⁶
+# and 1.4·10⁻⁵ (TURB002; finding, hence `require_convergence = false`);
+# every other field converges to round-off.
 
 case_format = "0.6"
 

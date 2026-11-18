@@ -409,26 +409,29 @@ Hanjalić, Popovac & Hadžiabdić (2004) with the treatments `compound` and
 equations. Part 6d2 ([gallery 74](../gallery/turbulence.md#zeta-f0),
 [recipe 74](../recipes/turbulence.md#zeta-f0)): the k-ε-ζ-f₀ model of
 Popovac (2023) with his compound treatment of 2023, robust from y⁺ 0.3
-to 30. Specification:
+to 30. Part 6e ([gallery 88](../gallery/turbulence.md#elliptic-blending),
+[recipe 88](../recipes/turbulence.md#elliptic-blending)): the
+elliptic-blending k-ε of Billard & Laurence (2012) with the treatments
+`compound` and `low-re`. Specification:
 [stage 6](../requirements/stage6-turbulence.md).
 
 | Key | Default | Meaning |
 |---|---|---|
-| `turbulence.model` | `"laminar"` | `"k-omega-sst"`, `"k-epsilon"` (Launder & Spalding 1974), `"realizable-k-epsilon"` (Shih et al. 1995), `"k-epsilon-zeta-f"` (Hanjalić, Popovac & Hadžiabdić 2004), `"k-epsilon-zeta-f0"` (Popovac 2023, with the deviations of specification 3.3.1) |
-| `turbulence.wall_treatment` | SST `"automatic"`, k-ε `"scalable"` | SST: `"automatic"` (Menter, Kuntz & Langtry 2003: blended viscous and log-law u_τ, ω and production in the first cell) or `"low-re"` (k = 0 and ω_w = 60ν/(β₁ d₁²) on the wall face, d₁ the wall-cell height). k-ε family: `"scalable"` (log law at max(y*, 11.06), any y⁺, accurate from y⁺ 30), `"standard"` (log law, 30 ≤ y⁺ ≤ 300), `"compound"` (blended profile of Popovac & Hanjalić; with the high-Re k-ε claimed from y⁺ 30 like the wall functions). k-ε-ζ-f: `"compound"` (default: k and ζ by zero gradient, ε and P_k of the first cell and the wall value of f blended between the viscous sublayer and the log law) or `"low-re"` (k = ζ = 0, ε_w = 2νk₁/d₁², f_w = −2νζ₁/d₁²); also `"compound-2023"`. k-ε-ζ-f₀: `"compound-2023"` (default: the blend u⁺ = [y*^{−10/3} + u⁺_log^{−10/3}]^{−3/10} of Popovac 2023 with the non-equilibrium factor ψ from the convection and the pressure gradient, ε and P_k of the first cell from its slope; f₀,w = 0), `"compound"` or `"low-re"` |
+| `turbulence.model` | `"laminar"` | `"k-omega-sst"`, `"k-epsilon"` (Launder & Spalding 1974), `"realizable-k-epsilon"` (Shih et al. 1995), `"k-epsilon-zeta-f"` (Hanjalić, Popovac & Hadžiabdić 2004), `"k-epsilon-zeta-f0"` (Popovac 2023, with the deviations of specification 3.3.1), `"elliptic-blending-k-epsilon"` (Billard & Laurence 2012, the BL-v²/k model: k, ε, φ = v²/k and the blending parameter α) |
+| `turbulence.wall_treatment` | SST `"automatic"`, k-ε `"scalable"` | SST: `"automatic"` (Menter, Kuntz & Langtry 2003: blended viscous and log-law u_τ, ω and production in the first cell) or `"low-re"` (k = 0 and ω_w = 60ν/(β₁ d₁²) on the wall face, d₁ the wall-cell height). k-ε family: `"scalable"` (log law at max(y*, 11.06), any y⁺, accurate from y⁺ 30), `"standard"` (log law, 30 ≤ y⁺ ≤ 300), `"compound"` (blended profile of Popovac & Hanjalić; with the high-Re k-ε claimed from y⁺ 30 like the wall functions). k-ε-ζ-f: `"compound"` (default: k and ζ by zero gradient, ε and P_k of the first cell and the wall value of f blended between the viscous sublayer and the log law) or `"low-re"` (k = ζ = 0, ε_w = 2νk₁/d₁², f_w = −2νζ₁/d₁²); also `"compound-2023"`. k-ε-ζ-f₀: `"compound-2023"` (default: the blend u⁺ = [y*^{−10/3} + u⁺_log^{−10/3}]^{−3/10} of Popovac 2023 with the non-equilibrium factor ψ from the convection and the pressure gradient, ε and P_k of the first cell from its slope; f₀,w = 0), `"compound"` or `"low-re"`. Elliptic-blending k-ε: `"compound"` (default, as for ζ-f, with ε_w = νk₁/d₁² in the blend and α_w = 0) or `"low-re"` (k = φ = α = 0, ε_w = νk₁/d₁²) |
 | `turbulence.production_limiter` | SST `"menter"`, k-ε `"durbin"` | `"menter"` (SST: P̃ = min(ν_t S², 10 β* k ω); k-ε: min(P_k, 10ε)), `"kato-launder"` (ν_t S Ω), `"durbin"` (the realisability bound with `durbin_coefficient`), `"none"`; the realizable k-ε takes `"none"` only |
-| `turbulence.ambient.k`, `turbulence.ambient.omega` or `epsilon` | none | sustaining terms of Spalart & Rumsey (2007): destruction at these free-stream values is balanced, so k and ω (or ε) do not decay ahead of a body; SST takes `omega`, the k-ε family and ζ-f `epsilon` |
+| `turbulence.ambient.k`, `turbulence.ambient.omega` or `epsilon` | none | sustaining terms of Spalart & Rumsey (2007): destruction at these free-stream values is balanced, so k and ω (or ε) do not decay ahead of a body; SST takes `omega`, the k-ε family, ζ-f and the elliptic-blending k-ε `epsilon` |
 | `turbulence.max_viscosity_ratio` | 1e5 | cap of ν_t/ν; capped cells are counted (TURB008) |
 | `turbulence.smooth_limits` | false | smooth min and max in the model (specification 2.6, for the adjoint) |
 | `turbulence.wall_distance` | `"exact"` | `"exact"` (BVH, D48) or `"pde"` (Poisson distance, one solve at the start) |
-| `turbulence.constants` | literature values | overrides by name: SST `beta_star`, `a1`, `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`, `sigma_k2`, `sigma_omega1`, `sigma_omega2`; k-ε `c_mu`, `c_epsilon1`, `c_epsilon2` (realizable: C₂), `sigma_k`, `sigma_epsilon`, `a0` (realizable), `kappa`; ζ-f `c_mu`, `c_epsilon1`, `c_epsilon2`, `c_1`, `c_2`, `sigma_k`, `sigma_epsilon`, `sigma_zeta`, `c_t`, `c_l`, `c_eta`, `kappa`, `c_epsilon1_zeta` (C″ε1 = 0.012), `a` (0.6, the realizability bound of T and L); ζ-f₀ also `n_zeta` (N_ζ = 2); a warning names each changed constant (TURB007) |
+| `turbulence.constants` | literature values | overrides by name: SST `beta_star`, `a1`, `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`, `sigma_k2`, `sigma_omega1`, `sigma_omega2`; k-ε `c_mu`, `c_epsilon1`, `c_epsilon2` (realizable: C₂), `sigma_k`, `sigma_epsilon`, `a0` (realizable), `kappa`; ζ-f `c_mu`, `c_epsilon1`, `c_epsilon2`, `c_1`, `c_2`, `sigma_k`, `sigma_epsilon`, `sigma_zeta`, `c_t`, `c_l`, `c_eta`, `kappa`, `c_epsilon1_zeta` (C″ε1 = 0.012), `a` (0.6, the realizability bound of T and L); ζ-f₀ also `n_zeta` (N_ζ = 2); the elliptic-blending k-ε `c_mu` (0.22), `c_epsilon1` (1.44), `c_epsilon2` (1.83), `c_epsilon3` (2.3, the E term), `c_epsilon4` (0.4, the lower end of C*_ε2; 1.83 makes C*_ε2 constant), `c_1` (1.7), `c_2` (0.9), `sigma_k` (1), `sigma_epsilon` (1.5), `sigma_phi` (1), `c_t` (4), `c_l` (0.164), `c_eta` (75), `a` (0.6, the realizability bound of T in ν_t), `kappa`; a warning names each changed constant (TURB007) |
 | `initial.k`, `initial.omega` or `initial.epsilon` | from the first inlet | start values, numbers or expressions of x, y, z; ω converts to ε = C_μ k ω and back |
-| `initial.zeta` | 2/3 | start ζ = v²/k of k-ε-ζ-f and ζ-f₀, in (0, 2]; f starts at 0 |
+| `initial.zeta` | 2/3 | start ζ = v²/k of k-ε-ζ-f and ζ-f₀, or φ = v²/k of the elliptic-blending k-ε, in (0, 2]; f starts at 0, α at 1 |
 | `initial.turbulence_intensity`, `initial.viscosity_ratio` | 0.01, 1 | start values from the intensity of `initial.velocity` and ν_t/ν |
 | `boundary.<inlet>.turbulence_intensity` | 0.05 | I, k = 1.5 (I U)² with U the inlet speed |
 | `boundary.<inlet>.turbulence_length_scale` or `viscosity_ratio` | ν_t/ν = 10 | ω = √k/(β*^¼ ℓ) or ω = k/(ν · ratio) |
 | `boundary.<inlet>.k`, `omega` or `epsilon` | none | k and ω or ε directly, numbers or expressions (ω and ε together: BC029) |
-| `boundary.<inlet>.zeta` | 2/3 | ζ = v²/k at an inlet (k-ε-ζ-f; in (0, 2]; BC028 with another model) |
+| `boundary.<inlet>.zeta` | 2/3 | ζ = v²/k at an inlet (k-ε-ζ-f, ζ-f₀; φ of the elliptic-blending k-ε; in (0, 2]; BC028 with another model) |
 | `boundary.<wall>.roughness` | 0 | equivalent sand-grain roughness k_s (m); SST: the wall values of k and ω of Aupoix (2015); k-ε: the log-law shift ΔB of Cebeci & Bradshaw (1977); BC027 when k_s exceeds the first-cell height on more than a tenth of the wall |
 | `boundary.<wall>.roughness_constant` | 0.5 | C_s of Cebeci & Bradshaw (k-ε family); 0.4 brings the fully rough friction factor of pipes to Colebrook's within 3 % |
 | `solver.turbulence.scheme` | `"linear-upwind"` | convection of k and ω: `upwind`, `linear-upwind`, `central` (transient runs only, TURB006) |
@@ -438,15 +441,15 @@ to 30. Specification:
 | `solver.turbulence.tolerance`, `max_iter` | 1e-2 steady, 1e-8 transient; 50 | relative tolerance and iterations of each BiCGStab solve |
 | `solver.turbulence.preconditioner` | `"reduction"` for the k-ε family with `coupled`, else `"jacobi"` | preconditioner of the BiCGStab solves of k, ω or ε and ζ: `"jacobi"`; `"reduction"`, the reduction multigrid of D179 on each equation's matrix with the settings of `[solver.coupled.multigrid]`, kept while the matrix changes by at most `reuse` (D180); or `"amg"` (the aggregation multigrid of `[solver.pressure.amg]`, one hierarchy per equation, built from the symmetric part ½(A + Aᵀ) and rebuilt every `solver.amg_rebuild` iterations; not with a pseudo-time step) |
 | `solver.turbulence.reuse` | 0.02 | `"reduction"`: a hierarchy is kept while Σ\|Δa\| / Σ\|a\| of its equation's matrix stays at most this value, and rebuilt when BiCGStab needs more than 8 iterations with it; 0 builds one for every solve |
-| `solver.elliptic.preconditioner` | `"amg"` | the CG solve of the elliptic f equation of ζ-f: `"amg"` (own hierarchy) or `"jacobi"` |
-| `solver.elliptic.tolerance`, `max_iter` | 1e-2 steady, 1e-8 transient; 100 | relative tolerance and iterations of the f solve |
+| `solver.elliptic.preconditioner` | `"amg"` | the CG solve of the elliptic f equation of ζ-f (α of the elliptic-blending k-ε): `"amg"` (own hierarchy) or `"jacobi"` |
+| `solver.elliptic.tolerance`, `max_iter` | 1e-2 steady, 1e-8 transient; 100 | relative tolerance and iterations of the f (α) solve |
 | `solver.turbulence.destruction` | ω `"newton"`, ε `"picard"` | linearisation of the ω or ε destruction: `newton` (2βω in the diagonal) or `picard` |
 
 The checks: TURB001 (the first-cell y⁺ does not suit the wall treatment
 on more than a tenth of a wall: above 2 with `low-re`, or in the buffer
 layer between 3 and 20 with `automatic`, where C_f of the flat plate is up
 to 16 % high; below 30 with `scalable`, outside 30 … 300 with `standard`
-and `compound` of the k-ε family; above 2 with `low-re` of ζ-f and ζ-f₀,
+and `compound` of the k-ε family; above 2 with `low-re` of ζ-f, ζ-f₀ and the elliptic-blending k-ε,
 whose `compound` and `compound-2023` cover every y⁺), TURB002 (the floor of k or ω acted in the final tenth of the
 solves), TURB003 and TURB009 (inlet turbulence out of the usual range, or
 defaulted), TURB005 (no wall), TURB006 (a scheme the model does not allow),

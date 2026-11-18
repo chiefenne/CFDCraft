@@ -276,10 +276,11 @@ pub struct Ambient {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct TurbulenceSection {
-    /// Turbulence model (D12, D130).
+    /// Turbulence model (D12, D130–D133).
     pub model: TurbulenceModel,
     /// Momentum wall treatment (D134; SST default `automatic`, k-ε family
-    /// `scalable`).
+    /// `scalable`, k-ε-ζ-f and the elliptic-blending k-ε `compound`,
+    /// k-ε-ζ-f₀ `compound-2023`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wall_treatment: Option<WallTreatment>,
     /// Production form of SST (default `menter`) and of the standard k-ε
@@ -304,7 +305,13 @@ pub struct TurbulenceSection {
     /// `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`,
     /// `sigma_k2`, `sigma_omega1`, `sigma_omega2`; k-ε: `c_mu`,
     /// `c_epsilon1`, `c_epsilon2`, `sigma_k`, `sigma_epsilon`, `a0`,
-    /// `kappa`); TURB007.
+    /// `kappa`; k-ε-ζ-f and ζ-f₀: `c_mu`, `c_epsilon1`,
+    /// `c_epsilon1_zeta`, `c_epsilon2`, `c_1`, `c_2`, `sigma_k`,
+    /// `sigma_epsilon`, `sigma_zeta`, `a`, `c_t`, `c_l`, `c_eta`, `kappa`,
+    /// `n_zeta` (ζ-f₀ only); the elliptic-blending k-ε: `c_mu`, `c_epsilon1` …
+    /// `c_epsilon4`, `c_1`, `c_2`, `sigma_k`, `sigma_epsilon`, `sigma_phi`,
+    /// `a`, `c_t`, `c_l`, `c_eta`, `kappa`, where `c_epsilon4 = 1.83`
+    /// makes C*_ε2 constant); TURB007.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub constants: BTreeMap<String, f64>,
 }

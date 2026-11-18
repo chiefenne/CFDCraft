@@ -22,7 +22,9 @@ multigrid of its momentum sweep
 multigrid of the turbulence equations and the larger steps with it
 ([below](#multigrid-for-the-turbulence-equations-part-6g)), part 6h the
 pressure solve of the coupled preconditioner
-([below](#the-pressure-solve-of-the-coupled-preconditioner-part-6h)). The commands are in
+([below](#the-pressure-solve-of-the-coupled-preconditioner-part-6h)), and
+the elliptic-blending k-ε of Billard & Laurence (2012)
+([below](#elliptic-blending-k-ε-d133)). The commands are in
 [recipe 63](../recipes/scalars.md#passive-scalars),
 [recipe 67](../recipes/boundary-conditions.md#periodic),
 [recipe 68](../recipes/turbulence.md#sst),
@@ -31,8 +33,9 @@ pressure solve of the coupled preconditioner
 [recipe 74](../recipes/turbulence.md#zeta-f0),
 [recipe 78](../recipes/flow.md#coupled),
 [recipe 80](../recipes/flow.md#momentum-multigrid),
-[recipe 81](../recipes/flow.md#turbulence-multigrid) and
-[recipe 83](../recipes/flow.md#pressure-hierarchy), the pictures in
+[recipe 81](../recipes/flow.md#turbulence-multigrid),
+[recipe 83](../recipes/flow.md#pressure-hierarchy) and
+[recipe 88](../recipes/turbulence.md#elliptic-blending), the pictures in
 [gallery 63](../gallery/scalars.md#passive-scalars),
 [gallery 67](../gallery/boundary-conditions.md#periodic),
 [gallery 68](../gallery/turbulence.md#sst),
@@ -41,8 +44,9 @@ pressure solve of the coupled preconditioner
 [gallery 74](../gallery/turbulence.md#zeta-f0),
 [gallery 78](../gallery/flow.md#coupled),
 [gallery 80](../gallery/flow.md#momentum-multigrid),
-[gallery 81](../gallery/flow.md#turbulence-multigrid) and
-[gallery 83](../gallery/flow.md#pressure-hierarchy), the generated
+[gallery 81](../gallery/flow.md#turbulence-multigrid),
+[gallery 83](../gallery/flow.md#pressure-hierarchy) and
+[gallery 88](../gallery/turbulence.md#elliptic-blending), the generated
 tables of every case in the [verification manual](manual.md).
 
 ## Passive scalars and the wall distance (part 6a)
@@ -909,3 +913,87 @@ where the profiles give 9.81) and compares our run.
 Not in this part: the heated pipe with the other models, and the plate for x below 0.2, where
 the k-ε start of the turbulent layer, not the thermal law, sets St
 (50 % low).
+
+## Elliptic-blending k-ε (D133)
+
+Specification: [requirements stage 6](../requirements/stage6-turbulence.md)
+section 3.4 (D133), `foehncraft-kernels::turb::eb`.
+
+**The model.** Billard & Laurence (2012), the BL-v²/k model, checked
+term by term against the paper itself (Appendix A, eqs. A.1 to A.7,
+Table A.10 and eq. 18): ν/2 in the molecular diffusion of k, ε and φ;
+the E term C_ε3 (1 − α)³ (k/ε) 2ν ν_t (∂²U_i/∂x_j∂x_l)² in the k
+equation; C*_ε2 = C_ε2 + α³(C_ε4 − C_ε2) tanh(|∂_j(ν_t/σ_k ∂_j k)/ε|^{3/2})
+in the ε equation; the φ source (1 − α³) f_w + α³ f_h − φP_k/k +
+(2/k)(ν_t/σ_k)∇φ·∇k with f_w = −εφ/(2k) and f_h = −(C₁ − 1 +
+C₂P_k/ε)(φ − 2/3)/T; α − L²∇²α = 1; T = (k²/ε² + C_T²ν/ε)^½,
+L = C_L (k³/ε² + C_η²ν^{3/2}/ε^{1/2})^½, ν_t = C_μ φ k min(T, T_lim),
+T_lim = 0.6/(√6 C_μ φ (S_ij S_ij)^½); wall values k = φ = α = 0,
+ε_w = νk/y². Constants: C_μ 0.22, C_ε1 1.44, C_ε2 1.83, C_ε3 2.3,
+C_ε4 0.4, σ_k 1, σ_ε 1.5, σ_φ 1, C_T 4, C_L 0.164, C_η 75, C₁ 1.7,
+C₂ 0.9. A published restatement of the model (the theory guide of an
+open-source code) prints C*_ε2 with C_ε2 − C_ε4; the paper and this
+code have C_ε4 − C_ε2, so C*_ε2 falls from 1.83 towards 0.4.
+
+**The implementation.** The kernel of k-ε-ζ-f (`turb::zeta_f`) with
+the form `FORM_EB`: φ takes the slot of ζ, α the slot of f, so both use
+the transport and elliptic solvers, the multigrid and the wall
+treatments of ζ-f. The E term needs (∂²U_i/∂x_j∂x_l)²: the least-squares
+gradient of each of the nine velocity-gradient components, squared and
+summed (`squares_add`). The switch of C*_ε2 needs ∇·(ν_t/σ_k ∇k): the
+gradient of the vector (ν_t/σ_k)∇k (`scale_vector`), its trace. Both use
+zero-gradient boundary values; α³ removes them next to walls. α is
+clipped to [0, 1] and starts at 1, also on a restart from a
+two-equation model.
+
+**Finding: the form of the α equation.** The paper writes
+α − L²∇²α = 1 with L² outside the Laplacian, and that form is solved here
+(∇²α + (1 − α)/L² = 0: diffusivity 1, source (1 − α)/L²). The
+conservative form −∇·(L²∇α) + α = 1 of the f equation of ζ-f, used
+first, adds ∇L²·∇α, which near the wall, where L changes fast, raises α
+and switches the E term off too early: U_b⁺ at Re_τ 395 came out 3.5 %
+low (C_f +7 %), at 590 4.5 % and at 2 000 5.6 % low, independent of
+the mesh (16.53, 16.86, 16.93 on 48, 96, 192 cells at Re_τ 395). An
+independent one-dimensional solver of the model reproduced both forms
+(published form: C_f at 97 % of the DNS at Re_τ 395).
+
+### Results
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| Channel at Re_τ = 395 (`channel_eb.toml`), 96 / 192 cells, first-cell y⁺ 0.28 / 0.14 | C_f/C_f,DNS (the driving force) against the paper's 98 % (Table 6) | U_b⁺ ±3 % | 99.0 / 98.8 %, U_b⁺ +0.5 / +0.6 %, converged (`eb_channel_meets_the_paper`) |
+| Channel at Re_τ = 590, 128 cells, y⁺ 0.25 | C_f/C_f,DNS against the paper's 100 % | U_b⁺ ±3 % | 99.1 %, U_b⁺ +0.5 % |
+| Channel at Re_τ = 180, 96 cells, y⁺ 0.13, start I = 0.15, ν_t/ν = 20 | C_f/C_f,DNS against the paper's 100 % | U_b⁺ ±3 % | 97.8 %, U_b⁺ +1.1 %; from I = 0.05, ν_t/ν = 100 laminar (F = 0.260, the laminar 0.258) |
+| The channel at Re_τ 395 with `algorithm = "coupled"` | driving force | – | 0.98993 against 0.98982 (SIMPLEC), converged in 315 iterations |
+| TMR plate (`tmr_plate_eb.toml`), turbulent start, y⁺ 1 | C_f(0.97) against White, 2.875e-3 | ±3 % | 2.889e-3 (+0.5 %); k and φ held by the floor near the leading edge (TURB002) |
+| The plate from the TMR free stream | C_f(0.97) | ±3 % | turbulent from x ≈ 0.25, +2.5 % |
+| Backward-facing step (`backstep_eb.toml`), 8 200 cells, SIMPLEC | x_r/H against 6.26 | ±10 % | 7.59 (+21 %; finding), converged to 10⁻⁶ in 2 480 iterations |
+| The step with `algorithm = "coupled"`, 8 200 / 32 800 cells | x_r/H | ±10 % | 7.74 to 7.77 / 7.84, not converged (finding) |
+| The step, the plate and the channel with C*_ε2 = C_ε2 (`c_epsilon4 = 1.83`) | x_r/H, C_f(0.97), C_f/C_f,DNS | – | 6.24 (−0.3 %), +4.9 %, 100.9 % |
+| Homogeneous decay (box at rest, ν = 10⁻¹², BDF2 with 10, 20, 40 steps) | k, ε with C_ε2 = 1.83 and φ → 2/3 with C₁ = 1.7 against the exact solution; α = 1 | order 1.8 to 2.2 | asserted (`eb_homogeneous_decay_is_second_order_in_time`) |
+| k-ε restart continued with the elliptic blending | φ in (0, 2], α in [0, 1] | – | asserted |
+| The plate on 1 and 4 threads (20 480 cells) | residuals, wall shear after 8 iterations | bit-identical | asserted |
+| Bad input | `compound-2023`, `scalable`, `automatic`, a production limiter; `sigma_zeta`; `c_epsilon3 = 0` | refused | CASE005, CASE002, refused |
+| Kernels | sources against the formulas of the paper and their signs, the Kolmogorov bounds of T and L at a wall, dual numbers | – | kernel tests of `turb::eb` |
+| ζ-f and ζ-f₀ after the change | channel driving force | bit-identical | 0.9624991 before and after |
+
+**Findings.** (1) The backward-facing step: the variable C*_ε2 lowers
+C_ε2 towards 0.4 where the turbulent transport of k is large against ε,
+ε grows, ν_t drops and the bubble reaches 7.59 H (+21 %; ζ-f of 2004:
+7.82, ζ-f₀: 6.38). With a constant C_ε2 the step is right (6.24) and the
+plate is 4.9 % high, so the switch helps the attached boundary layer and
+hurts the separated flow; the paper's periodic hill shows the same sign
+(its bubble 5.14 against 4.72 of the reference). The model stays as
+published; `c_epsilon4 = 1.83` is the option. (2) With the coupled
+algorithm the step does not converge: the residual of ε stays at 10⁻³
+and x_r moves between 7.74 and 7.77 (SIMPLEC converges to 7.59); the
+channel converges with both. (3) At Re_τ 180 the channel needs a strong
+start. (4) As with ζ-f, the positivity floor holds k and φ in the
+laminar part of the plate near the leading edge, so their residuals
+stay at 5·10⁻⁶ and 1.4·10⁻⁵. (5) The draft of specification 3.4 is
+corrected after the paper (ν/2 in the diffusion, the forms of T and L,
+ε_w = νk/y², the E term in the k equation, the α equation with L²
+outside the Laplacian). (6) Not in this part: the export of the wall
+normal ∇α/|∇α| (specification 2.3; with GGDH in stage 7), the near-wall
+profiles against the DNS, the step against the experiment's C_p and C_f
+and a GCI (stage 6 validation).

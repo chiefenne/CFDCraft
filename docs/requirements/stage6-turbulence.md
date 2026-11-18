@@ -412,35 +412,49 @@ stays laminar); backward-facing step x_r/H = 6.38 (+2 %). Keys: `constants.n_zet
 ### 3.4 Elliptic-blending k-ε (D133)
 
 Billard & Laurence (2012), the "BL-v²/k" model. Variables k, ε, φ = v²/k and
-the blending parameter α:
+the blending parameter α. *6e (PR #88):* the forms below are those of the
+paper (Appendix A, Table A.10, eq. 18), checked term by term; they replace
+the draft of this section, which was written from memory (ν instead of
+ν/2 in the diffusion, max forms of T and L, ε_w = 2νk/y², E in the ε
+equation, a C′_ε1):
 
-  ν_t = C_μ φ k T,  T = max(k/ε, C_T (ν/ε)^½),
-  L = C_L max(k^{3/2}/ε, C_η ν^{3/4}/ε^{1/4})
+  ν_t = C_μ φ k min(T, T_lim),  T = (k²/ε² + C_T² ν/ε)^½,
+  T_lim = 0.6/(√6 C_μ φ (S_ij S_ij)^½),
+  L = C_L (k³/ε² + C_η² ν^{3/2}/ε^{1/2})^½
 
-  α − L²∇²α = 1,  α_w = 0
+  α − L²∇²α = 1,  α_w = 0  (L² outside the Laplacian; the conservative
+  form −∇·(L²∇α) + α = 1 adds ∇L²·∇α and gives a channel C_f 7 % high at
+  Re_τ 395, see the verification page)
 
-  Dk/Dt = P_k − ε + ∇·[(ν + ν_t/σ_k)∇k]
+  Dk/Dt = P_k − ε − E + ∇·[(ν/2 + ν_t/σ_k)∇k],
+  E = C_ε3 (1 − α)³ (k/ε) 2ν ν_t (∂²U_i/∂x_j∂x_l)²
 
-  Dε/Dt = (C′_ε1 P_k − C*_ε2 ε)/T + E + ∇·[(ν + ν_t/σ_ε)∇ε]
+  Dε/Dt = (C_ε1 P_k − C*_ε2 ε)/T + ∇·[(ν/2 + ν_t/σ_ε)∇ε],
+  C*_ε2 = C_ε2 + α³ (C_ε4 − C_ε2) tanh(|∂_j(ν_t/σ_k ∂_j k)/ε|^{3/2})
 
-  Dφ/Dt = (1 − α³) f_w + α³ f_h − (φ/k) P_k + (2/k)(ν_t/σ_k) ∇φ·∇k + ∇·[(ν + ν_t/σ_φ)∇φ]
+  Dφ/Dt = (1 − α³) f_w + α³ f_h − (φ/k) P_k + (2/k)(ν_t/σ_k) ∇φ·∇k + ∇·[(ν/2 + ν_t/σ_φ)∇φ]
 
 with the near-wall part f_w = −(ε/2)(φ/k) and the homogeneous part
-f_h = −(1/T)(C₁ − 1 + C₂ P_k/ε)(φ − 2/3), a coefficient C′_ε1 that grows
-towards the wall through (1 − α³), the variable C*_ε2 and the extra
-near-wall term E of the paper. The structure above is ◇ as well. The exact forms of C′_ε1, C*_ε2 and E and
-**all constants (C_μ, C_ε1, C_ε2, C_ε3, A₁, C₁, C₂, C_T, C_L, C_η, σ_k,
-σ_ε, σ_φ) are taken from Billard & Laurence (2012) when the model is
-implemented** and are not written here from memory. Acceptance requires
-that the channel at Re_τ = 395 reproduces the paper's own channel result
-(section 9) before any other case.
+f_h = −(1/T)(C₁ − 1 + C₂ P_k/ε)(φ − 2/3). Constants of the paper: C_μ
+0.22, C_ε1 1.44, C_ε2 1.83, C_ε3 2.3, C_ε4 0.4, σ_k 1, σ_ε 1.5, σ_φ 1,
+C_T 4, C_L 0.164, C_η 75, C₁ 1.7, C₂ 0.9 (keys of `[turbulence.constants]`:
+`c_mu`, `c_epsilon1` … `c_epsilon4`, `sigma_k`, `sigma_epsilon`,
+`sigma_phi`, `c_t`, `c_l`, `c_eta`, `c_1`, `c_2`, `a` for the 0.6 of
+T_lim). Acceptance requires that the channel at Re_τ = 395 reproduces the
+paper's own channel result (section 9) before any other case. *6e:*
+C_f at 99.0 % of the DNS against the paper's 98 % (Table 6).
 
-- Wall values: k_w = 0, φ_w = 0, α_w = 0, ε_w = 2ν k_P/y_P² (or the
-  compound value of section 4.4).
-- Bounds: 0 ≤ α ≤ 1 by the discrete maximum principle (section 3.5),
-  0 ≤ φ ≤ 2.
+- Wall values: k_w = 0, φ_w = 0, α_w = 0, ε_w = ν k_P/y_P² (the paper;
+  half the value of ζ-f), or the compound value of section 4.4 with the
+  same ν k/y² in its viscous part.
+- Bounds: 0 ≤ α ≤ 1 (the discrete maximum principle; α is clipped to it as
+  well), 0 ≤ φ ≤ 2.
 - The wall-normal direction n = ∇α/|∇α| is exported (section 2.3); it is
-  what GGDH and algebraic flux models of stage 7 use near walls.
+  what GGDH and algebraic flux models of stage 7 use near walls. *6e:* not
+  yet exported; it comes with its first user (GGDH, stage 7).
+- Implementation (6e): the kernel of ζ-f with φ in the slot of ζ and α in
+  the slot of f (section 3.5); the second derivatives of E and the
+  transport of k in C*_ε2 are least-squares gradients of gradients.
 
 **Lag EB k-ε (P11, proposed as possible later).** Lardeau & Billard (2016)
 add a transport equation for the lag between stress and strain to the EB
@@ -452,7 +466,7 @@ gain is in non-equilibrium flows that are not in the stage-6 cases.
 
 | Aspect | ζ-f (Hanjalić et al. 2004) | EB k-ε (Billard & Laurence 2012) |
 |---|---|---|
-| Elliptic operator | −∇·(L²∇f) + f | −∇·(L²∇α) + α |
+| Elliptic operator | −∇·(L²∇f) + f | α − L²∇²α (L² outside the Laplacian, as published; *6e*) |
 | Matrix | symmetric, positive definite; M-matrix on orthogonal meshes, non-orthogonal part deferred (D26) | same |
 | Condition number | grows like 1 + (L/h)²_max; L spans C_η η (near walls) to k^{3/2}/ε (outer flow), so the coefficient jumps by orders of magnitude: AMG needed | same operator, same scaling, same need for AMG |
 | Right-hand side | dimensional (1/s), depends on P_k/ε, T and ζ − 2/3; changes sign | the constant 1 |
@@ -1171,6 +1185,16 @@ same direction). The ±3 % row of the compound treatment at y⁺ ≈ 1 does
 not hold for the high-Re k-ε models (−32 % on a graded mesh at y⁺ 0.4,
 the finding of 4.3); it moves to ζ-f and EB.
 
+**Results of 6e (PR #88, elliptic-blending k-ε, `compound`, first-cell
+y⁺ 0.13 to 0.28; details on the
+[verification page](../verification/stage6.md#elliptic-blending-k-ε-d133)).**
+C_f/C_f,DNS from the driving force at the DNS mass flow: 97.8 % at
+Re_τ 180, 99.0 % at 395 (98.8 % on 192 cells), 99.1 % at 590, against
+the paper's 100, 98 and 100 % (its Table 6); U_b⁺ +1.1, +0.5, +0.5 %.
+The acceptance target of section 3.4 is met. At Re_τ 180 the start
+(I 0.05, ν_t/ν 100) relaminarizes the channel; I 0.15 and ν_t/ν 20
+keep it turbulent. Flat plate (9.3): C_f(0.97) +0.5 % from White.
+
 ### 9.5 Backward-facing step (Driver & Seegmiller 1985)
 
 Expansion ratio 1.125, Re_H ≈ 36 000 on the step height H, inflow boundary
@@ -1195,6 +1219,14 @@ realizability coefficient 0.6 7.44 / 7.67; ζ-f (2004, `compound`)
 7.82 (+25 %; 6.80 with `a = 0.849`); SST (`automatic`) 5.79 (−7 %, on a Gmsh mesh of the same
 layout). C_p, C_f and the profiles against the experiment follow with the
 stage 6 validation.
+
+**Results of 6e (PR #88).** The elliptic-blending k-ε on the mesh of
+6d2 with SIMPLEC: x_r/H = 7.59 (+21 %), outside the band (finding). The
+variable C*_ε2 of the paper causes it: with C_ε4 = C_ε2 (`c_epsilon4 =
+1.83`) x_r/H = 6.24, but the flat plate is then +4.9 % from White
+instead of +0.5 %. The model stays as published. The coupled algorithm
+does not converge this case (residual of ε at 10⁻³, x_r 7.74 to 7.77;
+7.84 on 32 800 cells).
 
 ### 9.6 Axisymmetric impinging jet, H/D = 2
 
@@ -1276,7 +1308,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6c | Standard and realizable k-ε, scalable and standard wall functions, compound treatment for the k-ε family, Cebeci–Bradshaw roughness (done, PR #71: compound claimed from y⁺ 30 for the k-ε family, owner decision; Durbin bound and Picard ε destruction as defaults; findings: realizable 3–7 % low friction, rough pipe against Colebrook in 4.5 and 9.7) | `turb/keps.rs`, `turb/wall.rs` | 9.2, 9.3, 9.4 for the k-ε family, rough pipe and Moody study |
 | 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG), the AMG preconditioner for the scalar equations (D36; 6a solves them with Jacobi-preconditioned BiCGStab, enough for the laminar cases) (done, PR #73: channel +1.9 % / +1.4 %; findings on the plate: +5 % C_f, laminar from the TMR free stream, the k floor near the leading edge; the elliptic solve lives in `turbulence/mod.rs`) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
 | 6d2 | ζ-f₀ of Popovac (2023) with its compound treatment (maintainer decision 2026-11-17: robustness in y⁺ for industrial use) (done, PR #74: no code of the author available, own default of 3.3.1; channel +2.7 to −4.2 % and plate within 2.5 % of White over y⁺ 0.3 to 30, all converged; backward-facing step x_r/H 6.38 (+2 %; ζ-f +25 %, SST −7 %); the built-in mesher removes boxes, `mesh.generate.remove`) | `turb/zeta_f.rs`, `turb/wall.rs` | 9.3 and 9.4 over first-cell y⁺ 0.5 to 100, same or similar results as ζ-f |
-| 6e | EB k-ε (D133) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
+| 6e | EB k-ε (D133) (done, PR #88: channel C_f at 97.8 / 99.0 / 99.1 % of the DNS at Re_τ 180 / 395 / 590, the paper 100 / 98 / 100 %; plate +0.5 % from White; step x_r/H 7.59, +21 %, finding: the variable C*_ε2, 6.24 with it constant; the coupled algorithm does not converge the step; wall normal not yet exported) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars (done, PR #85; the default wall law is `kader` also with `low-re`, equal to `none` there; the channel Nu against DNS is open) | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
 | 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports | cases, gallery, `tools/notebooks/stage6_colab.ipynb` | 9.5, 9.6, 9.7, 6.6 |
 | 6h | SST options of D170: curvature and rotation correction (Smirnov & Menter 2009), QCR2000 and QCR2013 with the explicit-stress path in the momentum assembly that D171 reuses | `turb/sst.rs`, `turb/invariants.rs`, `foehncraft-flow/src/turbulence/stress.rs` | 9.8 |

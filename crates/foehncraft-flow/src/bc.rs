@@ -394,7 +394,8 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
-        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        /// ζ = v²/k (k-ε-ζ-f; φ of the elliptic-blending k-ε; default 2/3)
+        /// (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         zeta: Option<f64>,
     },
@@ -422,7 +423,8 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
-        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        /// ζ = v²/k (k-ε-ζ-f; φ of the elliptic-blending k-ε; default 2/3)
+        /// (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         zeta: Option<f64>,
     },
@@ -448,7 +450,8 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
-        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        /// ζ = v²/k (k-ε-ζ-f; φ of the elliptic-blending k-ε; default 2/3)
+        /// (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         zeta: Option<f64>,
     },
@@ -475,7 +478,8 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
-        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        /// ζ = v²/k (k-ε-ζ-f; φ of the elliptic-blending k-ε; default 2/3)
+        /// (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         zeta: Option<f64>,
     },
@@ -506,7 +510,8 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
-        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        /// ζ = v²/k (k-ε-ζ-f; φ of the elliptic-blending k-ε; default 2/3)
+        /// (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         zeta: Option<f64>,
     },
@@ -535,7 +540,8 @@ pub enum BoundaryCondition {
         /// ε (m²/s³) directly, with `k` (the k-ε family; stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         epsilon: Option<Scalar>,
-        /// ζ = v²/k (k-ε-ζ-f; default 2/3) (stage 6).
+        /// ζ = v²/k (k-ε-ζ-f; φ of the elliptic-blending k-ε; default 2/3)
+        /// (stage 6).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         zeta: Option<f64>,
     },
