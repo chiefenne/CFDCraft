@@ -504,14 +504,15 @@ does not contain the term.
 
 Backward-facing step of part 6d2, uniform start, iterations until x_r
 stays within 1 % of its final value (a result every 5 iterations for the
-coupled runs, every 25 for SIMPLEC):
+coupled runs, every 25 for SIMPLEC, every 50 on the fine mesh; the fine
+runs went on to 400 and 3 000 iterations for the final value):
 
 | Test | Check | SIMPLEC (0.5, then 0.8 from 100) | Coupled |
 |---|---|---|---|
 | Step, k-ε-ζ-f₀, 8 200 cells (`backstep_zeta_f0_coupled.toml`) | iterations to 1 %; final x_r/H | 525; 6.384 | 65; 6.385 |
 | Step, k-ε (`scalable`), 8 200 cells | the same | 600; 5.287 | 75; 5.287 |
-| Step, k-ω SST, 8 200 cells | the same | 675; 6.82 | 85; 6.81 |
-| Step, k-ε-ζ-f₀, 32 800 cells | the same | 1 750; 6.36 | 170 to 180; 6.38 |
+| Step, k-ω SST, 8 200 cells | the same | 675; 6.82 | 80; 6.81 |
+| Step, k-ε-ζ-f₀, 32 800 cells | the same | 1 600; 6.352 | 175; 6.352 |
 | Channel at Re_τ = 395, k-ε-ζ-f₀ (`channel_zeta_f0.toml`) | iterations to 10⁻⁶; U_b⁺ | about 2 100; 17.79 | 323; 17.79 |
 | Cavity at Re = 1000, 128² (`cavity_re1000_coupled.toml`) | iterations to 10⁻⁸; deviation from Ghia (u, v) | 1 397 (α = 0.9); 0.0040, 0.0136 | 452; 0.0040, 0.0136 |
 | The same cavity, kinetic-energy ledger (D88) | numerical dissipation over lid power; its pressure part (W) | 0.637 %; 3.996223 × 10⁻⁶ | 0.637 %; 3.996224 × 10⁻⁶ |
@@ -528,11 +529,11 @@ coupled runs, every 25 for SIMPLEC):
 
 Run time of the step with k-ε-ζ-f₀ until x_r has settled, one thread:
 21 s against 31 s on the coarse mesh (65 against 525 iterations), about
-235 s against 342 s on the fine one (175 against 1 750). A coupled
+235 s against 327 s on the fine one (175 against 1 600). A coupled
 iteration costs five to seven SIMPLEC iterations (10 and 14 Krylov
 iterations, each with a momentum sweep of 10 iterations and a pressure
-solve), so the run time gains a factor of about 1.5 where the count
-gains 8 to 10.
+solve), so the run time gains a factor of 1.4 to 1.5 where the count
+gains 8 to 9.
 
 **Findings.** (1) The coupled solve alone, with relaxation as before,
 halves the count (300 on the coarse step, 700 to 800 on the fine one):
@@ -566,15 +567,18 @@ same input, but its count reacts to the last digit of an input: the
 cavity needs 423 iterations with Δτ = 0.25 s given and 452 with the
 automatic step, which differs from 0.25 s in the 17th digit; the fine
 step needed 145 iterations with a slightly shorter step (a velocity
-scale that counted the symmetry planes) and needs 170 to 180 at
+scale that counted the symmetry planes) and needs 175 at
 7.3 H/U. The
 coupled solve stops at 0.1, its momentum sweep is cut off after 10
 iterations and the multigrid cycle runs in single precision, so two runs
 separate in the fifth digit within one outer iteration. The converged
 result does not change; the counts of this section are good to about
 10 %. The histories of the figure of gallery 78 come from intermediate
-results every 5 iterations; an intermediate result updates the boundary
-values and gradients once more and shifts the path within this scatter
-(fine step without them: x_r/H = 6.27, 6.34, 6.37 after 170, 180, 190
-iterations).
+results every 5 iterations (every 25 with SIMPLEC). An intermediate
+result leaves a run unchanged (stage 5, control files; test
+`intermediate_results_and_balances_do_not_change_the_run`), so they are
+the histories of the runs without them: the fine step gives x_r/H =
+6.27, 6.34, 6.37 after 170, 180, 190 iterations either way. Before that
+correction a result file shifted the path within this scatter (the SST
+count read 85 instead of 80).
 
