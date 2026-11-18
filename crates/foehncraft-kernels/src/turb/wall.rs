@@ -297,13 +297,24 @@ pub fn roughness_shift<T: Real>(ks_plus: T, cs: T, kappa: T) -> T {
 /// weight e^{−Γ} (`viscous`, 1 for the integration to the wall). The
 /// ζ-f₀ form (Popovac 2023, eq. (21)) generalises f_w to
 /// f₀_w = (N_ζ − 2) 2ν ζ_P/y_P², 0 with its N_ζ = 2; `n_zeta` = 1 is the
-/// 2004 model. Returns (ε_w, f_w).
+/// 2004 model. The elliptic-blending model (Billard & Laurence 2012)
+/// solves ε with half the molecular diffusion and takes ε_w = ν k_P/y_P²
+/// (`e_wall` = 1 instead of 2); its α_w = 0 is the f₀_w with N_ζ = 2.
+/// Returns (ε_w, f_w).
 #[inline(always)]
-pub fn zeta_f_wall_values<T: Real>(k: T, zeta: T, y: T, nu: T, viscous: T, n_zeta: T) -> (T, T) {
-    let two_nu_y2 = T::from_f64(2.0) * nu / (y * y);
+pub fn zeta_f_wall_values<T: Real>(
+    k: T,
+    zeta: T,
+    y: T,
+    nu: T,
+    viscous: T,
+    n_zeta: T,
+    e_wall: T,
+) -> (T, T) {
+    let nu_y2 = nu / (y * y);
     (
-        two_nu_y2 * k.max_of(T::ZERO),
-        (n_zeta - T::from_f64(2.0)) * viscous * two_nu_y2 * zeta.max_of(T::ZERO),
+        e_wall * nu_y2 * k.max_of(T::ZERO),
+        (n_zeta - T::from_f64(2.0)) * viscous * T::from_f64(2.0) * nu_y2 * zeta.max_of(T::ZERO),
     )
 }
 
@@ -442,7 +453,7 @@ pub fn keps_wall_face<T: Real>(
         // Popovac (2023): ε_P = Γ 2νk/y² + (1 − Γ) u*³/(κ y) (eq. (20))
         let (r, g, ps) = compound_2023(ys, y, nu, u_star, ut, i.cu, kappa);
         psi = ps;
-        (r, y, g, T::ONE - g, g * f(2.0) * nu * k / (y * y))
+        (r, y, g, T::ONE - g, g * f(c.e_wall) * nu * k / (y * y))
     } else if treatment == COMPOUND {
         let g = compound_gamma(ys).max_of(tiny);
         let a = (-g).exp_of();
@@ -450,7 +461,7 @@ pub fn keps_wall_face<T: Real>(
         let yl = ys.max_of(T::ONE);
         // u⁺/y* = a + b u⁺_log/y* (finite as y* → 0, where b = 0)
         let r = T::ONE / (a + b * log_plus(yl) / ys.max_of(tiny));
-        (r, y, a, b, a * f(2.0) * nu * k / (y * y))
+        (r, y, a, b, a * f(c.e_wall) * nu * k / (y * y))
     } else if treatment == STANDARD {
         let log = ys >= floor;
         if log {

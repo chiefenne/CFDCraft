@@ -80,6 +80,10 @@ pub struct KepsConstants {
     pub c1_min: f64,
     /// κ = 0.41 (wall functions).
     pub kappa: f64,
+    /// The viscous wall value ε = e_wall ν k_P/y_P² of the compound
+    /// treatment: 2 (the k-ε family, ζ-f); 1 for the elliptic-blending k-ε,
+    /// whose ε is redefined (Billard & Laurence 2012).
+    pub e_wall: f64,
 }
 
 impl KepsConstants {
@@ -94,6 +98,7 @@ impl KepsConstants {
             a0: 4.0,
             c1_min: 0.43,
             kappa: 0.41,
+            e_wall: 2.0,
         }
     }
 

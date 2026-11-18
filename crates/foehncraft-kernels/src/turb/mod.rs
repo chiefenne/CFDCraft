@@ -15,11 +15,14 @@
 //!   turbulent Prandtl number of Kays & Crawford (D135);
 //! - [`keps`]: the standard and the realizable k-ε model (D131);
 //! - [`zeta_f`]: the k-ε-ζ-f model (D132), its time and length scales and
-//!   the right-hand side of the elliptic f equation.
+//!   the right-hand side of the elliptic f equation;
+//! - [`eb`]: the elliptic-blending k-ε (D133) on the fields and solvers of
+//!   ζ-f.
 //!
 //! Switches (min, max) go through [`smin`] and [`smax`]: the published
 //! hard form for a width w = 0, the C¹ form of section 2.6 otherwise.
 
+pub mod eb;
 pub mod invariants;
 pub mod keps;
 pub mod sst;

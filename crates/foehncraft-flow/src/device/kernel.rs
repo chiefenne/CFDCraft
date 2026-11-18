@@ -463,6 +463,28 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.lin::<e::ScaledDifference>(r.len as usize, args)
     }
 
+    fn squares_add(&mut self, v: Buf3, out: Buf) -> Result<()> {
+        check(&[out], &v.all())?;
+        let args = e::VecArgs {
+            s: Raw::EMPTY,
+            v: self.r3(v),
+            out3: Raw3::default(),
+            out: self.r(out),
+        };
+        self.go::<e::SquaresAdd>(self.r(out).len as usize, &args)
+    }
+
+    fn scale_vector(&mut self, s: Buf, v: Buf3, out: Buf3) -> Result<()> {
+        check(&out.all(), &[s])?;
+        let args = e::VecArgs {
+            s: self.r(s),
+            v: self.r3(v),
+            out3: self.r3(out),
+            out: Raw::EMPTY,
+        };
+        self.go::<e::ScaleVector>(self.r(s).len as usize, &args)
+    }
+
     fn lincomb(&mut self, out: Buf, a: f64, x: Buf, b: f64, y: Buf) -> Result<()> {
         let r = self.r(out);
         let args = e::LinArgs {
@@ -1238,6 +1260,11 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             ins.push(x);
             ins.push(y);
         }
+        if let Some((gk, gz, g2, dkt)) = a.eb {
+            ins.extend(gk.all());
+            ins.extend(gz.all());
+            ins.extend([g2, dkt]);
+        }
         let mut outs = vec![a.nu_t, a.t, a.l2, a.pk, a.dk, a.de, a.dz, a.capped];
         if let Some(s) = a.sources {
             outs.extend(s);
@@ -1271,10 +1298,15 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             su_z: src.map_or(none, |s| s[4]),
             sp_z: src.map_or(none, |s| s[5]),
             rhs_f: src.map_or(none, |s| s[6]),
+            sp_f: src.map_or(none, |s| s[7]),
             dk: self.r(a.dk),
             de: self.r(a.de),
             dz: self.r(a.dz),
             capped: self.r(a.capped),
+            grad_k: a.eb.map_or(Raw3::default(), |b| self.r3(b.0)),
+            grad_z: a.eb.map_or(Raw3::default(), |b| self.r3(b.1)),
+            g2: a.eb.map_or(none, |b| self.r(b.2)),
+            dkt: a.eb.map_or(none, |b| self.r(b.3)),
         };
         self.go::<e::ZetaFCells>(self.nc, &args)
     }
@@ -1296,6 +1328,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             mu: self.r(a.mu),
             wall: self.r(a.wall),
             rho: self.rho,
+            mol: a.mol,
             mu_eff: self.r(a.mu_eff),
             gamma_k: self.r(a.gamma_k),
             gamma_w: self.r(a.gamma_w),

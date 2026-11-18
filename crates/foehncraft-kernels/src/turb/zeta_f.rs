@@ -93,6 +93,10 @@
 //!   a = 1.2 gives the same). The channel moves by 0.1 %, C_f of the flat
 //!   plate by +1.5 % (within 3 % of White's correlation from y⁺ 1 to 30).
 
+//! The elliptic-blending k-ε (D133) shares the fields, the solvers and
+//! these constants ([`FORM_EB`], [`ZetaFConstants::billard_laurence_2012`]);
+//! its cell body is [`super::eb::eb_cell`].
+
 use super::invariants::{Tensor, s2_omega2};
 use super::{smax, smin};
 use foehncraft_core::Real;
@@ -107,6 +111,9 @@ pub const ZETA_MAX: f64 = 2.0;
 pub const FORM_ZETA_F: u32 = 0;
 /// The ζ-f₀ of Popovac (2023).
 pub const FORM_F0: u32 = 1;
+/// The elliptic-blending k-ε of Billard & Laurence (2012): φ in the slot of
+/// ζ, α in the slot of f.
+pub const FORM_EB: u32 = 2;
 
 /// The constants of the model (the paper's by default; a case may change
 /// them, TURB007).
@@ -145,10 +152,19 @@ pub struct ZetaFConstants {
     pub c_mu_eq: f64,
     /// κ = 0.41 (wall treatment).
     pub kappa: f64,
-    /// N_ζ of the ζ-f₀ form (2; 1 in the 2004 model, where f₀ = f).
+    /// N_ζ of the ζ-f₀ form (2; 1 in the 2004 model, where f₀ = f; 2 for
+    /// EB, where the wall kernel then writes α_w = 0).
     pub n_zeta: f64,
-    /// [`FORM_ZETA_F`] or [`FORM_F0`].
+    /// [`FORM_ZETA_F`], [`FORM_F0`] or [`FORM_EB`].
     pub form: u32,
+    /// C_ε3 = 2.3 of the E term of the k equation (EB).
+    pub c_e3: f64,
+    /// C_ε4 = 0.4 of C*_ε2 (EB).
+    pub c_e4: f64,
+    /// Factor of the molecular diffusion of k, ε and ζ (φ): 1; ½ for EB.
+    pub mol: f64,
+    /// The wall value ε_w = e_wall ν k_P/y_P²: 2; 1 for EB.
+    pub e_wall: f64,
 }
 
 impl ZetaFConstants {
@@ -172,6 +188,39 @@ impl ZetaFConstants {
             kappa: 0.41,
             n_zeta: 1.0,
             form: FORM_ZETA_F,
+            c_e3: 0.0,
+            c_e4: 0.0,
+            mol: 1.0,
+            e_wall: 2.0,
+        }
+    }
+
+    /// The constants of the elliptic-blending k-ε (Billard & Laurence 2012;
+    /// module documentation). `a` = 0.6 is the coefficient of T_lim, which
+    /// takes (S_ij S_ij)^½.
+    pub const fn billard_laurence_2012() -> Self {
+        Self {
+            c_mu: 0.22,
+            c_e1: 1.44,
+            c_e1_zeta: 0.0,
+            c_e2: 1.83,
+            c1: 1.7,
+            c2: 0.9,
+            sigma_k: 1.0,
+            sigma_e: 1.5,
+            sigma_z: 1.0,
+            a: 0.6,
+            c_t: 4.0,
+            c_l: 0.164,
+            c_eta: 75.0,
+            c_mu_eq: 0.09,
+            kappa: 0.41,
+            n_zeta: 2.0,
+            form: FORM_EB,
+            c_e3: 2.3,
+            c_e4: 0.4,
+            mol: 0.5,
+            e_wall: 1.0,
         }
     }
 
@@ -193,6 +242,7 @@ impl ZetaFConstants {
         let mut c = super::keps::KepsConstants::standard();
         c.c_mu = self.c_mu_eq;
         c.kappa = self.kappa;
+        c.e_wall = self.e_wall;
         c
     }
 }
@@ -252,6 +302,14 @@ pub struct ZetaFCellInputs<T> {
     pub wall_m: T,
     /// The weighted wall production (m²/s³).
     pub wall_pk: T,
+    /// ∇k (EB: the cross diffusion of φ; zero otherwise).
+    pub grad_k: [T; 3],
+    /// ∇ζ = ∇φ (EB).
+    pub grad_z: [T; 3],
+    /// (∂_l ∂_j U_i)(∂_l ∂_j U_i) (1/(m² s²); EB: the E term).
+    pub g2: T,
+    /// ∇·(ν_t/σ_k ∇k) (m²/s³; EB: C*_ε2).
+    pub dkt: T,
 }
 
 /// Results of [`zeta_f_cell`] for one cell.
@@ -261,7 +319,8 @@ pub struct ZetaFCell<T> {
     pub nu_t: T,
     /// The time scale T (s).
     pub t: T,
-    /// L² (m²), the diffusivity of the f equation.
+    /// L² (m²), the diffusivity of the f equation (1 for the
+    /// elliptic-blending model, whose α equation divides by L²).
     pub l2: T,
     /// The production entering the equations (with the wall part) (m²/s³).
     pub pk: T,
@@ -277,8 +336,11 @@ pub struct ZetaFCell<T> {
     pub su_z: T,
     /// See `su_z`.
     pub sp_z: T,
-    /// The right-hand side of −∇·(L²∇f) + f = R (1/s).
+    /// The right-hand side of −∇·(L²∇f) + f = R (1/s); S_u of the α
+    /// equation (EB).
     pub rhs_f: T,
+    /// S_p of the elliptic equation: −1; −1/L² for EB.
+    pub sp_f: T,
     /// ν_t/σ_k.
     pub dk: T,
     /// ν_t/σ_ε.
@@ -319,6 +381,9 @@ pub fn zeta_f_cell<T: Real>(
     c: &ZetaFConstants,
     o: &ZetaFOptions,
 ) -> ZetaFCell<T> {
+    if c.form == FORM_EB {
+        return super::eb::eb_cell(i, c, o);
+    }
     let f = T::from_f64;
     let w = f(o.smooth);
     let tiny = f(1e-300);
@@ -412,6 +477,7 @@ pub fn zeta_f_cell<T: Real>(
         su_z,
         sp_z,
         rhs_f,
+        sp_f: -T::ONE,
         dk: nu_t / f(c.sigma_k),
         de: nu_t / f(c.sigma_e),
         dz: nu_t / f(c.sigma_z),
@@ -436,6 +502,10 @@ mod tests {
             nu: 1.5e-5,
             wall_m: 0.0,
             wall_pk: 0.0,
+            grad_k: [0.0; 3],
+            grad_z: [0.0; 3],
+            g2: 0.0,
+            dkt: 0.0,
         }
     }
 
@@ -577,6 +647,10 @@ mod tests {
                 nu: lift(i.nu),
                 wall_m: lift(0.0),
                 wall_pk: lift(0.0),
+                grad_k: [lift(0.0); 3],
+                grad_z: [lift(0.0); 3],
+                g2: lift(0.0),
+                dkt: lift(0.0),
             };
             let r = zeta_f_cell(&di, &c, &o);
             let x0 = [i.k, i.e, i.zeta][which];
