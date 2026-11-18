@@ -75,6 +75,7 @@ use crate::device::{Buf, Buf3, Lsq, Mask, TimeTerms};
 use crate::simplec::{Algorithm, Flow, Residuals};
 use crate::turbulence::PseudoStep;
 use anyhow::Result;
+use foehncraft_fv::amg::ReductionSettings;
 use foehncraft_fv::solver::Preconditioner;
 use foehncraft_kernels::flow as k;
 use serde::{Deserialize, Serialize};
@@ -89,7 +90,19 @@ pub struct CoupledSettings {
     pub tolerance: f64,
     /// Largest number of Krylov iterations per outer iteration.
     pub max_iter: usize,
-    /// Relative tolerance of the momentum sweeps of the preconditioner.
+    /// The momentum sweeps of the preconditioner: cycles of a reduction
+    /// multigrid (`multigrid`, D179) or BiCGStab with the Jacobi
+    /// preconditioner (`bicgstab`).
+    pub momentum_sweep: MomentumSweep,
+    /// Multigrid cycles per momentum sweep.
+    pub momentum_cycles: usize,
+    /// A multigrid hierarchy of the momentum sweeps is kept while the
+    /// momentum matrix differs from the one it was built from by at most
+    /// this fraction (the sum of the absolute changes of the coefficients
+    /// over the sum of their absolute values); 0: a setup in every outer
+    /// iteration.
+    pub momentum_reuse: f64,
+    /// Relative tolerance of a BiCGStab momentum sweep.
     pub momentum_tolerance: f64,
     /// Largest number of BiCGStab iterations of a momentum sweep.
     pub momentum_max_iter: usize,
@@ -97,6 +110,8 @@ pub struct CoupledSettings {
     pub pressure_tolerance: f64,
     /// Largest number of CG iterations of that pressure solve.
     pub pressure_max_iter: usize,
+    /// The multigrid of the momentum sweeps.
+    pub multigrid: ReductionSettings,
 }
 
 impl Default for CoupledSettings {
@@ -104,12 +119,79 @@ impl Default for CoupledSettings {
         Self {
             tolerance: 0.1,
             max_iter: 30,
+            momentum_sweep: MomentumSweep::Multigrid,
+            momentum_cycles: 1,
+            momentum_reuse: 0.02,
             momentum_tolerance: 0.01,
             momentum_max_iter: 10,
             pressure_tolerance: 0.1,
             pressure_max_iter: 20,
+            multigrid: ReductionSettings::default(),
         }
     }
+}
+
+/// The momentum sweep of the preconditioner of the coupled algorithm.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum MomentumSweep {
+    /// Cycles of the reduction multigrid of the momentum matrix (D179);
+    /// a hierarchy is kept while the matrix changes little
+    /// (`momentum_reuse`).
+    #[default]
+    Multigrid,
+    /// BiCGStab with the Jacobi preconditioner, to `momentum_tolerance` or
+    /// `momentum_max_iter`.
+    Bicgstab,
+}
+
+/// First multigrid slot of the momentum sweeps (one per velocity
+/// component; 0: the pressure, 1 to 4: the turbulence equations).
+const MOMENTUM_SLOT: usize = 5;
+
+/// A velocity component whose part of a vector holds less than this
+/// fraction of the squared norm of the three components takes no sweep
+/// (the third component of a planar case, zero up to rounding).
+const NEGLIGIBLE: f64 = 1e-20;
+
+/// A kept hierarchy whose cycle leaves more than this fraction of the
+/// momentum residual of the first Krylov vector of an outer iteration is
+/// rebuilt at once (a fresh one leaves 0.1 to 0.4 of it).
+const STALE: f64 = 0.5;
+
+/// The multigrid hierarchies of the momentum sweeps (D179) that outlive an
+/// outer iteration: the hierarchy (0 to 2, in the multigrid slots 5 to 7)
+/// each velocity component uses, and the momentum matrix each hierarchy
+/// was built from. A restart file holds them, so that a continued run
+/// builds the same hierarchies.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SweepState {
+    /// Hierarchy of each velocity component (`None`: none yet, or the
+    /// matrix has changed too much since its setup).
+    pub slot: [Option<usize>; 3],
+    /// The matrix (in the storage of the discretisation) each hierarchy
+    /// was built from.
+    pub matrix: [Option<Vec<f64>>; 3],
+}
+
+/// Σ|a − b| / Σ|a| of two matrices in the same storage; `diag` replaces
+/// the diagonal of `a` (at the positions `dpos`).
+fn matrix_change(a: &[f64], b: &[f64], diag: Option<&[f64]>, dpos: &[usize]) -> f64 {
+    let mut num = 0.0;
+    let mut den = 0.0;
+    for (x, y) in a.iter().zip(b) {
+        num += (x - y).abs();
+        den += x.abs();
+    }
+    if let Some(d) = diag {
+        for (&k, &di) in dpos.iter().zip(d) {
+            num += (di - b[k]).abs() - (a[k] - b[k]).abs();
+            den += di.abs() - a[k].abs();
+        }
+    }
+    if den > 0.0 { num / den } else { f64::INFINITY }
 }
 
 impl CoupledSettings {
@@ -138,6 +220,19 @@ impl CoupledSettings {
             CASE_RANGE,
             "[solver.coupled] max_iter must be <= 200 (the Krylov vectors are stored)"
         );
+        crate::need!(
+            (1..=10).contains(&self.momentum_cycles),
+            CASE_RANGE,
+            "[solver.coupled] momentum_cycles must lie in 1..=10"
+        );
+        crate::need!(
+            (0.0..=0.2).contains(&self.momentum_reuse),
+            CASE_RANGE,
+            "[solver.coupled] momentum_reuse must lie in [0, 0.2]"
+        );
+        if let Err(e) = self.multigrid.validate() {
+            crate::need!(false, CASE_RANGE, "[solver.coupled.multigrid]: {e}");
+        }
         Ok(())
     }
 }
@@ -254,6 +349,18 @@ pub(crate) struct CoupledWork {
     /// them (a solve that ends after k iterations uses k + 1 and k).
     v: Vec<Vec4>,
     z: Vec<Vec4>,
+    /// Storage position of the diagonal of every row of the momentum
+    /// matrix.
+    dpos: Vec<usize>,
+    /// The hierarchies of the momentum sweeps built in this outer
+    /// iteration (the others were kept from earlier ones).
+    mg_fresh: [bool; 3],
+    /// The first sweeps of this outer iteration are still to come (they
+    /// check the kept hierarchies).
+    mg_first: bool,
+    /// A multigrid setup failed in this outer iteration: BiCGStab does its
+    /// sweeps.
+    mg_failed: bool,
 }
 
 /// Counters of one coupled solve.
@@ -321,6 +428,10 @@ impl Flow {
             y: self.dev.alloc(nf)?,
             v: Vec::new(),
             z: Vec::new(),
+            dpos: (0..nc).map(|r| self.disc.sell.pos(r, 0)).collect(),
+            mg_fresh: [false; 3],
+            mg_first: true,
+            mg_failed: false,
         };
         self.coupled = Some(cw);
         Ok(())
@@ -377,6 +488,145 @@ impl Flow {
         Ok(())
     }
 
+    /// Before the sweeps of an outer iteration: the hierarchies of the
+    /// momentum sweeps whose matrix has changed by more than
+    /// `momentum_reuse` since their setup are given up (they are rebuilt
+    /// when a sweep needs them).
+    fn momentum_hierarchies_check(&mut self, sym: bool) -> Result<()> {
+        let reuse = self.settings.coupled.momentum_reuse;
+        {
+            let cw = self.coupled.as_mut().expect("coupled work");
+            cw.mg_fresh = [false; 3];
+            cw.mg_first = true;
+            cw.mg_failed = false;
+        }
+        if self.settings.coupled.momentum_sweep != MomentumSweep::Multigrid {
+            return Ok(());
+        }
+        if self.sweep.slot.iter().any(Option::is_some) {
+            let val = self.dev.download(self.w.val)?;
+            for i in 0..3 {
+                let Some(slot) = self.sweep.slot[i] else {
+                    continue;
+                };
+                let diag = if sym {
+                    Some(self.dev.download(self.w.diag.all()[i])?)
+                } else {
+                    None
+                };
+                let cw = self.coupled.as_ref().expect("coupled work");
+                let kept = match &self.sweep.matrix[slot] {
+                    Some(m) if m.len() == val.len() => {
+                        matrix_change(&val, m, diag.as_deref(), &cw.dpos) <= reuse
+                    }
+                    _ => false,
+                };
+                if !kept {
+                    self.sweep.slot[i] = None;
+                }
+            }
+        }
+        self.sweep_release();
+        Ok(())
+    }
+
+    /// Forgets the matrices of the hierarchies no component uses.
+    fn sweep_release(&mut self) {
+        for slot in 0..3 {
+            if !self.sweep.slot.contains(&Some(slot)) {
+                self.sweep.matrix[slot] = None;
+            }
+        }
+    }
+
+    /// Makes the multigrid hierarchy of the momentum matrix of component
+    /// `i` (in `w.val`) the active one. A hierarchy kept from an earlier
+    /// outer iteration serves while the matrix has changed little
+    /// ([`Self::momentum_hierarchies_check`]); otherwise it is built at the
+    /// first sweep that needs it, so that a component that never takes a
+    /// sweep costs no setup. Components with the same matrix share a
+    /// hierarchy (all three without symmetry planes; with them the
+    /// diagonals differ). Returns `false` when a setup failed: BiCGStab
+    /// then does the sweeps of this outer iteration.
+    fn momentum_hierarchy(&mut self, i: usize) -> Result<bool> {
+        if self.coupled.as_ref().expect("coupled work").mg_failed {
+            return Ok(false);
+        }
+        if let Some(slot) = self.sweep.slot[i] {
+            self.dev.amg_select(MOMENTUM_SLOT + slot)?;
+            return Ok(true);
+        }
+        let t = Instant::now();
+        let cur = self.dev.download(self.w.val)?;
+        // a hierarchy built in this outer iteration from the same matrix
+        let fresh = self.coupled.as_ref().expect("coupled work").mg_fresh;
+        let shared = (0..3).filter(|&j| j != i && fresh[j]).find_map(|j| {
+            let slot = self.sweep.slot[j]?;
+            (self.sweep.matrix[slot].as_ref() == Some(&cur)).then_some(slot)
+        });
+        let slot = match shared {
+            Some(slot) => {
+                self.dev.amg_select(MOMENTUM_SLOT + slot)?;
+                slot
+            }
+            None => {
+                let slot = (0..3)
+                    .find(|k| !self.sweep.slot.contains(&Some(*k)))
+                    .expect("three components, three hierarchies");
+                let ms = self.settings.coupled.multigrid.clone();
+                let built = self
+                    .dev
+                    .reduction_setup_slot(MOMENTUM_SLOT + slot, self.w.val, &ms);
+                if let Err(e) = built {
+                    self.timings.amg_setup += t.elapsed().as_secs_f64();
+                    self.coupled.as_mut().expect("coupled work").mg_failed = true;
+                    self.sweep_fallbacks += 1;
+                    if self.sweep_fallbacks == 1 {
+                        self.sweep_note = Some(format!(
+                            "outer iteration {}: the multigrid setup of the momentum sweep \
+                             failed ({e:#}); BiCGStab does the sweeps of such iterations",
+                            self.iteration
+                        ));
+                    }
+                    self.dev.amg_select(0)?;
+                    return Ok(false);
+                }
+                self.sweep_setups += 1;
+                self.sweep.matrix[slot] = Some(cur);
+                slot
+            }
+        };
+        self.sweep.slot[i] = Some(slot);
+        self.coupled.as_mut().expect("coupled work").mg_fresh[i] = true;
+        self.timings.amg_setup += t.elapsed().as_secs_f64();
+        Ok(true)
+    }
+
+    /// Rebuilds the hierarchies of the momentum sweeps of a restart from
+    /// their matrices, so that the run continues bit-identically.
+    pub fn restore_sweep(&mut self, sweep: &SweepState) -> Result<()> {
+        let stored = self.disc.sell.stored();
+        let ms = self.settings.coupled.multigrid.clone();
+        for (slot, m) in sweep.matrix.iter().enumerate() {
+            let Some(m) = m else {
+                continue;
+            };
+            anyhow::ensure!(
+                m.len() == stored,
+                "restart: the matrix of the momentum multigrid has {} values, the mesh needs \
+                 {stored}",
+                m.len()
+            );
+            self.dev.upload(self.w.val, m)?;
+            self.dev
+                .reduction_setup_slot(MOMENTUM_SLOT + slot, self.w.val, &ms)?;
+        }
+        self.dev.amg_select(0)?;
+        self.sweep = sweep.clone();
+        self.sweep_release();
+        Ok(())
+    }
+
     /// out = K x: the coupled operator, the continuity row scaled with
     /// `sc`.
     fn coupled_operator(&mut self, x: Vec4, out: Vec4, sc: f64, sym: bool) -> Result<()> {
@@ -421,22 +671,78 @@ impl Flow {
         let w = self.w;
         let s = self.settings.coupled.clone();
         let tm = Instant::now();
+        let setup = self.timings.amg_setup;
+        let mut part = [0.0; 3];
+        for (p, b) in part.iter_mut().zip(r.u.all()) {
+            *p = self.dev.sum_sq(b)?;
+        }
+        let total: f64 = part.iter().sum();
+        let multigrid = s.momentum_sweep == MomentumSweep::Multigrid;
+        let first = {
+            let cw = self.coupled.as_mut().expect("coupled work");
+            std::mem::replace(&mut cw.mg_first, false)
+        };
         for (i, count) in n.momentum.iter_mut().enumerate() {
+            let (ri, zi) = (r.u.all()[i], z.u.all()[i]);
+            self.dev.fill(zi, 0.0)?;
+            if part[i] <= NEGLIGIBLE * total {
+                continue;
+            }
             self.momentum_matrix(i, sym)?;
-            self.dev.fill(z.u.all()[i], 0.0)?;
-            let (it, _) = self.dev.solve(
-                w.val,
-                r.u.all()[i],
-                z.u.all()[i],
-                Preconditioner::Jacobi,
-                false,
-                s.momentum_tolerance,
-                s.momentum_max_iter,
-            )?;
-            *count += it;
+            if multigrid && self.momentum_hierarchy(i)? {
+                self.dev
+                    .multigrid_cycles(w.val, ri, zi, s.momentum_cycles)?;
+                *count += s.momentum_cycles;
+                let kept = !self.coupled.as_ref().expect("coupled work").mg_fresh[i];
+                if first && kept {
+                    // a kept hierarchy must still reduce the residual
+                    self.dev.matrix_product(w.val, zi, t)?;
+                    self.dev.lincomb(t, 1.0, ri, -1.0, t)?;
+                    let left = self.dev.sum_sq(t)?;
+                    // (a NaN counts as not reduced)
+                    let reduced = left <= STALE * STALE * part[i];
+                    if !reduced {
+                        self.sweep.slot[i] = None;
+                        self.sweep_release();
+                        if self.momentum_hierarchy(i)? {
+                            self.dev
+                                .multigrid_cycles(w.val, ri, zi, s.momentum_cycles)?;
+                            *count += s.momentum_cycles;
+                        } else {
+                            self.dev.fill(zi, 0.0)?;
+                            let (it, _) = self.dev.solve(
+                                w.val,
+                                ri,
+                                zi,
+                                Preconditioner::Jacobi,
+                                false,
+                                s.momentum_tolerance,
+                                s.momentum_max_iter,
+                            )?;
+                            *count += it;
+                        }
+                    }
+                }
+            } else {
+                let (it, _) = self.dev.solve(
+                    w.val,
+                    ri,
+                    zi,
+                    Preconditioner::Jacobi,
+                    false,
+                    s.momentum_tolerance,
+                    s.momentum_max_iter,
+                )?;
+                *count += it;
+            }
+        }
+        if multigrid {
+            self.dev.amg_select(0)?;
         }
         self.dev.sync()?;
-        self.timings.momentum_solve += tm.elapsed().as_secs_f64();
+        // the setups are counted under the multigrid setup
+        self.timings.momentum_solve +=
+            tm.elapsed().as_secs_f64() - (self.timings.amg_setup - setup);
         let tm = Instant::now();
         self.dev.delta_flux(z.u, mf)?;
         self.dev.net_outflow(mf, t)?;
@@ -732,6 +1038,9 @@ impl Flow {
         // ν/h in a fluid at rest)
         let sc = self.dev.dot(w.diag.x, one)? / area;
         self.dev.lincomb(r.p, sc, r.p, 0.0, r.p)?;
+        let tm = Instant::now();
+        self.momentum_hierarchies_check(sym)?;
+        self.timings.amg_setup += tm.elapsed().as_secs_f64();
         let n = self.coupled_solve(sc, sym)?;
         res.momentum_iterations = n.momentum;
         res.pressure_iterations = n.pressure;

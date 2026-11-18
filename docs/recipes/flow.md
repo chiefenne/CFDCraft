@@ -11,6 +11,7 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 23 | [Run the cylinder benchmark of Schäfer & Turek](#cylinder) |
 | 28 | [Let the error choose the time step, write output at exact times, start from potential flow](#time-control) |
 | 78 | [Converge a steady case in fewer iterations with the coupled algorithm](#coupled) |
+| 80 | [Choose and tune the momentum sweep of the coupled algorithm](#momentum-multigrid) |
 
 ---
 
@@ -350,12 +351,13 @@ target/release/foehn flow examples/cases/flow/cavity_re1000_coupled.toml
 **Reading the log.** The table has one more column of linear
 iterations: `K`, the Krylov iterations of the coupled solve of that outer
 iteration (`linear.coupled` in `[log] columns`; `krylov` in
-`residuals.csv` and the run record). `U V W` are then the BiCGStab
-iterations of all momentum sweeps of the preconditioner and `P` the CG
-iterations of its pressure solves and of the final pressure correction.
-A `K` at its limit (`solver.coupled.max_iter`, 30) in every iteration
-means that the step or the cap is too large for the momentum sweep: lower
-`solver.pseudo_time.factor` or the relaxation.
+`residuals.csv` and the run record). `U V W` are then the multigrid
+cycles of all momentum sweeps of the preconditioner (the BiCGStab
+iterations with `momentum_sweep = "bicgstab"`, recipe 80) and `P`
+the CG iterations of its pressure solves and of the final pressure
+correction. A `K` at its limit (`solver.coupled.max_iter`, 30) in every
+iteration means that the step or the cap is too large for the
+preconditioner: lower `solver.pseudo_time.factor` or the relaxation.
 
 **The pseudo-time step.** Default: automatic, Δτ = L/U with L the volume
 of the domain over the area of its boundaries (without symmetry planes)
@@ -415,3 +417,101 @@ python3 -m tools.plot.settling_chart docs/figures/gallery/coupled_step.svg "x_r 
 ```
 
 with one two-column file (iteration, value) per run.
+
+[↑ back to top](#incompressible-flow)
+
+---
+
+<a id="momentum-multigrid"></a>
+## 80. Choose and tune the momentum sweep of the coupled algorithm
+
+The preconditioner of the coupled algorithm (recipe 78) applies one
+V-cycle of a reduction multigrid to each velocity component
+([gallery 80](../gallery/flow.md#momentum-multigrid)). That is the
+default; a case needs no key for it:
+
+```
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0_coupled.toml
+target/release/foehn flow examples/cases/flow/cavity_re1000_coupled.toml
+```
+
+**Reading the log and the report.** The columns `U V W` count the
+multigrid cycles of the momentum sweeps of an outer iteration: one per
+Krylov iteration (`K`) and component with the default settings, none for
+a component without a residual (the third one of a planar case). The
+report of the run (`flow.md`) has the time of the cycles under
+`momentum solve` and that of the setups under `multigrid setup`, with
+the number of hierarchies built for the momentum sweeps:
+
+```
+multigrid setup 1.78 (45 setups, 28 of the momentum sweeps)
+```
+
+**Compare with the old sweep.** BiCGStab with a diagonal preconditioner,
+to `momentum_tolerance` or `momentum_max_iter`:
+
+```
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0_coupled.toml \
+    --set solver.coupled.momentum_sweep=bicgstab
+```
+
+The converged result is the same; the path to it and the counts differ
+a little (the fine step settles in 175 instead of 150 iterations).
+
+**The keys.**
+
+```toml
+[solver.coupled]
+momentum_sweep = "multigrid"   # or "bicgstab"
+momentum_cycles = 1            # cycles per sweep
+momentum_reuse = 0.02          # keep a hierarchy up to this change of the matrix
+
+[solver.coupled.multigrid]
+strength = 0.3                 # strong couplings: above this part of the largest of a row
+restriction_strength = 0.05    # the same for the entries that enter the restriction
+drop_tolerance = 1e-4          # coarse entries below this part of the diagonal are dropped
+max_coarse = 64                # unknowns of the coarsest level (dense inverse)
+max_levels = 30
+precision = "mixed"            # hierarchy in float32; "double": float64
+```
+
+- `momentum_reuse`: a hierarchy is kept while the sum of the absolute
+  changes of the matrix coefficients since its setup stays below this
+  part of the sum of their absolute values. 0 builds one in every outer
+  iteration, which costs more than it gains (a setup takes as long as
+  twenty to thirty cycles). Above about 0.05 a kept hierarchy stops
+  converging; the guard then rebuilds it at once (a kept hierarchy must
+  halve the residual in the first sweep of an outer iteration), so a
+  large value costs time but not the run.
+- `momentum_cycles = 2`: for a run whose `K` stays high although the
+  step and the cap are the defaults. On the cases of the gallery it does
+  not pay.
+- `[solver.coupled.multigrid]`: leave the defaults. A larger
+  `drop_tolerance` (10⁻³) gives a smaller hierarchy and is enough with
+  the cap 0.98; without the cap it loses the convergence on closed
+  streamlines.
+
+The three keys of the sweep may change during a run (re-read,
+`[[schedule]]`); those of `[solver.coupled.multigrid]` are fixed for a
+run.
+
+**If a setup fails** (a zero on the diagonal, a coarsening that stalls),
+the run goes on: BiCGStab does the momentum sweeps of that outer
+iteration, and the log carries one warning,
+`the multigrid setup of the momentum sweep failed (…); BiCGStab does the
+sweeps of such iterations`. Send such a case in: it should not happen.
+
+**Restart.** The restart file holds the matrices of the kept
+hierarchies (`momentum_amg_matrix_0` to `_2`); the continued run
+rebuilds them and stays bit-identical. A restart file from before this
+change works too (the hierarchies are built anew).
+
+**The figure of gallery 80.** The Krylov iterations per outer
+iteration come from `residuals.csv`:
+
+```
+python3 -m tools.plot.krylov_chart docs/figures/gallery/momentum_multigrid.svg \
+    "8 200 cells:BiCGStab sweep=output/step_bicgstab" "8 200 cells:multigrid sweep=output/step_multigrid" \
+    "32 800 cells:BiCGStab sweep=output/fine_bicgstab" "32 800 cells:multigrid sweep=output/fine_multigrid"
+```
+

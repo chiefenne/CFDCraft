@@ -10,14 +10,13 @@
 # instead of under-relaxation; the relaxation 0.98 (the default with
 # "coupled") only caps the local Courant number at 49.
 #
-# Result: 452 outer iterations to 10⁻⁸ against 1 397 with SIMPLEC at
-# α_u = 0.9, the same deviation from Ghia, Ghia & Shin (1982), 0.0040 and
-# 0.0136 of the lid speed, and the same kinetic-energy ledger (numerical
-# dissipation 0.637 % of the lid power). The column K of the log shows the
-# Krylov iterations of the coupled solve. A larger step
-# (`[solver.pseudo_time] factor = 4`) needs fewer iterations (about 360) and
-# more run time, because the momentum sweeps of the preconditioner get
-# dearer (requirements step 22, section 7).
+# Result: about 450 outer iterations to 10⁻⁸ against 1 397 with SIMPLEC
+# at α_u = 0.9 (12 s against 28 s on one thread), the same deviation from
+# Ghia, Ghia & Shin (1982), 0.0040 and 0.0136 of the lid speed, and the
+# same kinetic-energy ledger (numerical dissipation 0.637 % of the lid
+# power). The column K of the log shows the Krylov iterations of the
+# coupled solve, the columns U V W the multigrid cycles of the momentum
+# sweeps of the preconditioner (D179; requirements step 22, section 7).
 
 case_format = "0.6"
 

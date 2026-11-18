@@ -7,7 +7,7 @@
 use super::kernel::{Exec, KernelFlow};
 use super::{Buf, Setup};
 use anyhow::{Result, ensure};
-use foehncraft_fv::amg::AmgSettings;
+use foehncraft_fv::amg::{AmgSettings, ReductionSettings};
 use foehncraft_fv::backend::{Backend, V};
 use foehncraft_fv::solver::{self as linear, Preconditioner};
 use foehncraft_kernels::entry::{Entry, Raw};
@@ -78,6 +78,8 @@ pub struct CpuExec {
     bufs: Vec<HostArray<f64>>,
     statics: Vec<HostArray<u32>>,
     pool: rayon::ThreadPool,
+    /// The pool has one thread.
+    serial: bool,
     be: Box<dyn Backend>,
 }
 
@@ -98,6 +100,7 @@ impl CpuExec {
         Ok(Self {
             bufs: Vec::new(),
             statics: Vec::new(),
+            serial: pool.current_num_threads() == 1,
             pool,
             be,
         })
@@ -163,15 +166,22 @@ impl Exec for CpuExec {
     }
 
     fn launch<K: Entry>(&mut self, n: usize, a: &K::Args) -> Result<()> {
-        self.pool.install(|| {
-            (0..n.div_ceil(GRAIN)).into_par_iter().for_each(|ch| {
-                for i in ch * GRAIN..((ch + 1) * GRAIN).min(n) {
-                    // SAFETY: i < n; the device built the argument block from
-                    // live buffers and checked that outputs are distinct.
-                    unsafe { K::run(i, a) }
-                }
-            })
-        });
+        let task = |ch: usize| {
+            for i in ch * GRAIN..((ch + 1) * GRAIN).min(n) {
+                // SAFETY: i < n; the device built the argument block from
+                // live buffers and checked that outputs are distinct.
+                unsafe { K::run(i, a) }
+            }
+        };
+        // Handing a loop to the pool costs two thread switches, more than
+        // the loop itself on a small mesh: a pool of one thread and a loop
+        // of one task run on the calling thread (same values, D31).
+        if self.serial || n <= GRAIN {
+            (0..n.div_ceil(GRAIN)).for_each(task);
+        } else {
+            self.pool
+                .install(|| (0..n.div_ceil(GRAIN)).into_par_iter().for_each(task));
+        }
         Ok(())
     }
 
@@ -210,6 +220,24 @@ impl Exec for CpuExec {
 
     fn amg_slot(&mut self, slot: usize) -> Result<()> {
         self.be.amg_slot(slot)
+    }
+
+    fn reduction_setup(&mut self, val: Buf, s: &ReductionSettings) -> Result<()> {
+        self.be.set_matrix(self.bufs[val.0 as usize].slice())?;
+        linear::setup_reduction(self.be.as_mut(), s).map(|_| ())
+    }
+
+    fn cycles(&mut self, val: Buf, rhs: Buf, x: Buf, cycles: usize) -> Result<()> {
+        let be = self.be.as_mut();
+        if cycles > 1 {
+            // the residual between two cycles takes the matrix of the backend
+            be.set_matrix(self.bufs[val.0 as usize].slice())?;
+        }
+        be.upload(V::Rhs, self.bufs[rhs.0 as usize].slice())?;
+        linear::cycles(be, cycles)?;
+        let phi = be.download(V::Phi)?;
+        self.bufs[x.0 as usize].slice_mut().copy_from_slice(&phi);
+        Ok(())
     }
 
     fn sync(&mut self) -> Result<()> {

@@ -426,7 +426,7 @@ pub fn build(a: Csr, s: &AmgSettings) -> Result<Hierarchy> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// 2D five-point Laplacian on an m × m grid with Dirichlet boundaries.

@@ -20,7 +20,7 @@ pub mod kernel;
 
 use crate::bc::BoundaryArrays;
 use anyhow::Result;
-use foehncraft_fv::amg::AmgSettings;
+use foehncraft_fv::amg::{AmgSettings, ReductionSettings};
 use foehncraft_fv::disc::{Discretisation, Soa3};
 use foehncraft_fv::solver::Preconditioner;
 
@@ -748,6 +748,14 @@ pub trait FlowDevice {
     /// Makes multigrid slot `slot` the active one (back to 0 after a
     /// turbulence solve).
     fn amg_select(&mut self, slot: usize) -> Result<()>;
+    /// Setup of the reduction multigrid (D179) on the matrix `val`, which
+    /// need not be symmetric (a momentum matrix: slots 5 to 7), in slot
+    /// `slot`, which becomes the active one.
+    fn reduction_setup_slot(&mut self, slot: usize, val: Buf, s: &ReductionSettings) -> Result<()>;
+    /// x = the result of `cycles` multigrid cycles of the active slot on
+    /// `val` x = `rhs` from x = 0: a stationary iteration, so a fixed
+    /// linear operator on `rhs` (the sweep of a preconditioner).
+    fn multigrid_cycles(&mut self, val: Buf, rhs: Buf, x: Buf, cycles: usize) -> Result<()>;
     /// The face viscosity of the momentum equation (a face buffer that a
     /// turbulence model overwrites with μ + ρ ν_t, stage 6).
     fn face_viscosity(&self) -> Buf;

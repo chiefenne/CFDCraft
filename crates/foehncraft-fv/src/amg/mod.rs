@@ -33,12 +33,19 @@
 //! float32 copy of the fine matrix) is stored and applied in float32; CG,
 //! its residuals and the solution stay in float64. The float64 mode runs the
 //! identical hierarchy in float64.
+//!
+//! [`reduction`] holds a second setup for the non-symmetric matrices of
+//! transport equations (D179): a reduction multigrid with a splitting into
+//! coarse and fine points. Its hierarchies run through the same cycle and
+//! the same level operations.
 
 pub mod csr;
 pub mod cycle;
+pub mod reduction;
 pub mod setup;
 
 pub use csr::{Csr, SellMatrix};
+pub use reduction::ReductionSettings;
 pub use setup::{Hierarchy, HierarchyInfo, build};
 
 use serde::{Deserialize, Serialize};

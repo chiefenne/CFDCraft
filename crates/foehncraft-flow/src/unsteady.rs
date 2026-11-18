@@ -778,6 +778,7 @@ fn restart_of(
         iteration: fl.iteration(),
         amg_setups: fl.amg_setups,
         amg_matrix: fl.amg_matrix.clone(),
+        sweep: Default::default(),
         transient: Some((tr.old_levels(fl)?, tr.clock, dt_next, tr.scheme)),
         geometry: None,
     })
@@ -1848,6 +1849,7 @@ fn run_one<F: FnMut(&str)>(
         ns_per_cell_iteration: 1e9 * secs / (nc as f64 * nsteps.max(1) as f64),
         timings: fl.timings.clone(),
         amg_setups: fl.amg_setups,
+        sweep_setups: fl.sweep_setups,
         errors,
         reference,
         boundaries,

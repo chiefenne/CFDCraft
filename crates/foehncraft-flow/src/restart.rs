@@ -34,6 +34,10 @@
 //!   2 k, 3 ε or ω, 4 ζ; with their multigrid only);
 //! - `amg_matrix`: the pressure matrix of the last multigrid setup (the
 //!   hierarchy is rebuilt from it, so the preconditioner is the same);
+//! - the coupled algorithm with the multigrid momentum sweep (D179):
+//!   `momentum_amg_use`, the hierarchy (0 to 2, −1 none) of each velocity
+//!   component, and `momentum_amg_matrix_<h>`, the momentum matrix
+//!   hierarchy h was built from;
 //! - optional, for meshes that move (D91, L22): `point_id`,
 //!   `points_x|y|z` and the cell volumes of the time levels `volume_<k>`
 //!   (attribute `volume_levels`); a fixed mesh leaves them out.
@@ -67,6 +71,9 @@ pub struct Restart {
     pub amg_setups: usize,
     /// Pressure matrix of the last multigrid setup.
     pub amg_matrix: Option<Vec<f64>>,
+    /// The kept hierarchies of the momentum sweeps of the coupled
+    /// algorithm (D179).
+    pub sweep: crate::coupled::SweepState,
     /// Transient state: old levels, clock, next time step, scheme.
     pub transient: Option<(OldLevels, Clock, f64, TimeScheme)>,
     /// The geometry of the state, for meshes that move or deform (D91,
@@ -251,6 +258,15 @@ mod io {
             if let Some(m) = &r.amg_matrix {
                 ds(&g, "amg_matrix", m)?;
             }
+            if r.sweep.slot.iter().any(Option::is_some) {
+                let used = r.sweep.slot.map(|s| s.map_or(-1.0, |s| s as f64));
+                ds(&g, "momentum_amg_use", &used)?;
+                for (h, m) in r.sweep.matrix.iter().enumerate() {
+                    if let Some(m) = m {
+                        ds(&g, &format!("momentum_amg_matrix_{h}"), m)?;
+                    }
+                }
+            }
             if let Some((o, clock, dt_next, scheme)) = &r.transient {
                 attr(&g, "time", &clock.time)?;
                 attr(&g, "step", &(clock.step as u64))?;
@@ -431,6 +447,22 @@ mod io {
         } else {
             None
         };
+        let mut sweep = crate::coupled::SweepState::default();
+        if g.link_exists("momentum_amg_use") {
+            let used = rd(&g, "momentum_amg_use")?;
+            anyhow::ensure!(used.len() == 3, "momentum_amg_use: three values expected");
+            for (i, u) in used.iter().enumerate() {
+                if (0.0..3.0).contains(u) {
+                    let h = *u as usize;
+                    let name = format!("momentum_amg_matrix_{h}");
+                    anyhow::ensure!(g.link_exists(&name), "{name} is missing");
+                    if sweep.matrix[h].is_none() {
+                        sweep.matrix[h] = Some(rd(&g, &name)?);
+                    }
+                    sweep.slot[i] = Some(h);
+                }
+            }
+        }
         let tr = if transient {
             let scheme = match rsattr(&g, "scheme")?.as_str() {
                 "bdf1" => TimeScheme::Bdf1,
@@ -505,6 +537,7 @@ mod io {
             iteration: rattr::<u64>(&g, "iteration")? as usize,
             amg_setups: rattr::<u64>(&g, "amg_setups")? as usize,
             amg_matrix,
+            sweep,
             transient: tr,
         })
     }
@@ -689,6 +722,7 @@ impl Restart {
                 geo.volumes = geo.volumes.iter().map(|v| remap(v, &mc)).collect();
             }
             self.amg_matrix = None;
+            self.sweep = Default::default();
             self.cell_id = cell_id.to_vec();
             self.face_id = face_id.to_vec();
         }

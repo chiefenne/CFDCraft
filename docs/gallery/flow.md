@@ -10,6 +10,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 15 | [Cylinder in a channel: the Schäfer & Turek benchmark](#cylinder) | 5 | built-in O-grid, steady Re 20, vortex street at Re 100, adaptive time step, force coefficients |
 | 20 | [Time step from the error, output at exact times, potential-flow start](#time-control) | 5 | BDF2 error estimate with rejected steps, output in simulated time, potential flow from the pressure multigrid |
 | 78 | [Coupled algorithm and pseudo-time steps: the step case in 65 iterations](#coupled) | 6 | `solver.algorithm = "coupled"`, `[solver.coupled]`, `[solver.pseudo_time]`, log column `K` |
+| 80 | [A multigrid for the momentum sweep of the coupled algorithm](#momentum-multigrid) | 6 | `solver.coupled.momentum_sweep`, `momentum_cycles`, `momentum_reuse`, `[solver.coupled.multigrid]` |
 
 ---
 
@@ -290,10 +291,11 @@ within 1 % of its final value:
 | k-ω SST | 675 | 80 | 6.82 |
 | k-ε-ζ-f₀, 32 800 cells | 1 600 | 175 | 6.352 |
 
-The gain in run time is smaller, because a coupled iteration costs five
-to seven SIMPLEC iterations: on one thread the coarse step settles in
-21 s instead of 31 s, the fine one in about 235 s instead of 327 s. That
-cost is the momentum sweep of the preconditioner (last paragraph). The
+The gain in run time is smaller, because a coupled iteration costs
+several SIMPLEC iterations: with the multigrid momentum sweep of
+[gallery 80](#momentum-multigrid) the coarse step settles on one
+thread in 7.0 s instead of 18.7 s and the fine one, in 150 iterations,
+in 74 s instead of 243 s. The
 counts are good to about 10 %: they repeat exactly for the same input,
 but a change in the last digit of the step can move them
 ([verification page](../verification/stage6.md#coupled-algorithm-and-pseudo-time-steps-part-6e),
@@ -303,23 +305,124 @@ finding 8).
 (`channel_zeta_f0.toml` with `--set solver.algorithm=coupled`) converges
 in 323 iterations instead of about 2 100, to the same U_b⁺ = 17.79. The
 laminar cavity at Re = 1000 on 128 × 128 cells
-(`cavity_re1000_coupled.toml`) converges to 10⁻⁸ in 452 iterations
+(`cavity_re1000_coupled.toml`) converges to 10⁻⁸ in about 450 iterations
 instead of 1 397, with the same deviation from Ghia et al. (0.0040,
 0.0136) and the same kinetic-energy ledger: numerical dissipation 0.637 %
 of the lid power with both algorithms, its Rhie–Chow part equal to seven
 digits.
 
-**Where it does not pay yet.** On small laminar cases SIMPLEC at
-α = 0.9 is as fast: the cavity at Re = 400 on 48 × 48 cells takes 255
-iterations with SIMPLEC and 292 with the automatic step. A larger step
-(`[solver.pseudo_time] factor = 4` or `20`) brings 130 or 84 iterations,
-but each then costs more, because the momentum sweep of the
-preconditioner (BiCGStab with a diagonal preconditioner) gets expensive
-at large steps. The same sweep is why the cap stays at 0.98 and the fine
-step mesh still needs more than twice the iterations of the coarse one. A
-multigrid for convection-dominated matrices is the next step
-([requirements step 22](../requirements/step22-coupled-solver.md), L44).
+**Where it pays little.** On small laminar cases SIMPLEC at α = 0.9 is
+about as fast: the cavity at Re = 400 on 48 × 48 cells takes 255
+iterations with SIMPLEC and 289 with the automatic step, which is a
+careful one. A larger step (`[solver.pseudo_time] factor = 4` or `20`)
+brings 130 or 84 iterations. With the BiCGStab momentum sweep of the
+first version such steps cost more than they saved; with the multigrid
+sweep of [gallery 80](#momentum-multigrid) they no longer do (cavity
+at Re = 1000 on 64 × 64 cells: 3.0 s with SIMPLEC, 3.7 s, 2.8 s and
+2.6 s with the factors 1, 4 and 20). The cap stays at 0.98, which is why
+the fine step mesh still needs more than twice the iterations of the
+coarse one
+([requirements step 22](../requirements/step22-coupled-solver.md),
+section 8).
 
 The commands are in [recipe 78](../recipes/flow.md#coupled), the
 measurements and the method in the
 [verification page](../verification/stage6.md#coupled-algorithm-and-pseudo-time-steps-part-6e).
+
+[↑ back to top](#incompressible-flow)
+
+---
+
+<a id="momentum-multigrid"></a>
+## 80. A multigrid for the momentum sweep of the coupled algorithm
+
+![Krylov iterations of the coupled solve in each outer iteration of the backward-facing step with k-ε-ζ-f₀, on 8 200 cells (left, 160 iterations) and on 32 800 cells (right, 300 iterations). With the BiCGStab momentum sweep the count jumps between 3 and the limit of 30 during the whole run, 8.3 and 12.5 per outer iteration on average; with the multigrid sweep it falls smoothly from about 10 to 3 or 4 (4.1 and 4.8 on average) and is at the limit only in the first ten iterations on the fine mesh](../figures/gallery/momentum_multigrid.svg)
+
+**The sweep.** Every Krylov iteration of the coupled solve of
+[gallery 78](#coupled) needs an approximate inverse of the momentum
+matrix for each velocity component. BiCGStab with a diagonal
+preconditioner did that, cut off after 10 iterations. With a large
+pseudo-time step the matrix is far from diagonally dominant and 10
+iterations do not reach the tolerance, so the coupled solve took more
+Krylov iterations, each with its pressure solve, and an erratic number
+of them (figure: red).
+
+**The multigrid.** The momentum matrix is not symmetric: upwind
+convection makes it nearly triangular along the flow, and the
+aggregation multigrid of the pressure fails on it. A reduction multigrid
+uses that structure. It splits the cells into coarse and fine points
+such that the fine points are almost decoupled from each other (one
+Jacobi sweep solves them), and it builds the coarse problem with a
+restriction that approximates the ideal one (Manteuffel, Ruge &
+Southworth 2018) and the direct interpolation of classical multigrid.
+One V-cycle per velocity component is the sweep. It runs on the level
+kernels of the pressure multigrid, on the CPU and on the GPU. It is the
+default with the coupled algorithm; the old sweep is one key away:
+
+```toml
+[solver]
+algorithm = "coupled"
+
+[solver.coupled]
+# momentum_sweep = "bicgstab"   # the sweep of gallery 78
+```
+
+**The step case** (k-ε-ζ-f₀, one thread; outer iterations and run time
+until x_r stays within 1 % of its final value):
+
+| Mesh | SIMPLEC (0.5, then 0.8) | Coupled, BiCGStab sweep | Coupled, multigrid sweep |
+|---|---|---|---|
+| 8 200 cells | 525, 18.7 s | 65, 8.3 s | 65, 7.0 s |
+| 32 800 cells | 1 600, 243 s | 175, 131 s | 150, 74 s |
+
+Up to the settled result the Krylov iterations per outer iteration halve
+(10 → 5.3 and 14 → 6.0), and the pressure solves with them; the fine mesh
+settles 25 iterations earlier. The final x_r is the same (6.385 H and
+6.35 H). The laminar cavity at Re = 1000 on 128 × 128 cells
+(`cavity_re1000_coupled.toml`) converges to 10⁻⁸ in 12.1 s instead of
+18.8 s; SIMPLEC needs 28.3 s. k-ε and k-ω SST settle on the coarse step
+in 75 and 80 iterations as before.
+
+**Kept hierarchies.** Building a hierarchy costs as much as twenty to
+thirty cycles. So a hierarchy is kept while the momentum matrix has
+changed by at most 2 % since its setup (`momentum_reuse`), and rebuilt at
+once if its cycle no longer halves the residual. The cavity needs 28
+setups in 449 iterations; the step, whose matrix changes quickly while
+the recirculation zone forms, 96 in 65. The report of a run counts them:
+
+```
+Seconds per phase (R6): … momentum solve 0.30, … pressure solve 1.56, multigrid setup 1.49 (7 setups, 96 of the momentum sweeps)
+```
+
+A restart file holds the matrices of the kept hierarchies, so a
+continued run stays bit-identical to an uninterrupted one.
+
+**A side result: one thread without a pool.** Timing these runs showed
+a loss in the CPU backend that had nothing to do with the algorithm. On
+a pool of one thread (meshes below 20 000 cells always run on one) every
+kernel call was still handed to the worker thread and waited for, about
+2 000 times per outer iteration of the cavity. Such loops, and loops of
+one task like the coarse levels of a multigrid cycle, now run on the
+calling thread, with the same values. That alone took the SIMPLEC run of
+the coarse step from 31 s to 18.7 s and the coupled run of gallery 78
+from 21 s to 8.3 s.
+
+**What limits a coupled run now.** On the fine mesh the momentum sweeps
+and their setups take 16 % of the run time (the BiCGStab sweeps took a
+quarter), the
+turbulence model 35 % (its linear solves 21 %) and the pressure solves
+25 %. The setups cost
+more than the cycles they serve (7.3 s against 4.1 s). And the cap on
+the local step stays at 0.98: without it the fine step settles in about
+120 iterations, but the Krylov solve then runs into its limit in every
+outer iteration, because of the SIMPLE-type approximation of the Schur
+complement and no longer because of the sweep. The same multigrid for
+the turbulence equations, a cheaper setup, a multigrid with a
+coarse–fine splitting for the pressure and a better Schur complement are
+the next steps ([requirements step 22](../requirements/step22-coupled-solver.md),
+section 8).
+
+The commands are in [recipe 80](../recipes/flow.md#momentum-multigrid),
+the method and the tests in the
+[verification page](../verification/stage6.md#multigrid-for-the-momentum-sweep-part-6f).
+

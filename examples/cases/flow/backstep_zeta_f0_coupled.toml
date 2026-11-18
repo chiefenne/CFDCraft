@@ -10,7 +10,9 @@
 # volume over boundary area, 7.3 H, over the inflow speed), the
 # turbulence equations the step min(Δτ, 0.5 T) with the time scale T of
 # the model; the relaxation 0.98 of both only caps the local Courant
-# number.
+# number. The momentum sweep of the preconditioner is one cycle of a
+# reduction multigrid per velocity component (D179, the default;
+# `--set solver.coupled.momentum_sweep=bicgstab` for the older sweep).
 #
 # Result: the reattachment length is within 1 % of its final value after
 # 65 to 70 outer iterations, against about 525 with SIMPLEC and its
