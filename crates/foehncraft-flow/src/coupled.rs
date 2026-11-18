@@ -83,6 +83,9 @@ pub struct CoupledSettings {
     pub momentum_tolerance: f64,
     /// Largest number of BiCGStab iterations of a momentum sweep.
     pub momentum_max_iter: usize,
+    /// Preconditioner of the momentum sweeps (multigrid: slot 5, built
+    /// from the symmetric part of the momentum matrix).
+    pub momentum_preconditioner: Preconditioner,
     /// Relative tolerance of the pressure solve of the preconditioner.
     pub pressure_tolerance: f64,
     /// Largest number of CG iterations of that pressure solve.
@@ -104,6 +107,7 @@ impl Default for CoupledSettings {
             schur: Schur::Simplec,
             momentum_tolerance: 0.1,
             momentum_max_iter: 5,
+            momentum_preconditioner: Preconditioner::Jacobi,
             pressure_tolerance: 0.1,
             pressure_max_iter: 20,
             projection: true,
@@ -167,6 +171,9 @@ impl Vec4 {
     }
 }
 
+/// Multigrid slot of the momentum sweeps (0 pressure, 1 to 4 turbulence).
+const MOMENTUM_SLOT: usize = 5;
+
 /// Buffers of the coupled solve.
 #[derive(Debug)]
 pub(crate) struct CoupledWork {
@@ -192,6 +199,10 @@ pub(crate) struct CoupledWork {
     g: Buf3,
     t: Buf,
     mf: Buf,
+    /// ṁ − ρ ū·S of the current fields (pseudo-time term of the flux).
+    y: Buf,
+    /// The multigrid of the momentum sweeps exists.
+    momentum_amg: bool,
     /// Krylov basis and preconditioned basis.
     v: Vec<Vec4>,
     z: Vec<Vec4>,
@@ -266,6 +277,8 @@ impl Flow {
                     },
                     t: self.dev.alloc(nc)?,
                     mf: self.dev.alloc(nf)?,
+                    y: self.dev.alloc(nf)?,
+                    momentum_amg: false,
                     v: Vec::new(),
                     z: Vec::new(),
                 }
@@ -361,6 +374,10 @@ impl Flow {
         let w = self.w;
         let s = self.settings.coupled.clone();
         let tm = Instant::now();
+        let mpc = s.momentum_preconditioner;
+        if mpc == Preconditioner::Amg {
+            self.dev.amg_select(MOMENTUM_SLOT)?;
+        }
         for i in 0..3 {
             self.momentum_matrix(i, sym)?;
             self.dev.fill(z.u.all()[i], 0.0)?;
@@ -368,12 +385,15 @@ impl Flow {
                 w.val,
                 r.u.all()[i],
                 z.u.all()[i],
-                Preconditioner::Jacobi,
+                mpc,
                 false,
                 s.momentum_tolerance,
                 s.momentum_max_iter,
             )?;
             n.momentum[i] += it;
+        }
+        if mpc == Preconditioner::Amg {
+            self.dev.amg_select(0)?;
         }
         self.dev.sync()?;
         self.timings.momentum_solve += tm.elapsed().as_secs_f64();
@@ -575,12 +595,18 @@ impl Flow {
         let s = self.settings.clone();
         let alpha = s.alpha_u(false);
         self.coupled_work()?;
-        let (r, x, t, mf, cf, pval, dsum, one, area, dhat) = {
+        let (r, x, t, mf, cf, pval, dsum, one, area, dhat, y) = {
             let cw = self.coupled.as_ref().expect("coupled work");
             (
-                cw.r, cw.x, cw.t, cw.mf, cw.cf, cw.pval, cw.dsum, cw.one, cw.area, cw.dhat,
+                cw.r, cw.x, cw.t, cw.mf, cw.cf, cw.pval, cw.dsum, cw.one, cw.area, cw.dhat, cw.y,
             )
         };
+        // prototype: pseudo-time step Δτ (the same in every cell) from an
+        // iteration on
+        let env = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<f64>().ok());
+        let pseudo = env("FOEHN_PSEUDO_DT")
+            .filter(|_| self.iteration as f64 >= env("FOEHN_PSEUDO_FROM").unwrap_or(1.0));
+        let tau = pseudo.map_or(0.0, |dt| self.phys.rho / dt);
         let tm = Instant::now();
         self.update_boundaries()?;
         self.gradients()?;
@@ -590,7 +616,19 @@ impl Flow {
         // momentum rows and the residual of the current fields
         let tm = Instant::now();
         self.relaxation_term(alpha)?;
-        let scale = self.momentum_assembly(self.f.mass_flux, alpha, 1.0, None)?;
+        let time = pseudo.map(|_| crate::device::TimeTerms {
+            tau,
+            c_old: [tau, 0.0],
+            u_old: self.f.u,
+            u_old2: self.f.u,
+            explicit: (0.0, self.f.u),
+        });
+        if pseudo.is_some() {
+            let relax = self.w.relax;
+            self.dev
+                .lincomb(y, 1.0 / (1.0 - alpha), relax, 0.0, relax)?;
+        }
+        let scale = self.momentum_assembly(self.f.mass_flux, alpha, 1.0, time)?;
         let (f, w) = (self.f, self.w);
         let sym = self.bc.mom_kind.contains(&k::MOM_SYMMETRY);
         for i in 0..3 {
@@ -606,7 +644,7 @@ impl Flow {
         // Rhie–Chow fluxes of the current fields, the continuity residual,
         // the matrix L and the matrix Ŝ of the preconditioner
         let tm = Instant::now();
-        let a = self.flux_args(Some(w.d), w.relax, None);
+        let a = self.flux_args(Some(w.d), w.relax, pseudo.map(|_| (w.ds, y, alpha)));
         self.dev.mass_flux(&a, w.m)?;
         self.close_backflow(w.m)?;
         res.continuity = self.continuity(w.m)?;
@@ -617,9 +655,14 @@ impl Flow {
         {
             let d = self.dev.download(w.d)?;
             let dc = self.dev.download(w.dc)?;
-            let lim = 1.0 / (1.0 - alpha);
+            let ds = self.dev.download(w.ds)?;
+            // V / ((1 − α) a_P/α + τ V/α)
             let v: Vec<f64> = match s.coupled.schur {
-                Schur::Simplec => d.iter().zip(&dc).map(|(d, c)| c.min(d * lim)).collect(),
+                Schur::Simplec => dc
+                    .iter()
+                    .zip(&ds)
+                    .map(|(c, s)| c.min(1.0 / ((1.0 - alpha) / s + tau / alpha)))
+                    .collect(),
                 Schur::Simple => d,
             };
             self.dev.upload(dhat, &v)?;
@@ -636,6 +679,19 @@ impl Flow {
         self.timings.pressure_assembly += tm.elapsed().as_secs_f64();
         let rebuild = (self.iteration - 1).is_multiple_of(s.amg_rebuild);
         self.pressure_amg(rebuild)?;
+        if s.coupled.momentum_preconditioner == Preconditioner::Amg
+            && (rebuild || !self.coupled.as_ref().is_some_and(|c| c.momentum_amg))
+        {
+            let tm = Instant::now();
+            self.momentum_matrix(0, sym)?;
+            self.dev
+                .amg_setup_slot(MOMENTUM_SLOT, w.val, &s.pressure.amg, true)?;
+            self.dev.amg_select(0)?;
+            if let Some(c) = self.coupled.as_mut() {
+                c.momentum_amg = true;
+            }
+            self.timings.amg_setup += tm.elapsed().as_secs_f64();
+        }
 
         if let Some(dir) = std::env::var_os("FOEHN_COUPLED_DUMP") {
             let at: usize = std::env::var("FOEHN_COUPLED_DUMP_AT")
@@ -735,6 +791,8 @@ impl Flow {
         std::mem::swap(&mut self.f.mass_flux, &mut self.w.mc);
         if let Some(t) = self.turbulence.as_mut() {
             t.amg_rebuild = rebuild;
+            t.pseudo_dt = pseudo.and(env("FOEHN_PSEUDO_DT_TURB"));
+            t.pseudo_ct = env("FOEHN_PSEUDO_CT");
         }
         self.solve_scalars(None, &mut res)?;
         Ok(res)
