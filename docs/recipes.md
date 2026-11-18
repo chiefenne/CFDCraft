@@ -16,7 +16,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87 |
 | [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | 63 |
-| [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks | 68, 71, 73, 74 |
+| [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks | 68, 71, 73, 74, 88 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 29, 67 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
@@ -80,6 +80,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="thermal-wall-function"></a>85 | [Add heat transfer to a turbulent flow: wall function and turbulent Prandtl number](recipes/flow.md#thermal-wall-function) | [Incompressible flow](recipes/flow.md) |
 | <a id="heated-channel-dns"></a>86 | [Compare the heated channel with the DNS Nusselt numbers](recipes/flow.md#heated-channel-dns) | [Incompressible flow](recipes/flow.md) |
 | <a id="channel-dns-reynolds"></a>87 | [Run the heated channel at another Re_τ or Pr](recipes/flow.md#channel-dns-reynolds) | [Incompressible flow](recipes/flow.md) |
+| <a id="elliptic-blending"></a>88 | [Run a case with the elliptic-blending k-ε](recipes/turbulence.md#elliptic-blending) | [Turbulence models](recipes/turbulence.md) |
 
 ## Adding a feature
 
