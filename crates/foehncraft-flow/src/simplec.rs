@@ -728,6 +728,17 @@ pub struct State {
     pub turbulence: Option<crate::turbulence::TurbState>,
 }
 
+/// Host copies of the boundary values, gradients and limiters: what an
+/// outer iteration takes over from the previous one besides the cell
+/// values and the face fluxes ([`Flow::lagged`]).
+pub struct Lagged {
+    ub: Soa3,
+    pb: Vec<f64>,
+    grad_u: [Soa3; 3],
+    grad_p: Soa3,
+    psi: Soa3,
+}
+
 /// A host copy of the fields with the discretisation and the physics, for
 /// the output.
 pub struct Solution<'a> {
@@ -1694,6 +1705,48 @@ impl Flow {
             }
         }
         self.hold_convective(f.ub)
+    }
+
+    /// The boundary values, gradients and limiters as they are.
+    pub fn lagged(&mut self) -> Result<Lagged> {
+        let f = self.f;
+        let mut v3 = |b: Buf3| -> Result<Soa3> {
+            Ok(Soa3 {
+                x: self.dev.download(b.x)?,
+                y: self.dev.download(b.y)?,
+                z: self.dev.download(b.z)?,
+            })
+        };
+        Ok(Lagged {
+            ub: v3(f.ub)?,
+            grad_u: [v3(f.grad_u[0])?, v3(f.grad_u[1])?, v3(f.grad_u[2])?],
+            grad_p: v3(f.grad_p)?,
+            psi: v3(f.psi)?,
+            pb: self.dev.download(f.pb)?,
+        })
+    }
+
+    /// Puts the boundary values, gradients and limiters back. An observer
+    /// between two outer iterations (an intermediate result, a balance
+    /// table) brings them up to date for its output
+    /// ([`update_boundaries`](Self::update_boundaries),
+    /// [`gradients`](Self::gradients)). Without this the next iteration
+    /// would start from values that have seen one more update, and the run
+    /// would depend on its output schedule (D31).
+    pub fn set_lagged(&mut self, l: &Lagged) -> Result<()> {
+        let f = self.f;
+        let mut put = |b: Buf3, v: &Soa3| -> Result<()> {
+            self.dev.upload(b.x, &v.x)?;
+            self.dev.upload(b.y, &v.y)?;
+            self.dev.upload(b.z, &v.z)
+        };
+        put(f.ub, &l.ub)?;
+        for (g, v) in f.grad_u.into_iter().zip(&l.grad_u) {
+            put(g, v)?;
+        }
+        put(f.grad_p, &l.grad_p)?;
+        put(f.psi, &l.psi)?;
+        self.dev.upload(f.pb, &l.pb)
     }
 
     /// The convective outlets hold the boundary velocity `ub` (β = 0,
