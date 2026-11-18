@@ -13,6 +13,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 80 | [A multigrid for the momentum sweep of the coupled algorithm](#momentum-multigrid) | 6 | `solver.coupled.momentum_sweep`, `momentum_cycles`, `momentum_reuse`, `[solver.coupled.multigrid]` |
 | 81 | [A multigrid for the turbulence equations: the step settles in 40 and 65 iterations](#turbulence-multigrid) | 6 | `solver.turbulence.preconditioner`, `solver.turbulence.reuse`, relaxations 0.995 |
 | 83 | [The pressure hierarchy follows its matrix: the fine step 6 times faster than SIMPLEC](#pressure-hierarchy) | 6 | `solver.coupled.pressure_reuse`, `solver.coupled.pressure_tolerance` |
+| 85 | [Heat transfer in turbulent flow: the heated pipe and the heated flat plate](#thermal-wall-function) | 6 | `scalars.<name>.wall_function`, `turbulent_prandtl`, `turbulent_prandtl_model`, wall file columns of a scalar |
 
 ---
 
@@ -572,3 +573,45 @@ the tests in the
 [verification page](../verification/stage6.md#the-pressure-solve-of-the-coupled-preconditioner-part-6h).
 
 [↑ back to top](#incompressible-flow)
+
+---
+
+<a id="thermal-wall-function"></a>
+## 85. Heat transfer in turbulent flow: the heated pipe and the heated flat plate
+
+A passive scalar (a temperature of constant properties, or a
+concentration) of a turbulent flow diffuses with ν/Pr + ν_t/Pr_t. At a
+wall the first cell lies in the logarithmic layer, so the molecular
+conduction across it would be far too small: the wall face carries the
+conductance h_w = ρ u\*/T⁺ of a thermal wall law instead (`kader`, the
+default: Kader 1981, all y⁺ and any Pr; `jayatilleke`, the log region).
+Where the wall is resolved (y⁺ below 1) Kader's profile is T⁺ = Pr y⁺:
+the same default is exact for a fine mesh, nothing is switched off.
+
+**Heated pipe** (`pipe_heated_keps.toml`): Re = 10⁵, Pr = 0.71, uniform
+wall flux on a periodic module with the heat-flux jump (the periodic heated pipe `pipe_heated_periodic.toml`), standard k-ε with scalable wall functions, first-cell
+y⁺ 32. Nu against Gnielinski (1976), 180.2:
+
+| Wall law and Pr_t | Nu | Deviation |
+|---|---|---|
+| `kader`, Pr_t = 0.85 (default) | 182.6 | +1.3 % |
+| `kader`, Kays–Crawford | 181.3 | +0.6 % |
+| `jayatilleke`, Pr_t = 0.85 | 188.7 | +4.7 % |
+| `none` (molecular conduction at the wall) | 110.5 | −38.7 % |
+
+**Heated flat plate** (`plate_heated_keps.toml`): the plate of the TMR
+case at Re = 5·10⁶ per unit length, θ = 1 on the plate and 0 outside,
+Pr = 0.71. The Stanton number of the wall file (`theta_flux/theta_wall`,
+U = 1) against St = 0.0287 Re_x^−0.2 Pr^−0.4:
+
+| x | 0.29 | 0.5 | 0.97 | 1.5 |
+|---|---|---|---|---|
+| St against the correlation | +1.7 % | +4.3 % | +7.5 % | +9.8 % |
+
+Within ±10 % for x between 0.25 and 1.5 (Re_x 1.25·10⁶ to 7.5·10⁶).
+For x below 0.2 the k-ε model has not yet turned the boundary layer
+turbulent (the wall shear shows the same start), and St is 50 % low
+there; the correlation is for the turbulent layer.
+
+The commands are in [recipe 85](../recipes/flow.md#thermal-wall-function),
+the numbers on the [verification page](../verification/stage6.md#thermal-wall-function-and-turbulent-prandtl-number-part-6f).

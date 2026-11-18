@@ -334,6 +334,7 @@ mod io {
                     } else {
                         None
                     },
+                    wall: None,
                 })
             })
             .collect()
@@ -667,6 +668,7 @@ impl Restart {
                         name: x.name.clone(),
                         phi: remap(&x.phi, &mc),
                         old: x.old.as_ref().map(|o| remap(o, &mc)),
+                        wall: None,
                     })
                     .collect(),
                 periodic_force: s.periodic_force.clone(),

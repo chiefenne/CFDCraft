@@ -12,8 +12,8 @@
 
 use super::{
     BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask, MomentumFaceArgs,
-    MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, Setup, SstCellOps, TurbFaceOps, WallCellOps,
-    WallFaceOps, WallStatic, ZetaFCellOps,
+    MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, ScalarTurbOps, ScalarWallOps, Setup,
+    SstCellOps, TurbFaceOps, WallCellOps, WallFaceOps, WallStatic, ZetaFCellOps,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -1305,6 +1305,51 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             gamma_f: a.zeta_f.map_or(none, |z| self.r(z[3])),
         };
         self.go::<e::TurbFaces>(self.nf, &args)
+    }
+
+    fn scalar_turb_faces(&mut self, a: &ScalarTurbOps) -> Result<()> {
+        check(
+            &[a.gamma, a.bc_b],
+            &[a.mu, a.mu_eff, a.gamma0, a.wall, a.fq, a.bc_a],
+        )?;
+        let args = e::ScalarTurbArgs {
+            m: self.m,
+            mu: self.r(a.mu),
+            mu_eff: self.r(a.mu_eff),
+            gamma0: self.r(a.gamma0),
+            wall: self.r(a.wall),
+            fq: self.r(a.fq),
+            bc_a: self.r(a.bc_a),
+            prt_model: a.prt.0,
+            prt: a.prt.1,
+            gamma: self.r(a.gamma),
+            bc_b: self.r(a.bc_b),
+        };
+        self.go::<e::ScalarTurbFaces>(self.nf, &args)
+    }
+
+    fn scalar_wall_faces(&mut self, a: &ScalarWallOps) -> Result<()> {
+        let Some([faces, ..]) = self.wall else {
+            anyhow::bail!("flow device: scalar_wall_faces before wall_setup");
+        };
+        let mut outs = vec![a.gamma, a.bc_b];
+        outs.extend(a.t_plus);
+        check(&outs, &[a.y_plus, a.mu, a.gamma0, a.fq, a.bc_a])?;
+        let args = e::ScalarWallArgs {
+            m: self.m,
+            faces,
+            y_plus: self.r(a.y_plus),
+            mu: self.r(a.mu),
+            gamma0: self.r(a.gamma0),
+            fq: self.r(a.fq),
+            bc_a: self.r(a.bc_a),
+            law: a.law,
+            prt: a.prt,
+            gamma: self.r(a.gamma),
+            bc_b: self.r(a.bc_b),
+            t_plus: a.t_plus.map_or(Raw::EMPTY, |b| self.r(b)),
+        };
+        self.go::<e::ScalarWallFaces>(faces.len as usize, &args)
     }
 
     fn wall_faces(&mut self, a: &WallFaceOps) -> Result<()> {

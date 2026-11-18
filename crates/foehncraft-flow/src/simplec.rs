@@ -2335,7 +2335,18 @@ impl Flow {
         let Some(sc) = self.scalars.as_mut() else {
             return Ok(());
         };
-        res.scalars = sc.solve(self.dev.as_mut(), self.f.mass_flux, &flows, step, &xs)?;
+        let coupling = self
+            .turbulence
+            .as_ref()
+            .map(|t| t.scalar_coupling(self.dev.as_ref()));
+        res.scalars = sc.solve(
+            self.dev.as_mut(),
+            self.f.mass_flux,
+            &flows,
+            step,
+            &xs,
+            coupling,
+        )?;
         self.dev.sync()?;
         self.timings.scalars += t.elapsed().as_secs_f64();
         if !res.finite() {

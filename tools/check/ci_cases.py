@@ -46,6 +46,7 @@ FLOW = {
         "taylor_green_expression", "channel_ramp", "scalar_front_bdf2",
         "poiseuille_periodic", "channel_heated_periodic", "pipe_heated_periodic",
         "pipe_rough_keps", "backstep_zeta_f0_coupled",
+        "pipe_heated_keps", "plate_heated_keps",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_convective", "cylinder_re20_gci",

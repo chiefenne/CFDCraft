@@ -11,6 +11,8 @@
 //! - [`wall`]: the low-Reynolds and automatic wall treatments of SST
 //!   (D134) per wall face, and the rough-wall values of Aupoix (2015);
 //!   the wall functions of the k-ε family and the compound treatment;
+//! - [`thermal`]: the thermal wall functions of Kader and Jayatilleke and the
+//!   turbulent Prandtl number of Kays & Crawford (D135);
 //! - [`keps`]: the standard and the realizable k-ε model (D131);
 //! - [`zeta_f`]: the k-ε-ζ-f model (D132), its time and length scales and
 //!   the right-hand side of the elliptic f equation.
@@ -21,6 +23,7 @@
 pub mod invariants;
 pub mod keps;
 pub mod sst;
+pub mod thermal;
 pub mod wall;
 pub mod zeta_f;
 

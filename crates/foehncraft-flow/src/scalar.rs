@@ -43,13 +43,17 @@
 //! shared by all of them.
 
 use crate::bc::BoundaryCondition;
-use crate::device::{Buf, Buf3, Eps2, FlowDevice, ScalarFaceArgs, ScalarRowArgs, ScalarTime};
+use crate::device::{
+    Buf, Buf3, Eps2, FlowDevice, ScalarFaceArgs, ScalarRowArgs, ScalarTime, ScalarTurbOps,
+    ScalarWallOps,
+};
 use crate::diag::{self, Diagnostic};
 use crate::expr::{self, Env, Scalar, Value, Vars};
 use anyhow::Result;
 use foehncraft_fv::disc::Discretisation;
 use foehncraft_fv::problem::BoundaryKind;
 use foehncraft_fv::solver::{LimiterKind, Preconditioner, Scheme};
+use foehncraft_kernels::turb::thermal;
 use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -82,6 +86,81 @@ pub struct ScalarSection {
     /// (`[verification] scalar_order`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exact: Option<Scalar>,
+    /// Turbulent Prandtl (Schmidt) number Pr_t of the `constant` model; the
+    /// turbulent diffusivity is ν_t/Pr_t (D135). Used with a turbulence
+    /// model only.
+    #[serde(default = "default_prt")]
+    pub turbulent_prandtl: f64,
+    /// Model of the turbulent Prandtl number: `constant` (the number
+    /// above) or `kays-crawford` (Pr_t from ν_t/ν and Pr, Pr_t∞ = 0.85).
+    #[serde(default)]
+    pub turbulent_prandtl_model: PrandtlModel,
+    /// Thermal wall function at the walls of a turbulent flow: `kader`
+    /// (all y⁺ and any Pr; it reduces to the conduction law Pr y⁺ where
+    /// the wall is resolved), `jayatilleke` (log region, blended) or `none`
+    /// (the molecular diffusivity at the wall).
+    #[serde(default)]
+    pub wall_function: ThermalWallFunction,
+}
+
+fn default_prt() -> f64 {
+    0.85
+}
+
+/// The model of the turbulent Prandtl number (D135).
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum PrandtlModel {
+    /// A constant `turbulent_prandtl`.
+    #[default]
+    Constant,
+    /// Kays & Crawford (1993): Pr_t falls from 2 Pr_t∞ at ν_t → 0 to
+    /// Pr_t∞ in the turbulent core.
+    KaysCrawford,
+}
+
+/// The thermal wall function of a scalar (D135).
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThermalWallFunction {
+    /// Kader (1981), all y⁺, any Pr.
+    #[default]
+    Kader,
+    /// Jayatilleke (1969), log region, blended to the conduction limit.
+    Jayatilleke,
+    /// No wall function: the molecular diffusivity at the wall.
+    None,
+}
+
+/// The faces and buffers of the flow a turbulent scalar couples to.
+#[derive(Debug, Clone, Copy)]
+pub struct TurbCoupling {
+    /// Laminar viscosity per face.
+    pub mu: Buf,
+    /// The face viscosity of the flow (μ + ρ ν_t).
+    pub mu_eff: Buf,
+    /// 1 on the wall faces (per boundary face).
+    pub wall: Buf,
+    /// y⁺ per wall face (the wall treatment), if the flow has walls.
+    pub y_plus: Option<Buf>,
+}
+
+/// The turbulent part of one scalar on the device (D135).
+#[derive(Debug, Clone)]
+struct TurbField {
+    /// ρ Γ per face, molecular (the working `gamma` follows ν_t).
+    gamma0: Buf,
+    /// q d_n per boundary face.
+    fq: Buf,
+    law: u32,
+    prt_model: u32,
+    prt: f64,
+    /// d_n per boundary face.
+    dn: Vec<f64>,
 }
 
 /// `[boundary.<name>.scalar.<scalar>]`: the condition of a scalar on a
@@ -521,6 +600,7 @@ struct Field {
     heat_flux: Option<HeatFlux>,
     lsq: Buf3,
     gamma: Buf,
+    turb: TurbField,
     su: Option<Buf>,
     eps2: Option<Buf>,
     /// φⁿ, φⁿ⁻¹ and the φⁿ⁻¹ of the step before (taking a step back).
@@ -570,6 +650,22 @@ pub struct ScalarState {
     /// Transient: the cell values of the level before (φⁿ⁻¹ of the next
     /// step).
     pub old: Option<Vec<f64>>,
+    /// The boundary coefficients of the last solve (output only; not kept
+    /// in restart files).
+    pub wall: Option<ScalarWall>,
+}
+
+/// The boundary values of a scalar per boundary face: φ_b = a φ_P + b and
+/// the face diffusivity Γ_f = ρ (Γ + ν_t/Pr_t) (the wall function included
+/// on the walls of a turbulent flow).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScalarWall {
+    /// a per boundary face (0: fixed value).
+    pub a: Vec<f64>,
+    /// b per boundary face.
+    pub b: Vec<f64>,
+    /// ρ Γ per boundary face.
+    pub gamma: Vec<f64>,
 }
 
 /// Results of the scalar solves of one outer iteration.
@@ -742,6 +838,32 @@ impl Scalars {
                 z: put(&lsq.z)?,
             };
             let gamma = put(&gam_face.iter().map(|g| rho * g).collect::<Vec<_>>())?;
+            let turb = {
+                anyhow::ensure!(
+                    s.turbulent_prandtl > 0.0 && s.turbulent_prandtl.is_finite(),
+                    "[scalars.{name}] turbulent_prandtl is {}; it must be > 0",
+                    s.turbulent_prandtl
+                );
+                use foehncraft_kernels::turb::thermal as th;
+                TurbField {
+                    gamma0: put(&gam_face.iter().map(|g| rho * g).collect::<Vec<_>>())?,
+                    fq: put(&vec![0.0; nb])?,
+                    law: match s.wall_function {
+                        ThermalWallFunction::Kader => th::KADER,
+                        ThermalWallFunction::Jayatilleke => th::JAYATILLEKE,
+                        ThermalWallFunction::None => th::NONE,
+                    },
+                    prt_model: match s.turbulent_prandtl_model {
+                        PrandtlModel::Constant => th::PRT_CONSTANT,
+                        PrandtlModel::KaysCrawford => th::PRT_KAYS_CRAWFORD,
+                    },
+                    prt: match s.turbulent_prandtl_model {
+                        PrandtlModel::Constant => s.turbulent_prandtl,
+                        PrandtlModel::KaysCrawford => th::KC_PRT_INF,
+                    },
+                    dn: dn.clone(),
+                }
+            };
             let a: Vec<f64> = rules
                 .iter()
                 .map(|r| {
@@ -869,6 +991,7 @@ impl Scalars {
                 heat_flux,
                 lsq: lsq_b,
                 gamma,
+                turb,
                 su,
                 eps2,
                 old,
@@ -939,6 +1062,17 @@ impl Scalars {
                 })
                 .collect();
             dev.upload(f.bc_b, &b)?;
+            let fq: Vec<f64> = f
+                .rules
+                .iter()
+                .zip(&self.xf)
+                .zip(&f.turb.dn)
+                .map(|((r, &x), &d)| match r {
+                    FaceRule::Flux(v, _) => v.at(x, t) * d,
+                    _ => 0.0,
+                })
+                .collect();
+            dev.upload(f.turb.fq, &fq)?;
             let mut src_v = Vec::new();
             if let (Some(src), Some(su)) = (&f.source, f.su) {
                 src_v = cells.iter().map(|&x| src.at(x, t)).collect();
@@ -973,6 +1107,7 @@ impl Scalars {
         periodic_flow: &[f64],
         step: Option<StepTime>,
         cells: &[[f64; 3]],
+        turb: Option<TurbCoupling>,
     ) -> Result<ScalarResiduals> {
         if let Some(st) = step
             && st.time != self.t_set
@@ -999,6 +1134,34 @@ impl Scalars {
             }
         }
         for f in &self.fields {
+            if let Some(tc) = turb {
+                // the turbulent diffusivity of this iteration (D135)
+                dev.scalar_turb_faces(&ScalarTurbOps {
+                    mu: tc.mu,
+                    mu_eff: tc.mu_eff,
+                    gamma0: f.turb.gamma0,
+                    wall: tc.wall,
+                    fq: f.turb.fq,
+                    bc_a: f.bc_a,
+                    prt: (f.turb.prt_model, f.turb.prt),
+                    gamma: f.gamma,
+                    bc_b: f.bc_b,
+                })?;
+                if let (Some(y_plus), true) = (tc.y_plus, f.turb.law != thermal::NONE) {
+                    dev.scalar_wall_faces(&ScalarWallOps {
+                        y_plus,
+                        mu: tc.mu,
+                        gamma0: f.turb.gamma0,
+                        fq: f.turb.fq,
+                        bc_a: f.bc_a,
+                        law: f.turb.law,
+                        prt: f.turb.prt,
+                        gamma: f.gamma,
+                        bc_b: f.bc_b,
+                        t_plus: None,
+                    })?;
+                }
+            }
             let mut res = f64::NAN;
             let mut its = 0;
             let mut first = 0;
@@ -1208,6 +1371,15 @@ impl Scalars {
                     old: match f.old {
                         Some((o1, _, _)) => Some(dev.download(o1)?),
                         None => None,
+                    },
+                    wall: {
+                        let g = dev.download(f.gamma)?;
+                        let ni = g.len() - f.rules.len();
+                        Some(ScalarWall {
+                            a: dev.download(f.bc_a)?,
+                            b: dev.download(f.bc_b)?,
+                            gamma: g[ni..].to_vec(),
+                        })
                     },
                 })
             })

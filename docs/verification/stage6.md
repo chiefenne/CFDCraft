@@ -824,3 +824,38 @@ iterations per outer iteration instead of 160 and runs 1.4 times
 faster, 6.1 times faster than SIMPLEC (243 s). (4) Laminar cases do not
 trigger the rule: the pseudo-time term holds D̂, and the cavity builds
 the same 45 hierarchies either way.
+
+## Thermal wall function and turbulent Prandtl number (part 6f)
+
+Specification: [requirements stage 6](../requirements/stage6-turbulence.md)
+section 5 (D135), `foehncraft-kernels::turb::thermal`.
+
+**The method.** A passive scalar of a turbulent flow diffuses with
+ρ(Γ + ν_t/Pr_t) on every face: Pr_t is constant (`turbulent_prandtl`,
+0.85) or Kays & Crawford's correlation of ν_t/ν and Pr. On a wall face
+the diffusivity is Γ_w = μ y⁺/T⁺, so the face conductance is
+h_w = ρ u\*/T⁺ with T⁺ of Kader (1981; all y⁺, any Pr; the default) or
+Jayatilleke (1969; log region, blended to Pr y⁺ by Kader's Γ). Fixed-flux
+walls take b = q d_n/Γ_w, so the wall value is φ_P + q/h_w. y⁺ is that of
+the momentum wall treatment (u\* of the k-ε family, the blended u_τ of
+SST). The default is `kader` where the specification wrote `none` with
+`low-re`: the two agree for y⁺ below 1, and `kader` is also right at
+larger y⁺, so no switch is needed. Both kernels are single-source
+(GPU and CPU). Cases without a turbulence model do not run them.
+
+### Results
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| T⁺ of Kader for Pr 0.01, 0.71, 7, 100 at y⁺ 1, 10, 100; Jayatilleke; Kays–Crawford | formulas evaluated apart in Python | 1e-12 relative | asserted (`turb::thermal`) |
+| Limits | T⁺ → Pr y⁺ at the wall, log slope 2.12, Pr_t → 2 Pr_t∞ at ν_t → 0 | 1e-3 | asserted |
+| Heated pipe, Re = 10⁵, Pr = 0.71, k-ε scalable, 36 cells | Nu against Gnielinski (1976), 180.2 | ±10 % | +1.3 % (Kader), +0.6 % (Kays–Crawford), +4.7 % (Jayatilleke); `none` −39 % (`heated_pipe_meets_gnielinski`) |
+| Isothermal flat plate, Re = 5·10⁶ per unit length, 0.25 ≤ x ≤ 1 | St against 0.0287 Re_x^−0.2 Pr^−0.4 | ±10 % | +1.7 % at 0.29, +7.5 % at 0.97 (`heated_plate_meets_the_stanton_correlation`) |
+| Input | `turbulent_prandtl` ≤ 0, unknown wall function | refused | asserted |
+
+Not in this part: the channel Nusselt number at Re_τ 150 to 395 against
+DNS (the reference data are not stored with the project yet), the heated
+pipe with the other models (they take the same kernels through their
+y⁺), and the plate for x below 0.2, where the k-ε start of the turbulent
+layer, not the thermal law, sets St (50 % low).
+
