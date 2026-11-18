@@ -431,13 +431,18 @@ and the GCI (D67):
 ```toml
 [output]
 wall_crossings = [
-  { name = "xr", boundary = "ymin", from = [0.0, 0.0, 0.05] },   # reattachment (default)
+  # reattachment (the default kind), searched from x = 2 H on
+  { name = "xr", boundary = "ymin", from = [0.0, 0.0, 0.05], skip = 2.0 },
   { name = "xs", boundary = "ymin", from = [0.0, 0.0, 0.05], kind = "separation" },
 ]
 ```
 
-`direction` defaults to x; `width` keeps only the faces within that
-distance of the line through `from` (for a 3D wall). The faces are taken
+`direction` defaults to x; `skip` leaves out the faces closer than that
+distance to `from` and still measures the position from `from`: behind
+the step the corner vortices turn the shear positive and back up to
+x ≈ 1.5 H on the finer meshes, and without `skip` the first crossing is
+theirs. `width` keeps only the faces within that distance of the line
+through `from` (for a 3D wall). The faces are taken
 in the order of their centroids along the direction, so the wall should
 be one row of faces: a 2D case, or a 3D case with `width`.
 

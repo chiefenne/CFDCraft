@@ -32,7 +32,8 @@ The coefficients use the reference speed of the experiment, the velocity
 at x/H = −4 in the middle of the channel (y/H = 5); C_p is shifted to
 zero at x/H = 37.5, the last station of the shifted data of the TMR (the
 data are shifted the same way). The shear stress of the models is
-−u'v' = ν_t ∂u/∂y on the lines (∂v/∂x left out).
+−u'v' = ν_t ∂u/∂y on the lines (∂v/∂x left out), with the mean ν_t and
+the least-squares slope of u over ±0.05 H, plotted from y/H = 0.05.
 
 Experimental data: examples/studies/backstep/data (from the TMR, CC0;
 see its README). Needs the package (pip install ./python) or the `foehn`
@@ -62,6 +63,9 @@ SIMPLEC = {
     "solver.algorithm": "simplec",
     "solver.max_iterations": 40000,
     "solver.momentum.relaxation": 0.5,
+    # the pressure CG at its default limit of 100 iterations lets the
+    # finer meshes diverge in the first iterations (RUN014, DIV006)
+    "solver.pressure.max_iter": 200,
     # 0.5 while the bubble forms, 0.8 from iteration 100 (6d2)
     "schedule": [{"at_iteration": 100, "set": {"solver": {"momentum": {"relaxation": 0.8}}}}],
 }
@@ -144,6 +148,21 @@ def interp(x: float, pts: list[tuple[float, float]]) -> float:
     return pts[-1][1]
 
 
+def shear(rows: list[dict[str, float]], i: int, half: float = 0.05) -> float:
+    """ν_t ∂u/∂y at row i of a line: the mean ν_t and the least-squares
+    slope of u over the samples within ±half of its y (the line samples
+    cell values, so a plain difference of neighbours is noisy)."""
+    y0 = rows[i]["y"]
+    w = [r for r in rows if abs(r["y"] - y0) <= half + 1e-12]
+    if len(w) < 2:
+        return 0.0
+    my = sum(r["y"] for r in w) / len(w)
+    mu = sum(r["u"] for r in w) / len(w)
+    syy = sum((r["y"] - my) ** 2 for r in w)
+    dudy = sum((r["y"] - my) * (r["u"] - mu) for r in w) / syy if syy > 0 else 0.0
+    return sum(r["nu_t"] for r in w) / len(w) * dudy
+
+
 def evaluate(d: Path, exp) -> dict | None:
     """The numbers of one model from its run directory (finest mesh)."""
     if not (d / "flow.json").exists():
@@ -171,10 +190,7 @@ def evaluate(d: Path, exp) -> dict | None:
     for s in STATIONS:
         rows = _csv(d / f"line_x{s}.csv")
         pts = [(r["y"], r["u"] / uref) for r in rows]
-        uv = []
-        for a, b, c in zip(rows, rows[1:], rows[2:]):
-            dudy = (c["u"] - a["u"]) / (c["y"] - a["y"])
-            uv.append((b["y"], 1000.0 * b["nu_t"] * dudy / (uref * uref)))
+        uv = [(r["y"], 1000.0 * shear(rows, i) / (uref * uref)) for i, r in enumerate(rows)]
         profiles[s] = (pts, uv)
         ex = exp["profiles"][float(s)]
         du[s] = math.sqrt(sum((interp(y, pts) - u) ** 2 for y, u, _ in ex) / len(ex))
@@ -197,15 +213,45 @@ def evaluate(d: Path, exp) -> dict | None:
 # -- report ----------------------------------------------------------------
 
 
-def _f(v, fmt):
-    return "–" if v is None else format(v, fmt)
+def _f(v, fmt, unit=""):
+    """A number with a true minus sign, or – when there is none."""
+    return "–" if v is None else format(v, fmt).replace("-", "−") + unit
+
+
+# The bands of specification 9.5: x_r/H ±10 % of the experiment for SST,
+# ζ-f and EB (GCI_fine ≤ 2 %, p in [1, 3], C_p RMS ≤ 0.02), ±5 % of the
+# published result for the standard k-ε (GCI_fine ≤ 2 %); the others are
+# reported.
+BANDS = {"sst": (X_EXP, 0.10, True), "zf": (X_EXP, 0.10, True), "eb": (X_EXP, 0.10, True),
+         "keps": (KEPS_PUBLISHED, 0.05, False)}
+
+
+def verdict(key: str, r: dict) -> str:
+    """The checks of specification 9.5 for one model, as text."""
+    if key not in BANDS:
+        return "reported"
+    ref, band, strict = BANDS[key]
+    fin = r["xr"][-1] if r["xr"] else None
+    e = r["uncertainty"] or {}
+    gci, p = e.get("gci"), e.get("order")
+    out = []
+    if fin is not None:
+        out.append(f"x_r {'in' if abs(fin / ref - 1) <= band else 'outside'} ±{100 * band:.0f} %")
+    if gci is not None:
+        out.append(f"GCI {'≤' if gci <= 0.02 else '>'} 2 %")
+    if strict and p is not None:
+        out.append(f"p {'in' if 1.0 <= p <= 3.0 else 'outside'} [1, 3]")
+    if strict:
+        out.append(f"C_p {'≤' if r['cp_rms'] <= 0.02 else '>'} 0.02")
+    return ", ".join(out)
 
 
 def table(res: dict) -> str:
     """The Markdown tables of the results."""
     out = [
-        "| Model | x_r/H on the meshes | x_r/H finest | vs 6.26 | order p | GCI_fine | C_p RMS | C_f RMS ×10³ | C_f(−4) ×10³ | u/U_ref RMS at x/H 1, 4, 6, 10 |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        ("| Model | x_r/H on the meshes | x_r/H finest | vs 6.26 | order p | GCI_fine | C_p RMS "
+         "| C_f RMS ×10³ | C_f(−4) ×10³ | u/U_ref RMS at x/H 1, 4, 6, 10 | Specification 9.5 |"),
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for key, (label, _) in MODELS.items():
         r = res.get(key)
@@ -216,11 +262,24 @@ def table(res: dict) -> str:
         fin = r["xr"][-1] if r["xr"] else None
         out.append(
             f"| {label} | {', '.join(f'{v:.3f}' for v in xr)} | {_f(fin, '.3f')} | "
-            f"{_f(fin and 100 * (fin / X_EXP - 1), '+.1f')} % | {_f(e.get('order'), '.2f')} | "
-            f"{_f(e.get('gci') and 100 * e['gci'], '.2f')} % | {r['cp_rms']:.4f} | "
-            f"{1e3 * r['cf_rms']:.3f} | {1e3 * r['cf_m4']:.3f} | "
-            + ", ".join(f"{r['u_rms'][s]:.3f}" for s in STATIONS) + " |"
+            f"{_f(fin and 100 * (fin / X_EXP - 1), '+.1f', ' %')} | {_f(e.get('order'), '.2f')} | "
+            f"{_f(e.get('gci') and 100 * e['gci'], '.2f', ' %')} | {r['cp_rms']:.4f} | "
+            f"{1e3 * r['cf_rms']:.3f} | {_f(1e3 * r['cf_m4'], '.3f')} | "
+            + ", ".join(f"{r['u_rms'][s]:.3f}" for s in STATIONS)
+            + f" | {verdict(key, r)} |"
         )
+    out += [
+        "",
+        "| Model | Cells | Iterations | Converged |",
+        "|---|---|---|---|",
+    ]
+    for key, (label, _) in MODELS.items():
+        r = res.get(key)
+        if r is None:
+            continue
+        conv = ["yes" if c else "no" for c in r["converged"]]
+        out.append(f"| {label} | {', '.join(f'{c:,}'.replace(',', ' ') for c in r['cells'])} | "
+                   f"{', '.join(str(i) for i in r['iterations'])} | {', '.join(conv)} |")
     return "\n".join(out) + "\n"
 
 
@@ -296,12 +355,12 @@ def charts(res: dict, exp, dst: Path) -> list[Path]:
     out = _svg(w, h)
     xr = (-6.0, 36.0)
     line, dots, _, _ = _axes(out, 70, 40, 420, 270, "pressure coefficient, lower wall", "x/H",
-                             "C_p", xr, (-0.25, 0.08), ([0, 10, 20, 30], [-0.2, -0.1, 0, 0.05]))
+                             'C<tspan baseline-shift="sub" font-size="9">p</tspan>', xr, (-0.25, 0.08), ([0, 10, 20, 30], [-0.2, -0.1, 0, 0.05]))
     for k in keys:
         line(_thin(res[k]["cp"], xr, 0.05), COLOURS[k])
     dots(exp["cp_lower"])
     line, dots, sx, sy = _axes(out, 580, 40, 420, 270, "skin friction, lower wall", "x/H",
-                               "C_f × 10³", xr, (-1.5, 3.5), ([0, 10, 20, 30], [-1, 0, 1, 2, 3]))
+                               'C<tspan baseline-shift="sub" font-size="9">f</tspan> × 10³', xr, (-1.5, 3.5), ([0, 10, 20, 30], [-1, 0, 1, 2, 3]))
     out.append(f'<line x1="{sx(xr[0])}" y1="{sy(0):.1f}" x2="{sx(xr[1])}" y2="{sy(0):.1f}" '
                'stroke="#999" stroke-dasharray="3,3"/>')
     for k in keys:
@@ -316,17 +375,17 @@ def charts(res: dict, exp, dst: Path) -> list[Path]:
     out = _svg(w, h)
     for i, s in enumerate(STATIONS):
         x0 = 70 + 240 * i
-        line, dots, _, _ = _axes(out, x0, 40, 180, 260, f"x/H = {s}", "u/U_ref",
+        line, dots, _, _ = _axes(out, x0, 40, 180, 260, f"x/H = {s}", 'u/U<tspan baseline-shift="sub" font-size="9">ref</tspan>',
                                  "y/H" if i == 0 else "", (-0.3, 1.1), (0, 3.0),
                                  ([0, 0.5, 1], [0, 1, 2, 3]))
         for k in keys:
             line([(u, y) for y, u in res[k]["profiles"][s][0] if y <= 3.05], COLOURS[k])
         dots([(u, y) for y, u, _ in exp["profiles"][float(s)]])
-        line, dots, _, _ = _axes(out, x0, 380, 180, 260, f"x/H = {s}", "−1000 u'v'/U_ref²",
+        line, dots, _, _ = _axes(out, x0, 380, 180, 260, f"x/H = {s}", "−1000 u'v'/U" '<tspan baseline-shift="sub" font-size="9">ref</tspan>²',
                                  "y/H" if i == 0 else "", (-2, 14), (0, 3.0),
                                  ([0, 5, 10], [0, 1, 2, 3]))
         for k in keys:
-            line([(uv, y) for y, uv in res[k]["profiles"][s][1] if y <= 3.05], COLOURS[k])
+            line([(uv, y) for y, uv in res[k]["profiles"][s][1] if 0.05 <= y <= 3.05], COLOURS[k])
         dots([(-uv, y) for y, _, uv in exp["profiles"][float(s)]])
     _legend(out, 1010, 70, keys)
     out.append("</svg>")

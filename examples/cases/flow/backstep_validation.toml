@@ -23,8 +23,8 @@
 # the TMR's SST result 2.93·10⁻³), about 1.5 H thick.
 #
 # The reattachment point is a wall crossing (`[[output.wall_crossings]]`):
-# the first point after the step where the wall shear of `ymin` turns
-# from negative to positive, in the report and, in a level sweep, with
+# the first point after x = 2 H (behind the corner vortices) where the
+# wall shear of `ymin` turns from negative to positive, in the report and, in a level sweep, with
 # its observed order and GCI (D67). The lines give the velocity profiles
 # at x/H = −4, 1, 4, 6 and 10, the stations of the experiment.
 
@@ -88,7 +88,9 @@ vtkhdf = false
 wall_csv = true
 reference = { velocity = 1.0 }
 wall_probes = [ { name = "x-4", boundary = "step", point = [-4.0, 1.0, 0.05] } ]
-wall_crossings = [ { name = "xr", boundary = "ymin", from = [0.0, 0.0, 0.05] } ]
+# the corner vortices behind the step change the sign of the shear up to
+# x ≈ 1.5 H on the finer meshes: the search starts at 2 H
+wall_crossings = [ { name = "xr", boundary = "ymin", from = [0.0, 0.0, 0.05], skip = 2.0 } ]
 lines = [
   { name = "x-4", from = [-4.0, 1.0, 0.05], to = [-4.0, 9.0, 0.05], points = 321 },
   { name = "x1", from = [1.0, 0.0, 0.05], to = [1.0, 9.0, 0.05], points = 361 },

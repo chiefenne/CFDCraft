@@ -97,8 +97,9 @@ fn run_step(text: &str, name: &str) -> (FlowReport, String, Vec<(f64, f64)>) {
 /// The reattachment point is the sign change of the wall shear that the
 /// wall file shows, linear between the two face centroids; searched
 /// upstream from the outlet (direction −x) it is the same point, at the
-/// distance from the start; a kind that the shear does not show gives
-/// no position.
+/// distance from the start; `skip` leaves out the faces near the start
+/// and keeps the distance from `from`; a kind that the shear does not
+/// show gives no position.
 #[test]
 fn reattachment_is_the_sign_change_of_the_wall_shear() {
     let crossings = r#"wall_crossings = [
@@ -106,6 +107,8 @@ fn reattachment_is_the_sign_change_of_the_wall_shear() {
   { name = "back", boundary = "ymin", from = [12.0, 0.0, 0.05], direction = [-1.0, 0.0, 0.0] },
   { name = "none", boundary = "ymin", kind = "separation", from = [6.0, 0.0, 0.05] },
   { name = "row", boundary = "ymin", from = [0.0, 0.0, 0.05], width = 0.1 },
+  { name = "skip", boundary = "ymin", from = [0.0, 0.0, 0.05], skip = 0.5 },
+  { name = "past", boundary = "ymin", from = [0.0, 0.0, 0.05], skip = 11.9 },
 ]"#;
     let (rep, log, wall) = run_step(&laminar_step(crossings, ""), "laminar");
     let s = rep.solves.last().unwrap();
@@ -137,6 +140,8 @@ fn reattachment_is_the_sign_change_of_the_wall_shear() {
     assert_eq!(by("none").position, None);
     assert_eq!(by("none").at, None);
     assert!((by("row").position.unwrap() - want).abs() < 1e-12);
+    assert!((by("skip").position.unwrap() - want).abs() < 1e-12);
+    assert_eq!(by("past").position, None);
     // in the report data and in the log
     let js = serde_json::to_value(s).unwrap();
     assert_eq!(js["wall_crossings"][0]["name"], "xr");
@@ -173,8 +178,8 @@ fn level_sweep_gives_the_uncertainty_of_a_crossing() {
     assert!(rep.to_markdown().contains("wall_crossings.xr.position"));
 }
 
-/// A zero direction, a width that is not positive and an unknown kind are
-/// refused before the run.
+/// A zero direction, a width that is not positive, a negative skip and an
+/// unknown kind are refused before the run.
 #[test]
 fn bad_crossing_input_is_refused() {
     for (entry, code) in [
@@ -184,6 +189,10 @@ fn bad_crossing_input_is_refused() {
         ),
         (
             r#"{ name = "a", boundary = "ymin", from = [0.0, 0.0, 0.0], width = 0.0 }"#,
+            "CASE004",
+        ),
+        (
+            r#"{ name = "a", boundary = "ymin", from = [0.0, 0.0, 0.0], skip = -1.0 }"#,
             "CASE004",
         ),
         (

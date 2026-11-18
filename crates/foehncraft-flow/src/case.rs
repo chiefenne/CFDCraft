@@ -477,6 +477,13 @@ pub struct WallCrossing {
     /// The direction of the search (normalised).
     #[serde(default = "x_axis")]
     pub direction: [f64; 3],
+    /// Leaves out the faces closer than this distance (m) to `from` along
+    /// `direction`; the position is still measured from `from` (default
+    /// 0). Behind a step the corner vortices change the sign of the shear
+    /// close to the step face, so the search for the main reattachment
+    /// starts after them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skip: Option<f64>,
     /// Only the faces whose centroids lie within this distance (m) of the
     /// line through `from` along `direction` (default: every face of the
     /// boundary).
@@ -1387,6 +1394,12 @@ impl FlowCase {
                 "[[output.wall_crossings]] {}: width must be > 0",
                 w.name
             );
+            crate::need!(
+                w.skip.is_none_or(|b| b >= 0.0 && b.is_finite()),
+                CASE_RANGE,
+                "[[output.wall_crossings]] {}: skip must be >= 0",
+                w.name
+            );
         }
         Ok(())
     }
@@ -1616,7 +1629,8 @@ pub(crate) fn wall_crossing_line(w: &WallCrossingValue, c: &WallCrossing) -> Str
 }
 
 /// The wall crossings of `case` in the solution `fl`: per crossing the
-/// faces of the boundary after `from` (and within `width` of the line),
+/// faces of the boundary after `from` and `skip` (and within `width` of
+/// the line),
 /// ordered by the projection of their centroids on the direction (in face
 /// order on ties), and the first pair whose shear along the direction
 /// changes sign the given way, linear between the two.
@@ -1636,7 +1650,7 @@ pub(crate) fn wall_crossings(
             for f in p.range() {
                 let r = sub(geo.face_centroid[f], wc.from);
                 let s = dot(r, d);
-                if s < 0.0 {
+                if s < wc.skip.unwrap_or(0.0) {
                     continue;
                 }
                 if let Some(b) = wc.width {
