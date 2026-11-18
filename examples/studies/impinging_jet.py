@@ -16,8 +16,11 @@ examples/cases/flow/jet_pipe_profile.toml (OUT/pipe_<model>), whose line
 `foehncraft.profiles`); the jet, examples/cases/flow/impinging_jet.toml,
 then runs with `verification.levels` (default [0, 1, 2]: 2 600, 10 400
 and 41 600 cells), so that the solver reports the GCI of θ_w at the wall
-probe `stag` (the face next to the axis; the GCI of Nu₀ = q D/(Γ θ_w) is
-the same to first order). The finest mesh is evaluated. The limiter cases
+probe `stag` (the face next to the axis; the GCI of Nu₀ = q D/(Γ θ_w)
+is the same to first order) and of θ_w at r/D = 0.1 (the probe `r01`:
+the axis cells make Nu of the faces next to the axis low with the
+turbulence models, more so on finer meshes, a finding of 6g). The finest
+mesh is evaluated. The limiter cases
 run on the mesh of the case file (10 400 cells) in OUT/limiter: the
 standard k-ε with `none`, `kato-launder` and its default `durbin`, SST
 with `none`, `menter` (its default), `kato-launder` and `durbin`, and
@@ -30,7 +33,8 @@ Models (key, label, wall treatment, algorithm):
 
     zf0   k-ε-ζ-f₀ (2023)          compound-2023  coupled
     zf    k-ε-ζ-f (2004)           compound       SIMPLEC (the coupled run does not converge)
-    eb    elliptic-blending k-ε    compound       SIMPLEC (the coupled run does not converge)
+    eb    elliptic-blending k-ε    compound       SIMPLEC (the coupled run does not converge;
+                                                   tolerance 2e-5: k and φ stall at the floor)
     sst   k-ω SST, Kato–Launder    automatic      coupled
     keps  k-ε                      scalable       coupled
     rke   realizable k-ε           scalable       coupled (tolerance 1e-4: the residuals stall)
@@ -66,6 +70,9 @@ Q = 1e-3                       # wall flux q/(ρ c_p), K m/s
 STATIONS = ("0.5", "1", "2", "2.5", "3")
 AXIS = 0.25                    # x/D of the stagnation region (excess k)
 
+# the scalar converges last: on the finest mesh θ needs about 2 300
+# iterations after the flow has converged
+COUPLED = {"solver.max_iterations": 4000}
 SIMPLEC = {
     "solver.algorithm": "simplec",
     "solver.max_iterations": 20000,
@@ -77,24 +84,29 @@ SIMPLEC = {
 # (label, turbulence keys of both runs, solver keys of the jet)
 MODELS = {
     "zf0": ("k-ε-ζ-f₀", {"turbulence.model": "k-epsilon-zeta-f0",
-                         "turbulence.wall_treatment": "compound-2023"}, {}),
+                         "turbulence.wall_treatment": "compound-2023"}, dict(COUPLED)),
     "zf": ("k-ε-ζ-f", {"turbulence.model": "k-epsilon-zeta-f",
                        "turbulence.wall_treatment": "compound"}, dict(SIMPLEC)),
-    # the floor of k holds a few cells, its residual stays at 4.5e-6 on
-    # the middle mesh (every other one below 1e-7)
+    # the floor of k holds a few cells: the residuals of k and φ stay at
+    # 9.7e-6 and 1.1e-5 on the coarse mesh, unchanged to eight digits from
+    # iteration 2 000 to 20 000 (every other one below 1e-8), 4.5e-6 for k
+    # on the middle mesh; with the relaxation 0.5 of the first 100
+    # iterations the coarse mesh diverges
     "eb": ("elliptic-blending k-ε", {"turbulence.model": "elliptic-blending-k-epsilon",
                                      "turbulence.wall_treatment": "compound"},
-           {**SIMPLEC, "solver.tolerance": 1e-5}),
+           {**SIMPLEC, "solver.tolerance": 2e-5, "solver.max_iterations": 12000,
+            "solver.momentum.relaxation": 0.3}),
     "sst": ("k-ω SST, Kato–Launder", {"turbulence.model": "k-omega-sst",
                                       "turbulence.wall_treatment": "automatic",
-                                      "turbulence.production_limiter": "kato-launder"}, {}),
+                                      "turbulence.production_limiter": "kato-launder"},
+            dict(COUPLED)),
     "keps": ("k-ε", {"turbulence.model": "k-epsilon",
-                     "turbulence.wall_treatment": "scalable"}, {}),
+                     "turbulence.wall_treatment": "scalable"}, dict(COUPLED)),
     # the residuals stall at 5e-5 (coupled) or 1e-4 (SIMPLEC) with a
     # steady field
     "rke": ("realizable k-ε", {"turbulence.model": "realizable-k-epsilon",
                                "turbulence.wall_treatment": "scalable"},
-            {"solver.tolerance": 1e-4}),
+            {**COUPLED, "solver.tolerance": 1e-4}),
 }
 COLOURS = {"sst": "#1f6fb4", "keps": "#8c564b", "rke": "#d9822b", "zf": "#9467bd",
            "zf0": "#2a9d5b", "eb": "#0fa3b1"}
@@ -170,10 +182,11 @@ def wall_jet(d: Path, s: str) -> tuple[list, float, float]:
     return pts, um, xm
 
 
-def probe(solve: dict) -> float | None:
-    """Nu₀ from θ_w of the wall probe `stag`."""
+def probe(solve: dict, name: str = "stag") -> float | None:
+    """Nu from θ_w of a wall probe: `stag` (the face next to the axis,
+    Nu₀) or `r01` (r/D = 0.1)."""
     for p in solve.get("wall_probes", []):
-        if p["name"] == "stag":
+        if p["name"] == name:
             for s in p.get("scalars", []):
                 if s["name"] == "theta":
                     return Q / (GAMMA * s["wall"])
@@ -186,15 +199,18 @@ def evaluate(d: Path, exp: dict) -> dict | None:
         return None
     rep = json.loads((d / "flow.json").read_text())
     solves = rep.get("solves", [])
-    unc = next((e for e in rep.get("uncertainty", [])
-                if e["quantity"] == "wall_probes.stag.theta_wall"), None)
+    unc = {n: next((e for e in rep.get("uncertainty", [])
+                    if e["quantity"] == f"wall_probes.{n}.theta_wall"), None)
+           for n in ("stag", "r01")}
     nu = nusselt(d)
     out = {
         "cells": [s["cells"] for s in solves],
         "iterations": [s["iterations"] for s in solves],
         "converged": [s.get("converged") for s in solves],
         "nu0": [probe(s) for s in solves],
-        "uncertainty": unc,
+        "nu01": [probe(s, "r01") for s in solves],
+        "uncertainty": unc["stag"],
+        "uncertainty01": unc["r01"],
         "secondary": secondary(nu),
         "nu_at": {r: interp(r, nu) for r in (0.5, 1.0, 2.0, 3.0, 4.0)},
         "k_axis": axis_k(d),
@@ -215,7 +231,8 @@ def evaluate_limiters(root: Path) -> dict:
         d = root / _lim_name(m, lim)
         if (d / "flow.json").exists():
             rep = json.loads((d / "flow.json").read_text())
-            out[(m, lim)] = {"nu0": probe(rep["solves"][-1]), "k": axis_k(d),
+            out[(m, lim)] = {"nu0": probe(rep["solves"][-1]),
+                             "nu01": probe(rep["solves"][-1], "r01"), "k": axis_k(d),
                              "converged": rep["solves"][-1].get("converged")}
     ref = out.get(("zf0", None))
     for m, lims in (("keps", ("kato-launder", "durbin")),
@@ -288,20 +305,24 @@ def table(res: dict, lim: dict, exp: dict) -> str:
     n0 = exp["nusselt"][0][1] if exp["nusselt"] else None
     out = [
         ("| Model | Nu₀ on the meshes | Nu₀ finest | vs experiment | order p | GCI_fine "
+         "| Nu(r/D = 0.1) on the meshes, p, GCI_fine "
          "| secondary maximum r/D, Nu | Nu at r/D 1, 2, 3, 4 | Nu RMS 0–4 | Specification 9.6 |"),
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for key, (label, _, _) in MODELS.items():
         r = res.get(key)
         if r is None:
             continue
         e = r["uncertainty"] or {}
+        e1 = r["uncertainty01"] or {}
         fin = r["nu0"][-1]
         s = r["secondary"]
         out.append(
             f"| {label} | {', '.join(_f(v, '.1f') for v in r['nu0'])} | {_f(fin, '.1f')} | "
             f"{_f(n0 and fin and 100 * (fin / n0 - 1), '+.1f', ' %')} | "
             f"{_f(e.get('order'), '.2f')} | {_gci(e.get('gci'))} | "
+            f"{', '.join(_f(v, '.1f') for v in r['nu01'])}; {_f(e1.get('order'), '.2f')}, "
+            f"{_gci(e1.get('gci'))} | "
             f"{'none' if s is None else f'{s[0]:.2f}, {s[1]:.1f}'} | "
             + ", ".join(f"{r['nu_at'][x]:.1f}" for x in (1.0, 2.0, 3.0, 4.0))
             + f" | {_f(r['nu_rms'] and 100 * r['nu_rms'], '.1f', ' %')} | {verdict(key, r, exp)} |"
@@ -324,8 +345,9 @@ def table(res: dict, lim: dict, exp: dict) -> str:
         out.append(f"| {label} | " + " | ".join(
             f"{r['jet'][s][1]:.3f} at {r['jet'][s][2]:.3f}" for s in STATIONS) + " |")
     if lim:
-        out += ["", "| Limiter case (10 400 cells) | Nu₀ | vs experiment | k_max, x/D ≤ 0.25 "
-                "| excess k removed | Specification 9.6 |", "|---|---|---|---|---|---|"]
+        out += ["", ("| Limiter case (10 400 cells) | Nu₀ | Nu(r/D = 0.1) | vs experiment "
+                     "| k_max, x/D ≤ 0.25 | excess k removed | Specification 9.6 |"),
+                "|---|---|---|---|---|---|---|"]
         for (m, lm), r in lim.items():
             label = MODELS[m][0].split(",")[0] + (f", `{lm}`" if lm else " (reference)")
             dev = n0 and r["nu0"] and r["nu0"] / n0 - 1
@@ -334,7 +356,8 @@ def table(res: dict, lim: dict, exp: dict) -> str:
                 check = f"anomaly {'reproduced' if dev > 0.5 else 'not reproduced'} (> +50 %)"
             elif "removed" in r:
                 check = f"{'≥' if r['removed'] >= 0.7 else '<'} 70 % removed"
-            out.append(f"| {label} | {_f(r['nu0'], '.1f')} | {_f(dev and 100 * dev, '+.1f', ' %')}"
+            out.append(f"| {label} | {_f(r['nu0'], '.1f')} | {_f(r['nu01'], '.1f')} "
+                       f"| {_f(dev and 100 * dev, '+.1f', ' %')}"
                        f" | {r['k']:.4f} | {_f(r.get('removed') and 100 * r['removed'], '.0f', ' %')}"
                        f" | {check} |")
     return "\n".join(out) + "\n"

@@ -533,12 +533,15 @@ refused (BC029), and so is a column name the profile does not know
 the passive temperature θ (Pr = 0.71), and both inlets bring θ = 0, so
 Nu(r) = q D/(Γ θ_w(r)) with Γ = ν/Pr from the column `theta_wall` of
 `wall_xmin.csv`. A wall probe reports the wall value and the flux of
-every scalar at a point, here the stagnation point:
+every scalar at a point, here at the stagnation point and at r/D = 0.1:
 
 ```toml
 [output]
 wall_csv = true
-wall_probes = [ { name = "stag", boundary = "xmin", point = [0.0, 0.0, 0.0] } ]
+wall_probes = [
+  { name = "stag", boundary = "xmin", point = [0.0, 0.0, 0.0] },
+  { name = "r01", boundary = "xmin", point = [0.0, 0.1, 0.0] },
+]
 ```
 
 ```
@@ -546,10 +549,16 @@ target/release/foehn flow examples/cases/flow/impinging_jet.toml
 grep "wall probe" output/impinging_jet/flow.log
 ```
 
-The probe takes the two wall faces nearest the point; at the axis that
-is the first face (r/D = 0.03 on the case's mesh). In a sweep over three
-meshes `wall_probes.stag.theta_wall` gets its observed order and GCI
-(D67), and so Nu₀ (to first order the same relative GCI).
+The log prints both (`wall probe stag at (0, 2.94e-2, 0) m: … theta
+wall 1.085e-1, flux 1.000e-3`). A probe interpolates between the two
+wall faces nearest its point and is clamped to the nearest face beyond
+them, so `stag` reports the face next to the axis (r/D = 0.03 on this
+mesh). In a sweep over three meshes `wall_probes.stag.theta_wall` and
+`wall_probes.r01.theta_wall` get their observed order and GCI (D67), and
+so Nu₀ (to first order the same relative GCI). The two differ by 1 % on
+this mesh and by up to 7 % on 41 600 cells: the axis cells of the wedge
+lower Nu of the faces next to the axis with the turbulence models (a
+finding of 6g, see the verification page).
 
 **All models, three meshes, the limiters.** The study runs the pipe and
 the jet for six models (`verification.levels` 0, 1, 2: 2 600, 10 400

@@ -10,6 +10,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | 74 | [k-ε-ζ-f₀ at any y⁺: channel, flat plate, backward-facing step](#zeta-f0) | 6 | `model = "k-epsilon-zeta-f0"`, `wall_treatment = "compound-2023"`, `constants.n_zeta`, `a`, `mesh.generate.remove` |
 | 88 | [Elliptic-blending k-ε: channel at three Re_τ, flat plate, backward-facing step](#elliptic-blending) | 6 | `model = "elliptic-blending-k-epsilon"`, `constants.c_epsilon4`, `zeta` as φ |
 | 89 | [Backward-facing step against the experiment: six models, three meshes](#step-validation) | 6 | `[[output.wall_crossings]]` (`skip`, `kind`, `direction`, `width`), `verification.levels`, the TMR layout of the step, `examples/studies/backstep_validation.py` |
+| 90 | [Impinging jet at H/D = 2: a pipe profile as the inlet, Nusselt number, the stagnation-point anomaly](#impinging-jet) | 6 | `profile = "table"` with `k`, `epsilon`/`omega`, `zeta` columns, `foehncraft.profiles`, wall probes with scalars, `production_limiter`, `examples/studies/impinging_jet.py` |
 
 ---
 
@@ -562,6 +563,119 @@ experiment; the models' −u'v' is ν_t ∂u/∂y:
 ```
 target/release/foehn flow examples/cases/flow/backstep_validation.toml
 python3 examples/studies/backstep_validation.py output/backstep_validation --jobs 4 --chart docs/figures/gallery
+```
+
+[↑ back to top](#turbulence-models)
+
+<a id="impinging-jet"></a>
+## 90. Impinging jet at H/D = 2: a pipe profile as the inlet, Nusselt number, the stagnation-point anomaly
+
+**The case** (`impinging_jet.toml`). A round jet leaves a long pipe of
+diameter D and hits a heated plate two diameters away, Re = U D/ν =
+23 750, the heat-transfer experiments of Baughn & Shimizu (1989) and
+Baughn et al. (1991). Axisymmetric on a 0.5° wedge about the jet axis
+(x): the plate is x = 0, the pipe exit the plane x = 2 D for r < D/2,
+the rest of that plane lets ambient fluid in at the total pressure 0,
+and the wall jet leaves at r = 6 D. 10 400 cells, the first cell at the
+plate 5·10⁻⁴ D (y⁺ below 1), clustered at the pipe lip. k-ε-ζ-f₀ with
+the coupled algorithm converges in 873 iterations (about a minute on
+four cores).
+
+**The developed pipe flow as the inlet.** The jet's turbulence comes
+from the pipe, so the inlet carries the velocity, k, ε and ζ of a
+developed pipe flow: a periodic wedge pipe at the same Re
+(`jet_pipe_profile.toml`, Darcy f 0.0253 against 0.0255 of Blasius)
+samples the radius, and `python3 -m foehncraft.profiles` writes the line
+as a table with one row per cell and a wall row. The table's header now
+names its columns, and the turbulence columns set the inlet face by
+face:
+
+```toml
+[boundary.xmax]
+type = "velocity-inlet"
+profile = "table"
+table = "impinging_jet_profile.csv"   # r, u_n, k, epsilon, zeta
+table_coordinate = "radius"
+table_direction = [1.0, 0.0, 0.0]
+```
+
+**The Nusselt number.** A passive temperature θ (Pr = 0.71) with a
+uniform flux q through the plate and θ = 0 at both inlets gives
+Nu(r) = q D/(Γ θ_w(r)), Γ = ν/Pr, from the wall file. A wall probe now
+also reports the wall value and flux of each scalar, so the probe `stag`
+at the axis gives Nu₀ and `r01` the Nu at r/D = 0.1, each with its GCI
+in a level sweep:
+
+```toml
+[output]
+wall_csv = true
+wall_probes = [
+  { name = "stag", boundary = "xmin", point = [0.0, 0.0, 0.0] },
+  { name = "r01", boundary = "xmin", point = [0.0, 0.1, 0.0] },
+]
+```
+
+**Six models on three meshes** (`examples/studies/impinging_jet.py`).
+Each model runs its own pipe and then the jet with `verification.levels`
+0, 1, 2 (2 600, 10 400 and 41 600 cells); ζ-f and EB with SIMPLEC, the
+others coupled. Nu₀ is the probe `stag` at the axis, with the probe
+`r01` at r/D = 0.1 next to it:
+
+| Model | Nu₀ (axis) on 2 600 / 10 400 / 41 600 cells | Nu at r/D = 0.1 | GCI_fine at r/D = 0.1 | secondary maximum, r/D: Nu |
+|---|---|---|---|---|
+| k-ε-ζ-f₀ (`compound-2023`) | 167.2, 155.4, 141.5 | 165.1, 156.8, 152.4 | 4.9 %, p 0.78 | 1.95: 128.8 |
+| k-ε-ζ-f (`compound`, SIMPLEC) | 179.3, 173.0, 167.2 | 178.4, 174.7, 174.2 | 0.06 %, p 2.9 | 2.27: 118.5 |
+| elliptic-blending k-ε (`compound`, SIMPLEC) | 234.2, 247.9, 244.2 | 205.3, 204.6, 204.2 | 0.19 %, p 1.1 | 2.31: 93.6 |
+| k-ω SST, Kato–Launder (`automatic`) | 152.2, 143.0, 134.8 | 149.9, 142.6, 141.1 | 0.35 %, p 2.2 | 1.84: 111.7 |
+| k-ε, Durbin bound (`scalable`) | 157.0, 156.0, 155.2 | 155.7, 155.9, 156.4 | within 0.5 % | 1.55: 143.7 |
+| realizable k-ε (`scalable`) | 208.5, 209.2, 209.3 | 207.5, 208.3, 208.8 | 0.81 %, p 0.48 (the two coarser meshes stall) | 1.65: 142.2 |
+
+![Nu(r/D) on the plate for the six models on 41 600 cells, and the stagnation-point anomaly on 10 400 cells: k-ε and SST with each production limiter](../figures/gallery/impinging_jet_nusselt.svg)
+
+**What the runs show.** The face next to the axis is low with every
+turbulence model, and more so on finer meshes (ζ-f₀ 7 % below the
+plateau on 41 600 cells), while the laminar jet on the same meshes is
+flat to the axis: the axis cells of the wedge carry an error in a
+turbulence term (their v/r is up to 10 % above that of the next rows).
+That is the next thing to fix; until then Nu at r/D = 0.1 is the
+mesh-converged stagnation value for all but ζ-f₀, whose Nu there still
+falls 2.8 % from the middle to the finest mesh. EB's Nu peaks sharply at
+the axis (about 245 for r/D < 0.05) because its k does. Without a limiter
+the standard k-ε shows the stagnation-point anomaly, Nu₀ 210 and nearly
+seven times the k of ζ-f₀ on the axis; its default Durbin bound removes 72 % of
+the excess k (Nu₀ 156) and Kato–Launder 109 % (Nu₀ 84). The realizable
+k-ε has the anomaly as well (Nu₀ 209, 4.7 times the axis k of ζ-f₀). SST has no
+anomaly to remove: its own bound ν_t = a₁k/(F₂S) holds along the whole
+axis, so `none`, `menter` and `durbin` give the same Nu₀ (160.0) and
+only Kato–Launder changes it (143.0). The experiment of Baughn et al. is
+not in the repository yet; the study compares with it once its data are
+in `examples/studies/impinging_jet/data`.
+
+The radial velocity of the wall jet at the stations of Cooper et al.:
+
+![The radial velocity u_r/U over the distance from the plate at r/D = 0.5, 1, 2, 2.5 and 3 for the six models on 41 600 cells](../figures/gallery/impinging_jet_profiles.svg)
+
+| Check | Result |
+|---|---|
+| Nu₀ at the axis, three meshes (band GCI ≤ 3 %) | ζ-f₀ divergent, ζ-f and SST equal steps (no GCI), EB oscillatory 0.66 %: the axis cells (finding) |
+| Nu at r/D = 0.1, three meshes | ζ-f 0.06 %, EB 0.19 %, SST 0.35 %; ζ-f₀ 4.9 % (finding) |
+| Secondary maximum (ζ-f, EB) | ζ-f 118.5 at r/D 2.27, EB 93.6 at 2.31 (weak); ζ-f₀ 128.8 at 1.95 |
+| Anomaly, k-ε `none` / `durbin` / `kato-launder` (10 400 cells) | Nu₀ 209.9 / 156.0 / 83.9; excess k removed 72 % / 109 % |
+| Anomaly, SST `none` / `menter` / `durbin` / `kato-launder` | Nu₀ 160.0 / 160.0 / 160.0 / 143.0; k on the axis below that of ζ-f₀, no excess |
+| Thermal law of the k-ε family in u* (section 5.2) | k-ε Nu₀ 37 with u_τ, 157 with u* |
+| The coarse jet in CI (`tests/impinging_jet.rs`) | ζ-f₀ Nu₀ 167.2, secondary maximum 128.4 at r/D 2.01 |
+| Inlet table with turbulence columns | constant columns = constant inlet bit for bit; BC029, BC019 |
+
+| | |
+|---|---|
+| Code | `bc::ProfileTable::columns`, `turbulence::inlet::InletSpec::Table`, `case::WallProbeScalar`, `turb::wall` (`y_star` of the wall kernel), `python/foehncraft/profiles.py` |
+| Tests | `tests/inlet_table.rs`, `tests/impinging_jet.rs`, `tests/thermal.rs`, `python/tests/test_profiles.py` |
+| Case files | `flow/jet_pipe_profile.toml`, `flow/impinging_jet.toml` with `impinging_jet_profile.csv`; the study `examples/studies/impinging_jet.py` |
+| Recipe | [90](../recipes/turbulence.md#impinging-jet) |
+
+```
+target/release/foehn flow examples/cases/flow/impinging_jet.toml
+python3 examples/studies/impinging_jet.py output/impinging_jet_study --jobs 2 --chart docs/figures/gallery
 ```
 
 [↑ back to top](#turbulence-models)

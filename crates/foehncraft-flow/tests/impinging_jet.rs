@@ -62,18 +62,23 @@ fn at(nu: &[(f64, f64)], r: f64) -> f64 {
     a + (b - a) * (r - r0) / (r1 - r0)
 }
 
-/// k-ε-ζ-f₀: converged, the wall probe `stag` gives the Nu₀ of the first
-/// wall face, and Nu(r/D) falls to a minimum and rises again to a
-/// secondary maximum near r/D = 2 (167 and 128 at r/D 2.0 on this mesh).
+/// k-ε-ζ-f₀: converged, the wall probe `stag` at the axis gives the Nu₀ of
+/// the face next to it and `r01` the Nu at r/D = 0.1, and Nu(r/D) falls to
+/// a minimum and rises again to a secondary maximum near r/D = 2 (128 at
+/// r/D 2.0 on this mesh).
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn the_jet_has_its_secondary_maximum() {
     let (r, nu) = jet("k-epsilon-zeta-f0", "compound-2023");
     assert!(r.failures.is_empty(), "{:?}", r.failures);
-    let p = &r.solves[0].wall_probes[0];
-    assert_eq!(p.name, "stag");
-    let nu0 = 1e-3 / (GAMMA * p.scalars[0].wall);
+    let probes = &r.solves[0].wall_probes;
+    assert_eq!(probes[0].name, "stag");
+    assert_eq!(probes[1].name, "r01");
+    let nu0 = 1e-3 / (GAMMA * probes[0].scalars[0].wall);
     assert!((nu0 / nu[0].1 - 1.0).abs() < 1e-9, "{nu0} {}", nu[0].1);
+    // the probe interpolates θ_w, the wall table Nu: equal to 0.1 %
+    let (nu01, near) = (1e-3 / (GAMMA * probes[1].scalars[0].wall), at(&nu, 0.1));
+    assert!((nu01 / near - 1.0).abs() < 1e-3, "{nu01} {near}");
     assert!((150.0..185.0).contains(&nu0), "Nu₀ {nu0}");
     let (rmin, nmin) = nu
         .iter()
