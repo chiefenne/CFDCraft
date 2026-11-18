@@ -438,7 +438,7 @@ def charts(res: dict, lim_root: Path, exp: dict, dst: Path) -> list[Path]:
     for i, s in enumerate(STATIONS):
         x0 = 70 + 190 * i
         line, dots = _axes(out, x0, 40, 150, 270, f"r/D = {s}", "u_r/U", "x/D" if i == 0 else "",
-                           (-0.1, 1.0), (0.0, 0.3), ([0, 0.5, 1], [0, 0.1, 0.2, 0.3]))
+                           (-0.1, 1.2), (0.0, 0.3), ([0, 0.5, 1], [0, 0.1, 0.2, 0.3]))
         for k in keys:
             line([(v, x) for x, v in res[k]["jet"][s][0] if x <= 0.31], COLOURS[k])
         if s in exp["velocity"]:

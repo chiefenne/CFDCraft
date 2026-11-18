@@ -862,12 +862,12 @@ larger y⁺, so no switch is needed. Both kernels are single-source
 |---|---|---|---|
 | T⁺ of Kader for Pr 0.01, 0.71, 7, 100 at y⁺ 1, 10, 100; Jayatilleke; Kays–Crawford | formulas evaluated apart in Python | 1e-12 relative | asserted (`turb::thermal`) |
 | Limits | T⁺ → Pr y⁺ at the wall, log slope 2.12, Pr_t → 2 Pr_t∞ at ν_t → 0 | 1e-3 | asserted |
-| Heated pipe, Re = 10⁵, Pr = 0.71, k-ε scalable, 36 cells | Nu against Gnielinski (1976), 180.2 | ±10 % | +1.3 % (Kader), +0.6 % (Kays–Crawford), +4.7 % (Jayatilleke); `none` −39 % (`heated_pipe_meets_gnielinski`) |
-| Isothermal flat plate, Re = 5·10⁶ per unit length, 0.25 ≤ x ≤ 1 | St against 0.0287 Re_x^−0.2 Pr^−0.4 | ±10 % | +1.7 % at 0.29, +7.5 % at 0.97 (`heated_plate_meets_the_stanton_correlation`) |
+| Heated pipe, Re = 10⁵, Pr = 0.71, k-ε scalable, 36 cells | Nu against Gnielinski (1976), 180.2 | ±10 % | +1.6 % (Kader), +0.8 % (Kays–Crawford), +5.0 % (Jayatilleke); `none` −39 % (`heated_pipe_meets_gnielinski`) |
+| Isothermal flat plate, Re = 5·10⁶ per unit length, 0.4 ≤ x ≤ 1 | St against 0.0287 Re_x^−0.2 Pr^−0.4 | ±10 % | +8.3 % at 0.55, +9.0 % at 0.97; +14 % at 0.29 (`heated_plate_meets_the_stanton_correlation`; see below) |
 | Input | `turbulent_prandtl` ≤ 0, unknown wall function | refused | asserted |
-| Heated channel, Re_τ = 395, Pr = 0.71, 12 cells, y⁺ 32 (`channel_heated_keps.toml`) | Nu on 2h against 36.39 of the DNS of Abe, Kawamura & Matsuo (JAXA DNS database, Re_b = 13 849) | ±7 % | −1.0 % (constant Pr_t), −2.0 % (Kays–Crawford) |
+| Heated channel, Re_τ = 395, Pr = 0.71, 12 cells, y⁺ 32 (`channel_heated_keps.toml`) | Nu on 2h against 36.39 of the DNS of Abe, Kawamura & Matsuo (JAXA DNS database, Re_b = 13 849) | ±7 % | −1.8 % (constant Pr_t), −2.8 % (Kays–Crawford) |
 | Heated channel, Re_τ 180 … 1020, Pr 0.71 and 0.025 (table below) | Nu on 2h against the DNS | Pr 0.71: ±7 % both models; Pr 0.025: ±8 % Kays–Crawford | asserted for all eight points (`heated_channel_meets_the_dns_nusselt_number`) |
-| Heated channel, Re_τ = 395, Pr = 0.71, 48 cells, y⁺ 7.8 | thermal law at the scalable floor | ±13 % | +10.5 % (+28 % with T⁺ at the true y⁺) (`the_thermal_law_follows_the_scalable_floor`) |
+| Heated channel, Re_τ = 395, Pr = 0.71, 48 cells, y⁺ 7.8 | thermal law at the scalable floor | ±13 % | +10.1 % (+28 % with T⁺ at the true y⁺) (`the_thermal_law_follows_the_scalable_floor`) |
 
 **The channel at all DNS points** (pull request 87). The case of
 `channel_heated_keps.toml` with ν = 1/Re_τ, Γ = ν/Pr, the mass flow of
@@ -881,16 +881,16 @@ k-ε predicts a friction 3–7 % low at the fixed mass flow).
 
 | Re_τ | Pr | Re_b | N | y⁺ | Nu DNS | Nu, Pr_t 0.85 | Nu, Kays–Crawford |
 |---|---|---|---|---|---|---|---|
-| 180 | 0.71 | 5 546 | 6 | 28.1 | 18.25 | 18.43 (+1.0 %) | 18.22 (−0.2 %) |
-| 395 | 0.71 | 13 849 | 12 | 31.5 | 36.39 | 35.98 (−1.1 %) | 35.62 (−2.1 %) |
-| 640 | 0.71 | 24 095 | 20 | 30.9 | 55.57 | 54.62 (−1.7 %) | 54.10 (−2.6 %) |
-| 1020 | 0.71 | 41 441 | 32 | 31.3 | 83.00 | 82.87 (−0.2 %) | 82.15 (−1.0 %) |
+| 180 | 0.71 | 5 546 | 6 | 28.1 | 18.25 | 18.13 (−0.7 %) | 17.93 (−1.8 %) |
+| 395 | 0.71 | 13 849 | 12 | 31.5 | 36.39 | 35.73 (−1.8 %) | 35.38 (−2.8 %) |
+| 640 | 0.71 | 24 095 | 20 | 30.9 | 55.57 | 54.49 (−1.9 %) | 53.97 (−2.9 %) |
+| 1020 | 0.71 | 41 441 | 32 | 31.3 | 83.00 | 82.88 (−0.1 %) | 82.16 (−1.0 %) |
 | 180 | 0.025 | 5 731 | 6 | 28.9 | 5.48 | 6.16 (+12.4 %) | 5.80 (+5.9 %) |
 | 395 | 0.025 | 14 147 | 12 | 32.1 | 6.60 | 7.88 (+19.4 %) | 7.07 (+7.2 %) |
 | 640 | 0.025 | 24 428 | 20 | 31.3 | 7.89 | 9.57 (+21.3 %) | 8.42 (+6.7 %) |
 | 1020 | 0.025 | 41 441 | 32 | 31.3 | 9.81 | 11.98 (+22.1 %) | 10.49 (+6.9 %) |
 
-At Pr 0.71 both Pr_t models are within 2.6 % at every Re_τ. At Pr 0.025
+At Pr 0.71 both Pr_t models are within 2.9 % at every Re_τ. At Pr 0.025
 (a liquid metal) conduction dominates: Pe_t = (ν_t/ν) Pr stays below
 about 2, where the real Pr_t rises well above 0.85. The constant Pr_t
 then over-predicts the turbulent heat flux and Nu by 12–22 %, growing
@@ -898,9 +898,27 @@ with Re_τ; Kays & Crawford, whose Pr_t tends to 2 Pr_t∞ at small Pe_t,
 brings it to +6 … +7 %. The rest is not the mesh: at Re_τ 395, Pr 0.025,
 Nu is 6.94, 7.07, 7.13 and 7.08 on 8, 12, 24 and 48 cells. At Pr 0.71
 the k-ε model without damping sets the limit below y⁺ 30: Nu 35.52,
-35.62, 38.21, 40.20 on 8, 12, 24, 48 cells (y⁺ 47, 32, 16, 8). Meshes
+35.62, 38.21, 40.20 on 8, 12, 24, 48 cells (y⁺ 47, 32, 16, 8; with the
+velocity scale u_τ of 6f, see below). Meshes
 finer than y⁺ ≈ 30 near heated walls take ζ-f or EB with the compound
 treatment, not the k-ε family.
+
+**The velocity scale of the thermal law** (6g, pull request 90). 6f took
+h_w = ρ u_τ/T⁺(y⁺) with u_τ = (τ_w/ρ)^½ for every model. Specification
+5.2 asks for u* = C_μ^¼ k_P^½ for the k-ε family and ζ-f/EB (the blended
+u_τ for SST). The two agree in an equilibrium log layer, but u_τ vanishes
+with the wall shear: at the stagnation point of the impinging jet the
+k-ε Nu₀ was 37, against 156 with u*. The thermal law now takes u* and
+y* = u* y_P/ν for these models (the wall kernel writes y* next to y⁺).
+The numbers above are those of u*: the channel moves by −0.1 to −1.2
+points (Pr 0.71; Pr 0.025 unchanged, conduction dominates), the pipe by
++0.2 to +0.3 points, the fine channel of 48 cells from +10.5 to +10.1 %.
+On the flat plate St follows k: the k-ε start of the turbulent layer at
+x ≈ 0.16 leaves k above its equilibrium for a while, so St is +43 % at
+x = 0.17, +14 % at 0.29 and +8 … +9 % from x = 0.4 on (with u_τ +1.7 %
+at 0.29, +7.5 % at 0.97). The test now covers 0.4 ≤ x ≤ 1. ζ-f₀ on the
+jet (y⁺ below 1) is unchanged to 0.1 %: below y⁺ ≈ 1 both scales give
+the molecular conduction.
 
 The Re_τ = 180 channel on 6 cells is exactly one-dimensional; its pressure
 residual (about 10⁻⁴⁰) lies below the float32 range of the multigrid
@@ -918,7 +936,7 @@ where the profiles give 9.81) and compares our run.
 
 Not in this part: the heated pipe with the other models, and the plate for x below 0.2, where
 the k-ε start of the turbulent layer, not the thermal law, sets St
-(50 % low).
+(97 % low before it, 43 % high just after it).
 
 ## Elliptic-blending k-ε (D133)
 

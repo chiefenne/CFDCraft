@@ -740,7 +740,11 @@ h_w = ρ c_p u*/T⁺ (for a passive scalar: the exchange coefficient
 ρ u*/φ⁺), with u* = C_μ^{1/4} k_P^{1/2} for the k-ε family and ζ-f/EB,
 and the blended u_τ of 4.3 for SST. *6f (pull request 87):* with the
 scalable momentum treatment T⁺ is taken at ỹ⁺ = max(y⁺, 11.06), the
-virtual wall distance of its log law.
+virtual wall distance of its log law. *6g (pull request 90):* 6f took
+u_τ = (τ_w/ρ)^{1/2} for all models; the k-ε family and ζ-f/EB now take
+u* as above (T⁺ at y* = u* y_P/ν), so that the heat transfer does not
+vanish with the wall shear at a stagnation point or a reattachment line
+(the k-ε Nu₀ of the impinging jet was 37 with u_τ, 156 with u*).
 
 - **`"kader"`** (default, all y⁺, any Pr; Kader 1981, wall form with the
   outer-layer factor dropped, y/δ → 0):
@@ -950,6 +954,11 @@ the backflow of pressure outlets (keys already reserved in stage 5), one of:
 `zeta` (v²/k, ζ-f and EB, default 2/3) at inlets (D12). With a table
 profile (D29) k and ε or ω can be columns of the table, so that a profile
 from a periodic pipe or channel run (D111) feeds a jet or a duct.
+*6g (pull request 90):* the header names the columns (`u_n` or `u_x`,
+`u_y`, `u_z`; `k` with `epsilon` or `omega`; `zeta`), a boundary that
+gives turbulence values as well is refused (BC029), an unknown column
+too (BC019); `python3 -m foehncraft.profiles` makes the table from a
+line of the periodic run.
 
 ### 7.2 Walls, symmetry, periodic, wedge
 
