@@ -11,13 +11,17 @@
 //! - `k` with `omega` or `epsilon` (numbers or expressions of x, y, z
 //!   and, in a transient case, t; D53), as the TMR cases give them;
 //!   converted with ε = C_μ k ω when the model solves the other one;
+//! - the columns `k` with `epsilon` or `omega` (and `zeta`) of the table
+//!   of a table profile, interpolated at the face centroid like the
+//!   velocity: a profile from a periodic pipe or channel run (D111) feeds
+//!   a jet or a duct;
 //! - nothing: I = 0.05 and r = 10 (TURB009).
 //!
 //! |u| is the speed of the boundary face velocity of the current iteration
 //! (the prescribed one at velocity and mass-flow inlets, the one the flow
 //! takes at pressure inlets).
 
-use crate::bc::{BoundaryCondition, InletTurbulence};
+use crate::bc::{BoundaryCondition, InletTurbulence, ProfileColumns, TableProfile};
 use crate::expr::{self, Env, Value, Vars};
 use anyhow::Result;
 
@@ -35,9 +39,41 @@ pub(crate) enum InletSpec {
     Length { i: f64, l: f64 },
     /// Intensity and viscosity ratio.
     Ratio { i: f64, r: f64 },
+    /// The columns of the table of a table profile.
+    Table {
+        profile: TableProfile,
+        k: usize,
+        second: usize,
+        eps: bool,
+        zeta: Option<usize>,
+    },
 }
 
 impl InletSpec {
+    /// The spec of the inlet `bc` (validated before): the turbulence
+    /// columns of its table profile, if it has them, else
+    /// [`Self::of`].
+    pub fn of_inlet(bc: &BoundaryCondition, env: &Env, transient: bool, key: &str) -> Result<Self> {
+        if let Some(p) = bc.table_profile()
+            && let Ok(c) = p.table.columns()
+            && let Some(k) = c.k
+        {
+            let (second, eps) = match (c.epsilon, c.omega) {
+                (Some(e), _) => (e, true),
+                (None, Some(w)) => (w, false),
+                (None, None) => unreachable!("validated with the table"),
+            };
+            return Ok(Self::Table {
+                profile: p,
+                k,
+                second,
+                eps,
+                zeta: c.zeta,
+            });
+        }
+        Self::of(&bc.turbulence(), env, transient, key)
+    }
+
     /// The spec of an inlet's values (validated before).
     pub fn of(t: &InletTurbulence, env: &Env, transient: bool, key: &str) -> Result<Self> {
         let time = if transient { Vars::T } else { Vars::NONE };
@@ -75,7 +111,19 @@ impl InletSpec {
 
     /// True when the values depend on the face speed.
     pub fn speed_dependent(&self) -> bool {
-        !matches!(self, Self::Direct { .. })
+        matches!(self, Self::Length { .. } | Self::Ratio { .. })
+    }
+
+    /// ζ at the face centroid `x` from the table, if it has the column.
+    pub fn zeta_at(&self, x: [f64; 3]) -> Option<f64> {
+        match self {
+            Self::Table {
+                profile,
+                zeta: Some(z),
+                ..
+            } => profile.at(x).map(|v| v[*z]),
+            _ => None,
+        }
     }
 
     /// k and ω (`eps` false) or ε (`eps` true) at a face with the speed
@@ -83,6 +131,26 @@ impl InletSpec {
     /// viscosity, `c_mu` = C_μ (β* of SST).
     pub fn at(&self, speed: f64, x: [f64; 3], t: f64, nu: f64, c_mu: f64, eps: bool) -> (f64, f64) {
         let (k, w) = match self {
+            Self::Table {
+                profile,
+                k,
+                second,
+                eps: e,
+                ..
+            } => {
+                let row = profile.at(x).unwrap_or_default();
+                let (k, v) = (
+                    row.get(*k).copied().unwrap_or(0.0),
+                    row.get(*second).copied().unwrap_or(0.0),
+                );
+                if *e == eps {
+                    return (k, v);
+                }
+                if *e {
+                    return (k, v / (c_mu * k).max(1e-300));
+                }
+                (k, v)
+            }
             Self::Direct { k, second, eps: e } => {
                 let (k, v) = (k.at(x, t), second.at(x, t));
                 if *e == eps {
@@ -136,6 +204,33 @@ pub(crate) fn check(bc: &BoundaryCondition) -> Vec<(bool, &'static str, String)>
     let scales = t.turbulence_intensity.is_some()
         || t.turbulence_length_scale.is_some()
         || t.viscosity_ratio.is_some();
+    let columns: Option<ProfileColumns> = bc
+        .table_profile()
+        .and_then(|p| p.table.columns().ok())
+        .filter(ProfileColumns::has_turbulence);
+    if let Some(c) = columns {
+        if direct || scales {
+            out.push((
+                true,
+                crate::diag::TURB_INLET_CONFLICT,
+                format!(
+                    "the table of the profile has the turbulence columns, and the boundary \
+                     gives {} as well: give one",
+                    t.given().join(", ")
+                ),
+            ));
+        }
+        if c.zeta.is_some() && t.zeta.is_some() {
+            out.push((
+                true,
+                crate::diag::TURB_INLET_CONFLICT,
+                "the table of the profile has the column `zeta`, and the boundary gives `zeta` \
+                 as well: give one"
+                    .into(),
+            ));
+        }
+        return out;
+    }
     if direct && scales {
         out.push((
             true,
@@ -220,6 +315,94 @@ pub(crate) fn check(bc: &BoundaryCondition) -> Vec<(bool, &'static str, String)>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bc::{ProfileTable, TableCoordinate, VelocityColumns};
+    use std::sync::Arc;
+
+    fn columns(text: &str) -> std::result::Result<ProfileColumns, String> {
+        ProfileTable::parse(text)?.columns()
+    }
+
+    #[test]
+    fn a_header_names_the_columns_of_a_profile() {
+        // the legacy forms: the header "y, u_n" and four unnamed columns
+        let c = columns("y, u_n\n0, 0\n1, 1\n").unwrap();
+        assert_eq!(c.velocity, VelocityColumns::Normal(0));
+        assert!(!c.has_turbulence());
+        let c = columns("0, 1, 0, 0\n1, 2, 0, 0\n").unwrap();
+        assert_eq!(c.velocity, VelocityColumns::Components([0, 1, 2]));
+        // any order, k with ε or ω, ζ
+        let c = columns("r zeta epsilon k u_n\n0 0.5 1e-3 1e-2 1\n1 0.3 3e-3 3e-2 2\n").unwrap();
+        assert_eq!(c.velocity, VelocityColumns::Normal(3));
+        assert_eq!(
+            (c.k, c.epsilon, c.omega, c.zeta),
+            (Some(2), Some(1), None, Some(0))
+        );
+        let c = columns("y,u_x,u_y,u_z,k,omega\n0,1,0,0,1,2\n1,1,0,0,1,2\n").unwrap();
+        assert_eq!(c.velocity, VelocityColumns::Components([0, 1, 2]));
+        assert_eq!((c.k, c.omega), (Some(3), Some(4)));
+        // refusals
+        for (text, part) in [
+            ("r, u_n, k, eps\n0,1,1,1\n1,1,1,1\n", "`eps`"),
+            (
+                "r, u_n, u_x, u_y, u_z\n0,1,1,0,0\n1,1,1,0,0\n",
+                "one of the two",
+            ),
+            ("r, k, epsilon\n0,1,1\n1,1,1\n", "one of the two"),
+            ("r, u_n, k\n0,1,1\n1,1,1\n", "goes with"),
+            ("r, u_n, zeta\n0,1,1\n1,1,1\n", "goes with"),
+            (
+                "r, u_n, k, epsilon, omega\n0,1,1,1,1\n1,1,1,1,1\n",
+                "together",
+            ),
+            ("r, u_n, k, k\n0,1,1,1\n1,1,1,1\n", "twice"),
+            ("r, a, b\n0,1,1\n1,1,1\n", "without a header"),
+        ] {
+            let e = columns(text).unwrap_err();
+            assert!(e.contains(part), "{text:?}: {e}");
+        }
+        // without a header only 2 or 4 columns
+        assert!(
+            ProfileTable::parse("0,1,1\n1,1,1\n")
+                .unwrap_err()
+                .contains("columns")
+        );
+    }
+
+    #[test]
+    fn the_turbulence_columns_are_interpolated_at_the_face() {
+        let table = ProfileTable::parse(
+            "r, u_n, k, epsilon, zeta\n0, 1, 0.01, 0.001, 0.5\n1, 2, 0.03, 0.003, 0.3\n",
+        )
+        .unwrap();
+        let c = table.columns().unwrap();
+        let spec = InletSpec::Table {
+            profile: TableProfile {
+                table: Arc::new(table),
+                coordinate: TableCoordinate::Radius,
+                origin: [0.0; 3],
+                direction: Some([1.0, 0.0, 0.0]),
+            },
+            k: c.k.unwrap(),
+            second: c.epsilon.unwrap(),
+            eps: true,
+            zeta: c.zeta,
+        };
+        assert!(!spec.speed_dependent() && !spec.time_dependent());
+        // r = 0.25 at x = (7, 0.15, 0.2)
+        let x = [7.0, 0.15, 0.2];
+        let (k, e) = spec.at(99.0, x, 0.0, 1e-5, 0.09, true);
+        assert!(
+            (k - 0.015).abs() < 1e-15 && (e - 0.0015).abs() < 1e-15,
+            "{k} {e}"
+        );
+        let (k, w) = spec.at(99.0, x, 0.0, 1e-5, 0.09, false);
+        assert!((k - 0.015).abs() < 1e-15);
+        assert!((w - 0.0015 / (0.09 * 0.015)).abs() < 1e-12, "{w}");
+        assert!((spec.zeta_at(x).unwrap() - 0.45).abs() < 1e-15);
+        // beyond the rows: the end values
+        let (k, _) = spec.at(0.0, [0.0, 3.0, 0.0], 0.0, 1e-5, 0.09, true);
+        assert_eq!(k, 0.03);
+    }
 
     #[test]
     fn intensity_with_length_scale_or_viscosity_ratio() {

@@ -1386,7 +1386,7 @@ pub const ZETA_F_DROP: f64 = 0.1;
 #[derive(Debug, Clone)]
 struct Inlets {
     specs: Vec<InletSpec>,
-    /// ζ per spec (k-ε-ζ-f; default 2/3).
+    /// ζ per spec (k-ε-ζ-f; default 2/3; a table column wins).
     zeta: Vec<f64>,
     /// Per inlet face: boundary face index, spec, centroid.
     faces: Vec<(u32, usize, [f64; 3])>,
@@ -1658,12 +1658,7 @@ impl Turbulence {
             if !inlet::is_inlet(bc) {
                 continue;
             }
-            let s = InletSpec::of(
-                &bc.turbulence(),
-                &env,
-                transient,
-                &format!("boundary.{}", p.name),
-            )?;
+            let s = InletSpec::of_inlet(bc, &env, transient, &format!("boundary.{}", p.name))?;
             spec_of.insert(p.name.clone(), specs.len());
             specs.push(s);
             zetas.push(bc.turbulence().zeta.unwrap_or(2.0 / 3.0));
@@ -2206,8 +2201,10 @@ impl Turbulence {
         dev.upload(self.w.b_in, &wb)?;
         if let Some(z) = self.zf {
             let mut zb = vec![0.0; self.nb];
-            for &(fb, s, _) in &self.inlets.faces {
-                zb[fb as usize] = self.inlets.zeta[s];
+            for &(fb, s, x) in &self.inlets.faces {
+                zb[fb as usize] = self.inlets.specs[s]
+                    .zeta_at(x)
+                    .unwrap_or(self.inlets.zeta[s]);
             }
             dev.upload(z.z.b_in, &zb)?;
         }
