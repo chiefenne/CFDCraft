@@ -214,7 +214,8 @@ pub struct MomentumInputs<'a, T> {
 ///   gradient, a developed outflow).
 /// - [`MOM_SYMMETRY`] faces (no mass flux): c_P = μ D, which
 ///   [`momentum_row`] puts into the diagonal of component i weighted with
-///   n̂_i², and b_i = μ D n̂_i Σ_{j≠i} n̂_j u_P,j.
+///   n̂_i², and b_i = μ D n̂_i Σ_{j≠i} n̂_j u_P,j; with `transposed` 2μ D
+///   in both (the normal stress 2μ ∂u_n/∂n of the full stress).
 ///
 /// # Safety
 /// `f` is a face of the topology and every array of `inp` is long enough
@@ -329,7 +330,13 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
                 }
                 (mp, T::ZERO, b)
             } else if kind == MOM_SYMMETRY {
-                // n̂_i n̂_j = S_i S_j / |S|²
+                // n̂_i n̂_j = S_i S_j / |S|²; with the transposed stress the
+                // normal stress is 2μ ∂u_n/∂n: on the plane u_n = 0, so the
+                // transposed traction μ (∇u)ᵀ·S = μ |S| ∇u_n has only the
+                // normal part μ |S| ∂u_n/∂n n̂, the part the Laplacian
+                // takes once more. On the planes of a wedge it is half of
+                // the hoop stress, −2μ v/r² (stage 6 part 6g)
+                let dd = dd * (T::ONE + inp.transposed);
                 let s = g.area.at(f);
                 let a2 = dot(s, s);
                 let up = inp.u.at(p);

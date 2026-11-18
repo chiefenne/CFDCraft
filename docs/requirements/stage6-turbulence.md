@@ -149,7 +149,12 @@ compound treatment, or the automatic weight), and per scalar
 - Momentum diffusion uses μ_eff = μ + ρν_t in the full stress
   ∇·[μ_eff(∇u + (∇u)ᵀ)]; the transposed part is a deferred explicit term
   (it vanishes for constant μ_eff and incompressible flow, not for a
-  varying ν_t).
+  varying ν_t). It acts on symmetry faces too (symmetry planes, slip
+  walls, the planes of a wedge): there u_n = 0, so its traction has only
+  the normal part μ_eff |S| ∂u_n/∂n, and the normal stress on the face is
+  2μ_eff ∂u_n/∂n, implicit like the Laplacian part. On a wedge it is half
+  of the hoop stress −2μ_eff v/r² (6g: without it the cells next to the
+  axis of the impinging jet were wrong).
 - The isotropic part (2/3)ρk of the Reynolds stress is absorbed into a
   modified pressure p̂ = p + (2/3)ρk, which the pressure equation solves.
   Pressure boundary values given by the user are static pressures p and
@@ -1279,26 +1284,27 @@ figure or table, and retrieval note.
 | Stagnation-point anomaly | standard k-ε without and with Kato–Launder; SST `none` against `menter`, `kato-launder`, `durbin` | – | without limiter Nu₀ over-predicted by more than 50 % (the anomaly is reproduced); the limiter removes at least 70 % of the excess k at the stagnation point. This tests the limiters, not the models |
 | Wall-jet velocity profiles at r/D = 0.5, 1, 2, 2.5, 3 | all | – | reported |
 
-**Results of 6g (PR #90; details on the
+**Results of 6g (PR #90, with the fix of PR #91; details on the
 [verification page](../verification/stage6.md#impinging-jet-at-hd--2-part-6g-96)).**
 `impinging_jet.toml` on a 0.5° wedge, the inlet the table of a periodic
 pipe of each model (k, ε or ω and ζ columns, 7.1), 2 600, 10 400 and
 41 600 cells. Nu₀ is the wall probe `stag` at the axis, next to it `r01`
-at r/D = 0.1. The face next to the axis is low with every turbulence
-model and more so on finer meshes (ζ-f₀ −7 % on the finest mesh), while
-the laminar jet is flat to the axis: the axis cells carry an error in a
-turbulence term (v/r up to 10 % above the next rows), an open item. So
-the GCI of Nu₀ at the axis misses the band for ζ-f (equal steps,
-179.3, 173.0, 167.2) and is 0.66 % for EB (oscillatory, 244.2); at
-r/D = 0.1: ζ-f 174.2 (GCI 0.06 %), EB 204.2 (0.19 %), SST with
-`kato-launder` 141.1 (0.35 %), ζ-f₀ 152.4 (4.9 %, p 0.78: outside 3 %).
-Secondary maximum: ζ-f 118.5 at r/D 2.27, EB 93.6 at 2.31 (weak),
-ζ-f₀ 128.8 at 1.95. Anomaly on 10 400 cells: k-ε `none` Nu₀ 209.9
-(+35 % above ζ-f₀) with 6.7 times the axis k; `durbin` removes 72 % of
-the excess, `kato-launder` 109 %. SST `none`, `menter` and `durbin` give
-the same field (Nu₀ 160.0, the axis k below that of ζ-f₀): its bound
+at r/D = 0.1. The first runs had the face next to the axis low with
+every turbulence model and more so on finer meshes (ζ-f₀ −7 % on the
+finest mesh), while the laminar jet was flat to the axis: the symmetry
+faces lacked the transposed part of the stress, on a wedge half of the
+hoop stress (2.4; fixed in PR #91). Now Nu is flat to the axis, and the
+GCI of Nu₀ at the axis is 0.12 % for ζ-f (173.8), 2.9 % for SST with
+`kato-launder` (141.2) and 0.19 % for EB (249.2); at r/D = 0.1: ζ-f
+173.9 (GCI 0.03 %), EB 205.0 (0.40 %), SST 141.1 (0.31 %), ζ-f₀ 151.7
+(5.3 %, p 0.74: outside 3 %, not yet asymptotic). Secondary maximum:
+ζ-f 118.4 at r/D 2.27, EB 93.4 at 2.31 (weak), ζ-f₀ 128.7 at 1.95.
+Anomaly on 10 400 cells: k-ε `none` Nu₀ 210.7 (+34 % above ζ-f₀) with
+6.6 times the axis k; `durbin` removes 71 % of the excess,
+`kato-launder` 111 %. SST `none`, `menter` and `durbin` give the same
+field (Nu₀ 160.5, the axis k below that of ζ-f₀): its bound
 ν_t = a₁k/(F₂S) holds on the axis, so there is no anomaly for the
-limiters to remove; `kato-launder` 143.0. The thermal law of the k-ε
+limiters to remove; `kato-launder` 144.6. The thermal law of the k-ε
 family now takes u* (5.2; Nu₀ 37 with u_τ). The experiment's data are
 not in the repository yet (they must be uploaded by hand, their licence
 is open), so the ±15 %/±20 % bands of Nu₀, the RMS of Nu(r/D), the
@@ -1365,7 +1371,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6d2 | ζ-f₀ of Popovac (2023) with its compound treatment (maintainer decision 2026-11-17: robustness in y⁺ for industrial use) (done, PR #74: no code of the author available, own default of 3.3.1; channel +2.7 to −4.2 % and plate within 2.5 % of White over y⁺ 0.3 to 30, all converged; backward-facing step x_r/H 6.38 (+2 %; ζ-f +25 %, SST −7 %); the built-in mesher removes boxes, `mesh.generate.remove`) | `turb/zeta_f.rs`, `turb/wall.rs` | 9.3 and 9.4 over first-cell y⁺ 0.5 to 100, same or similar results as ζ-f |
 | 6e | EB k-ε (D133) (done, PR #88: channel C_f at 97.8 / 99.0 / 99.1 % of the DNS at Re_τ 180 / 395 / 590, the paper 100 / 98 / 100 %; plate +0.5 % from White; step x_r/H 7.59, +21 %, finding: the variable C*_ε2, 6.24 with it constant; the coupled algorithm does not converge the step; wall normal not yet exported) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars (done, PR #85; the default wall law is `kader` also with `low-re`, equal to `none` there; the channel Nu against DNS is open) | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
-| 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports (in several PRs; part 1 done, PR #89: the backward-facing step in the TMR layout, six models on three meshes, the reattachment point as a wall crossing `[[output.wall_crossings]]` with its GCI; part 2 done, PR #90: the impinging jet, the inlet table with turbulence columns, wall probes with scalars, the thermal law in u*, the comparison with the experiment once its data are in) | cases, gallery, `tools/notebooks/stage6_colab.ipynb`; `examples/cases/flow/backstep_validation.toml`, `examples/studies/backstep_validation.py`; `examples/cases/flow/{jet_pipe_profile,impinging_jet}.toml`, `examples/studies/impinging_jet.py`, `python/foehncraft/profiles.py` | 9.5, 9.6, 9.7, 6.6 |
+| 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports (in several PRs; part 1 done, PR #89: the backward-facing step in the TMR layout, six models on three meshes, the reattachment point as a wall crossing `[[output.wall_crossings]]` with its GCI; part 2 done, PR #90: the impinging jet, the inlet table with turbulence columns, wall probes with scalars, the thermal law in u*, the comparison with the experiment once its data are in; part 3 done, PR #91: the full stress on symmetry and wedge planes, the axis cells of the jet) | cases, gallery, `tools/notebooks/stage6_colab.ipynb`; `examples/cases/flow/backstep_validation.toml`, `examples/studies/backstep_validation.py`; `examples/cases/flow/{jet_pipe_profile,impinging_jet}.toml`, `examples/studies/impinging_jet.py`, `python/foehncraft/profiles.py`; `foehncraft-kernels/src/flow.rs`, `tests/symmetry_stress.rs` | 9.5, 9.6, 9.7, 6.6 |
 | 6h | SST options of D170: curvature and rotation correction (Smirnov & Menter 2009), QCR2000 and QCR2013 with the explicit-stress path in the momentum assembly that D171 reuses | `turb/sst.rs`, `turb/invariants.rs`, `foehncraft-flow/src/turbulence/stress.rs` | 9.8 |
 | release | v0.6: version bump, changelog summary, README, verification manual, Release workflow (dry run first) | | all of section 9 green or findings recorded |
 

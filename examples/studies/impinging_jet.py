@@ -17,10 +17,8 @@ examples/cases/flow/jet_pipe_profile.toml (OUT/pipe_<model>), whose line
 then runs with `verification.levels` (default [0, 1, 2]: 2 600, 10 400
 and 41 600 cells), so that the solver reports the GCI of θ_w at the wall
 probe `stag` (the face next to the axis; the GCI of Nu₀ = q D/(Γ θ_w)
-is the same to first order) and of θ_w at r/D = 0.1 (the probe `r01`:
-the axis cells make Nu of the faces next to the axis low with the
-turbulence models, more so on finer meshes, a finding of 6g). The finest
-mesh is evaluated. The limiter cases
+is the same to first order) and of θ_w at r/D = 0.1 (the probe `r01`).
+The finest mesh is evaluated. The limiter cases
 run on the mesh of the case file (10 400 cells) in OUT/limiter: the
 standard k-ε with `none`, `kato-launder` and its default `durbin`, SST
 with `none`, `menter` (its default), `kato-launder` and `durbin`, and

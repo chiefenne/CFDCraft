@@ -550,15 +550,16 @@ grep "wall probe" output/impinging_jet/flow.log
 ```
 
 The log prints both (`wall probe stag at (0, 2.94e-2, 0) m: … theta
-wall 1.085e-1, flux 1.000e-3`). A probe interpolates between the two
+wall 1.075e-1, flux 1.000e-3`). A probe interpolates between the two
 wall faces nearest its point and is clamped to the nearest face beyond
 them, so `stag` reports the face next to the axis (r/D = 0.03 on this
 mesh). In a sweep over three meshes `wall_probes.stag.theta_wall` and
 `wall_probes.r01.theta_wall` get their observed order and GCI (D67), and
-so Nu₀ (to first order the same relative GCI). The two differ by 1 % on
-this mesh and by up to 7 % on 41 600 cells: the axis cells of the wedge
-lower Nu of the faces next to the axis with the turbulence models (a
-finding of 6g, see the verification page).
+so Nu₀ (to first order the same relative GCI). The two differ by 0.5 %
+on this mesh and by less than 0.1 % on 41 600 cells. (Before PR #91 the
+faces next to the axis were up to 7 % low with the turbulence models:
+the planes of the wedge lacked the transposed part of the stress, half
+of the hoop stress; see the verification page.)
 
 **All models, three meshes, the limiters.** The study runs the pipe and
 the jet for six models (`verification.levels` 0, 1, 2: 2 600, 10 400

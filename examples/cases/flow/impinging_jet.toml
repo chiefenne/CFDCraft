@@ -27,10 +27,7 @@
 # 2 600, 10 400 and 41 600 cells of the study
 # (examples/studies/impinging_jet.py). The wall probe `stag` at the axis
 # reports θ_w of the face next to it, so that a level sweep gives the GCI
-# of Nu₀; `r01` reports θ_w at r/D = 0.1. The axis cells of the wedge make
-# Nu of the faces next to the axis low with the turbulence models (1 % on
-# this mesh, 4 to 7 % on the finest of the study, a finding of 6g), so the
-# study reports both.
+# of Nu₀; `r01` reports θ_w at r/D = 0.1.
 
 case_format = "0.6"
 
