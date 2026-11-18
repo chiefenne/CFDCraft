@@ -9,6 +9,7 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 | 73 | [Run a case with k-ε-ζ-f and resolved walls](#zeta-f) |
 | 74 | [Run a case with k-ε-ζ-f₀ at any first-cell y⁺](#zeta-f0) |
 | 88 | [Run a case with the elliptic-blending k-ε](#elliptic-blending) |
+| 89 | [Validate the turbulence models on the backward-facing step](#step-validation) |
 
 ---
 
@@ -403,5 +404,74 @@ target/release/foehn flow examples/cases/flow/channel_eb.toml --out output/chann
     --set initial.turbulence_intensity=0.15 --set initial.viscosity_ratio=20.0
 grep "periodic xmin" output/channel_eb_590/flow.log output/channel_eb_180/flow.log
 ```
+
+[↑ back to top](#turbulence-models)
+
+<a id="step-validation"></a>
+## 89. Validate the turbulence models on the backward-facing step
+
+The validation case of stage 6 (specification 9.5) is the step of
+Driver & Seegmiller (1985) in the layout of NASA's Turbulence Modeling
+Resource: `backstep_validation.toml`, k-ε-ζ-f₀ with the coupled
+algorithm, no-slip walls at the bottom and the top, 11 040 cells. One
+run of it:
+
+```
+target/release/foehn flow examples/cases/flow/backstep_validation.toml
+grep -E "wall crossing|wall probe" output/backstep_validation/flow.log
+```
+
+**The reattachment length as a result.** A wall crossing reports the
+first point after `from` along `direction` where the wall shear along
+`direction` changes sign, linear between the two face centroids; its
+distance from `from` is in the log, in `flow.json` and, in a sweep over
+three or more meshes, in the uncertainty table with the observed order
+and the GCI (D67):
+
+```toml
+[output]
+wall_crossings = [
+  { name = "xr", boundary = "ymin", from = [0.0, 0.0, 0.05] },   # reattachment (default)
+  { name = "xs", boundary = "ymin", from = [0.0, 0.0, 0.05], kind = "separation" },
+]
+```
+
+`direction` defaults to x; `width` keeps only the faces within that
+distance of the line through `from` (for a 3D wall). The faces are taken
+in the order of their centroids along the direction, so the wall should
+be one row of faces: a 2D case, or a 3D case with `width`.
+
+**Three meshes.** `verification.levels` halves every interval once and
+twice (44 160 and 176 640 cells); the uncertainty table of `flow.md`
+then has the row `wall_crossings.xr.position`:
+
+```
+target/release/foehn flow examples/cases/flow/backstep_validation.toml --out output/step_gci \
+    --set 'verification.levels=[0, 1, 2]' --set solver.max_iterations=800
+grep -A12 "Discretisation uncertainty" output/step_gci/flow.md
+```
+
+**All models against the experiment.** The study runs SST, k-ε,
+realizable k-ε, ζ-f, ζ-f₀ and the elliptic-blending k-ε on the three
+meshes (ζ-f and EB with SIMPLEC and the relaxation ramp; the coupled
+algorithm does not converge them), then compares the finest mesh with
+the experiment: x_r/H with its GCI, the RMS difference of C_p at the 33
+stations of the lower wall (the band of the specification is 0.02 for
+SST, ζ-f and EB), C_f, and the velocity profiles at x/H = 1, 4, 6 and
+10. The reference speed is u at x/H = −4, y/H = 5, and C_p is shifted to
+zero at x/H = 37.5 like the data:
+
+```
+pip install ./python
+python3 examples/studies/backstep_validation.py output/backstep_validation --jobs 4 \
+    --chart docs/figures/gallery
+cat output/backstep_validation/summary.md
+```
+
+`--models sst,keps,rke,zf0` runs a subset; `--levels 0,1` fewer meshes;
+`--report-only` evaluates the runs that are there. A run whose case has
+not changed is not repeated, so the study can be stopped and started
+again. ζ-f and EB on the finest mesh take hours with SIMPLEC; the four
+coupled models about 40 minutes with four cores.
 
 [↑ back to top](#turbulence-models)

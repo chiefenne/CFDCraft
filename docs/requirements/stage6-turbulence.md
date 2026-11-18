@@ -1206,7 +1206,7 @@ the experiment.
 | Quantity | Models | Verification | Validation band |
 |---|---|---|---|
 | x_R/H | SST, ζ-f, EB | GCI_fine ≤ 2 %, p in [1, 3] | ±10 % of 6.26 |
-| x_R/H | standard and realizable k-ε | GCI_fine ≤ 2 % | ±5 % of a published result of the same model on a comparable grid (selected and recorded in the case before the run; the standard k-ε is known to reattach early) |
+| x_R/H | standard and realizable k-ε | GCI_fine ≤ 2 % | ±5 % of a published result of the same model on a comparable grid (selected and recorded in the case before the run; the standard k-ε is known to reattach early). *6g:* standard k-ε with wall functions 5.22 and 5.47 from two solvers (Mizukami, Georgiadis & Cannon 1993, NASA Lewis, table 1), the band ±5 % about their mean 5.345; no published result of the realizable model on this case was found, its x_R is reported |
 | C_p and C_f along the lower wall at the experiment's stations | all | – | reported against the experiment; RMS difference of C_p ≤ 0.02 for SST, ζ-f, EB |
 | Velocity profiles at x/H = 1, 4, 6, 10 | all | – | reported (plots in the gallery) |
 
