@@ -652,10 +652,12 @@ What closes the gap, in this order:
   them more.
 - **A better Schur complement** for steps without the cap on the local
   step: the SIMPLE-type approximation needs 4 to 6 Krylov iterations
-  with the cap 0.98 and 10 to 50 without it, with exact sub-solves. With
-  it the count would no longer grow with the mesh. By estimate this is
-  the largest lever: the fine step needs 150 outer iterations where the
-  coarse one needs 65.
+  with the cap 0.98 and 10 to 50 without it, with exact sub-solves. The
+  count of outer iterations is the largest lever on the run time (150 on
+  the fine step where the coarse one needs 65). Without the cap the fine
+  step settled in about 120, with every Krylov solve cut off at its
+  limit; how far a better Schur complement brings the count down, and
+  what else makes it grow with the mesh, is open.
 - **L45, automatic step control and a stop on monitored values**: the
   step grows as the residual falls (switched evolution relaxation, Mulder
   & van Leer 1985; Kelley & Keyes 1998) and falls back after a failed
