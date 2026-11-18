@@ -1249,6 +1249,18 @@ pub unsafe fn residual_scale<T: Real>(
     }
 }
 
+/// D̂ of the coupled preconditioner (the momentum inverse of its Schur
+/// complement): the SIMPLEC factor D^C = V/(a_P/α + Σ a_N) bounded by its
+/// value for face fluxes that satisfy continuity, 1/(a/D^s + b) with
+/// a = 1 − α and b = τ/α (τ = ρ/Δτ of the pseudo-time term, D^s the factor
+/// without it). With fluxes that do not satisfy continuity yet (a start, a
+/// loose solve) a_P + Σ a_N can be negative and D^C without the bound
+/// arbitrarily large.
+#[inline(always)]
+pub fn schur_diagonal<T: Real>(a: T, b: T, ds: T, dc: T) -> T {
+    dc.min_of(T::ONE / (a / ds + b))
+}
+
 /// a (x_i − y_i).
 ///
 /// # Safety

@@ -24,13 +24,20 @@ line (recipe 26).
 | `pressure.reference_point` | lower corner of the bounding box | the cell containing it holds the pressure level when no boundary fixes it |
 | `pressure.reference_value` | 0 | pressure in that cell (Pa) |
 | `boundary.<boundary>` | required for every boundary | condition, table below |
-| `solver.algorithm` | `"simplec"` | `simplec` (Van Doormaal & Raithby 1984) or `simple` |
+| `solver.algorithm` | `"simplec"` | `simplec` (Van Doormaal & Raithby 1984), `simple`, or `coupled`: momentum and continuity of an outer iteration as one linear system, with pseudo-time steps (D176 to D178, [recipe 78](../recipes/flow.md#coupled)) |
+| `solver.coupled.tolerance`, `solver.coupled.max_iter` | 0.1, 30 | `coupled`: relative residual of the coupled system per outer iteration and the largest number of Krylov iterations (flexible GMRES) |
+| `solver.coupled.momentum_tolerance`, `solver.coupled.momentum_max_iter` | 0.01, 10 | `coupled`: the momentum sweep of the preconditioner (BiCGStab per component) |
+| `solver.coupled.pressure_tolerance`, `solver.coupled.pressure_max_iter` | 0.1, 20 | `coupled`: the pressure solve of the preconditioner (CG with the preconditioner of `[solver.pressure]`) |
+| `solver.pseudo_time.step` | automatic | pseudo-time step Δτ of a steady run (s), the same in every cell; automatic: `factor` × L/U, L the volume of the domain over the area of its boundaries without symmetry planes, U the larger of the largest prescribed boundary speed (inlets, moving walls) and the root mean square of the cell speeds |
+| `solver.pseudo_time.factor` | 1 | factor on the automatic step |
+| `solver.pseudo_time.momentum` | true | the momentum equations of `coupled` take the step; false: relaxation only |
+| `solver.pseudo_time.turbulence` | 0.5 with `coupled`, else 0 | c_T: the turbulence equations take the step min(Δτ, c_T T), T the time scale of the model; 0: relaxation only |
 | `solver.momentum.scheme` | `"linear-upwind"` | convection of momentum: `upwind`, `linear-upwind` or `central` (bounded central, D25) |
 | `solver.momentum.central_blending`, `solver.momentum.central_bounding` | 1, 0.1 | with `central`: share of the central correction (rest linear upwind) and the bound β (as for the scalar cases) |
 | `solver.momentum.limiter` | `"none"` | gradient limiter: `none`, `venkatakrishnan`, `venkatakrishnan-wang` |
 | `solver.momentum.limiter_k` | 5 | constant K of the limiter |
 | `solver.nonorth_correction` | true | deferred non-orthogonal and skewness correction of the viscous term |
-| `solver.momentum.relaxation` | 0.7 | under-relaxation α_u of the momentum equations (implicit, Patankar 1980) |
+| `solver.momentum.relaxation` | 0.7; 0.98 with `coupled` | under-relaxation α_u of the momentum equations (implicit, Patankar 1980); with `coupled` it only caps the local Courant number of the pseudo-time step at α/(1 − α) |
 | `solver.pressure.relaxation` | 1 (SIMPLEC), 0.3 (SIMPLE) | relaxation α_p of the pressure correction |
 | `solver.pressure_gradient` | `"least-squares"` | gradient of the pressure in the momentum source, the Rhie–Chow flux and the wall pressure: `least-squares` (second order on every mesh) or `gauss` (the face sum of the face pressures; robust on skewed faces) |
 | `solver.remediation` | `"auto"` | cell-quality remediation (D50): `auto` switches to the `gauss` pressure gradient and the Venkatakrishnan limiter when a face of the mesh is skewed beyond `skewness_limit`, and reports it (`MESH001`, `MESH002`, the report); `off` keeps the schemes as set. A mesh without such faces runs unchanged ([recipe 36](../recipes/meshes.md#skewed-tets)) |
@@ -422,7 +429,7 @@ to 30. Specification:
 | `boundary.<wall>.roughness_constant` | 0.5 | C_s of Cebeci & Bradshaw (k-ε family); 0.4 brings the fully rough friction factor of pipes to Colebrook's within 3 % |
 | `solver.turbulence.scheme` | `"linear-upwind"` | convection of k and ω: `upwind`, `linear-upwind`, `central` (transient runs only, TURB006) |
 | `solver.turbulence.limiter`, `limiter_k` | `venkatakrishnan`, 0 | limiter of the gradients of k and ω; the threshold is relative, ε = K (φ_max − φ_min) |
-| `solver.turbulence.relaxation` | 0.8 steady, 1 transient | under-relaxation of k and ω |
+| `solver.turbulence.relaxation` | 0.8 steady, 1 transient; 0.98 with a pseudo-time step (`solver.pseudo_time.turbulence`) | under-relaxation of k and ω |
 | `solver.turbulence.viscosity_relaxation` | 1 | relaxation of ν_t |
 | `solver.turbulence.tolerance`, `max_iter` | 1e-2 steady, 1e-8 transient; 50 | relative tolerance and iterations of each BiCGStab solve |
 | `solver.turbulence.preconditioner` | `"jacobi"` | preconditioner of the BiCGStab solves of k, ω or ε and ζ: `"jacobi"` or `"amg"` (the aggregation multigrid of `[solver.pressure.amg]`, one hierarchy per equation, built from the symmetric part ½(A + Aᵀ) and rebuilt every `solver.amg_rebuild` iterations) |

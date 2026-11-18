@@ -9,6 +9,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 14 | [Taylor–Green vortex: second order in time and space](#taylor-green) | 5 | PISO, variable-step BDF2, Crank–Nicolson, extrapolation, outer iterations at large steps |
 | 15 | [Cylinder in a channel: the Schäfer & Turek benchmark](#cylinder) | 5 | built-in O-grid, steady Re 20, vortex street at Re 100, adaptive time step, force coefficients |
 | 20 | [Time step from the error, output at exact times, potential-flow start](#time-control) | 5 | BDF2 error estimate with rejected steps, output in simulated time, potential flow from the pressure multigrid |
+| 78 | [Coupled algorithm and pseudo-time steps: the step case in 65 iterations](#coupled) | 6 | `solver.algorithm = "coupled"`, `[solver.coupled]`, `[solver.pseudo_time]`, log column `K` |
 
 ---
 
@@ -236,3 +237,89 @@ python3 -m tools.mesh.render_mesh output/cylinder_potential/fields.vtkhdf potent
 ```
 
 [↑ back to top](#incompressible-flow)
+
+---
+
+<a id="coupled"></a>
+## 78. Coupled algorithm and pseudo-time steps: the step case in 65 iterations
+
+![The reattachment length x_r/H of the backward-facing step against the outer iteration on a logarithmic axis, one panel per turbulence model (k-ε-ζ-f₀, k-ε, k-ω SST), each with SIMPLEC and with the coupled algorithm. The grey band is ±1 % of the final value. The coupled runs enter it after 65, 75 and 85 iterations, the SIMPLEC runs after 525, 600 and 675](../figures/gallery/coupled_step.svg)
+
+**Why SIMPLEC needs hundreds of iterations.** Under-relaxation is a time
+step in disguise: with the factor α a cell advances by α/(1 − α) of its
+own transit time per outer iteration, 4 transit times at α = 0.8. The
+step shrinks with the cell, but the recirculation zone behind a step
+needs a fixed physical time to form. So the backward-facing step of
+gallery 74 takes about 600 iterations on 8 200 cells and 1 750 on
+32 800.
+
+**The coupled algorithm.** `algorithm = "coupled"` solves the momentum
+equations and the continuity equation of an outer iteration as one linear
+system for the increments of velocity and pressure, and replaces the
+relaxation by pseudo-time steps on physical scales:
+
+```toml
+[solver]
+algorithm = "coupled"
+```
+
+- The momentum equations take one step Δτ for all cells, by default the
+  volume of the domain over the area of its boundaries, over the flow
+  speed (7.3 H/U on the step). The relaxation, now 0.98, only caps the
+  local Courant number at 49.
+- The turbulence equations take the step min(Δτ, 0.5 T) per cell, with T
+  the time scale of the model (k/ε, 1/(β* ω)): their sources are stiff on
+  that scale.
+- The discrete equations are those of SIMPLEC. The converged result is
+  the same and depends neither on the step nor on the cap; the face
+  fluxes satisfy continuity after every outer iteration.
+
+No block matrix is built: the coupled system is applied with the kernels
+of the segregated solver and solved by flexible GMRES with a SIMPLE-type
+preconditioner (a momentum sweep, a pressure solve with the multigrid of
+the pressure, a velocity correction).
+
+**The step** (`backstep_zeta_f0_coupled.toml`, 8 200 cells, from a
+uniform start, no relaxation ramp). Outer iterations until x_r stays
+within 1 % of its final value:
+
+| Model | SIMPLEC (0.5, then 0.8) | Coupled | Final x_r/H, both |
+|---|---|---|---|
+| k-ε-ζ-f₀ | 525 | 65 | 6.385 |
+| k-ε, scalable wall functions | 600 | 75 | 5.287 |
+| k-ω SST | 675 | 85 | 6.82 |
+| k-ε-ζ-f₀, 32 800 cells | 1 750 | 170 to 180 | 6.36, 6.38 |
+
+The gain in run time is smaller, because a coupled iteration costs five
+to seven SIMPLEC iterations: on one thread the coarse step settles in
+21 s instead of 31 s, the fine one in about 235 s instead of 342 s. That
+cost is the momentum sweep of the preconditioner (last paragraph). The
+counts are good to about 10 %: they repeat exactly for the same input,
+but a change in the last digit of the step can move them
+([verification page](../verification/stage6.md#coupled-algorithm-and-pseudo-time-steps-part-6e),
+finding 8).
+
+**Channel and cavity.** The channel at Re_τ = 395 with k-ε-ζ-f₀
+(`channel_zeta_f0.toml` with `--set solver.algorithm=coupled`) converges
+in 323 iterations instead of about 2 100, to the same U_b⁺ = 17.79. The
+laminar cavity at Re = 1000 on 128 × 128 cells
+(`cavity_re1000_coupled.toml`) converges to 10⁻⁸ in 452 iterations
+instead of 1 397, with the same deviation from Ghia et al. (0.0040,
+0.0136) and the same kinetic-energy ledger: numerical dissipation 0.637 %
+of the lid power with both algorithms, its Rhie–Chow part equal to seven
+digits.
+
+**Where it does not pay yet.** On small laminar cases SIMPLEC at
+α = 0.9 is as fast: the cavity at Re = 400 on 48 × 48 cells takes 255
+iterations with SIMPLEC and 292 with the automatic step. A larger step
+(`[solver.pseudo_time] factor = 4` or `20`) brings 130 or 84 iterations,
+but each then costs more, because the momentum sweep of the
+preconditioner (BiCGStab with a diagonal preconditioner) gets expensive
+at large steps. The same sweep is why the cap stays at 0.98 and the fine
+step mesh still needs more than twice the iterations of the coarse one. A
+multigrid for convection-dominated matrices is the next step
+([requirements step 22](../requirements/step22-coupled-solver.md), L44).
+
+The commands are in [recipe 78](../recipes/flow.md#coupled), the
+measurements and the method in the
+[verification page](../verification/stage6.md#coupled-algorithm-and-pseudo-time-steps-part-6e).

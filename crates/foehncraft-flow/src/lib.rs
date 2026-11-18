@@ -39,6 +39,7 @@ pub mod case;
 pub mod checkpoint;
 pub mod console;
 pub mod control;
+pub mod coupled;
 pub mod derived;
 pub mod device;
 pub mod diag;

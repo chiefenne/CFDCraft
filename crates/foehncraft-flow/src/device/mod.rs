@@ -286,6 +286,9 @@ pub struct ScalarRowArgs {
     pub fix: Option<(Buf, Buf)>,
     /// A positive variable: the deferred corrections split by sign (k, ω).
     pub positive: bool,
+    /// Pseudo-time coefficient ρ V/Δτ per cell of a steady iteration
+    /// ([`FlowDevice::pseudo_coefficient`]), if any.
+    pub pseudo: Option<Buf>,
     /// Output: matrix values.
     pub val: Buf,
     /// Output: right-hand side.
@@ -577,6 +580,21 @@ pub trait FlowDevice {
     fn fill(&mut self, b: Buf, v: f64) -> Result<()>;
     /// out = a (x − y); `out` may be `x` or `y`.
     fn scaled_difference(&mut self, out: Buf, a: f64, x: Buf, y: Buf) -> Result<()>;
+    /// out = min(dc, 1/(a/ds + b)) per cell: D̂ of the coupled
+    /// preconditioner ([`foehncraft_kernels::flow::schur_diagonal`]).
+    fn schur_diagonal(&mut self, out: Buf, a: f64, b: f64, ds: Buf, dc: Buf) -> Result<()>;
+    /// out = ρ V max(inv_dt, factor · num/den) per cell: the pseudo-time
+    /// coefficient of a scalar row with the step min(Δτ_max, T/factor)
+    /// ([`foehncraft_kernels::scalar::pseudo_coefficient`]; `num`, `den`
+    /// absent: 1).
+    fn pseudo_coefficient(
+        &mut self,
+        out: Buf,
+        inv_dt: f64,
+        factor: f64,
+        num: Option<Buf>,
+        den: Option<Buf>,
+    ) -> Result<()>;
     /// out = a x + b y; `out` may be `x` or `y`.
     fn lincomb(&mut self, out: Buf, a: f64, x: Buf, b: f64, y: Buf) -> Result<()>;
     /// Σ x² in the fixed block order.
@@ -650,8 +668,15 @@ pub trait FlowDevice {
     /// Rows of a scalar.
     fn scalar_rows(&mut self, a: &ScalarRowArgs) -> Result<()>;
     /// Residual scale ‖a φ‖ + ‖b − (a/α − a) φ‖ of a scalar row (unrelaxed
-    /// a and b).
-    fn scalar_scale(&mut self, phi: Buf, rhs: Buf, diag: Buf, alpha: f64) -> Result<f64>;
+    /// a and b, without the pseudo-time coefficient `pseudo` of the row).
+    fn scalar_scale(
+        &mut self,
+        phi: Buf,
+        rhs: Buf,
+        diag: Buf,
+        alpha: f64,
+        pseudo: Option<Buf>,
+    ) -> Result<f64>;
     /// Face mass fluxes (Rhie–Chow).
     fn mass_flux(&mut self, a: &FluxArgs, out: Buf) -> Result<()>;
     /// Momentum face coefficients.

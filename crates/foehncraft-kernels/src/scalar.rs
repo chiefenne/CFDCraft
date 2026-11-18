@@ -84,6 +84,10 @@ pub struct ScalarRowInputs<'a, T> {
     /// specification 6.2), so that it cannot make the right-hand side
     /// negative.
     pub positive: bool,
+    /// Pseudo-time coefficient ρ V/Δτ per cell (kg/s) of a steady
+    /// iteration ([`pseudo_coefficient`]): the term ρ V (φ − φ^prev)/Δτ,
+    /// zero at convergence; empty: none.
+    pub pseudo: &'a [T],
 }
 
 /// Outputs of [`scalar_row`] for one cell.
@@ -175,6 +179,12 @@ pub unsafe fn scalar_row<T: Real>(c: usize, inp: &ScalarRowInputs<T>, val: *mut 
             diag += tau * a0;
             b += tau * rest;
         }
+        if !inp.pseudo.is_empty() {
+            // pseudo-time term: the old value is that of the last iteration
+            let tau = ld(inp.pseudo, c);
+            diag += tau;
+            b += tau * ld(inp.phi, c);
+        }
         let dr = diag / inp.alpha;
         b += (dr - diag) * ld(inp.phi, c);
         // a (partly) fixed value: (1 − m)·row + m a_P (φ_P − value), the
@@ -203,8 +213,28 @@ pub unsafe fn scalar_row<T: Real>(c: usize, inp: &ScalarRowInputs<T>, val: *mut 
 /// Parts of the residual scale of a scalar row, as those of the momentum
 /// ([`crate::flow::residual_scale`]): (a_P φ_P, b − (a_P/α − a_P) φ_P) with
 /// the unrelaxed a_P and b, so that the scale is finite also for φ = 0.
+/// `pseudo` is the pseudo-time coefficient of the row (0: none), which is
+/// taken out of both parts: the scale does not depend on the pseudo-time
+/// step.
 #[inline(always)]
-pub fn residual_parts<T: Real>(phi: T, rhs: T, diag_relaxed: T, alpha: T) -> (T, T) {
+pub fn residual_parts<T: Real>(phi: T, rhs: T, diag_relaxed: T, alpha: T, pseudo: T) -> (T, T) {
     let a = diag_relaxed * alpha;
-    (a * phi, rhs - (diag_relaxed - a) * phi)
+    (
+        (a - pseudo) * phi,
+        rhs - (diag_relaxed - a) * phi - pseudo * phi,
+    )
+}
+
+/// Pseudo-time coefficient ρ V/Δτ of a cell with the step
+/// Δτ = min(Δτ_max, T/f): `rho_v` = ρ V, `inv_dt` = 1/Δτ_max and the rate
+/// f/T given as `factor · num / den` (T = k/ε: num = ε, den = k; T = 1/(β*ω):
+/// num = ω, den = 1; a stored T: num = 1, den = T). A cell with `den` ≤ 0
+/// takes Δτ_max.
+#[inline(always)]
+pub fn pseudo_coefficient<T: Real>(rho_v: T, inv_dt: T, factor: T, num: T, den: T) -> T {
+    if den > T::ZERO {
+        rho_v * inv_dt.max_of(factor * num / den)
+    } else {
+        rho_v * inv_dt
+    }
 }

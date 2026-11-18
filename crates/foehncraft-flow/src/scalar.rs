@@ -1058,12 +1058,13 @@ impl Scalars {
                     time,
                     fix: None,
                     positive: false,
+                    pseudo: None,
                     val: self.val,
                     rhs: self.rhs,
                     diag: self.diag,
                     order: self.order,
                 })?;
-                let scale = dev.scalar_scale(f.phi, self.rhs, self.diag, alpha)?;
+                let scale = dev.scalar_scale(f.phi, self.rhs, self.diag, alpha, None)?;
                 let (it, r0) = dev.solve(
                     self.val,
                     self.rhs,

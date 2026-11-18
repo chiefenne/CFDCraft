@@ -26,6 +26,8 @@ macro_rules! entries {
 entries! {
     flow_lincomb => e::Lincomb,
     flow_scaled_difference => e::ScaledDifference,
+    flow_schur_diagonal => e::SchurDiagonal,
+    flow_pseudo_coefficient => e::PseudoCoefficient,
     flow_fill => e::Fill,
     flow_subtract => e::Subtract,
     flow_scale_entry => e::ScaleEntry,

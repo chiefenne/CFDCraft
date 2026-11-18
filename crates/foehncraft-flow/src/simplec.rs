@@ -66,6 +66,10 @@ pub enum Algorithm {
     /// `correctors` pressure corrections, optionally repeated in
     /// `outer_iterations` (a PIMPLE-type loop).
     Piso,
+    /// Coupled (L11), steady: the momentum and continuity equations of an
+    /// outer iteration are solved as one linear system for the increments
+    /// of the velocity and the pressure ([`crate::coupled`]).
+    Coupled,
 }
 
 /// Gradient of the pressure (D24, D50), used in the momentum source
@@ -192,6 +196,12 @@ pub fn gauss_weights(d: &Discretisation) -> Soa3 {
     out
 }
 
+/// Default α_u of the coupled algorithm: a local Courant number of at most
+/// α/(1 − α) = 49. (A larger cap saves outer iterations, but the momentum
+/// sweeps of the preconditioner, BiCGStab with a diagonal preconditioner,
+/// then need more than they save.)
+pub const COUPLED_RELAXATION: f64 = 0.98;
+
 /// `[solver]` settings of a flow case.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -203,6 +213,10 @@ pub struct Settings {
     pub momentum: MomentumSettings,
     /// The pressure (correction) equation (`[solver.pressure]`).
     pub pressure: PressureSettings,
+    /// The linear solve of the coupled algorithm (`[solver.coupled]`).
+    pub coupled: crate::coupled::CoupledSettings,
+    /// The pseudo-time steps of a steady run (`[solver.pseudo_time]`).
+    pub pseudo_time: crate::coupled::PseudoTimeSettings,
     /// The passive scalars (`[solver.scalar]`, D51).
     pub scalar: crate::scalar::ScalarSettings,
     /// The turbulence equations (`[solver.turbulence]`, stage 6).
@@ -328,6 +342,8 @@ impl Default for Settings {
             algorithm: None,
             momentum: MomentumSettings::default(),
             pressure: PressureSettings::default(),
+            coupled: crate::coupled::CoupledSettings::default(),
+            pseudo_time: crate::coupled::PseudoTimeSettings::default(),
             scalar: crate::scalar::ScalarSettings::default(),
             turbulence: crate::turbulence::TurbulenceSettings::default(),
             elliptic: crate::turbulence::EllipticSettings::default(),
@@ -375,11 +391,16 @@ impl Settings {
             .unwrap_or(if transient { 1e-8 } else { 1e-2 })
     }
 
-    /// α_u.
+    /// α_u. With the coupled algorithm it only caps the local Courant
+    /// number of the pseudo-time step at α/(1 − α).
     pub fn alpha_u(&self, transient: bool) -> f64 {
-        self.momentum
-            .relaxation
-            .unwrap_or(if transient { 1.0 } else { 0.7 })
+        self.momentum.relaxation.unwrap_or(if transient {
+            1.0
+        } else if self.algorithm(false) == Algorithm::Coupled {
+            COUPLED_RELAXATION
+        } else {
+            0.7
+        })
     }
 
     /// α_p.
@@ -387,7 +408,7 @@ impl Settings {
         self.pressure
             .relaxation
             .unwrap_or(match self.algorithm(transient) {
-                Algorithm::Simplec | Algorithm::Piso => 1.0,
+                Algorithm::Simplec | Algorithm::Piso | Algorithm::Coupled => 1.0,
                 Algorithm::Simple => 0.3,
             })
     }
@@ -436,6 +457,7 @@ impl Settings {
                  runs PISO (remove `algorithm` or set it to \"piso\")",
                 match alg {
                     Algorithm::Simple => "simple",
+                    Algorithm::Coupled => "coupled",
                     _ => "simplec",
                 }
             );
@@ -466,6 +488,17 @@ impl Settings {
                 CASE_INCONSISTENT,
                 "[solver] algorithm = \"piso\" is transient and needs a [time] table"
             );
+            self.pseudo_time.validate()?;
+            if alg == Algorithm::Coupled {
+                self.coupled.validate()?;
+                crate::need!(
+                    au < 1.0,
+                    CASE_RANGE,
+                    "[solver.momentum] the coupled algorithm needs relaxation < 1 \
+                     (it caps the local Courant number of the pseudo-time step at \
+                     α/(1 − α)); try 0.98"
+                );
+            }
             crate::diag::check_fix(
                 !(alg == Algorithm::Simplec && au >= 1.0),
                 crate::diag::CASE_INCONSISTENT,
@@ -582,6 +615,14 @@ pub struct Residuals {
     pub momentum_iterations: [usize; 3],
     /// CG iterations of the pressure solve (all correctors).
     pub pressure_iterations: usize,
+    /// Krylov iterations of the coupled solve (0 with a segregated
+    /// algorithm).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub coupled_iterations: usize,
+    /// The pseudo-time step Δτ of the momentum equations in s (coupled
+    /// algorithm, D177); none where only the relaxation acts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pseudo_step: Option<f64>,
     /// The passive scalars (D51): residuals and iterations per scalar, in
     /// name order.
     #[serde(
@@ -595,6 +636,10 @@ pub struct Residuals {
         skip_serializing_if = "crate::turbulence::TurbResiduals::is_empty"
     )]
     pub turbulence: crate::turbulence::TurbResiduals,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 impl Residuals {
@@ -806,6 +851,14 @@ pub struct Flow {
     /// Work face buffer of the mass-flow driving (the flux of a unit
     /// increment of the driving force).
     unit_flux: Option<Buf>,
+    /// Buffers of the coupled algorithm (allocated at its first iteration).
+    pub(crate) coupled: Option<crate::coupled::CoupledWork>,
+    /// The length of the automatic pseudo-time step (computed at its first
+    /// use).
+    pub(crate) pseudo_length: Option<f64>,
+    /// The largest prescribed boundary speed for that step (computed at
+    /// its first use, again after new boundary velocities).
+    pub(crate) pseudo_speed: Option<f64>,
 }
 
 /// The driving of one periodic pair: a uniform body force β t̂ along the
@@ -1230,6 +1283,9 @@ impl Flow {
             turbulence: None,
             periodic,
             unit_flux,
+            coupled: None,
+            pseudo_length: None,
+            pseudo_speed: None,
         })
     }
 
@@ -1274,7 +1330,7 @@ impl Flow {
     /// velocity follows a uniform force increment by δβ D^C t̂ (the
     /// response of the SIMPLEC rows), the fluxes by the flux of that
     /// increment.
-    fn drive_mass_flow(&mut self) -> Result<()> {
+    pub(crate) fn drive_mass_flow(&mut self) -> Result<()> {
         let Some(unit) = self.unit_flux else {
             return Ok(());
         };
@@ -1691,6 +1747,10 @@ impl Flow {
     /// New prescribed boundary velocity (time-dependent conditions); faces
     /// with another update rule ignore it.
     pub fn set_boundary_velocity(&mut self, ub: &[Vec<f64>; 3]) -> Result<()> {
+        for (own, new) in self.bc.ub.iter_mut().zip(ub) {
+            own.copy_from_slice(new);
+        }
+        self.pseudo_speed = None;
         let s = self.f.ub_set;
         self.dev.upload(s.x, &ub[0])?;
         self.dev.upload(s.y, &ub[1])?;
@@ -1828,7 +1888,10 @@ impl Flow {
                 self.dev.lincomb(r, 1.0, r, 1.0, q)?;
             }
         }
-        if self.settings.algorithm(self.transient) != Algorithm::Simplec {
+        if matches!(
+            self.settings.algorithm(self.transient),
+            Algorithm::Simple | Algorithm::Piso
+        ) {
             self.dev.copy(w.d, w.dc)?;
         }
         // residual scale ‖a_P u‖ + ‖b‖ over the three components (unrelaxed
@@ -1906,21 +1969,11 @@ impl Flow {
         Ok(d / t.max(f64::MIN_POSITIVE))
     }
 
-    /// Step 6: the pressure correction of the fluxes `m` into `w.pc`
-    /// (shifted to zero in the reference cell); `rebuild` sets the
-    /// multigrid up first. Returns the CG iterations.
-    pub(crate) fn pressure_correction(&mut self, m: Buf, rebuild: bool) -> Result<usize> {
+    /// The multigrid setup on the pressure matrix `w.pval` (the first one,
+    /// and again when `rebuild`).
+    pub(crate) fn pressure_amg(&mut self, rebuild: bool) -> Result<()> {
         let t = Instant::now();
         let w = self.w;
-        self.dev.pressure_faces(w.dc, w.cf)?;
-        self.dev.pressure_rows(w.cf, m, w.pval, w.prhs)?;
-        if let Some(r) = self.reference_cell {
-            let pos = self.disc.sell.pos(r, 0);
-            self.dev.scale_entry(w.pval, pos, 2.0)?;
-        }
-        self.dev.sync()?;
-        self.timings.pressure_assembly += t.elapsed().as_secs_f64();
-        let t = Instant::now();
         let s = self.settings.clone();
         if s.pressure.preconditioner == Preconditioner::Amg && (self.amg_setups == 0 || rebuild) {
             if let Err(e) = self.dev.amg_setup(w.pval, &s.pressure.amg) {
@@ -1945,6 +1998,25 @@ impl Flow {
             self.amg_setups += 1;
             self.timings.amg_setup += t.elapsed().as_secs_f64();
         }
+        Ok(())
+    }
+
+    /// Step 6: the pressure correction of the fluxes `m` into `w.pc`
+    /// (shifted to zero in the reference cell); `rebuild` sets the
+    /// multigrid up first. Returns the CG iterations.
+    pub(crate) fn pressure_correction(&mut self, m: Buf, rebuild: bool) -> Result<usize> {
+        let t = Instant::now();
+        let w = self.w;
+        self.dev.pressure_faces(w.dc, w.cf)?;
+        self.dev.pressure_rows(w.cf, m, w.pval, w.prhs)?;
+        if let Some(r) = self.reference_cell {
+            let pos = self.disc.sell.pos(r, 0);
+            self.dev.scale_entry(w.pval, pos, 2.0)?;
+        }
+        self.dev.sync()?;
+        self.timings.pressure_assembly += t.elapsed().as_secs_f64();
+        self.pressure_amg(rebuild)?;
+        let s = self.settings.clone();
         let t = Instant::now();
         self.dev.fill(w.pc, 0.0)?;
         let (it, _) = self.dev.solve(
@@ -2005,6 +2077,9 @@ impl Flow {
 
     /// One steady outer iteration; returns the residuals before the solves.
     pub fn iterate(&mut self) -> Result<Residuals> {
+        if self.settings.algorithm(false) == Algorithm::Coupled {
+            return self.iterate_coupled();
+        }
         self.iteration += 1;
         let mut res = Residuals {
             iteration: self.iteration,
@@ -2062,6 +2137,7 @@ impl Flow {
         if let Some(t) = self.turbulence.as_mut() {
             t.amg_rebuild = rebuild;
         }
+        self.turbulence_step(None)?;
         self.solve_scalars(None, &mut res)?;
         Ok(res)
     }

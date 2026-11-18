@@ -10,6 +10,7 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 21 | [Run a transient flow case and check its time order](#transient-flow) |
 | 23 | [Run the cylinder benchmark of Schäfer & Turek](#cylinder) |
 | 28 | [Let the error choose the time step, write output at exact times, start from potential flow](#time-control) |
+| 78 | [Converge a steady case in fewer iterations with the coupled algorithm](#coupled) |
 
 ---
 
@@ -312,3 +313,105 @@ The last run converges in 1527 outer iterations instead of 1570 from rest.
 A restart file, when given, wins over the start.
 
 [↑ back to top](#incompressible-flow)
+
+---
+
+<a id="coupled"></a>
+## 78. Converge a steady case in fewer iterations with the coupled algorithm
+
+One key switches a steady case from SIMPLEC to the coupled
+pressure–velocity algorithm with pseudo-time steps
+([gallery 78](../gallery/flow.md#coupled)):
+
+```toml
+[solver]
+algorithm = "coupled"
+```
+
+or on the command line, for any steady case file:
+
+```
+target/release/foehn flow examples/cases/flow/channel_zeta_f0.toml --set solver.algorithm=coupled
+```
+
+Remove a `[solver.momentum] relaxation` and a relaxation `[[schedule]]`
+that the case set for SIMPLEC: with the coupled algorithm the relaxation
+is only a cap on the local Courant number α/(1 − α), and its default is
+0.98. The result is the one of SIMPLEC; only the number of iterations
+changes.
+
+The step case of gallery 78 and the cavity:
+
+```
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0_coupled.toml
+target/release/foehn flow examples/cases/flow/cavity_re1000_coupled.toml
+```
+
+**Reading the log.** The table has one more column of linear
+iterations: `K`, the Krylov iterations of the coupled solve of that outer
+iteration (`linear.coupled` in `[log] columns`; `krylov` in
+`residuals.csv` and the run record). `U V W` are then the BiCGStab
+iterations of all momentum sweeps of the preconditioner and `P` the CG
+iterations of its pressure solves and of the final pressure correction.
+A `K` at its limit (`solver.coupled.max_iter`, 30) in every iteration
+means that the step or the cap is too large for the momentum sweep: lower
+`solver.pseudo_time.factor` or the relaxation.
+
+**The pseudo-time step.** Default: automatic, Δτ = L/U with L the volume
+of the domain over the area of its boundaries (without symmetry planes)
+and U the larger of the largest prescribed boundary speed (inlets, moving
+walls) and the root mean square of the cell speeds. The summary of the
+run shows the step of the last iteration (`Pseudo-time step`), the run
+record has it per iteration (`pseudo_step`).
+
+```toml
+[solver.pseudo_time]
+factor = 4.0        # a larger step: fewer iterations, dearer linear solves
+# step = 5.0        # or the step itself, in s
+# momentum = false  # relaxation only (the cap alone sets the step)
+# turbulence = 0.5  # c_T of the turbulence step min(Δτ, c_T T); 0: off
+```
+
+A larger `factor` pays on diffusion-dominated laminar cases (cavity at
+Re = 400: 292, 130 and 84 iterations with 1, 4 and 20). On the turbulent
+step the count does not change between 5 and 29 H/U. These keys and those
+of `[solver.coupled]` may change during a run (re-read, `[[schedule]]`).
+Iteration counts repeat exactly for the same input, but they are good to
+about 10 % only: a change in the last digit of the step can move them
+(cavity at Re = 1000: 423 iterations with `step = 0.25`, 452 with the
+automatic step, which is the same to 16 digits). The result is the same.
+
+**The cap.** `solver.momentum.relaxation` (0.98) caps the local Courant
+number of the momentum equations at 49, `solver.turbulence.relaxation`
+(0.98 with a pseudo-time step) that of the turbulence equations. A higher
+momentum cap (0.99, 0.999) saves outer iterations on fine meshes and
+costs more in each; lower it (0.95) if a run diverges at the start.
+Leave the turbulence value: 0.9 makes the turbulence lag the momentum
+equations and costs several times the iterations, 1 can diverge from a
+uniform start.
+
+**With SIMPLEC.** The turbulence step alone also helps the segregated
+algorithm; it is off by default there, so that existing results do not
+change:
+
+```
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0.toml \
+    --set solver.pseudo_time.turbulence=0.5
+```
+
+The coarse step then settles in about 230 iterations at α_u = 0.8
+instead of 525.
+
+**Has the result settled?** As with SIMPLEC the residual of the step
+case stalls near 10⁻⁴, so judge by a monitored value: write fields at
+chosen iterations (`touch output/<case>/.result_50 .result_100 …` before
+the run, recipe 74) and compare, or watch a probe in the log
+(`[log] columns`, recipe 38). The figure of gallery 78 was drawn from
+such histories:
+
+```
+python3 -m tools.plot.settling_chart docs/figures/gallery/coupled_step.svg "x_r / H" \
+    "k-ε-ζ-f₀:SIMPLEC=simplec_zf0.csv" "k-ε-ζ-f₀:coupled=coupled_zf0.csv" …
+```
+
+with one two-column file (iteration, value) per run.

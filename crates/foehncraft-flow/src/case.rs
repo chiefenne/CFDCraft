@@ -2256,6 +2256,12 @@ pub fn run_steered(
             );
             let _ = write!(head, ",scalar_{s},bicgstab_{s}");
         }
+        // the Krylov iterations of the coupled algorithm: a last column
+        let coupled = case.solver.algorithm(false) == crate::simplec::Algorithm::Coupled;
+        if coupled {
+            units.push_str(", krylov - (iterations of the coupled system)");
+            head.push_str(",krylov");
+        }
         let mut csv = csv_preamble("residuals", name, None, &units);
         csv.push_str(&head);
         csv.push('\n');
@@ -2382,10 +2388,13 @@ pub fn run_steered(
                 {
                     let _ = write!(csv, ",{r:e},{n}");
                 }
+                if coupled {
+                    let _ = write!(csv, ",{}", res.coupled_iterations);
+                }
                 csv.push('\n');
                 hist.push((it as f64, res.max()));
                 if steer.record.on() {
-                    steer.record.row(&serde_json::json!({
+                    let mut row = serde_json::json!({
                         "type": "iteration",
                         "iteration": it,
                         "momentum": res.momentum,
@@ -2395,7 +2404,14 @@ pub fn run_steered(
                         "scalars": res.scalars.residual,
                         "turbulence": res.turbulence.residual,
                         "turbulence_floors": res.turbulence.floors,
-                    }));
+                    });
+                    if coupled {
+                        row["krylov"] = serde_json::json!(res.coupled_iterations);
+                        if let Some(dt) = res.pseudo_step {
+                            row["pseudo_step"] = serde_json::json!(dt);
+                        }
+                    }
+                    steer.record.row(&row);
                 }
             }
             if it == first + 1 || it % case.solver.log_every == 0 || done {
@@ -2538,6 +2554,20 @@ pub fn run_steered(
                 },
             );
             f.push_kv("Largest scaled residual", crate::console::sci3(res.max()));
+            if let Some(dt) = res.pseudo_step {
+                f.push_kv(
+                    "Pseudo-time step",
+                    format!(
+                        "{} s  ({}, last iteration)",
+                        crate::console::sci3(dt),
+                        if case.solver.pseudo_time.step.is_some() {
+                            "given"
+                        } else {
+                            "automatic"
+                        }
+                    ),
+                );
+            }
             f.push_kv(
                 "Solve time",
                 format!(
