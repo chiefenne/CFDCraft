@@ -3918,9 +3918,16 @@ impl FlowReport {
             } else {
                 String::new()
             };
+            let mut models = String::new();
+            if t.turbulence > 0.0 {
+                let _ = write!(models, ", turbulence model {:.2}", t.turbulence);
+            }
+            if t.scalars > 0.0 {
+                let _ = write!(models, ", scalars {:.2}", t.scalars);
+            }
             let _ = writeln!(
                 s,
-                "\nSeconds per phase (R6): gradients {:.2}, momentum assembly {:.2}, momentum solve {:.2}, pressure assembly {:.2}, pressure solve {:.2}, multigrid setup {:.2} ({} setups{sweeps})",
+                "\nSeconds per phase (R6): gradients {:.2}, momentum assembly {:.2}, momentum solve {:.2}, pressure assembly {:.2}, pressure solve {:.2}, multigrid setup {:.2} ({} setups{sweeps}){models}",
                 t.gradients,
                 t.momentum_assembly,
                 t.momentum_solve,

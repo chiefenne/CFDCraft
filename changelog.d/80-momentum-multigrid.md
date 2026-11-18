@@ -28,7 +28,9 @@
   `momentum_amg_matrix_<n>`), so a continued run stays bit-identical;
   older restart files still load. If a setup fails, BiCGStab does the
   sweeps of that outer iteration and the log carries a warning. The
-  report of a run counts the setups of the momentum sweeps.
+  report of a run counts the setups of the momentum sweeps and gives
+  the time of the turbulence model and of the scalars among its
+  seconds per phase.
 - **One thread without a pool.** On a pool of one thread (meshes below
   20 000 cells, or `--threads 1`) every kernel call and every level
   operation of a multigrid cycle was handed to the worker thread and

@@ -59,8 +59,8 @@ Contents
   convection-dominated matrices (D179, sections 3.1 and 7.7): half the
   Krylov iterations, 150 instead of 175 iterations on the fine step, and
   a run time 2.7 (coarse) and 3.3 (fine) times shorter than SIMPLEC.
-- **What limits it today**: the turbulence equations and the pressure
-  solves take two thirds of a coupled run, the setups of the momentum
+- **What limits it today**: the turbulence model and the pressure
+  solves take 60 % of a coupled run, the setups of the momentum
   hierarchies cost more than their cycles, and the cap on the local
   step has to stay because of the Schur complement approximation
   (section 8).
@@ -540,7 +540,7 @@ iteration over 160 iterations), the channel converges in 324 iterations
 by 0.0040 and 0.0136 as before).
 
 Where the time goes, in seconds (the phases of the run report; "other"
-is mostly the turbulence equations):
+is the turbulence model, the start and the output):
 
 | Run | Momentum sweeps | Setups of their hierarchies | Pressure solves | Assembly and the rest of the coupled solve | Other |
 |---|---|---|---|---|---|
@@ -548,6 +548,19 @@ is mostly the turbulence equations):
 | Coarse, 65 iterations, multigrid sweep | 0.3 | 1.4 (96) | 1.6 | 1.1 | 2.6 |
 | Fine, 175 iterations, BiCGStab sweep | 33.9 | – | 39.5 | 14.3 | 42.9 |
 | Fine, 150 iterations, multigrid sweep | 4.1 | 7.3 (140) | 18.5 | 12.8 | 31.4 |
+
+"Other" split up in a repeat of the two multigrid runs (7.1 s and
+70.5 s; the report now gives the time of the turbulence model):
+
+| Run | Turbulence model | of it: linear solves | of it: assembly, gradients, sources, wall treatment | Start, output |
+|---|---|---|---|---|
+| Coarse, 65 iterations | 2.3 | 1.3 | 1.0 | 0.4 |
+| Fine, 150 iterations | 24.5 | 14.8 | 9.8 | 4.8 |
+
+The linear solves of the fine run: f with CG and the aggregation
+multigrid 18 iterations per solve and 5.8 s; k, ε and ζ with
+Jacobi-BiCGStab 33, 24 and 39 iterations per solve and 3.1 s, 2.2 s and
+3.7 s (coarse: 14 for f, 25, 15 and 31).
 
 Findings:
 
@@ -575,10 +588,11 @@ Findings:
    these matrices (4 to 6 with the cap), and 51 on the cavity with a
    step of 20 times the automatic one: the approximation of the Schur
    complement limits then, not the sweep alone (section 8).
-5. The momentum sweep is no longer what limits a coupled run. On the
-   fine mesh the turbulence equations (BiCGStab with 25 to 35
-   iterations per equation and outer iteration) and the pressure solves
-   take two thirds of the time.
+5. The momentum sweep is no longer what limits a coupled run, and no
+   single part is. On the fine mesh the turbulence model takes 35 % of
+   the time (its four linear solves 21 %, the rest of it 14 %), the
+   pressure solves 25 %, the assembly and the rest of the coupled solve
+   16 %, the setups of the hierarchies 11 %.
 6. Large steps on laminar cases are no longer expensive. Cavity at
    Re = 1000 on 64²: SIMPLEC at α = 0.9 584 iterations in 3.0 s; coupled
    with `factor` 1, 4, 20: 624, 275, 170 iterations in 3.7 s, 2.8 s,
@@ -628,15 +642,20 @@ global step.
 
 What closes the gap, in this order:
 
-- **L44, the rest.** The multigrid of D179 as the preconditioner of the
-  turbulence equations, which take the largest part of a coupled run
-  today; a cheaper setup; a multigrid with a coarse–fine splitting for
+- **L44, the rest.** A multigrid with a coarse–fine splitting for
   the pressure (2 to 5 iterations per solve in the prototype where the
-  aggregation multigrid needs 5 to 23).
+  aggregation multigrid needs 5 to 23; the pressure solves are a quarter
+  of a coupled run); the multigrid of D179 as the preconditioner of the
+  turbulence equations (their linear solves are a fifth of a coupled
+  run, with 24 to 39 BiCGStab iterations per solve); a cheaper setup.
+  By estimate each of them removes 5 to 15 % of the run time, none of
+  them more.
 - **A better Schur complement** for steps without the cap on the local
   step: the SIMPLE-type approximation needs 4 to 6 Krylov iterations
   with the cap 0.98 and 10 to 50 without it, with exact sub-solves. With
-  it the count would no longer grow with the mesh.
+  it the count would no longer grow with the mesh. By estimate this is
+  the largest lever: the fine step needs 150 outer iterations where the
+  coarse one needs 65.
 - **L45, automatic step control and a stop on monitored values**: the
   step grows as the residual falls (switched evolution relaxation, Mulder
   & van Leer 1985; Kelley & Keyes 1998) and falls back after a failed

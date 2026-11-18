@@ -410,7 +410,8 @@ from 21 s to 8.3 s.
 **What limits a coupled run now.** On the fine mesh the momentum sweeps
 and their setups take 16 % of the run time (the BiCGStab sweeps took a
 quarter), the
-turbulence equations 42 % and the pressure solves 25 %. The setups cost
+turbulence model 35 % (its linear solves 21 %) and the pressure solves
+25 %. The setups cost
 more than the cycles they serve (7.3 s against 4.1 s). And the cap on
 the local step stays at 0.98: without it the fine step settles in about
 120 iterations, but the Krylov solve then runs into its limit in every

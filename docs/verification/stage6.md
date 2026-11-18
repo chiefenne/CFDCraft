@@ -671,7 +671,8 @@ iterations, but every outer iteration runs into the limit of 30 Krylov
 iterations: the cap stays at 0.98 until the Schur complement
 approximation is better. (5) The BiCGStab sweeps took a quarter of the
 run time on the fine mesh; the cycles and their setups take 16 %, and
-the turbulence equations and the pressure solves two thirds. (6) Thread hand-off: with a pool of one
+the turbulence model 35 % (its linear solves 21 %) and the pressure
+solves 25 %. (6) Thread hand-off: with a pool of one
 thread every kernel call went to the worker thread and back, about
 2 000 times per outer iteration of the cavity. Running such loops on
 the calling thread took the coarse step with SIMPLEC from 31 s to
