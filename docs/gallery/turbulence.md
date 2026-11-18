@@ -9,6 +9,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | 73 | [k-ε-ζ-f to the wall: channel and flat plate](#zeta-f) | 6 | `model = "k-epsilon-zeta-f"`, `wall_treatment = "compound"`, `"low-re"`, `zeta` at inlets and in `[initial]`, `[solver.elliptic]`, `solver.turbulence.preconditioner = "amg"` |
 | 74 | [k-ε-ζ-f₀ at any y⁺: channel, flat plate, backward-facing step](#zeta-f0) | 6 | `model = "k-epsilon-zeta-f0"`, `wall_treatment = "compound-2023"`, `constants.n_zeta`, `a`, `mesh.generate.remove` |
 | 88 | [Elliptic-blending k-ε: channel at three Re_τ, flat plate, backward-facing step](#elliptic-blending) | 6 | `model = "elliptic-blending-k-epsilon"`, `constants.c_epsilon4`, `zeta` as φ |
+| 89 | [Backward-facing step against the experiment: six models, three meshes](#step-validation) | 6 | `[[output.wall_crossings]]` (`skip`, `kind`, `direction`, `width`), `verification.levels`, the TMR layout of the step, `examples/studies/backstep_validation.py` |
 
 ---
 
@@ -461,6 +462,106 @@ reference).
 target/release/foehn flow examples/cases/flow/channel_eb.toml
 target/release/foehn flow examples/cases/flow/tmr_plate_eb.toml
 target/release/foehn flow examples/cases/flow/backstep_eb.toml
+```
+
+[↑ back to top](#turbulence-models)
+
+<a id="step-validation"></a>
+## 89. Backward-facing step against the experiment: six models, three meshes
+
+**The case** (`backstep_validation.toml`). The step of Driver &
+Seegmiller (1985), Re_H = 36 000, in the layout of NASA's Turbulence
+Modeling Resource (TMR): walls from x = −110 H, outlet at 50 H, and a
+no-slip top wall at 9 H like the experiment's channel (expansion ratio
+1.125). The step cases of gallery 74 and 88 have a slip top and walls
+from −85 H; with the top wall the C_p of ζ-f₀ comes from an RMS
+difference of 0.033 to 0.018 against the experiment, and x_r moves by
+less than 1 %. The built-in mesher cuts the step out of the box: 11 040
+cells, and `verification.levels = [0, 1, 2]` halves every interval once
+and twice (44 160 and 176 640 cells).
+
+**The reattachment length as a result.** A new output,
+`[[output.wall_crossings]]`, finds the first point along a direction
+where the wall shear changes sign: reattachment (from negative to
+positive, the default) or separation. Its position is in the log and the
+report, and in a level sweep it is a monitored quantity of the
+discretisation uncertainty (D67), so x_r/H gets its observed order and
+GCI without a script. `skip` starts the search 2 H behind the step: on
+the finer meshes the corner vortices change the sign of the shear up to
+x ≈ 1.5 H (SST on the finest mesh: negative to 0.14 H, positive to
+1.44 H, then the main bubble), and their crossing would come first:
+
+```toml
+[output]
+wall_crossings = [ { name = "xr", boundary = "ymin", from = [0.0, 0.0, 0.05], skip = 2.0 } ]
+```
+
+**Six models** (`examples/studies/backstep_validation.py`). k-ω SST,
+k-ε and realizable k-ε with scalable wall functions and k-ε-ζ-f₀ run with
+the coupled algorithm; k-ε-ζ-f and the elliptic-blending k-ε need
+SIMPLEC (the coupled algorithm does not converge them). x_r/H on the
+three meshes, the rest on the finest mesh against the experiment (ζ-f
+and EB on the middle mesh), C_p shifted to zero at x/H = 37.5 and both
+coefficients on the experiment's reference speed (u at x/H = −4,
+y/H = 5):
+
+| Model | x_r/H on 11 040 / 44 160 / 176 640 cells | From 6.26 | GCI_fine | C_p RMS | C_f RMS ×10³ |
+|---|---|---|---|---|---|
+| k-ω SST (`automatic`) | 6.793, 6.747, 6.747 | +7.8 % | < 0.01 %, oscillatory | 0.023 | 0.375 |
+| k-ε (`scalable`) | 5.237, 5.321, 5.372 | −14.2 % (+0.5 % from the published k-ε) | 1.94 %, p 0.69 | 0.018 | 0.373 |
+| realizable k-ε (`scalable`) | 6.274, 6.337, 6.407 | +2.4 % | – (steps grow) | 0.026 | 0.153 |
+| k-ε-ζ-f₀ (`compound-2023`) | 6.329, 6.297, 6.296 | +0.6 % | < 0.01 %, p 4.8 | 0.017 | 0.463 |
+| k-ε-ζ-f (`compound`, SIMPLEC) | 7.686, 7.741, – | +23.7 % | – | 0.037 | 0.593 |
+| elliptic-blending k-ε (`compound`, SIMPLEC) | 7.446, 7.556, – | +20.7 % | – | 0.034 | 0.410 |
+
+The bands of the specification (9.5): x_r/H within ±10 % of the
+experiment for SST, ζ-f (both forms) and EB with GCI_fine ≤ 2 %, the
+standard k-ε within ±5 % of a published k-ε result (5.22 and 5.47 from
+two solvers, Mizukami, Georgiadis & Cannon 1993), and the C_p RMS
+≤ 0.02 for SST, ζ-f and EB. ζ-f₀ is closest to the experiment, 6.296
+(+0.6 %), with the lowest C_p RMS (0.017); its two finer meshes agree
+to 0.02 %. SST is inside the x_r band and just outside the C_p band;
+its sweep is oscillatory (the two finer meshes agree to 0.008 %). k-ε
+meets its band. ζ-f and EB reattach 21 to 24 % late, as on the step of
+gallery 74 and 88, and miss both bands; they need
+SIMPLEC, and their finest mesh (an estimated 30 000 iterations) follows
+in the next 6g PR. The k-ε models run their wall functions at first-cell
+y⁺ 1.5 to 0.3, below the y⁺ ≥ 30 they are claimed for; their order of
+0.69 and the growing steps of realizable k-ε may come from that.
+
+C_p and C_f along the lower wall against the experiment (ζ-f and EB on
+the middle mesh):
+
+![C_p and C_f along the lower wall behind the step for the six models against Driver & Seegmiller (1985): C_p from x/H = −6 to 36, C_f × 10³ with the zero line](../figures/gallery/backstep_validation_wall.svg)
+
+The velocity and the turbulent shear stress at the four stations of the
+experiment; the models' −u'v' is ν_t ∂u/∂y:
+
+![The velocity u/U_ref and the turbulent shear stress −1000 u'v'/U_ref² at x/H = 1, 4, 6 and 10 for the six models against the experiment](../figures/gallery/backstep_validation_profiles.svg)
+
+| Check | Result |
+|---|---|
+| Step x_r/H, SST: three meshes, finest against 6.26 | 6.793, 6.747, 6.747; +7.8 % (band ±10 %); oscillatory, GCI < 0.01 % |
+| Step x_r/H, k-ε: finest against the published 5.345 | 5.372, +0.5 % (band ±5 %); GCI 1.94 % (band 2 %), p 0.69 |
+| Step x_r/H, realizable k-ε | 6.407, +2.4 %; steps 0.063, 0.070: no GCI (finding) |
+| Step x_r/H, ζ-f₀ | 6.329, 6.297, 6.296; +0.6 % (band ±10 %); GCI < 0.01 %, p 4.8 |
+| Step x_r/H, ζ-f / EB, two meshes, SIMPLEC | 7.741 (+23.7 %) / 7.556 (+20.7 %): outside ±10 % (finding) |
+| C_p RMS on the lower wall (band 0.02 for SST, ζ-f, EB) | SST 0.023, k-ε 0.018, realizable 0.026, ζ-f₀ 0.017, ζ-f 0.037, EB 0.034 |
+| Slip top (gallery 74) against the no-slip top wall, ζ-f₀, coarse mesh | C_p RMS 0.033 against 0.018, x_r within 1 % |
+| Wall crossing against the sign change of the wall file (laminar step), upstream, `width`, `skip` | 10⁻¹² |
+| A level sweep of the laminar step | GCI of x_r < 5 % |
+| Bad input (a zero direction, `width = 0`, `skip < 0`, an unknown kind) | CASE004, CASE004, CASE004, the parse error |
+
+| | |
+|---|---|
+| Code | `foehncraft_flow::case` (`WallCrossing`, `wall_crossings`), `uncertainty::quantities` (`wall_crossings.<name>.position`), `logblocks::flow_category` |
+| Tests | `tests/wall_crossing.rs` |
+| Case files | `flow/backstep_validation.toml`; the study `examples/studies/backstep_validation.py` with the TMR data in `examples/studies/backstep/data` (CC0) |
+| Recipe | [89](../recipes/turbulence.md#step-validation) |
+
+```
+target/release/foehn flow examples/cases/flow/backstep_validation.toml
+python3 examples/studies/backstep_validation.py output/backstep_validation --jobs 4 --chart docs/figures/gallery
 ```
 
 [↑ back to top](#turbulence-models)

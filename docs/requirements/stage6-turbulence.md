@@ -1206,7 +1206,7 @@ the experiment.
 | Quantity | Models | Verification | Validation band |
 |---|---|---|---|
 | x_R/H | SST, ζ-f, EB | GCI_fine ≤ 2 %, p in [1, 3] | ±10 % of 6.26 |
-| x_R/H | standard and realizable k-ε | GCI_fine ≤ 2 % | ±5 % of a published result of the same model on a comparable grid (selected and recorded in the case before the run; the standard k-ε is known to reattach early) |
+| x_R/H | standard and realizable k-ε | GCI_fine ≤ 2 % | ±5 % of a published result of the same model on a comparable grid (selected and recorded in the case before the run; the standard k-ε is known to reattach early). *6g:* standard k-ε with wall functions 5.22 and 5.47 from two solvers (Mizukami, Georgiadis & Cannon 1993, NASA Lewis, table 1), the band ±5 % about their mean 5.345; no published result of the realizable model on this case was found, its x_R is reported |
 | C_p and C_f along the lower wall at the experiment's stations | all | – | reported against the experiment; RMS difference of C_p ≤ 0.02 for SST, ζ-f, EB |
 | Velocity profiles at x/H = 1, 4, 6, 10 | all | – | reported (plots in the gallery) |
 
@@ -1227,6 +1227,27 @@ variable C*_ε2 of the paper causes it: with C_ε4 = C_ε2 (`c_epsilon4 =
 instead of +0.5 %. The model stays as published. The coupled algorithm
 does not converge this case (residual of ε at 10⁻³, x_r 7.74 to 7.77;
 7.84 on 32 800 cells).
+
+**Results of 6g (PR #89; details on the
+[verification page](../verification/stage6.md#backward-facing-step-against-the-experiment-part-6g-95)).**
+The layout of the TMR: walls from x = −110 H, outlet at 50 H, a no-slip
+top wall at 9 H (the slip top of 6d2 put the C_p of ζ-f₀ 0.033 RMS from
+the experiment, the wall 0.018; x_r within 1 %); 11 040, 44 160 and
+176 640 cells from the built-in mesher (the TMR's grids could not
+be downloaded); x_r/H as the wall crossing `xr` with `skip = 2.0`, the corner
+vortices of the finer meshes left out. On the finest mesh: SST 6.747
+(+7.8 %; the TMR's SST variant about 6.50), GCI below 0.01 % but an
+oscillatory sweep (6.793, 6.747, 6.747), so p is not defined; k-ε 5.372,
++0.5 % from the published 5.345, GCI 1.94 %, p 0.69; realizable k-ε
+6.407 (+2.4 %), its steps grow (no GCI); ζ-f₀ 6.296 (+0.6 %), monotonic, GCI below 0.01 %, p 4.8 (the fine pair 0.02 % apart). ζ-f and EB with
+SIMPLEC on the two coarser meshes: 7.686, 7.741 (+23.7 %) and 7.446,
+7.556 (+20.7 %), outside the band, as in 6d2 and 6e; their finest mesh
+is a long run for the next 6g PR. C_p RMS on the finest mesh: SST 0.023,
+k-ε 0.018, realizable 0.026, ζ-f₀ 0.017; ζ-f 0.037 and EB 0.034 on the
+middle mesh: the band 0.02 is missed by SST, ζ-f and EB (findings). The
+k-ε models run at first-cell y⁺ 1.5 to 0.3 with wall functions claimed
+for y⁺ ≥ 30; a sweep that keeps the first cell may show whether that
+causes their slow or growing steps.
 
 ### 9.6 Axisymmetric impinging jet, H/D = 2
 
@@ -1310,7 +1331,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6d2 | ζ-f₀ of Popovac (2023) with its compound treatment (maintainer decision 2026-11-17: robustness in y⁺ for industrial use) (done, PR #74: no code of the author available, own default of 3.3.1; channel +2.7 to −4.2 % and plate within 2.5 % of White over y⁺ 0.3 to 30, all converged; backward-facing step x_r/H 6.38 (+2 %; ζ-f +25 %, SST −7 %); the built-in mesher removes boxes, `mesh.generate.remove`) | `turb/zeta_f.rs`, `turb/wall.rs` | 9.3 and 9.4 over first-cell y⁺ 0.5 to 100, same or similar results as ζ-f |
 | 6e | EB k-ε (D133) (done, PR #88: channel C_f at 97.8 / 99.0 / 99.1 % of the DNS at Re_τ 180 / 395 / 590, the paper 100 / 98 / 100 %; plate +0.5 % from White; step x_r/H 7.59, +21 %, finding: the variable C*_ε2, 6.24 with it constant; the coupled algorithm does not converge the step; wall normal not yet exported) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars (done, PR #85; the default wall law is `kader` also with `low-re`, equal to `none` there; the channel Nu against DNS is open) | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
-| 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports | cases, gallery, `tools/notebooks/stage6_colab.ipynb` | 9.5, 9.6, 9.7, 6.6 |
+| 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette; statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports (in several PRs; part 1 done, PR #89: the backward-facing step in the TMR layout, six models on three meshes, the reattachment point as a wall crossing `[[output.wall_crossings]]` with its GCI) | cases, gallery, `tools/notebooks/stage6_colab.ipynb`; `examples/cases/flow/backstep_validation.toml`, `examples/studies/backstep_validation.py` | 9.5, 9.6, 9.7, 6.6 |
 | 6h | SST options of D170: curvature and rotation correction (Smirnov & Menter 2009), QCR2000 and QCR2013 with the explicit-stress path in the momentum assembly that D171 reuses | `turb/sst.rs`, `turb/invariants.rs`, `foehncraft-flow/src/turbulence/stress.rs` | 9.8 |
 | release | v0.6: version bump, changelog summary, README, verification manual, Release workflow (dry run first) | | all of section 9 green or findings recorded |
 

@@ -2,7 +2,8 @@
 //!
 //! For every monitored quantity of a sweep with three or more solutions
 //! (boundary mass flows, mean pressures and forces, force coefficients,
-//! benchmark values, viscous and numerical dissipation) the report gives
+//! wall probes and wall crossings, benchmark values, viscous and
+//! numerical dissipation) the report gives
 //! the observed order, the extrapolated value, the uncertainty band and
 //! the grid convergence index of the three finest solutions, after the procedure of
 //! Celik, Ghia, Roache, Freitas, Coleman and Raad (2008), with the verdict
@@ -191,6 +192,14 @@ pub fn quantities(solve: &serde_json::Value) -> Vec<(String, f64)> {
                 if let Some(v) = p.get(k).and_then(num) {
                     out.push((format!("wall_probes.{name}.{k}"), v));
                 }
+            }
+        }
+    }
+    if let Some(ps) = solve.get("wall_crossings").and_then(|p| p.as_array()) {
+        for p in ps {
+            let name = p.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+            if let Some(v) = p.get("position").and_then(num) {
+                out.push((format!("wall_crossings.{name}.position"), v));
             }
         }
     }

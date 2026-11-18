@@ -106,20 +106,30 @@ pub fn files(case: &FlowCase, desc: &str, out: &Path) -> Frame {
     f
 }
 
+/// The flow category of the run-control frame: laminar (Stokes without
+/// convection) or turbulent with the model and its wall treatment.
+fn flow_category(case: &FlowCase) -> String {
+    let t = &case.turbulence;
+    if !t.is_laminar() {
+        format!(
+            "incompressible, turbulent ({}, {})",
+            t.model.name(),
+            t.treatment().name()
+        )
+    } else if case.flow.convection {
+        "incompressible, laminar".to_string()
+    } else {
+        "incompressible, laminar, Stokes (convection off)".to_string()
+    }
+}
+
 /// What a run of a steady case does.
 pub fn control_steady(case: &FlowCase) -> Frame {
     let s = &case.solver;
     let alg = spelled(&s.algorithm(false)).to_uppercase();
     let mut f = Frame::new("Run control")
         .kv("Run mode", "steady")
-        .kv(
-            "Flow category",
-            if case.flow.convection {
-                "incompressible, laminar"
-            } else {
-                "incompressible, laminar, Stokes (convection off)"
-            },
-        )
+        .kv("Flow category", flow_category(case))
         .kv("Algorithm", alg)
         .kv("Max. iterations", s.max_iterations)
         .kv(
@@ -195,14 +205,7 @@ pub fn control_transient(case: &FlowCase, dt: f64, steps: usize) -> Frame {
     let s = &case.solver;
     let mut f = Frame::new("Run control")
         .kv("Run mode", "transient")
-        .kv(
-            "Flow category",
-            if case.flow.convection {
-                "incompressible, laminar"
-            } else {
-                "incompressible, laminar, Stokes (convection off)"
-            },
-        )
+        .kv("Flow category", flow_category(case))
         .kv("Algorithm", "PISO")
         .kv("Time integration", t.scheme.label())
         .kv(

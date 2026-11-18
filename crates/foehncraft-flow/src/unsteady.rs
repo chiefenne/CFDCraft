@@ -1690,6 +1690,7 @@ fn run_one<F: FnMut(&str)>(
     }
     let boundaries = boundary_summaries(&sol, mesh, geo, &case);
     let wall_probe_values = crate::case::wall_probes(&case, mesh, geo, &sol);
+    let wall_crossing_values = crate::case::wall_crossings(&case, mesh, geo, &sol);
     let total: f64 = boundaries.iter().map(|p| p.mass_flow).sum();
     let umax = (0..nc).map(|c| norm(sol.u.get(c))).fold(0.0f64, f64::max);
     let big = boundaries
@@ -1831,11 +1832,15 @@ fn run_one<F: FnMut(&str)>(
     for sm in &scalars {
         lg.line(&crate::scalar::summary_line(sm));
     }
+    for (w, c) in wall_crossing_values.iter().zip(&case.output.wall_crossings) {
+        lg.line(&crate::case::wall_crossing_line(w, c));
+    }
     let scalar_fields: Vec<Vec<f64>> = sol.state.scalars.iter().map(|x| x.phi.clone()).collect();
     let solve = Solve {
         scalars,
         periodic,
         wall_probes: wall_probe_values,
+        wall_crossings: wall_crossing_values,
         turbulence,
         remediation,
         balance: Some(balance_summary),
