@@ -12,6 +12,7 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 28 | [Let the error choose the time step, write output at exact times, start from potential flow](#time-control) |
 | 78 | [Converge a steady case in fewer iterations with the coupled algorithm](#coupled) |
 | 80 | [Choose and tune the momentum sweep of the coupled algorithm](#momentum-multigrid) |
+| 81 | [Use the multigrid of the turbulence equations and its larger steps](#turbulence-multigrid) |
 
 ---
 
@@ -515,3 +516,97 @@ python3 -m tools.plot.krylov_chart docs/figures/gallery/momentum_multigrid.svg \
     "32 800 cells:BiCGStab sweep=output/fine_bicgstab" "32 800 cells:multigrid sweep=output/fine_multigrid"
 ```
 
+[↑ back to top](#incompressible-flow)
+
+---
+
+<a id="turbulence-multigrid"></a>
+## 81. Use the multigrid of the turbulence equations and its larger steps
+
+With the coupled algorithm (recipe 78) in a steady run, the transport
+equations of k, ε and ζ of the k-ε family (k-ε, realizable k-ε,
+k-ε-ζ-f, k-ε-ζ-f₀) take one cycle of the reduction multigrid of
+recipe 80 as the preconditioner of BiCGStab, and the relaxations of the
+momentum and turbulence equations default to 0.995 instead of 0.98
+([gallery 81](../gallery/flow.md#turbulence-multigrid)). A case needs no
+key for it:
+
+```
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0_coupled.toml
+```
+
+The step settles in about 40 outer iterations and converges to its
+tolerance in about 120.
+
+**Reading the report.** `flow.md` counts the hierarchies built for the
+turbulence equations after those of the momentum sweeps:
+
+```
+multigrid setup 1.17 (4 setups, 76 of the momentum sweeps, 114 of the turbulence equations)
+```
+
+While the recirculation zone forms, most solves rebuild their
+hierarchy; once the flow has settled they are kept. The BiCGStab counts
+of k, ε and ζ are in `residuals.csv` (columns `bicgstab_k`, `bicgstab_epsilon`, `bicgstab_zeta`): 1 to 2
+per solve with the multigrid, up to the limit 50 with Jacobi at 0.995.
+
+**Back to the defaults of part 6f** (Jacobi and 0.98), for a comparison
+or a case that does not take the larger steps:
+
+```
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0_coupled.toml \
+    --set solver.turbulence.preconditioner=jacobi \
+    --set solver.turbulence.relaxation=0.98 --set solver.momentum.relaxation=0.98
+```
+
+Setting `preconditioner = "jacobi"` alone keeps the relaxations at 0.98
+too; setting a relaxation keeps the others at their defaults. A
+relaxation above 0.99 with Jacobi runs the solves into their limit and
+the result jitters: do not combine them.
+
+**The keys.**
+
+```toml
+[solver.turbulence]
+preconditioner = "reduction"   # default with the coupled algorithm and the k-ε family;
+                               # "jacobi" elsewhere; "amg" is the aggregation multigrid
+                               # of recipe 73 (not with the coupled algorithm: its
+                               # coarsest level is not positive definite there)
+reuse = 0.02                   # keep a hierarchy up to this change of the matrix
+relaxation = 0.995             # default with "reduction", else 0.98
+
+[solver.momentum]
+relaxation = 0.995             # the cap on the local step; default with "reduction", else 0.98
+```
+
+- `reuse`: as `momentum_reuse` of recipe 80, the sum of the absolute
+  changes of the matrix since the setup over the sum of its absolute
+  values; a hierarchy whose solve needs more than 8 BiCGStab iterations
+  is rebuilt in the next solve anyway. 0 builds one in every solve.
+- The multigrid settings are those of `[solver.coupled.multigrid]`.
+
+**k-ω SST** keeps Jacobi and 0.98: with accurate solves of k and ω its
+steady state on the step is not held (gallery 81). `--set
+solver.turbulence.preconditioner=reduction` on an SST case is accepted
+but not recommended.
+
+**If a setup fails**, the solves of that equation take Jacobi until a
+setup succeeds, and the log carries one warning, `the multigrid setup
+of a turbulence equation failed (…); its solves take the Jacobi
+preconditioner until a setup succeeds`.
+
+**Restart.** The restart file holds the matrices of the kept
+hierarchies (`turb_amg_matrix_<slot>`); the continued run stays
+bit-identical. A restart file from before this change works too (the
+hierarchies are built anew).
+
+**The figure of gallery 81.** Write x_r every 5 iterations (recipe 78)
+into a two-column file (iteration, value) per run, then:
+
+```
+python3 -m tools.plot.settling_chart docs/figures/gallery/turbulence_multigrid.svg "x_r / H" \
+    "8 200 cells:part 6f (relaxations 0.98)=coarse_6f.csv" "8 200 cells:part 6g (0.995, multigrid)=coarse_6g.csv" \
+    "32 800 cells:part 6f (relaxations 0.98)=fine_6f.csv" "32 800 cells:part 6g (0.995, multigrid)=fine_6g.csv"
+```
+
+[↑ back to top](#incompressible-flow)

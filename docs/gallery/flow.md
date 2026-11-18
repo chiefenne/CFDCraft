@@ -11,6 +11,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 20 | [Time step from the error, output at exact times, potential-flow start](#time-control) | 5 | BDF2 error estimate with rejected steps, output in simulated time, potential flow from the pressure multigrid |
 | 78 | [Coupled algorithm and pseudo-time steps: the step case in 65 iterations](#coupled) | 6 | `solver.algorithm = "coupled"`, `[solver.coupled]`, `[solver.pseudo_time]`, log column `K` |
 | 80 | [A multigrid for the momentum sweep of the coupled algorithm](#momentum-multigrid) | 6 | `solver.coupled.momentum_sweep`, `momentum_cycles`, `momentum_reuse`, `[solver.coupled.multigrid]` |
+| 81 | [A multigrid for the turbulence equations: the step settles in 40 and 65 iterations](#turbulence-multigrid) | 6 | `solver.turbulence.preconditioner`, `solver.turbulence.reuse`, relaxations 0.995 |
 
 ---
 
@@ -426,3 +427,86 @@ The commands are in [recipe 80](../recipes/flow.md#momentum-multigrid),
 the method and the tests in the
 [verification page](../verification/stage6.md#multigrid-for-the-momentum-sweep-part-6f).
 
+[↑ back to top](#incompressible-flow)
+
+---
+
+<a id="turbulence-multigrid"></a>
+## 81. A multigrid for the turbulence equations: the step settles in 40 and 65 iterations
+
+![Reattachment length x_r/H of the backward-facing step with k-ε-ζ-f₀ against the outer iteration of the coupled algorithm, on 8 200 cells (left) and on 32 800 cells (right). With the relaxations 0.98 of part 6f (blue) x_r stays within 1 % of its final value from iteration 65 on the coarse mesh and 150 on the fine one; with the multigrid in the turbulence equations and the relaxations 0.995 (orange) from iteration 40 and 65; the grey band is ±1 % of the final value](../figures/gallery/turbulence_multigrid.svg)
+
+**Why the count grew with the mesh.** With the coupled algorithm of
+[gallery 78](#coupled) and the momentum multigrid of
+[gallery 80](#momentum-multigrid) the step settled in 65 outer
+iterations on 8 200 cells and in 150 on 32 800: 2.3 times more per four
+times the cells, where the published coupled solvers stay nearly
+independent of the mesh. The cause was not the pressure–velocity
+coupling but the relaxation 0.98 of the turbulence equations. A
+relaxation α acts as a local pseudo step α/(1−α) ρV/a_P, in a flat cell
+at the wall about 25 h²/ν: it shrinks with the cells. Raising it to
+0.99 alone took the fine step from 150 to 95 iterations, but then the
+BiCGStab solves of k, ε and ζ with a diagonal preconditioner run into
+their limit of 50 iterations in every outer iteration and the
+reattachment length jitters.
+
+**The multigrid.** The transport equations of k, ε and ζ have the same
+structure as the momentum equations: convection makes them nearly
+triangular along the flow. So the reduction multigrid of gallery 80
+serves as their preconditioner, one V-cycle per BiCGStab iteration, and
+a solve needs 1 to 2 iterations at any relaxation. With it the
+relaxations of the momentum and of the turbulence equations default to
+0.995. That is the default for the k-ε family (k-ε, realizable k-ε,
+k-ε-ζ-f, k-ε-ζ-f₀) with the coupled algorithm in steady runs; a case
+needs no key:
+
+```toml
+[solver]
+algorithm = "coupled"
+
+[solver.turbulence]
+# preconditioner = "jacobi"   # with relaxation = 0.98: the runs of part 6f
+```
+
+**The step case** (k-ε-ζ-f₀, one thread, quiet machine; outer
+iterations and run time until x_r stays within 1 % of its final value):
+
+| Mesh | SIMPLEC (0.5, then 0.8) | Coupled, part 6f | Coupled, multigrid in the turbulence equations |
+|---|---|---|---|
+| 8 200 cells | 525, 18.7 s | 65, 7.0 s | 40, 7.5 s |
+| 32 800 cells | 1 600, 243 s | 150, 74 s | 65, 56 s |
+
+The count now grows by 1.6 per four times the cells. k-ε settles in 45
+iterations instead of 75, the channel at Re_τ = 395 converges in 231
+instead of 323. The final values do not change (x_r = 6.385 H and
+6.353 H, 5.287 H with k-ε).
+
+**The honest part: the cost of an iteration.** Fewer iterations do not
+yet mean a shorter run on small meshes. At the momentum cap 0.995 the
+SIMPLE-type Schur complement needs about 9 Krylov iterations per outer
+iteration instead of 5, each with its pressure solve, and while the
+recirculation zone forms the matrices of the turbulence equations change
+by more than 2 % in most iterations, so their hierarchies are rebuilt in
+most solves (114 setups in 120 solves on the coarse step). The coarse
+steps therefore take about the time they took before (7.5 s against
+7.0 s; k-ε 5.7 s against 4.5 s). The fine step is 1.3 times faster, and
+the gain grows with the mesh: against SIMPLEC it is now a factor of 4.3
+there. A cheaper setup and a better Schur complement are the next steps
+([requirements step 22](../requirements/step22-coupled-solver.md),
+section 8). The report counts the setups (coarse step, 40 iterations):
+
+```
+Seconds per phase (R6): … pressure solve 1.97, multigrid setup 1.17 (4 setups, 76 of the momentum sweeps, 114 of the turbulence equations), turbulence model 2.86
+```
+
+**k-ω SST keeps the old defaults.** With accurate solves of k and ω the
+SST residuals on the step grow again after about 160 iterations and x_r
+wanders from 6.81 to 6.85 H, at any relaxation; the loose Jacobi solves
+of today damp this. SST therefore keeps Jacobi and 0.98 (80 iterations
+on the coarse step), and laminar cases keep the cap 0.98.
+
+The commands are in [recipe 81](../recipes/flow.md#turbulence-multigrid),
+the method and the tests in the
+[verification page](../verification/stage6.md#multigrid-for-the-turbulence-equations-part-6g).
+
+[↑ back to top](#incompressible-flow)

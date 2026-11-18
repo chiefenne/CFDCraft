@@ -719,7 +719,10 @@ pub struct TurbulenceSettings {
     /// momentum equations is far above the differences of k (10⁻⁸ to
     /// 10⁻³ m²/s² on a flat plate) and would switch the limiter off.
     pub limiter_k: f64,
-    /// Under-relaxation of k and ω (default 0.8 steady, 1 transient).
+    /// Under-relaxation of the transport equations (default 0.8 steady, 1
+    /// transient; with the pseudo-time step of the coupled algorithm a cap
+    /// on the local step: 0.98, or 0.995 for the k-ε family with the
+    /// reduction multigrid, D180).
     pub relaxation: Option<f64>,
     /// Relative tolerance per solve (default 1e-2 steady, 1e-8 transient).
     pub tolerance: Option<f64>,
@@ -731,12 +734,33 @@ pub struct TurbulenceSettings {
     pub destruction: Option<Destruction>,
     /// Relaxation α_νt of ν_t.
     pub viscosity_relaxation: f64,
-    /// Preconditioner of BiCGStab: `jacobi`, or `amg`, the aggregation
-    /// multigrid of the pressure (D36) built from the symmetric part of the
-    /// equation's matrix, for stiff near-wall layers of high aspect ratio
-    /// (its own hierarchy, rebuilt for every solve; the multigrid settings
-    /// are those of `[solver.pressure.amg]`).
-    pub preconditioner: Preconditioner,
+    /// Preconditioner of BiCGStab: `jacobi`; `reduction`, the reduction
+    /// multigrid of the momentum sweeps (D179, D180) on the equation's own
+    /// matrix, kept while the matrix changes by at most `reuse` (settings
+    /// `[solver.coupled.multigrid]`); or `amg`, the aggregation multigrid
+    /// of the pressure (D36) built from the symmetric part of the matrix
+    /// (settings `[solver.pressure.amg]`; not with a pseudo-time step,
+    /// where the symmetric part is not positive definite). Default:
+    /// `reduction` for the k-ε family with the coupled algorithm and its
+    /// pseudo-time step, `jacobi` otherwise.
+    pub preconditioner: Option<TransportPreconditioner>,
+    /// `preconditioner = "reduction"`: a hierarchy is kept while the
+    /// matrix of its equation differs from the one it was built from by at
+    /// most this fraction (Σ|Δa| / Σ|a|); 0 builds one for every solve.
+    pub reuse: f64,
+}
+
+/// Preconditioner of the transport equations of a turbulence model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransportPreconditioner {
+    /// Diagonal (Jacobi).
+    Jacobi,
+    /// One V-cycle of the smoothed-aggregation multigrid on the symmetric
+    /// part of the matrix.
+    Amg,
+    /// One V-cycle of the reduction multigrid (D179) on the matrix.
+    Reduction,
 }
 
 /// `[solver.elliptic]`: the elliptic equation of k-ε-ζ-f (f), stage 6
@@ -799,7 +823,8 @@ impl Default for TurbulenceSettings {
             max_iter: 50,
             destruction: None,
             viscosity_relaxation: 1.0,
-            preconditioner: Preconditioner::Jacobi,
+            preconditioner: None,
+            reuse: 0.02,
         }
     }
 }
@@ -844,6 +869,12 @@ impl TurbulenceSettings {
             self.limiter_k >= 0.0 && self.limiter_k.is_finite(),
             CASE_RANGE,
             "[solver.turbulence] limiter_k must be >= 0"
+        );
+        crate::need!(
+            (0.0..=0.2).contains(&self.reuse),
+            CASE_RANGE,
+            "[solver.turbulence] reuse must lie in [0, 0.2], is {}",
+            self.reuse
         );
         crate::need!(
             transient || self.scheme != Scheme::Central,
@@ -1203,6 +1234,46 @@ pub(crate) struct PseudoStep {
 /// the momentum equations and the run needs several times the iterations.)
 pub const PSEUDO_RELAXATION: f64 = 0.98;
 
+/// The same default for the k-ε family with the reduction multigrid as
+/// preconditioner (D180): a local Courant number of at most 199. The
+/// relaxation is a local step that shrinks with the cells (α/(1 − α) h/U,
+/// or about half of that times h²/ν_eff in flat cells at a wall), so it
+/// makes the number of outer iterations grow with the mesh: 150 on the
+/// backward-facing step with 32 800 cells against 65 with 8 200 at 0.98.
+/// Above 0.98 Jacobi-BiCGStab no longer solves the equations within its
+/// 50 iterations; with the multigrid one or two iterations do. (The
+/// steady state of the SST model on that step is not held with accurate
+/// solves of its equations, at any relaxation: SST keeps 0.98 and the
+/// Jacobi preconditioner, step 22 section 7.8.)
+pub const PSEUDO_RELAXATION_REDUCTION: f64 = 0.995;
+
+/// A kept reduction hierarchy of a transport equation is rebuilt for the
+/// next solve when BiCGStab needed more than this many iterations with it
+/// (a fresh one needs one or two).
+const REDUCTION_STALE: usize = 8;
+
+/// The case runs the coupled algorithm with pseudo-time steps in the
+/// turbulence equations (steady).
+fn pseudo_steps(case: &crate::case::FlowCase) -> bool {
+    let alg = case.solver.algorithm(false);
+    alg == crate::simplec::Algorithm::Coupled
+        && case.solver.pseudo_time.turbulence_factor(alg) > 0.0
+}
+
+/// The k-ε family with the coupled algorithm and the reduction multigrid
+/// in its transport equations (D180): the case where the defaults of the
+/// relaxations are 0.995 instead of 0.98.
+pub fn reduction_defaults(case: &crate::case::FlowCase) -> bool {
+    case.time.is_none()
+        && case.turbulence.model.is_epsilon()
+        && pseudo_steps(case)
+        && case
+            .solver
+            .turbulence
+            .preconditioner
+            .is_none_or(|p| p == TransportPreconditioner::Reduction)
+}
+
 /// k-ε-ζ-f: one outer iteration lowers k, ε or ζ of a cell by at most
 /// this factor. An unconverged Krylov iterate of the loose steady
 /// tolerance can be negative where the solution is small; the absolute
@@ -1299,6 +1370,17 @@ pub struct Turbulence {
     pseudo_coef: Buf,
     /// The matrix of the last setup per hierarchy slot (index = slot).
     amg_built: std::cell::RefCell<Vec<Option<Vec<f64>>>>,
+    /// The preconditioner of the transport equations in force.
+    transport_pc: TransportPreconditioner,
+    /// Settings of the reduction multigrid (`[solver.coupled.multigrid]`).
+    reduction: foehncraft_fv::amg::reduction::ReductionSettings,
+    /// Setups of the reduction multigrid of the transport equations.
+    reduction_setups: std::cell::Cell<usize>,
+    /// Solves that took the Jacobi preconditioner after a failed setup.
+    reduction_fallbacks: std::cell::Cell<usize>,
+    /// The message of the first such failure, until the run loop reports
+    /// it.
+    note: std::cell::RefCell<Option<String>>,
     /// Host copies of a and of the inlet b of k (for p̂ at the pressure
     /// boundaries).
     ka_host: Vec<f64>,
@@ -1435,6 +1517,14 @@ impl Turbulence {
         let stored = disc.sell.stored();
         let model = section.model;
         let eps = model.is_epsilon();
+        let transport_pc =
+            settings
+                .preconditioner
+                .unwrap_or(if eps && !transient && pseudo_steps(case) {
+                    TransportPreconditioner::Reduction
+                } else {
+                    TransportPreconditioner::Jacobi
+                });
         let c = if eps {
             SstConstants::default()
         } else {
@@ -1656,6 +1746,11 @@ impl Turbulence {
             pseudo: None,
             pseudo_coef: dev.alloc(nc)?,
             amg_built: std::cell::RefCell::new(Vec::new()),
+            transport_pc,
+            reduction: case.solver.coupled.multigrid.clone(),
+            reduction_setups: std::cell::Cell::new(0),
+            reduction_fallbacks: std::cell::Cell::new(0),
+            note: std::cell::RefCell::new(None),
             ka_host,
             kin_host: vec![0.0; nb],
             pressure_faces: pressure,
@@ -2263,7 +2358,12 @@ impl Turbulence {
             None => None,
         };
         let alpha = if pseudo.is_some() {
-            s.relaxation.unwrap_or(PSEUDO_RELAXATION)
+            s.relaxation
+                .unwrap_or(if self.transport_pc == TransportPreconditioner::Reduction {
+                    PSEUDO_RELAXATION_REDUCTION
+                } else {
+                    PSEUDO_RELAXATION
+                })
         } else {
             s.alpha(tr)
         };
@@ -2429,17 +2529,28 @@ impl Turbulence {
             }
             None => None,
         };
-        let pc = s.preconditioner;
-        if pc == Preconditioner::Amg {
-            // its own hierarchy (slot 2 k, 3 ε or ω, 4 ζ), from the
-            // symmetric part
-            self.amg_prepare(dev, slot, true)?;
-        }
+        // its own hierarchy (slot 2 k, 3 ε or ω, 4 ζ): the aggregation
+        // multigrid from the symmetric part, or the reduction multigrid
+        let (pc, kept) = match self.transport_pc {
+            TransportPreconditioner::Jacobi => (Preconditioner::Jacobi, false),
+            TransportPreconditioner::Amg => {
+                self.amg_prepare(dev, slot, true)?;
+                (Preconditioner::Amg, false)
+            }
+            TransportPreconditioner::Reduction => match self.reduction_prepare(dev, slot)? {
+                Some(kept) => (Preconditioner::Amg, kept),
+                None => (Preconditioner::Jacobi, false),
+            },
+        };
         let solved = dev.solve(self.val, self.rhs, v.phi, pc, false, s.tol(tr), s.max_iter);
         if pc == Preconditioner::Amg {
             dev.amg_select(0)?;
         }
         let (it, r0) = solved?;
+        if kept && it > REDUCTION_STALE {
+            // a kept hierarchy that no longer serves: rebuilt next time
+            self.amg_built.borrow_mut()[slot] = None;
+        }
         let hi = if self.zf.is_some_and(|z| z.z.phi == v.phi) {
             kzf::ZETA_MAX
         } else {
@@ -2474,9 +2585,61 @@ impl Turbulence {
         Ok(())
     }
 
+    /// The reduction multigrid (D180) of an equation in slot `slot`: the
+    /// kept hierarchy while the assembled matrix differs from the one it
+    /// was built from by at most `reuse`, else a new one. Returns whether
+    /// the hierarchy was kept, or None when the setup failed (the solve
+    /// then takes the Jacobi preconditioner; the first failure is noted
+    /// for the log).
+    fn reduction_prepare(&self, dev: &mut dyn FlowDevice, slot: usize) -> Result<Option<bool>> {
+        let mut built = self.amg_built.borrow_mut();
+        if built.len() <= slot {
+            built.resize(slot + 1, None);
+        }
+        let cur = dev.download(self.val)?;
+        let keep = built[slot].as_ref().is_some_and(|m| {
+            crate::coupled::matrix_change(&cur, m, None, &[]) <= self.settings.reuse
+        });
+        if keep {
+            dev.amg_select(slot)?;
+            return Ok(Some(true));
+        }
+        match dev.reduction_setup_slot(slot, self.val, &self.reduction) {
+            Ok(()) => {
+                built[slot] = Some(cur);
+                self.reduction_setups.set(self.reduction_setups.get() + 1);
+                Ok(Some(false))
+            }
+            Err(e) => {
+                built[slot] = None;
+                dev.amg_select(0)?;
+                let n = self.reduction_fallbacks.get() + 1;
+                self.reduction_fallbacks.set(n);
+                if n == 1 {
+                    *self.note.borrow_mut() = Some(format!(
+                        "the multigrid setup of a turbulence equation failed ({e:#}); its \
+                         solves take the Jacobi preconditioner until a setup succeeds"
+                    ));
+                }
+                Ok(None)
+            }
+        }
+    }
+
+    /// Setups of the reduction multigrid of the transport equations.
+    pub fn reduction_setups(&self) -> usize {
+        self.reduction_setups.get()
+    }
+
+    /// The message of the first failed multigrid setup, once.
+    pub fn take_note(&self) -> Option<String> {
+        self.note.borrow_mut().take()
+    }
+
     /// Rebuilds the hierarchies of a loaded state from their matrices
     /// (`TurbState::amg`); the slot of the f equation is not symmetrized,
-    /// the others are (as in [`Self::amg_prepare`]).
+    /// the others are (as in [`Self::amg_prepare`]), or carry the
+    /// reduction multigrid.
     fn amg_restore(&self, dev: &mut dyn FlowDevice, amg: &[(usize, Vec<f64>)]) -> Result<()> {
         let mut built = self.amg_built.borrow_mut();
         built.clear();
@@ -2486,7 +2649,11 @@ impl Turbulence {
                 "turbulence multigrid slot {slot} outside 1..=4"
             );
             dev.upload(self.val, m)?;
-            dev.amg_setup_slot(*slot, self.val, &self.amg, *slot != 1)?;
+            if *slot != 1 && self.transport_pc == TransportPreconditioner::Reduction {
+                dev.reduction_setup_slot(*slot, self.val, &self.reduction)?;
+            } else {
+                dev.amg_setup_slot(*slot, self.val, &self.amg, *slot != 1)?;
+            }
             if built.len() <= *slot {
                 built.resize(slot + 1, None);
             }

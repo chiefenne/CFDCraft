@@ -14,7 +14,10 @@ implementation is stage 6 part 6e
 ([verification](../verification/stage6.md#coupled-algorithm-and-pseudo-time-steps-part-6e));
 the multigrid of the momentum sweep (D179, sections 3.1 and 7.7) is
 part 6f
-([verification](../verification/stage6.md#multigrid-for-the-momentum-sweep-part-6f)).
+([verification](../verification/stage6.md#multigrid-for-the-momentum-sweep-part-6f));
+the multigrid of the turbulence equations and the larger steps with it
+(D180, sections 4.2 and 7.8) are part 6g
+([verification](../verification/stage6.md#multigrid-for-the-turbulence-equations-part-6g)).
 
 Clean-room rule (D21): methods from the cited papers only; other codes are
 not named.
@@ -59,6 +62,12 @@ Contents
   convection-dominated matrices (D179, sections 3.1 and 7.7): half the
   Krylov iterations, 150 instead of 175 iterations on the fine step, and
   a run time 2.7 (coarse) and 3.3 (fine) times shorter than SIMPLEC.
+- **The count no longer grows much with the mesh** since part 6g
+  (D180, section 7.8): with the multigrid of D179 also in the
+  turbulence equations of the k-ε family the relaxations can be 0.995
+  instead of 0.98. The step settles in 40 iterations on 8 200 cells and
+  65 on 32 800 (65 and 150 before); on the fine mesh the run time falls
+  from 74 s to 56 s, on the coarse meshes it stays about the same.
 - **What limits it today**: the turbulence model and the pressure
   solves take 60 % of a coupled run, the setups of the momentum
   hierarchies cost more than their cycles, and the cap on the local
@@ -303,6 +312,18 @@ With SIMPLEC the rule is off by default (results unchanged) and can be
 switched on with `[solver.pseudo_time] turbulence = 0.5`: the coarse step
 then needs about 230 iterations at α_u = 0.8 instead of 550 to 600.
 
+**The relaxation as a cap (D180).** The relaxation 0.98 that stays on
+top of the step is a local pseudo-time step of α/(1 − α) ρV/a_P, so it
+shrinks with the cells: about 49 h/U, or about 25 h²/ν_eff in the flat
+cells at a wall. It, and not the step of the rule, made the number of
+outer iterations grow with the mesh (section 7.8). The k-ε family
+takes 0.995 in its transport equations and the momentum equations with
+the coupled algorithm, which needs a better preconditioner of the
+transport equations than Jacobi (BiCGStab then runs into its limit of 50
+iterations): the reduction multigrid of D179 on each equation's matrix,
+kept while the matrix changes by at most 2 % (`[solver.turbulence]
+preconditioner = "reduction"`, `reuse`). SST keeps Jacobi and 0.98.
+
 ### 4.3 No start-up phase
 
 The pseudo-time steps act from the first iteration, from a uniform start.
@@ -341,7 +362,13 @@ same ledger.
 algorithm = "coupled"        # steady; default "simplec"
 
 [solver.momentum]
-relaxation = 0.98            # default with "coupled": the cap α/(1 − α) = 49
+relaxation = 0.98            # default with "coupled": the cap α/(1 − α) = 49;
+                             # 0.995 for the k-ε family with "reduction" (D180)
+
+[solver.turbulence]          # the transport equations of the turbulence model
+preconditioner = "reduction" # default for the k-ε family with "coupled"; "jacobi" otherwise
+reuse = 0.02                 # keep a hierarchy up to this matrix change; 0: never
+relaxation = 0.995           # default with "reduction"; 0.98 with Jacobi and a pseudo-time step
 
 [solver.coupled]             # the linear solve
 tolerance = 0.1              # relative residual of the coupled system
@@ -373,7 +400,8 @@ The log shows the Krylov iterations of the coupled solve in the column
 `K` (`linear.coupled`), next to the totals of the momentum sweeps (the
 multigrid cycles, or the BiCGStab iterations) and the pressure solves;
 `residuals.csv` and the run record carry them as `krylov`. The report of
-a run counts the setups of the momentum hierarchies.
+a run counts the setups of the momentum hierarchies and of those of the
+turbulence equations.
 
 ## 7. Measurements
 
@@ -611,6 +639,61 @@ calling thread, with the same values. That alone took the coupled
 coarse step from 21 s to 8.3 s and the SIMPLEC one from 31 s to 18.7 s;
 the times of sections 7.1 and 7.5 are from before.
 
+### 7.8 The turbulence equations (D180)
+
+**What made the count grow with the mesh.** Fine step (32 800 cells,
+k-ε-ζ-f₀), iterations until x_r stays within 1 % of 6.352 H, every other
+setting the default of part 6f:
+
+| Change | Iterations |
+|---|---|
+| none (part 6f) | 150 |
+| momentum cap 0.99, 0.995 (Krylov limit raised) | 150, 145 |
+| `pseudo_time.factor = 2` | 140 |
+| `pseudo_time.turbulence = 1` (c_T) | 125 |
+| turbulence relaxation 0.99 (Jacobi) | 95, the BiCGStab solves of k, ε, ζ at their limit of 50 |
+| turbulence relaxation 0.99, 0.995, 0.999 with the multigrid | 105, 90, 105; 1 to 2 BiCGStab iterations per solve |
+| turbulence and momentum 0.995 with the multigrid (the defaults of D180) | 65 |
+
+**Runs with the defaults of D180** (one thread, quiet machine, to the
+settled result; part 6f in brackets):
+
+| Case | Iterations | Run time |
+|---|---|---|
+| Step, k-ε-ζ-f₀, 8 200 cells | 40 (65) | 7.5 s (7.0 s) |
+| Step, k-ε-ζ-f₀, 32 800 cells | 65 (150) | 56 s (74 s) |
+| Step, k-ε, 8 200 cells | 45 (75) | 5.7 s (4.5 s) |
+| Channel, k-ε-ζ-f₀, to the tolerance | 231 (323) | – |
+| Step, SST; cavity at Re = 1000 | unchanged: 80; 449 | unchanged |
+
+The final values do not change (x_r = 6.385 and 6.353 H, 5.287 H with
+k-ε; the channel's driving force agrees to 10⁻⁶ with the Jacobi run at
+0.98). The fine step converges to the residual tolerance in 205
+iterations.
+
+Findings:
+
+1. The relaxation 0.98 of the turbulence equations, a local step that
+   shrinks with the cells, made the count grow with the mesh; the
+   momentum cap and the Schur complement did not.
+2. On the coarse meshes the gain in iterations is eaten by the cost of
+   an iteration: the momentum cap 0.995 doubles the Krylov iterations
+   (9 instead of 5 per outer iteration) and with them the pressure
+   solves, and the hierarchies of the turbulence equations are rebuilt
+   in most solves while the flow forms (114 setups in 120 solves on the
+   coarse step, 172 in 195 on the fine one). On the fine mesh the run
+   is 1.3 times faster, and the gain grows with the mesh.
+3. SST on the step: with accurate solves of its equations (the
+   multigrid, or Jacobi at the tolerance 10⁻⁴) the residuals grow again
+   after about 160 iterations and x_r wanders from 6.81 to 6.85 H, at
+   any relaxation of k and ω (0.95 to 0.995). Today's loose Jacobi
+   solves damp this. A relaxation of ν_t of 0.2 cures it (206
+   iterations to the tolerance, x_r = 6.809 H) but not with the larger
+   caps, so SST keeps Jacobi and 0.98 for now.
+4. The cheaper setup and the Krylov count at the larger cap (the Schur
+   complement) are what turns the fewer iterations into run time on
+   small meshes (section 8).
+
 ## 8. State of the art and what comes next
 
 Published reference points for pressure-based coupled solvers:
@@ -629,35 +712,34 @@ Published reference points for pressure-based coupled solvers:
   factor near 1 (3 to 10 can speed a run up), the turbulence equations on
   the same step.
 
-Where Foehncraft stands after part 6f: the iteration counts are in the
-published range (8 to 11 times fewer iterations than SIMPLEC), the count
-still grows with the mesh (150 on the fine mesh against 65), and the
-gain in run time is a factor of 2.7 on the coarse step and 3.3 on the
-fine one (section 7.7), where the published coupled solvers with a
-block multigrid report 8 to 40 on meshes of 12 000 to 195 000 cells.
-The gain grows with the mesh here too, but the comparison is not
-closed. The turbulence step from the model time scale is our own
+Where Foehncraft stands after part 6g: the iteration counts are in the
+published range (13 to 25 times fewer iterations than SIMPLEC), the
+count grows less with the mesh (40 and 65 on 8 200 and 32 800 cells,
+65 and 150 before part 6g), and the gain in run time is a factor of 2.5
+on the coarse step and 4.3 on the fine one (sections 7.7 and 7.8),
+where the published coupled solvers with a block multigrid report 8 to
+40 on meshes of 12 000 to 195 000 cells. The gain grows with the mesh
+here too, but the comparison is not closed. The turbulence step from the model time scale is our own
 addition; the published solvers leave the turbulence equations on the
 global step.
 
 What closes the gap, in this order:
 
-- **L44, the rest.** A multigrid with a coarse–fine splitting for
-  the pressure (2 to 5 iterations per solve in the prototype where the
+- **L44, the rest.** A cheaper setup (flat row builders; a numeric
+  refresh on a kept splitting), now that the turbulence equations take
+  hierarchies too; a multigrid with a coarse–fine splitting for the
+  pressure (2 to 5 iterations per solve in the prototype where the
   aggregation multigrid needs 5 to 23; the pressure solves are a quarter
-  of a coupled run); the multigrid of D179 as the preconditioner of the
-  turbulence equations (their linear solves are a fifth of a coupled
-  run, with 24 to 39 BiCGStab iterations per solve); a cheaper setup.
-  By estimate each of them removes 5 to 15 % of the run time, none of
-  them more.
+  of a coupled run). By estimate each of them removes 5 to 15 % of the
+  run time.
 - **A better Schur complement** for steps without the cap on the local
   step: the SIMPLE-type approximation needs 4 to 6 Krylov iterations
-  with the cap 0.98 and 10 to 50 without it, with exact sub-solves. The
-  count of outer iterations is the largest lever on the run time (150 on
-  the fine step where the coarse one needs 65). Without the cap the fine
-  step settled in about 120, with every Krylov solve cut off at its
-  limit; how far a better Schur complement brings the count down, and
-  what else makes it grow with the mesh, is open.
+  with the cap 0.98 and 10 to 50 without it, with exact sub-solves; at
+  the cap 0.995 of D180 the Krylov iterations double. A better Schur
+  complement turns the fewer outer iterations of part 6g into run time
+  on small meshes too, and lets the caps rise further.
+- **SST** with accurate solves of its equations (section 7.8, finding
+  3), so that it can take the multigrid and the larger caps too.
 - **L45, automatic step control and a stop on monitored values**: the
   step grows as the residual falls (switched evolution relaxation, Mulder
   & van Leer 1985; Kelley & Keyes 1998) and falls back after a failed
@@ -678,7 +760,8 @@ Rows in [`requirements.md`](../requirements.md).
 | D177 | Pseudo-time step of the momentum equations, automatic from ΣV/ΣA_b over a velocity scale; α_u as the cap on the local Courant number; `[solver.pseudo_time]` | stage 6 part 6e |
 | D178 | Pseudo-time step of the turbulence equations from the model time scale, min(Δτ, c_T T) | stage 6 part 6e |
 | D179 | Reduction multigrid (approximate ideal restriction) as the momentum sweep of the coupled preconditioner; `momentum_sweep`, `momentum_cycles`, `momentum_reuse`, `[solver.coupled.multigrid]` | stage 6 part 6f |
-| L44 | The same multigrid for the turbulence equations, a cheaper setup, a splitting-based multigrid for the pressure, a Schur complement without the cap | the next solver steps |
+| D180 | The reduction multigrid as the preconditioner of the turbulence equations of the k-ε family, kept hierarchies; the relaxations 0.995 with it; `[solver.turbulence] preconditioner = "reduction"`, `reuse` | stage 6 part 6g |
+| L44 | A cheaper setup, a splitting-based multigrid for the pressure, a Schur complement without the cap | the next solver steps |
 | L45 | Automatic step control (switched evolution relaxation) and a stop on monitored values | after L44 |
 | L46 | Newton–Krylov on the coupled system | after L45 |
 

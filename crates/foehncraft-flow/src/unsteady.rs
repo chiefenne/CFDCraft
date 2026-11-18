@@ -1850,6 +1850,7 @@ fn run_one<F: FnMut(&str)>(
         timings: fl.timings.clone(),
         amg_setups: fl.amg_setups,
         sweep_setups: fl.sweep_setups,
+        turbulence_setups: fl.turbulence.as_ref().map_or(0, |t| t.reduction_setups()),
         errors,
         reference,
         boundaries,

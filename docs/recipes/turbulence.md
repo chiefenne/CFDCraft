@@ -208,7 +208,8 @@ preconditioner = "amg"           # default; "jacobi"
 tolerance = 1e-2                 # default steady (transient 1e-8)
 
 [solver.turbulence]
-preconditioner = "amg"           # default "jacobi"
+preconditioner = "amg"           # default "jacobi"; with the coupled algorithm
+                                 # "reduction" (recipe 81)
 ```
 
 Run the channel and the plate of the gallery:
