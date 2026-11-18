@@ -37,8 +37,16 @@ from pathlib import Path
 
 BASE = "https://jaxa-dns-database.jaxa.jp/channelflow/"
 ROOT = Path(__file__).resolve().parents[2]
-CASES = [(180, "071"), (395, "071"), (640, "071"), (1020, "071"),
-         (180, "0025"), (395, "0025"), (640, "0025"), (1020, "0025")]
+CASES = [
+    (180, "071"),
+    (395, "071"),
+    (640, "071"),
+    (1020, "071"),
+    (180, "0025"),
+    (395, "0025"),
+    (640, "0025"),
+    (1020, "0025"),
+]
 
 
 def fetch(out: Path, name: str) -> Path:
@@ -67,7 +75,11 @@ def first_table(path: Path):
 
 
 def header_value(path: Path, key: str) -> float:
-    m = re.search(rf"^\s+{key}\s*=\s*([0-9.eE+-]+)\s*$", path.read_text(errors="replace"), re.M)
+    m = re.search(
+        rf"^\s+{key}\s*=\s*([0-9.eE+-]+)\s*$",
+        path.read_text(errors="replace"),
+        re.MULTILINE,
+    )
     return float(m.group(1))
 
 
@@ -94,8 +106,10 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     out = Path(args[0]) if args else ROOT / "output" / "dns_jaxa"
     out.mkdir(parents=True, exist_ok=True)
-    print(f"{'Re_tau':>6} {'Pr':>6} {'U_b+':>7} {'Re_b':>7} {'Re_b file':>9} "
-          f"{'Th_b+':>7} {'Nu_2h':>7} {'Nu file':>8} {'Nu_4h':>7}")
+    print(
+        f"{'Re_tau':>6} {'Pr':>6} {'U_b+':>7} {'Re_b':>7} {'Re_b file':>9} "
+        f"{'Th_b+':>7} {'Nu_2h':>7} {'Nu file':>8} {'Nu_4h':>7}"
+    )
     nu_by = {}
     for re_tau, pr in CASES:
         v = fetch(out, f"ch{re_tau}.dat")
@@ -105,16 +119,22 @@ def main():
         ub, thb = integrals(re_tau, first_table(v), first_table(t))
         nu = 2 * re_tau * prn / thb
         nu_by[(re_tau, pr)] = nu
-        print(f"{re_tau:6d} {prn:6.3f} {ub:7.3f} {2 * re_tau * ub:7.0f} "
-              f"{header_value(t, 'Re_bulk'):9.0f} {thb:7.3f} {nu:7.2f} "
-              f"{header_value(t, 'Nu'):8.2f} {2 * nu:7.2f}")
+        print(
+            f"{re_tau:6d} {prn:6.3f} {ub:7.3f} {2 * re_tau * ub:7.0f} "
+            f"{header_value(t, 'Re_bulk'):9.0f} {thb:7.3f} {nu:7.2f} "
+            f"{header_value(t, 'Nu'):8.2f} {2 * nu:7.2f}"
+        )
     if "--run" in sys.argv:
         exe = ROOT / "target" / "release" / "foehn"
         case = ROOT / "examples" / "cases" / "flow" / "channel_heated_keps.toml"
         run_dir = out / "run"
-        subprocess.run([str(exe), "flow", str(case), "--out", str(run_dir)],
-                       check=True, capture_output=True)
+        subprocess.run(
+            [str(exe), "flow", str(case), "--out", str(run_dir)],
+            check=True,
+            capture_output=True,
+        )
         import json
+
         res = json.loads((run_dir / "result.json").read_text())
         sol = res["solves"][-1] if "solves" in res else res
         b = {x["boundary"]: x for x in sol["scalars"][0]["boundaries"]}
@@ -122,8 +142,10 @@ def main():
         tw = 0.5 * (b["ymin"]["mean"] + b["ymax"]["mean"]) - delta / 2
         nu = 2 * q / (1 / 395 / 0.71 * (tw - b["xmin"]["mixed_mean"]))
         ref = nu_by[(395, "071")]
-        print(f"\nour channel, Re_tau 395, Pr 0.71: Nu_2h {nu:.2f}, DNS {ref:.2f} "
-              f"({100 * (nu / ref - 1):+.1f} %)")
+        print(
+            f"\nour channel, Re_tau 395, Pr 0.71: Nu_2h {nu:.2f}, DNS {ref:.2f} "
+            f"({100 * (nu / ref - 1):+.1f} %)"
+        )
 
 
 if __name__ == "__main__":
