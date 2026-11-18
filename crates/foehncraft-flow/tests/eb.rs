@@ -11,6 +11,7 @@ use foehncraft_flow::case::{FlowCase, FlowReport, run};
 use foehncraft_flow::diag;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "hdf5")]
 const MODEL: &str = "model = \"elliptic-blending-k-epsilon\"";
 
 fn cases() -> PathBuf {
