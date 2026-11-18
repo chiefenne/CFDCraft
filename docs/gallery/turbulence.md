@@ -445,7 +445,7 @@ reference).
 | Channel C_f / C_f,DNS at Re_τ 180 / 395 / 590 (paper 100 / 98 / 100 %) | 97.8 / 99.0 / 99.1 % (band ±3 % on U_b⁺) |
 | Plate C_f(0.97) from White: turbulent start / TMR free stream / C*_ε2 constant | +0.5 / +2.5 / +4.9 % (band ±3 %) |
 | Step x_r/H, 8 200 cells, SIMPLEC / C*_ε2 constant | 7.59 (+21 %, finding) / 6.24 (−0.3 %) |
-| Step x_r/H on 32 800 cells, coupled algorithm (not converged) | 7.84 |
+| Step x_r/H on 32 800 cells, SIMPLEC (converged) / coupled (not converged) | 7.68 (+23 %, 1.2 % from the coarse mesh) / 7.84 |
 | Homogeneous decay: k, ε (C_ε2 = 1.83) and the return of φ to 2/3, BDF2 | second order (asserted 1.8 to 2.2) |
 | k-ε restart continued with the elliptic blending; 1 against 4 threads | φ = 2/3, α = 1 at the start; bit-identical |
 | Bad input (`compound-2023`, wall functions, a production limiter, `sigma_zeta`) | CASE005, CASE005, CASE002 |

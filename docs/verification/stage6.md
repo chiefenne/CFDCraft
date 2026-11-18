@@ -968,6 +968,7 @@ independent one-dimensional solver of the model reproduced both forms
 | TMR plate (`tmr_plate_eb.toml`), turbulent start, y⁺ 1 | C_f(0.97) against White, 2.875e-3 | ±3 % | 2.889e-3 (+0.5 %); k and φ held by the floor near the leading edge (TURB002) |
 | The plate from the TMR free stream | C_f(0.97) | ±3 % | turbulent from x ≈ 0.25, +2.5 % |
 | Backward-facing step (`backstep_eb.toml`), 8 200 cells, SIMPLEC | x_r/H against 6.26 | ±10 % | 7.59 (+21 %; finding), converged to 10⁻⁶ in 2 480 iterations |
+| The step on 32 800 cells (each interval halved), SIMPLEC | x_r/H | ±10 % | 7.68 (+23 %), converged in 7 330 iterations; 1.2 % from the coarse mesh |
 | The step with `algorithm = "coupled"`, 8 200 / 32 800 cells | x_r/H | ±10 % | 7.74 to 7.77 / 7.84, not converged (finding) |
 | The step, the plate and the channel with C*_ε2 = C_ε2 (`c_epsilon4 = 1.83`) | x_r/H, C_f(0.97), C_f/C_f,DNS | – | 6.24 (−0.3 %), +4.9 %, 100.9 % |
 | Homogeneous decay (box at rest, ν = 10⁻¹², BDF2 with 10, 20, 40 steps) | k, ε with C_ε2 = 1.83 and φ → 2/3 with C₁ = 1.7 against the exact solution; α = 1 | order 1.8 to 2.2 | asserted (`eb_homogeneous_decay_is_second_order_in_time`) |

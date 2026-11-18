@@ -1221,7 +1221,7 @@ layout). C_p, C_f and the profiles against the experiment follow with the
 stage 6 validation.
 
 **Results of 6e (PR #88).** The elliptic-blending k-ε on the mesh of
-6d2 with SIMPLEC: x_r/H = 7.59 (+21 %), outside the band (finding). The
+6d2 with SIMPLEC: x_r/H = 7.59 (+21 %; 7.68 on 32 800 cells), outside the band (finding). The
 variable C*_ε2 of the paper causes it: with C_ε4 = C_ε2 (`c_epsilon4 =
 1.83`) x_r/H = 6.24, but the flat plate is then +4.9 % from White
 instead of +0.5 %. The model stays as published. The coupled algorithm
