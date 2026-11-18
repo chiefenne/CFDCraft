@@ -36,3 +36,5 @@ __pycache__/
 /python/foehncraft/_native*.pyd
 .pytest_cache/
 .ruff_cache/
+# the experimental data of the impinging jet: the licence of the source is open
+examples/studies/impinging_jet/data/*.csv

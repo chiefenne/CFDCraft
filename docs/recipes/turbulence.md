@@ -565,8 +565,10 @@ of the hoop stress; see the verification page.)
 the jet for six models (`verification.levels` 0, 1, 2: 2 600, 10 400
 and 41 600 cells) and the cases of the stagnation-point anomaly (k-ε and
 SST with each production limiter on the 10 400 cells), then writes
-`summary.md`; the experiment enters when its data are in
-`examples/studies/impinging_jet/data`:
+`summary.md`; the experiment (ERCOFTAC case 025) enters when its CSV
+files are in `examples/studies/impinging_jet/data` (see the README there;
+`ercoftac_to_csv.py` makes them), and the charts then draw it, so the
+gallery figures are made with `--no-experiment`:
 
 ```
 pip install ./python
