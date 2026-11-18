@@ -2633,7 +2633,7 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 44);
+        assert_eq!(NAMES.len(), 46);
     }
 
     /// The pseudo-time kernels of the coupled algorithm (D176 to D178).
