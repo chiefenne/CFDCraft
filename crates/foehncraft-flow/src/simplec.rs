@@ -202,6 +202,14 @@ pub fn gauss_weights(d: &Discretisation) -> Soa3 {
 /// then need more than they save.)
 pub const COUPLED_RELAXATION: f64 = 0.98;
 
+/// The same default for the k-ε family when its transport equations take
+/// the reduction multigrid (D180): a local Courant number of at most 199.
+/// On the backward-facing step the run settles in 65 instead of 90
+/// iterations on 32 800 cells (with the turbulence relaxation 0.995 in
+/// both); the laminar cavity does not gain (449 iterations at 0.98, 493
+/// at 0.995), so it keeps 0.98.
+pub const COUPLED_RELAXATION_REDUCTION: f64 = 0.995;
+
 /// `[solver]` settings of a flow case.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -261,6 +269,12 @@ pub struct Settings {
     /// limiters of the deferred corrections. Without it the lag of these
     /// terms makes plain PISO (one outer iteration) first order in time.
     pub extrapolation: bool,
+    /// Set from the whole case, not read: the k-ε family runs the coupled
+    /// algorithm with the reduction multigrid in its transport equations,
+    /// so the default α_u is [`COUPLED_RELAXATION_REDUCTION`] (D180).
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub reduction_defaults: bool,
 }
 
 /// `[solver.momentum]`: the momentum equations (the velocity column of the
@@ -282,7 +296,9 @@ pub struct MomentumSettings {
     /// Constant K of the limiter.
     pub limiter_k: f64,
     /// Under-relaxation of the momentum equations α_u (default 0.7 steady,
-    /// 1 transient).
+    /// 1 transient; with the coupled algorithm a cap on the local step:
+    /// 0.98, or 0.995 for the k-ε family with the reduction multigrid in
+    /// its transport equations, D180).
     pub relaxation: Option<f64>,
     /// Relative tolerance of each momentum solve (default 1e-2 steady, 1e-8
     /// transient).
@@ -359,6 +375,7 @@ impl Default for Settings {
             outer_iterations: 1,
             outer_tolerance: 1e-6,
             extrapolation: true,
+            reduction_defaults: false,
         }
     }
 }
@@ -397,7 +414,11 @@ impl Settings {
         self.momentum.relaxation.unwrap_or(if transient {
             1.0
         } else if self.algorithm(false) == Algorithm::Coupled {
-            COUPLED_RELAXATION
+            if self.reduction_defaults {
+                COUPLED_RELAXATION_REDUCTION
+            } else {
+                COUPLED_RELAXATION
+            }
         } else {
             0.7
         })

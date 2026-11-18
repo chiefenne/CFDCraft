@@ -1,6 +1,7 @@
 //! The coupled pressure–velocity algorithm and the pseudo-time steps of a
 //! steady run (D176 to D178, docs/verification/stage6.md, part 6e), and
-//! the multigrid of its momentum sweeps (D179, part 6f).
+//! the multigrid of its momentum sweeps (D179, part 6f) and of the
+//! turbulence equations (D180, part 6g).
 //!
 //! The backward-facing step with the three turbulence models and the
 //! cavity at Re = 1000 run from the case files in CI; the tests here use
@@ -475,6 +476,128 @@ fn coupled_channel_meets_its_band() {
         "{} iterations",
         r.solves[0].iterations
     );
+}
+
+/// D180: with the coupled algorithm the transport equations of the k-ε
+/// family take the reduction multigrid as preconditioner, with kept
+/// hierarchies, and the relaxations 0.995. The converged result is that
+/// of the Jacobi preconditioner with the relaxations 0.98; SST keeps
+/// Jacobi.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn turbulence_multigrid_gives_the_same_result() {
+    let channel = |name: &str, extra: &str| {
+        let text = std::fs::read_to_string(cases().join("channel_zeta_f0.toml"))
+            .unwrap()
+            .replace("\r\n", "\n")
+            .replace(
+                "tolerance = 1e-6\nmax_iterations = 5000",
+                &format!(
+                    "tolerance = 1e-10\nmax_iterations = 5000\nalgorithm = \"coupled\"\n{extra}"
+                ),
+            );
+        let r = run_case(&FlowCase::from_toml(&text, &cases()).unwrap(), name);
+        assert!(r.failures.is_empty(), "{name}: {:?}", r.failures);
+        let s = &r.solves[0];
+        assert!(s.converged, "{name} did not converge");
+        eprintln!(
+            "{name}: {} iterations, {} multigrid setups of the turbulence equations",
+            s.iterations, s.turbulence_setups
+        );
+        (
+            s.periodic[0].driving_force,
+            s.iterations,
+            s.turbulence_setups,
+        )
+    };
+    let (f, it, setups) = channel("turb_reduction", "");
+    // kept hierarchies: fewer setups than solves (three equations)
+    assert!(
+        setups >= 1 && setups < 3 * it,
+        "{setups} setups in {it} iterations"
+    );
+    let (g, it_j, setups_j) = channel(
+        "turb_jacobi",
+        "[solver.momentum]\nrelaxation = 0.98\n[solver.turbulence]\npreconditioner = \"jacobi\"\nrelaxation = 0.98\n",
+    );
+    assert_eq!(setups_j, 0);
+    assert!(
+        it < it_j,
+        "{it} iterations against {it_j} with Jacobi and 0.98"
+    );
+    assert!(
+        (f - g).abs() <= 1e-6 * g.abs(),
+        "driving force {f} against {g}"
+    );
+    let sst = FlowCase::from_toml(
+        &std::fs::read_to_string(cases().join("channel_sst.toml"))
+            .unwrap()
+            .replace("\r\n", "\n")
+            .replace(
+                "max_iterations = ",
+                "algorithm = \"coupled\"\nmax_iterations = ",
+            ),
+        &cases(),
+    )
+    .unwrap();
+    assert!(!sst.solver.reduction_defaults);
+    assert!(
+        (sst.solver.alpha_u(false) - foehncraft_flow::simplec::COUPLED_RELAXATION).abs() < 1e-15
+    );
+}
+
+/// D42 with D180: the restart file holds the matrices of the kept
+/// hierarchies of the turbulence equations, so a continued coupled run
+/// of k-ε-ζ-f₀ ends bit-identically to the run without the interruption.
+#[cfg(feature = "hdf5")]
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn turbulence_multigrid_restart_continues_bit_identically() {
+    use foehncraft_flow::restart;
+    let case = |run: &str| {
+        let text = std::fs::read_to_string(cases().join("channel_zeta_f0.toml"))
+            .unwrap()
+            .replace("\r\n", "\n")
+            .replace(
+                "tolerance = 1e-6\nmax_iterations = 5000",
+                "tolerance = 1e-14\nmax_iterations = 60\nalgorithm = \"coupled\"",
+            );
+        FlowCase::from_toml(
+            &format!("{text}\n[run]\n{run}\n[verification]\nrequire_convergence = false\n"),
+            &cases(),
+        )
+        .unwrap()
+    };
+    let da = out("turb_restart_full");
+    let ra = run(&case("restart_at = [30]"), "full", &da, |_| {}).unwrap();
+    assert!(ra.failures.is_empty(), "{:?}", ra.failures);
+    let from = da.join("restart_000030.h5");
+    let kept = restart::read(&from).unwrap().state.turbulence.unwrap().amg;
+    assert!(
+        kept.iter().any(|(slot, _)| (2..=4).contains(slot)),
+        "no hierarchy of a transport equation in the restart file"
+    );
+    let db = out("turb_restart_cont");
+    let rb = run(
+        &case(&format!("restart = '{}'", from.display())),
+        "cont",
+        &db,
+        |_| {},
+    )
+    .unwrap();
+    assert!(rb.failures.is_empty(), "{:?}", rb.failures);
+    let a = restart::read(&da.join("restart.h5")).unwrap();
+    let b = restart::read(&db.join("restart.h5")).unwrap();
+    assert_eq!(a.iteration, 60);
+    assert_eq!(b.iteration, 60);
+    assert!(a.state.u.x == b.state.u.x, "the continued velocity differs");
+    assert!(a.state.p == b.state.p, "the continued pressure differs");
+    assert!(
+        a.state.turbulence == b.state.turbulence,
+        "the continued turbulence state differs"
+    );
+    let _ = std::fs::remove_dir_all(&da);
+    let _ = std::fs::remove_dir_all(&db);
 }
 
 #[test]

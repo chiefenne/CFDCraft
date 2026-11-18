@@ -920,6 +920,7 @@ impl FlowCase {
             b.resolve_paths(dir);
         }
         crate::expr::resolve_paths(&mut c.tables, dir);
+        c.solver.reduction_defaults = crate::turbulence::reduction_defaults(&c);
         c.validate()?;
         Ok(c)
     }
@@ -1432,6 +1433,9 @@ pub struct Solve {
     /// Multigrid setups of the momentum sweeps of the coupled algorithm
     /// (D179).
     pub sweep_setups: usize,
+    /// Multigrid setups of the transport equations of the turbulence
+    /// model (D180).
+    pub turbulence_setups: usize,
     /// Nanoseconds per cell and outer iteration (R6).
     pub ns_per_cell_iteration: f64,
     /// Error norms.
@@ -2375,6 +2379,9 @@ pub fn run_steered(
             if let Some(m) = fl.sweep_note.take() {
                 lg.warn(&m);
             }
+            if let Some(m) = fl.turbulence.as_ref().and_then(|t| t.take_note()) {
+                lg.warn(&m);
+            }
             let it = fl.iteration();
             let done = res.max() < case.solver.tolerance;
             if it % case.output.history_every == 0 || done {
@@ -2755,6 +2762,7 @@ pub fn run_steered(
             timings: fl.timings.clone(),
             amg_setups: fl.amg_setups,
             sweep_setups: fl.sweep_setups,
+            turbulence_setups: fl.turbulence.as_ref().map_or(0, |t| t.reduction_setups()),
             errors,
             reference,
             boundaries,
@@ -3913,11 +3921,17 @@ impl FlowReport {
                 );
             }
             let t = &v.timings;
-            let sweeps = if v.sweep_setups > 0 {
-                format!(", {} of the momentum sweeps", v.sweep_setups)
-            } else {
-                String::new()
-            };
+            let mut sweeps = String::new();
+            if v.sweep_setups > 0 {
+                let _ = write!(sweeps, ", {} of the momentum sweeps", v.sweep_setups);
+            }
+            if v.turbulence_setups > 0 {
+                let _ = write!(
+                    sweeps,
+                    ", {} of the turbulence equations",
+                    v.turbulence_setups
+                );
+            }
             let mut models = String::new();
             if t.turbulence > 0.0 {
                 let _ = write!(models, ", turbulence model {:.2}", t.turbulence);

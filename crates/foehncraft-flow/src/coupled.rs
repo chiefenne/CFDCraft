@@ -178,7 +178,7 @@ pub struct SweepState {
 
 /// Σ|a − b| / Σ|a| of two matrices in the same storage; `diag` replaces
 /// the diagonal of `a` (at the positions `dpos`).
-fn matrix_change(a: &[f64], b: &[f64], diag: Option<&[f64]>, dpos: &[usize]) -> f64 {
+pub(crate) fn matrix_change(a: &[f64], b: &[f64], diag: Option<&[f64]>, dpos: &[usize]) -> f64 {
     let mut num = 0.0;
     let mut den = 0.0;
     for (x, y) in a.iter().zip(b) {
