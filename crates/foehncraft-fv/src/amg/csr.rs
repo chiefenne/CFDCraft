@@ -170,44 +170,64 @@ impl Csr {
     /// the row of `self`, then of the rows of `b`).
     pub fn matmul(&self, b: &Csr) -> Csr {
         assert_eq!(self.n_cols, b.n_rows, "matmul: inner dimensions");
-        let rows: Vec<Vec<(u32, f64)>> = (0..self.n_rows)
+        Csr::build_rows(
+            self.n_rows,
+            b.n_cols,
+            || RowAccumulator::new(b.n_cols),
+            |acc, i, col, val| {
+                for (k, a) in self.row(i) {
+                    for (j, v) in b.row(k) {
+                        acc.add(j as u32, a * v);
+                    }
+                }
+                acc.drain_sorted(col, val);
+            },
+        )
+    }
+
+    /// Builds a matrix row by row: `fill(scratch, i, col, val)` appends the
+    /// entries of row `i`, columns ascending and each once, to `col` and
+    /// `val`. Blocks of rows are built in parallel into flat arrays (one
+    /// scratch per worker, no allocation per row) and joined in row order,
+    /// so the result does not depend on the threads (D31).
+    pub fn build_rows<S, I, F>(n_rows: usize, n_cols: usize, init: I, fill: F) -> Csr
+    where
+        I: Fn() -> S + Sync + Send,
+        F: Fn(&mut S, usize, &mut Vec<u32>, &mut Vec<f64>) + Sync + Send,
+    {
+        const BLOCK: usize = 512;
+        let blocks: Vec<(Vec<u32>, Vec<u32>, Vec<f64>)> = (0..n_rows.div_ceil(BLOCK))
             .into_par_iter()
-            .with_min_len(1024)
-            .map_init(
-                || (vec![usize::MAX; b.n_cols], Vec::<(u32, f64)>::new()),
-                |(pos, acc), i| {
-                    acc.clear();
-                    for (k, a) in self.row(i) {
-                        for (j, v) in b.row(k) {
-                            if pos[j] == usize::MAX {
-                                pos[j] = acc.len();
-                                acc.push((j as u32, a * v));
-                            } else {
-                                acc[pos[j]].1 += a * v;
-                            }
-                        }
-                    }
-                    for e in acc.iter() {
-                        pos[e.0 as usize] = usize::MAX;
-                    }
-                    let mut r = acc.clone();
-                    r.sort_by_key(|e| e.0);
-                    r
-                },
-            )
+            .map_init(init, |scratch, b| {
+                let (lo, hi) = (b * BLOCK, ((b + 1) * BLOCK).min(n_rows));
+                let mut len = Vec::with_capacity(hi - lo);
+                let mut col = Vec::new();
+                let mut val = Vec::new();
+                for i in lo..hi {
+                    let start = col.len();
+                    fill(scratch, i, &mut col, &mut val);
+                    len.push((col.len() - start) as u32);
+                }
+                (len, col, val)
+            })
             .collect();
+        let nnz = blocks.iter().map(|b| b.1.len()).sum();
         let mut out = Csr {
-            n_rows: self.n_rows,
-            n_cols: b.n_cols,
-            row_ptr: vec![0],
-            ..Csr::default()
+            n_rows,
+            n_cols,
+            row_ptr: Vec::with_capacity(n_rows + 1),
+            col: Vec::with_capacity(nnz),
+            val: Vec::with_capacity(nnz),
         };
-        for r in rows {
-            for (c, v) in r {
-                out.col.push(c);
-                out.val.push(v);
+        out.row_ptr.push(0);
+        let mut end = 0usize;
+        for (len, col, val) in blocks {
+            for l in len {
+                end += l as usize;
+                out.row_ptr.push(end);
             }
-            out.row_ptr.push(out.col.len());
+            out.col.extend_from_slice(&col);
+            out.val.extend_from_slice(&val);
         }
         out
     }
@@ -250,6 +270,51 @@ impl Csr {
             }
         }
         d / scale
+    }
+}
+
+/// The dense accumulator of one row of a sparse product or sum: entries
+/// of the same column are added in the order they arrive (the sums of
+/// [`Csr::from_rows`]), and the row leaves sorted by column.
+pub struct RowAccumulator {
+    pos: Vec<u32>,
+    acc: Vec<(u32, f64)>,
+}
+
+impl RowAccumulator {
+    /// An accumulator for rows of `n_cols` columns.
+    pub fn new(n_cols: usize) -> Self {
+        Self {
+            pos: vec![u32::MAX; n_cols],
+            acc: Vec::new(),
+        }
+    }
+
+    /// Adds `v` to column `j` of the row.
+    #[inline]
+    pub fn add(&mut self, j: u32, v: f64) {
+        let p = &mut self.pos[j as usize];
+        if *p == u32::MAX {
+            *p = self.acc.len() as u32;
+            self.acc.push((j, v));
+        } else {
+            self.acc[*p as usize].1 += v;
+        }
+    }
+
+    /// Appends the row, columns ascending, to `col` and `val` and empties
+    /// the accumulator.
+    pub fn drain_sorted(&mut self, col: &mut Vec<u32>, val: &mut Vec<f64>) {
+        for e in &self.acc {
+            self.pos[e.0 as usize] = u32::MAX;
+        }
+        // the columns are distinct: an unstable sort gives the same order
+        self.acc.sort_unstable_by_key(|e| e.0);
+        for &(j, v) in &self.acc {
+            col.push(j);
+            val.push(v);
+        }
+        self.acc.clear();
     }
 }
 
@@ -355,6 +420,44 @@ mod tests {
             })
             .collect();
         Csr::from_rows(n, rows)
+    }
+
+    /// The product of two matrices with scattered, repeated columns equals
+    /// the one of the reference (rows of pairs through `from_rows`), bit
+    /// for bit, on any number of threads: `build_rows` joins blocks of rows
+    /// in row order and `RowAccumulator` sums in arrival order.
+    #[test]
+    fn flat_products_equal_the_reference_bitwise() {
+        let n = 1500; // more than two blocks of rows
+        let row = |i: usize, shift: usize| -> Vec<(u32, f64)> {
+            (0..1 + (i * 7 + shift) % 5)
+                .map(|k| {
+                    let c = (i * 31 + k * 97 + shift * 13) % n;
+                    (c as u32, 0.1 + ((i + k * 3 + shift) % 11) as f64 * 0.37)
+                })
+                .collect()
+        };
+        let a = Csr::from_rows(n, (0..n).map(|i| row(i, 1)).collect());
+        let b = Csr::from_rows(n, (0..n).map(|i| row(i, 2)).collect());
+        let mut reference: Vec<Vec<(u32, f64)>> = Vec::new();
+        for i in 0..n {
+            let mut r = Vec::new();
+            for (k, x) in a.row(i) {
+                for (j, y) in b.row(k) {
+                    r.push((j as u32, x * y));
+                }
+            }
+            reference.push(r);
+        }
+        let reference = Csr::from_rows(n, reference);
+        assert_eq!(a.matmul(&b), reference);
+        for threads in [1, 3] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            assert_eq!(pool.install(|| a.matmul(&b)), reference);
+        }
     }
 
     #[test]
