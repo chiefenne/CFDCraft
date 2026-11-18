@@ -20,7 +20,9 @@ iterations of the steady turbulent cases
 multigrid of its momentum sweep
 ([below](#multigrid-for-the-momentum-sweep-part-6f)), part 6g the
 multigrid of the turbulence equations and the larger steps with it
-([below](#multigrid-for-the-turbulence-equations-part-6g)). The commands are in
+([below](#multigrid-for-the-turbulence-equations-part-6g)), part 6h the
+pressure solve of the coupled preconditioner
+([below](#the-pressure-solve-of-the-coupled-preconditioner-part-6h)). The commands are in
 [recipe 63](../recipes/scalars.md#passive-scalars),
 [recipe 67](../recipes/boundary-conditions.md#periodic),
 [recipe 68](../recipes/turbulence.md#sst),
@@ -28,8 +30,9 @@ multigrid of the turbulence equations and the larger steps with it
 [recipe 73](../recipes/turbulence.md#zeta-f),
 [recipe 74](../recipes/turbulence.md#zeta-f0),
 [recipe 78](../recipes/flow.md#coupled),
-[recipe 80](../recipes/flow.md#momentum-multigrid) and
-[recipe 81](../recipes/flow.md#turbulence-multigrid), the pictures in
+[recipe 80](../recipes/flow.md#momentum-multigrid),
+[recipe 81](../recipes/flow.md#turbulence-multigrid) and
+[recipe 83](../recipes/flow.md#pressure-hierarchy), the pictures in
 [gallery 63](../gallery/scalars.md#passive-scalars),
 [gallery 67](../gallery/boundary-conditions.md#periodic),
 [gallery 68](../gallery/turbulence.md#sst),
@@ -37,8 +40,9 @@ multigrid of the turbulence equations and the larger steps with it
 [gallery 73](../gallery/turbulence.md#zeta-f),
 [gallery 74](../gallery/turbulence.md#zeta-f0),
 [gallery 78](../gallery/flow.md#coupled),
-[gallery 80](../gallery/flow.md#momentum-multigrid) and
-[gallery 81](../gallery/flow.md#turbulence-multigrid), the generated
+[gallery 80](../gallery/flow.md#momentum-multigrid),
+[gallery 81](../gallery/flow.md#turbulence-multigrid) and
+[gallery 83](../gallery/flow.md#pressure-hierarchy), the generated
 tables of every case in the [verification manual](manual.md).
 
 ## Passive scalars and the wall distance (part 6a)
@@ -767,3 +771,56 @@ tolerance, x_r = 6.809 H) but not at the larger ones, so SST keeps the
 old defaults. (6) The aggregation multigrid of the scalar equations
 (`preconditioner = "amg"`, part 6d) fails with pseudo steps: its
 coarsest level is not positive definite.
+
+## The pressure solve of the coupled preconditioner (part 6h)
+
+Specification: [requirements step 22](../requirements/step22-coupled-solver.md)
+sections 7.9 and 7.10 (D181).
+
+**The method** (`foehncraft-flow::coupled`). The pressure solve inside
+the SIMPLE-type preconditioner of the coupled algorithm stops at the
+relative tolerance 0.3 instead of 0.1 (`pressure_tolerance`): the
+Krylov iteration corrects what it leaves. The aggregation multigrid of
+its matrix Ŝ is built anew when Ŝ has changed by more than 5 % since
+the setup (`pressure_reuse`, the measure of `momentum_reuse`), besides
+every `amg_rebuild` iterations as before. The restart file and the
+state kept across an intermediate result hold the matrix of the last
+setup, as before.
+
+### Results
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| Cavity 24², Re = 100, coupled, to 10⁻¹¹ | a new hierarchy whenever Ŝ changes (`pressure_reuse = 0`) against the periodic rebuild alone (`1`): more setups, the periodic count exactly every 10 iterations, the same lid force | 10⁻⁸ | asserted (`pressure_hierarchy_follows_its_matrix`) |
+| Coupled tests of parts 6e to 6g, restart included (hdf5) | results with the new defaults | as before | asserted |
+| Input | `pressure_reuse` outside [0, 1] | refused | asserted |
+
+Runs on one thread, quiet machine, to the iteration from which x_r stays
+within 1 % of its final value; part 6g with the tolerance 0.1 in
+brackets:
+
+| Case | Iterations | Run time | Pressure solves |
+|---|---|---|---|
+| Step, k-ε-ζ-f₀, 8 200 cells (`backstep_zeta_f0_coupled.toml`) | 40 (40) | 6.2 s (8.0 s) | 0.69 s (2.02 s) |
+| Step, k-ε-ζ-f₀, 32 800 cells | 65 (65) | 39.8 s (56.9 s) | 5.81 s (20.0 s) |
+| Step, k-ε (`scalable`), 8 200 cells | 45 (45) | 4.7 s (6.4 s) | 0.85 s (2.03 s) |
+| Step, k-ω SST, 8 200 cells | 80 (80) | 5.4 s | 0.82 s |
+| Cavity at Re = 1000 | 442 to the tolerance (449) | – | – |
+
+The step case file converges to its tolerance in 115 iterations with
+every check passed.
+
+**Findings.** (1) Two published Schur complements were measured against
+the SIMPLE-type one and do not pay on the step: SIMPLER (a pressure
+prediction first) saves a few Krylov iterations for a second pressure
+solve, the least-squares commutator runs into the Krylov limit near the
+inlet, outlet and walls (section 7.9). (2) The pressure solves, not the
+Schur complement, were the cost: a hierarchy up to nine outer
+iterations old needed 9 to 20 CG iterations per solve where a fresh one
+needs two. (3) The tolerance 0.3 alone gains 8 % on the coarse meshes
+and nothing on the fine one (its solves stop at the limit of 20 either
+way); with the hierarchy following its matrix the fine step needs 71 CG
+iterations per outer iteration instead of 160 and runs 1.4 times
+faster, 6.1 times faster than SIMPLEC (243 s). (4) Laminar cases do not
+trigger the rule: the pseudo-time term holds D̂, and the cavity builds
+the same 45 hierarchies either way.

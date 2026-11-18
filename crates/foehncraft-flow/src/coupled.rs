@@ -113,6 +113,12 @@ pub struct CoupledSettings {
     pub pressure_tolerance: f64,
     /// Largest number of CG iterations of that pressure solve.
     pub pressure_max_iter: usize,
+    /// The multigrid hierarchy of the pressure matrix Ŝ is built anew when
+    /// Ŝ differs from the matrix of its last setup by more than this
+    /// fraction (the measure of `momentum_reuse`), besides every
+    /// `amg_rebuild` iterations; 0: whenever Ŝ has changed; 1: only every
+    /// `amg_rebuild` iterations (requirements step 22, section 7.9).
+    pub pressure_reuse: f64,
     /// The multigrid of the momentum sweeps.
     pub multigrid: ReductionSettings,
 }
@@ -129,6 +135,7 @@ impl Default for CoupledSettings {
             momentum_max_iter: 10,
             pressure_tolerance: 0.3,
             pressure_max_iter: 20,
+            pressure_reuse: 0.05,
             multigrid: ReductionSettings::default(),
         }
     }
@@ -232,6 +239,11 @@ impl CoupledSettings {
             (0.0..=0.2).contains(&self.momentum_reuse),
             CASE_RANGE,
             "[solver.coupled] momentum_reuse must lie in [0, 0.2]"
+        );
+        crate::need!(
+            (0.0..=1.0).contains(&self.pressure_reuse),
+            CASE_RANGE,
+            "[solver.coupled] pressure_reuse must lie in [0, 1]"
         );
         if let Err(e) = self.multigrid.validate() {
             crate::need!(false, CASE_RANGE, "[solver.coupled.multigrid]: {e}");
@@ -856,6 +868,22 @@ impl Flow {
         Ok(n)
     }
 
+    /// The pressure matrix Ŝ (in `w.pval`) differs from the one of the last
+    /// multigrid setup by more than `reuse`: with D̂ it changes in every
+    /// outer iteration, and a hierarchy from an older matrix needs many
+    /// more CG iterations (requirements step 22, section 7.9).
+    fn pressure_changed(&mut self, reuse: f64) -> Result<bool> {
+        if self.settings.pressure.preconditioner != Preconditioner::Amg
+            || reuse >= 1.0
+            || self.amg_matrix.is_none()
+        {
+            return Ok(false);
+        }
+        let cur = self.dev.download(self.w.pval)?;
+        let old = self.amg_matrix.as_deref().unwrap_or_default();
+        Ok(old.len() != cur.len() || matrix_change(&cur, old, None, &[]) > reuse)
+    }
+
     /// The length L of the automatic pseudo-time step: the volume of the
     /// domain over the area of its boundary faces without the symmetry
     /// planes (periodic faces are interior faces); (ΣV)^(1/3) for a domain
@@ -1033,7 +1061,8 @@ impl Flow {
         self.dev.sync()?;
         self.timings.pressure_assembly += tm.elapsed().as_secs_f64();
         let rebuild = (self.iteration - 1).is_multiple_of(s.amg_rebuild);
-        self.pressure_amg(rebuild)?;
+        let changed = self.pressure_changed(s.coupled.pressure_reuse)?;
+        self.pressure_amg(rebuild || changed)?;
 
         // the continuity row in the units of the momentum rows: times the
         // velocity Σ a_P / (ρ Σ|S|), the mean diagonal coefficient over the

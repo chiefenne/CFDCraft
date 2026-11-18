@@ -72,6 +72,7 @@ pub const RUNTIME_KEYS: &[&str] = &[
     "solver.coupled.momentum_max_iter",
     "solver.coupled.pressure_tolerance",
     "solver.coupled.pressure_max_iter",
+    "solver.coupled.pressure_reuse",
     "solver.pseudo_time.step",
     "solver.pseudo_time.factor",
     "solver.pseudo_time.momentum",

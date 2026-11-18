@@ -21,7 +21,7 @@
 # about 40 outer iterations (65 before D180), against about 525 with
 # SIMPLEC and its relaxation ramp, and ends at the same x_r/H = 6.385
 # (+2 % from the experiment's 6.26). The run reaches the tolerance after
-# about 110 iterations (budget 150). With `model = "k-epsilon"` (and
+# about 115 iterations (budget 150). With `model = "k-epsilon"` (and
 # `wall_treatment = "scalable"`) x_r settles after about 45 iterations,
 # with `"k-omega-sst"` (Jacobi and 0.98, D180) after 80 to 85 (recipe 78
 # shows how to see that x_r has settled).
