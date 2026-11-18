@@ -14,6 +14,7 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 80 | [Choose and tune the momentum sweep of the coupled algorithm](#momentum-multigrid) |
 | 81 | [Use the multigrid of the turbulence equations and its larger steps](#turbulence-multigrid) |
 | 83 | [See and tune the pressure hierarchy of the coupled preconditioner](#pressure-hierarchy) |
+| 85 | [Add heat transfer to a turbulent flow: wall function and turbulent Prandtl number](#thermal-wall-function) |
 
 ---
 
@@ -691,3 +692,45 @@ setup, as before; the continued run decides the next rebuild from it
 and stays bit-identical.
 
 [↑ back to top](#incompressible-flow)
+
+---
+
+<a id="thermal-wall-function"></a>
+## 85. Add heat transfer to a turbulent flow: wall function and turbulent Prandtl number
+
+A temperature of constant properties is a passive scalar (D51). Give it
+the molecular diffusivity ν/Pr, its boundary values and, with a
+turbulence model, nothing else: the defaults are the wall function of
+Kader and Pr_t = 0.85.
+
+```toml
+[scalars.theta]
+diffusivity = 1.4084507042253522e-5   # ν/Pr, Pr = 0.71
+turbulent_prandtl = 0.85              # constant model
+# turbulent_prandtl_model = "kays-crawford"   # raises Pr_t near walls, for low Pr
+wall_function = "kader"               # "jayatilleke" (log region) or "none"
+
+[boundary.plate.scalar.theta]
+value = 1.0                           # or flux = q (K m/s: q_w/(ρ c_p))
+```
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/pipe_heated_keps.toml
+target/release/foehn flow examples/cases/flow/plate_heated_keps.toml
+```
+
+**Reading the result.** The wall file `wall_<boundary>.csv` gains four
+columns per scalar: `theta_wall` (the wall value, for a fixed flux
+φ_P + q/h_w), `theta_flux` (the flux into the domain), `theta_h` (the
+exchange velocity flux/(wall − cell value), h_w/(ρ c_p) of a
+temperature) and `theta_t_plus` (u\*/theta_h). The Stanton number is
+`theta_flux/(U (theta_wall − θ_∞))`; the Nusselt number of the pipe
+needs the wall value at the periodic plane (the mean over the wall
+minus G L/2, gallery 85).
+
+**Choosing.** Leave `wall_function` at `kader` on any mesh: it reduces to
+the molecular conduction where y⁺ is below 1. `none` is for comparison
+(Nu 39 % low at y⁺ 32). Use `kays-crawford` for fluids of low Prandtl
+number, where the molecular conduction reaches further into the layer.
+Roughness has no thermal correction: the smooth-wall T⁺ is used.
