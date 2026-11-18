@@ -108,8 +108,8 @@ pub struct CoupledSettings {
     pub momentum_max_iter: usize,
     /// Relative tolerance of the pressure solve of the preconditioner. The
     /// Krylov iteration corrects what this solve leaves: 0.3 needs the
-    /// same Krylov iterations as 0.1 with a third fewer CG iterations
-    /// (requirements step 22, section 7.9).
+    /// same Krylov iterations as 0.1 with a fifth to a quarter fewer CG
+    /// iterations (requirements step 22, section 7.9).
     pub pressure_tolerance: f64,
     /// Largest number of CG iterations of that pressure solve.
     pub pressure_max_iter: usize,

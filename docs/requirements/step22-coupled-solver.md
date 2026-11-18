@@ -378,7 +378,7 @@ momentum_cycles = 1          # multigrid cycles per sweep
 momentum_reuse = 0.02        # keep a hierarchy up to this matrix change; 0: never
 momentum_tolerance = 0.01    # a BiCGStab sweep
 momentum_max_iter = 10
-pressure_tolerance = 0.1     # pressure solve of the preconditioner
+pressure_tolerance = 0.3     # pressure solve of the preconditioner (section 7.9)
 pressure_max_iter = 20
 
 [solver.coupled.multigrid]   # the multigrid of the momentum sweeps (D179)
@@ -694,6 +694,76 @@ Findings:
    complement) are what turns the fewer iterations into run time on
    small meshes (section 8).
 
+### 7.9 The Schur complement and the pressure solve of the preconditioner
+
+**Why the Krylov count grows with the cap.** With Ŝ = L − D D̂ G, the
+SIMPLE-type sweep and a block LU factorisation with the same Ŝ give the
+preconditioned operator the eigenvalues 1 and those of Ŝ⁻¹ S, with the
+Schur complement S = L − D A⁻¹ G. A⁻¹ acts on a smooth pressure gradient
+like the inverse of the row sum of A (the SIMPLEC diagonal D̂), on a rough
+one like the inverse of its diagonal (D); D̂ is up to α/(1 − α) times D,
+200 at the cap 0.995 and 1 000 at 0.999. The eigenvalues spread over that
+ratio, and the Krylov count grows with the cap: 5 at 0.98, 9 at 0.995,
+20 at 0.999 on the coarse step. No diagonal fits both kinds of mode.
+
+**Two published alternatives, measured once** (coarse step, k-ε-ζ-f₀,
+defaults of D180, to the tolerance; four runs side by side, so the times
+compare with each other only):
+
+| Preconditioner | Krylov / CG iterations per outer iteration | Outer iterations (settled from) | Run time |
+|---|---|---|---|
+| SIMPLE-type, D̂ (the default) | 9.4 / 81 | 117 (40) | 16.3 s |
+| the same, cap 0.999 | 20.2 / 216 | 86 (40) | 19.8 s |
+| SIMPLER: a pressure prediction first (Klaij & Vuik 2013) | 8.7 / 152 | 126 (40) | 21.2 s |
+| SIMPLER, cap 0.999 | 15.6 / 347 | 89 (40) | 26.0 s |
+| Least-squares commutator, Ŝ⁻¹ = L⁻¹ (−D Q⁻¹ A Q⁻¹ G) L⁻¹ with Q = diag A, in a block LU sweep (Elman et al. 2006) | 29.7 (at the limit) / – | 200, not converged (40) | 69.3 s |
+
+On the cavity at Re = 1000 (128²) the three need 2.1, 2.1 and 2.0 Krylov
+iterations and 449, 439 and 422 outer iterations. SIMPLER saves a few
+Krylov iterations and pays with a second pressure solve. The commutator
+captures both kinds of mode in the interior (the cavity) but not near the
+inlet, the outlet and the walls of the step, a known weakness of the
+method (Elman & Tuminaro 2009). Neither pays, so the SIMPLE-type sweep
+stays. Removing the spread needs an operator that is not diagonal: the
+coarse levels of the whole coupled system, as the block multigrid of the
+published coupled solvers has them (section 8).
+
+**The pressure solve of the preconditioner.** The same runs showed where
+the cost is: each pressure solve of the preconditioner took 8.6 CG
+iterations to the tolerance 0.1 on the coarse step and up to its limit
+of 20 on the fine one. The hierarchy is up to nine outer iterations old
+(`amg_rebuild = 10`), while Ŝ changes with D̂ in every one: with a fresh
+hierarchy in every outer iteration, two CG iterations per solve give the
+same Krylov count (9.6), but the setups cost what the solves save
+(17.1 s against 16.3 s). The Krylov iteration corrects what the pressure
+solve leaves, so a looser solve costs no Krylov iterations:
+
+| Pressure solve (coarse step, side by side) | Krylov / CG per outer iteration | Outer iterations | Run time |
+|---|---|---|---|
+| tolerance 0.1 (before) | 9.4 / 81 | 117 | 16.3 s |
+| at most 2 CG iterations | 12.9 / 48 | 120 | 15.9 s |
+| tolerance 0.3 (the new default) | 9.2 / 58 | 106 | 13.3 s |
+
+With the tolerance 0.3, on one thread and a quiet machine, to the settled
+result:
+
+| Case | Iterations | Run time (tolerance 0.1) | Pressure solves |
+|---|---|---|---|
+| Step, k-ε-ζ-f₀, 8 200 cells | 40 | 7.4 s (8.0 s) | 1.31 s (2.02 s) |
+| Step, k-ε-ζ-f₀, 32 800 cells | 65 | 57.1 s (56.9 s) | 17.3 s (20.0 s) |
+| Step, k-ε, 8 200 cells | 45 | 5.9 s (6.4 s) | 1.45 s (2.03 s) |
+
+The settled values and the counts do not change (x_r = 6.385 and 6.353 H,
+5.287 H; SST settles at 80; the channel converges in 231 iterations, the
+cavity in 442 instead of 449, the step case file in 106 instead of
+117). The coarse meshes gain 8 %, the fine one
+nothing: there the pressure solves stop at their limit of 20 CG
+iterations with either tolerance (21 and 16 CG iterations per Krylov
+iteration, the final pressure correction included), and they take 30 to
+35 % of the run. The stale hierarchy is the cause, so a numeric refresh
+in every outer iteration (the aggregates kept, the coarse matrices
+recomputed) is the next step (section 8).
+
 ## 8. State of the art and what comes next
 
 Published reference points for pressure-based coupled solvers:
@@ -725,19 +795,21 @@ global step.
 
 What closes the gap, in this order:
 
-- **L44, the rest.** A cheaper setup (flat row builders; a numeric
-  refresh on a kept splitting), now that the turbulence equations take
-  hierarchies too; a multigrid with a coarse–fine splitting for the
-  pressure (2 to 5 iterations per solve in the prototype where the
-  aggregation multigrid needs 5 to 23; the pressure solves are a quarter
-  of a coupled run). By estimate each of them removes 5 to 15 % of the
-  run time.
-- **A better Schur complement** for steps without the cap on the local
-  step: the SIMPLE-type approximation needs 4 to 6 Krylov iterations
-  with the cap 0.98 and 10 to 50 without it, with exact sub-solves; at
-  the cap 0.995 of D180 the Krylov iterations double. A better Schur
-  complement turns the fewer outer iterations of part 6g into run time
-  on small meshes too, and lets the caps rise further.
+- **L44, the rest.** First the pressure hierarchy of the preconditioner:
+  it is up to nine outer iterations old while its matrix changes in every
+  one, and a fresh one needs two CG iterations where the kept one needs
+  9 to 20 (section 7.9); a numeric refresh in every outer iteration (the
+  aggregates kept) removes most of the pressure solves, the largest
+  single part of a fine coupled run. Then a cheaper setup in general
+  (flat row builders; a numeric refresh on a kept splitting for the
+  momentum and turbulence hierarchies) and a multigrid with a
+  coarse–fine splitting for the pressure (2 to 5 iterations per solve in
+  the prototype). By estimate each removes 5 to 15 % of the run time.
+- **The Schur complement** (section 7.9): measured, SIMPLER and the
+  least-squares commutator do not pay; the SIMPLE-type sweep stays. The
+  spread of its eigenvalues with the cap comes from approximating A⁻¹ by
+  a diagonal, and only a coupled block multigrid (Darwish, Sraj &
+  Moukalled 2009) removes it: a larger step, together with L46.
 - **SST** with accurate solves of its equations (section 7.8, finding
   3), so that it can take the multigrid and the larger caps too.
 - **L45, automatic step control and a stop on monitored values**: the
