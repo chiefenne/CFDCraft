@@ -1,0 +1,97 @@
+# Round jet from a pipe impinging on a heated plate at H/D = 2, Re = 23 750,
+# k-ε-ζ-f₀ with the coupled algorithm on an axisymmetric wedge (stage 6
+# part 6g, specification 9.6: Baughn & Shimizu 1989, Baughn et al. 1991,
+# Cooper et al. 1993).
+#
+#   target/release/foehn flow examples/cases/flow/impinging_jet.toml
+#
+# The jet axis is the x axis, the plate the plane x = 0 and the pipe exit
+# the plane x = H = 2D (D = 1 m); y is the radius (a wedge of 0.5° about
+# the x axis), out to r = 6D. The pipe exit (`xmax` for r < D/2) is a table
+# inlet with the developed profile of jet_pipe_profile.toml (u, k, ε and ζ
+# over the radius, impinging_jet_profile.csv, made by `python3 -m
+# foehncraft.profiles`); the rest of the exit plane (`entrain`, r > D/2)
+# lets ambient fluid in at the total pressure 0, the edge r = 6D lets the
+# wall jet out at the static pressure 0.
+#
+# Heat transfer: a passive temperature θ with Pr = 0.71, the uniform flux
+# q = 10⁻³ K m/s through the plate and θ = 0 at both inlets. The Nusselt
+# number is Nu(r) = q D/(Γ θ_w(r)), Γ = ν/Pr, from the column theta_wall
+# of wall_xmin.csv. The lines give the velocity along the axis and over
+# the distance from the plate at r/D = 0.5, 1, 2, 2.5 and 3, the stations
+# of Cooper et al.
+#
+# Mesh: 100 × 104 cells, the first cell at the plate 5·10⁻⁴ D (first-cell
+# y⁺ below 1), clustered at the pipe lip r = D/2; `verification.levels`
+# refines it for the study.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [0.0, 0.0, 0.0]
+upper = [2.0, 6.0, 0.1]
+cells = [100, 104, 1]
+segments = { x = [ { to = 0.5, cells = 60, ratio = 70.5252 }, { to = 2.0, cells = 40, ratio = 1.12946 } ], y = [ { to = 0.5, cells = 30, ratio = 0.0930221 }, { to = 1.0, cells = 24, ratio = 14.6648 }, { to = 6.0, cells = 50, ratio = 2.67413 } ] }
+split = [ { boundary = "xmax", axis = "y", at = 0.5, name = "entrain" } ]
+wedge = 0.5            # degrees about the x axis; y is the radius
+
+[fluid]
+density = 1.0
+viscosity = 4.2105263157894736e-5    # Re = U D/ν = 23 750
+
+[turbulence]
+model = "k-epsilon-zeta-f0"
+wall_treatment = "compound-2023"
+
+[scalars.theta]
+diffusivity = 5.930318754633061e-5   # ν/Pr, Pr = 0.71
+initial = 0.0
+
+[initial]
+velocity = [0.0, 0.0, 0.0]
+k = 1.0e-3
+epsilon = 1.0e-4
+
+[boundary.xmax]
+type = "velocity-inlet"
+profile = "table"
+table = "impinging_jet_profile.csv"   # r, u_n, k, epsilon, zeta
+table_coordinate = "radius"
+table_direction = [1.0, 0.0, 0.0]
+[boundary.entrain]
+type = "total-pressure-inlet"
+total_pressure = 0.0
+turbulence_intensity = 0.01
+viscosity_ratio = 1.0
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.scalar.theta]
+flux = 1e-3                  # q = wall heat flux over ρ c_p (K m/s)
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-6
+max_iterations = 1500
+log_every = 100
+
+[output]
+vtkhdf = false
+wall_csv = true
+reference = { velocity = 1.0 }
+lines = [
+  { name = "axis", from = [0.0, 0.0, 0.0], to = [2.0, 0.0, 0.0], points = 401 },
+  { name = "r0.5", from = [0.0, 0.5, 0.0], to = [2.0, 0.5, 0.0], points = 401 },
+  { name = "r1", from = [0.0, 1.0, 0.0], to = [2.0, 1.0, 0.0], points = 401 },
+  { name = "r2", from = [0.0, 2.0, 0.0], to = [2.0, 2.0, 0.0], points = 401 },
+  { name = "r2.5", from = [0.0, 2.5, 0.0], to = [2.0, 2.5, 0.0], points = 401 },
+  { name = "r3", from = [0.0, 3.0, 0.0], to = [2.0, 3.0, 0.0], points = 401 },
+]
