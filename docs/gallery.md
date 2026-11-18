@@ -15,7 +15,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Kernel benchmarks and GPU runs](gallery/benchmarks.md) | gate G1 on CPUs and GPUs, on box, polyhedral and tetrahedral meshes, and the flow loop on a GPU | 1, 2, 7, 16 |
 | [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes | 3, 4, 5, 6, 26 |
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
-| [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85 |
+| [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
@@ -69,6 +69,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="turbulence-multigrid"></a>81 | [A multigrid for the turbulence equations: the step settles in 40 and 65 iterations](gallery/flow.md#turbulence-multigrid) | [Incompressible flow](gallery/flow.md) |
 | <a id="pressure-hierarchy"></a>83 | [The pressure hierarchy follows its matrix: the fine step 6 times faster than SIMPLEC](gallery/flow.md#pressure-hierarchy) | [Incompressible flow](gallery/flow.md) |
 | <a id="thermal-wall-function"></a>85 | [Heat transfer in turbulent flow: the heated pipe and the heated flat plate](gallery/flow.md#thermal-wall-function) | [Incompressible flow](gallery/flow.md) |
+| <a id="heated-channel-dns"></a>86 | [The heated channel against DNS: Nu at Re_τ = 395](gallery/flow.md#heated-channel-dns) | [Incompressible flow](gallery/flow.md) |
 
 ## Adding a feature
 
