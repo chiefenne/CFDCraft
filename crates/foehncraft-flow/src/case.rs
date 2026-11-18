@@ -452,6 +452,61 @@ pub struct WallProbe {
     pub point: [f64; 3],
 }
 
+/// A sign change of the wall shear, `[[output.wall_crossings]]`: the first
+/// point after `from` along `direction` where the component of the wall
+/// shear stress along `direction` changes sign on a wall, linear between
+/// the two face centroids (stage 6: the reattachment length of the
+/// backward-facing step, with its uncertainty in a level sweep). The
+/// faces are taken in the order of their centroids along `direction`, so
+/// the wall is one row of faces: a 2D case (one cell thick), or `width`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WallCrossing {
+    /// Name (in the report and the uncertainty table).
+    pub name: String,
+    /// The wall boundary.
+    pub boundary: String,
+    /// `reattachment` (the shear along `direction` turns from negative to
+    /// positive) or `separation` (from positive to negative).
+    #[serde(default)]
+    pub kind: CrossingKind,
+    /// The point the search starts from (m); faces whose centroids lie
+    /// before it along `direction` are left out. The position is reported
+    /// as the distance from it along `direction`.
+    pub from: [f64; 3],
+    /// The direction of the search (normalised).
+    #[serde(default = "x_axis")]
+    pub direction: [f64; 3],
+    /// Only the faces whose centroids lie within this distance (m) of the
+    /// line through `from` along `direction` (default: every face of the
+    /// boundary).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f64>,
+}
+
+/// The kind of a wall crossing.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum CrossingKind {
+    /// The shear along the direction turns from negative to positive.
+    #[default]
+    Reattachment,
+    /// The shear along the direction turns from positive to negative.
+    Separation,
+}
+
+impl CrossingKind {
+    /// The name in the case file.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Reattachment => "reattachment",
+            Self::Separation => "separation",
+        }
+    }
+}
+
 /// Force coefficients, `[output.coefficients]`: C = 2 F / (ρ U² A) of the
 /// sum of the forces on `boundaries`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -582,6 +637,11 @@ pub struct OutputSection {
     /// report (and its uncertainty table of a level sweep).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub wall_probes: Vec<WallProbe>,
+    /// Wall crossings: the first point along a direction where the wall
+    /// shear changes sign (reattachment or separation), in the report (and
+    /// its uncertainty table of a level sweep).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub wall_crossings: Vec<WallCrossing>,
     /// Force coefficients of some boundaries (`forces.csv`, the report).
     pub coefficients: Option<Coefficients>,
     /// Derived fields written with the fields (D72), from the cell
@@ -610,6 +670,7 @@ impl Default for OutputSection {
             monitor_interval: None,
             probes: Vec::new(),
             wall_probes: Vec::new(),
+            wall_crossings: Vec::new(),
             coefficients: None,
             derived: Vec::new(),
             reference: Default::default(),
@@ -1313,6 +1374,20 @@ impl FlowCase {
                 l.name
             );
         }
+        for w in &self.output.wall_crossings {
+            crate::need!(
+                norm(w.direction) > 0.0 && w.direction.iter().all(|x| x.is_finite()),
+                CASE_RANGE,
+                "[[output.wall_crossings]] {}: direction must be a non-zero vector",
+                w.name
+            );
+            crate::need!(
+                w.width.is_none_or(|b| b > 0.0),
+                CASE_RANGE,
+                "[[output.wall_crossings]] {}: width must be > 0",
+                w.name
+            );
+        }
         Ok(())
     }
 
@@ -1469,6 +1544,9 @@ pub struct Solve {
     /// The wall probes of `[[output.wall_probes]]`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub wall_probes: Vec<WallProbeValue>,
+    /// The wall crossings of `[[output.wall_crossings]]`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub wall_crossings: Vec<WallCrossingValue>,
     /// The turbulence model (stage 6): first-cell y⁺ per wall, ν_t/ν max.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub turbulence: Option<crate::turbulence::TurbulenceSummary>,
@@ -1506,6 +1584,93 @@ pub(crate) fn wall_probe_line(w: &WallProbeValue) -> String {
             .unwrap_or_default(),
         w.y_plus
     )
+}
+
+/// A wall crossing at the end of a solve.
+#[derive(Debug, Clone, Serialize)]
+pub struct WallCrossingValue {
+    /// Name.
+    pub name: String,
+    /// `reattachment` or `separation`.
+    pub kind: &'static str,
+    /// Distance from `from` along `direction` (m); none when the shear
+    /// does not change sign that way.
+    pub position: Option<f64>,
+    /// The point on the wall (m), between the two face centroids.
+    pub at: Option<[f64; 3]>,
+}
+
+/// The log line of a wall crossing.
+pub(crate) fn wall_crossing_line(w: &WallCrossingValue, c: &WallCrossing) -> String {
+    match (w.position, w.at) {
+        (Some(s), Some(x)) => format!(
+            "wall crossing {} ({}) on {}: {:.6e} m from ({:.6e}, {:.6e}, {:.6e}) m, at \
+             ({:.6e}, {:.6e}, {:.6e}) m",
+            w.name, w.kind, c.boundary, s, c.from[0], c.from[1], c.from[2], x[0], x[1], x[2]
+        ),
+        _ => format!(
+            "wall crossing {} ({}) on {}: the shear does not change sign that way",
+            w.name, w.kind, c.boundary
+        ),
+    }
+}
+
+/// The wall crossings of `case` in the solution `fl`: per crossing the
+/// faces of the boundary after `from` (and within `width` of the line),
+/// ordered by the projection of their centroids on the direction (in face
+/// order on ties), and the first pair whose shear along the direction
+/// changes sign the given way, linear between the two.
+pub(crate) fn wall_crossings(
+    case: &FlowCase,
+    mesh: &Mesh,
+    geo: &Geometry,
+    fl: &Solution,
+) -> Vec<WallCrossingValue> {
+    let ni = mesh.n_interior_faces();
+    let mut out = Vec::new();
+    for wc in &case.output.wall_crossings {
+        let n = norm(wc.direction);
+        let d: [f64; 3] = std::array::from_fn(|i| wc.direction[i] / n);
+        let mut faces: Vec<(f64, usize, f64)> = Vec::new();
+        if let Some(p) = mesh.boundaries.iter().find(|p| p.name == wc.boundary) {
+            for f in p.range() {
+                let r = sub(geo.face_centroid[f], wc.from);
+                let s = dot(r, d);
+                if s < 0.0 {
+                    continue;
+                }
+                if let Some(b) = wc.width {
+                    let off: [f64; 3] = std::array::from_fn(|i| r[i] - s * d[i]);
+                    if norm(off) > b {
+                        continue;
+                    }
+                }
+                let (_, _, tau) = wall_face_values(fl, geo, f, ni);
+                faces.push((s, f, dot(tau, d)));
+            }
+        }
+        faces.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let turns = |t0: f64, t1: f64| match wc.kind {
+            CrossingKind::Reattachment => t0 < 0.0 && t1 >= 0.0,
+            CrossingKind::Separation => t0 > 0.0 && t1 <= 0.0,
+        };
+        let hit = faces.windows(2).find(|w| turns(w[0].2, w[1].2)).map(|w| {
+            let ((s0, f0, t0), (s1, f1, t1)) = (w[0], w[1]);
+            let a = -t0 / (t1 - t0);
+            let (x0, x1) = (geo.face_centroid[f0], geo.face_centroid[f1]);
+            (
+                s0 + a * (s1 - s0),
+                std::array::from_fn(|i| x0[i] + a * (x1[i] - x0[i])),
+            )
+        });
+        out.push(WallCrossingValue {
+            name: wc.name.clone(),
+            kind: wc.kind.name(),
+            position: hit.map(|h| h.0),
+            at: hit.map(|h| h.1),
+        });
+    }
+    out
 }
 
 /// The turbulence summary of a solve, its log lines and findings.
@@ -2665,6 +2830,10 @@ pub fn run_steered(
         for w in &wall_probe_values {
             lg.line(&wall_probe_line(w));
         }
+        let wall_crossing_values = wall_crossings(&case, &mesh, &geo, sol);
+        for (w, c) in wall_crossing_values.iter().zip(&case.output.wall_crossings) {
+            lg.line(&wall_crossing_line(w, c));
+        }
         let total: f64 = boundaries.iter().map(|p| p.mass_flow).sum();
         // scale: the largest boundary mass flow, or in a closed domain the
         // flow ρ |u|max A through the largest boundary
@@ -2786,6 +2955,7 @@ pub fn run_steered(
             scalars,
             periodic,
             wall_probes: wall_probe_values,
+            wall_crossings: wall_crossing_values,
             turbulence,
         });
         if stopped {

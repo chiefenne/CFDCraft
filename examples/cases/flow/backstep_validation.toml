@@ -1,0 +1,98 @@
+# Backward-facing step of Driver & Seegmiller (1985) in the layout of
+# NASA's Turbulence Modeling Resource (TMR), k-ε-ζ-f₀ with the coupled
+# algorithm: the validation case of stage 6 part 6g (specification 9.5).
+#
+#   target/release/foehn flow examples/cases/flow/backstep_validation.toml
+#   python3 examples/studies/backstep_validation.py      # six models, three meshes
+#
+# Step height H = 1 m, inflow 1 m/s, Re_H = 36 000. The layout of the TMR
+# case: the walls start at x = −110 H (the TMR has 20 H of symmetry
+# plane ahead of them; here the inlet is at the leading edge), the
+# outlet is at x = 50 H, and the top wall at y = 9 H is a no-slip wall
+# like the lower one (the expansion ratio 1.125 of the experiment). The
+# earlier step cases (backstep_zeta_f0.toml and others) have a slip top
+# at 9 H and walls from −85 H: their C_p is further from the experiment
+# (RMS 0.033 against 0.018 here), their x_r/H is within 1 % of this one.
+#
+# The built-in mesher cuts the step out of the box: 136 × 96 cells less
+# the 56 × 36 under the step, 11 040 cells, graded towards the walls
+# (first-cell y⁺ about 1.5), the step corner and the reattachment
+# region; `verification.levels = [0, 1, 2]` (the study) halves every
+# interval once and twice (44 160 and 176 640 cells). The inflow
+# boundary layer at x = −4 H: C_f = 2.95·10⁻³ (the experiment 2.88·10⁻³,
+# the TMR's SST result 2.93·10⁻³), about 1.5 H thick.
+#
+# The reattachment point is a wall crossing (`[[output.wall_crossings]]`):
+# the first point after the step where the wall shear of `ymin` turns
+# from negative to positive, in the report and, in a level sweep, with
+# its observed order and GCI (D67). The lines give the velocity profiles
+# at x/H = −4, 1, 4, 6 and 10, the stations of the experiment.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-110.0, 0.0, 0.0]
+upper = [50.0, 9.0, 0.1]
+cells = [136, 96, 1]
+segments = { x = [ { to = 0.0, cells = 56, ratio = 0.0113838 }, { to = 50.0, cells = 80, ratio = 19.4829 } ], y = [ { to = 0.5, cells = 18, ratio = 36.8448 }, { to = 1.0, cells = 18, ratio = 0.0271409 }, { to = 5.0, cells = 30, ratio = 264.733 }, { to = 9.0, cells = 30, ratio = 0.00377739 } ] }
+remove = [ { lower = [-110.0, 0.0, 0.0], upper = [0.0, 1.0, 0.1], name = "step" } ]
+
+[fluid]
+density = 1.0
+viscosity = 2.7777777777777777e-5
+
+[turbulence]
+model = "k-epsilon-zeta-f0"
+wall_treatment = "compound-2023"
+ambient = { k = 1.5e-4, epsilon = 7.29e-6 }
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+k = 1.0e-3
+epsilon = 3.24e-5
+
+# I = 1 %, ν_t/ν = 10 (the TMR's free stream, 0.06 % and 0.009, keeps the
+# boundary layer of the ζ-f models laminar, 6d)
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+k = 1.5e-4
+epsilon = 7.29e-6
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.step]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-6
+max_iterations = 400
+log_every = 50
+
+[verification]
+require_convergence = false
+
+[output]
+vtkhdf = false
+wall_csv = true
+reference = { velocity = 1.0 }
+wall_probes = [ { name = "x-4", boundary = "step", point = [-4.0, 1.0, 0.05] } ]
+wall_crossings = [ { name = "xr", boundary = "ymin", from = [0.0, 0.0, 0.05] } ]
+lines = [
+  { name = "x-4", from = [-4.0, 1.0, 0.05], to = [-4.0, 9.0, 0.05], points = 321 },
+  { name = "x1", from = [1.0, 0.0, 0.05], to = [1.0, 9.0, 0.05], points = 361 },
+  { name = "x4", from = [4.0, 0.0, 0.05], to = [4.0, 9.0, 0.05], points = 361 },
+  { name = "x6", from = [6.0, 0.0, 0.05], to = [6.0, 9.0, 0.05], points = 361 },
+  { name = "x10", from = [10.0, 0.0, 0.05], to = [10.0, 9.0, 0.05], points = 361 },
+]
