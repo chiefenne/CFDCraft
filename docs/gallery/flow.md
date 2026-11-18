@@ -557,6 +557,11 @@ do not trigger the rule (the cavity builds the same 45 hierarchies in
 Seconds per phase (R6): gradients 0.21, momentum assembly 0.74, momentum solve 2.45, pressure assembly 4.03, pressure solve 5.81, multigrid setup 6.94 (20 setups, 118 of the momentum sweeps, 172 of the turbulence equations), turbulence model 16.66
 ```
 
+A later change (#84) builds the multigrid matrices into flat arrays
+instead of a vector per row, with bit-identical results: the setups of
+the fine step take 4.9 s instead of 6.9 s and the run 33.3 s (7.3 times
+faster than SIMPLEC), the coarse step 5.7 s.
+
 The turbulence model is now the largest part of a fine run (42 %), the
 pressure solves 15 %. The published coupled solvers report 8 to 40
 times on 12 000 to 195 000 cells; closing that is the work of the next

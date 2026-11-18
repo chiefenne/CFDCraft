@@ -798,6 +798,30 @@ same time, with every check passed. Laminar cases do not trigger the
 rule, since the pseudo-time term holds D̂: the cavity at Re = 1000
 builds the same 45 hierarchies in 442 iterations either way.
 
+### 7.11 A cheaper setup
+
+The profile of 12 iterations on the coarse step put the reduction
+multigrid setups at a quarter of the instructions: building the
+restriction, the interpolation and the strong graph as a vector per row,
+then the products R·(A·P) with a vector and a sort per row. They now
+build into flat arrays (blocks of 512 rows in parallel, joined in row
+order, one accumulator per worker): the matrices and so every residual
+history are bit-identical to before, on one thread and on several (test
+`flat_products_equal_the_reference_bitwise`; the coupled tests of the
+thread independence pass unchanged). One thread, quiet machine, to the
+settled result:
+
+| Case | Run time (before) | Multigrid setups (before) |
+|---|---|---|
+| Step, k-ε-ζ-f₀, 8 200 cells | 5.7 s (6.2 s) | 1.11 s (1.29 s) |
+| Step, k-ε-ζ-f₀, 32 800 cells | 33.3 s (39.8 s) | 4.86 s (6.94 s) |
+
+The fine step is now 7.3 times faster than SIMPLEC (243 s). The setups
+remain the largest single part of the turbulence model; what is left is
+the Ruge–Stüben splitting (a heap on one thread), the conversion of the
+assembled matrix to rows and the sliced-ELL storage of the levels. The
+owner has parked solver speed (2026-11-18): no further step is planned.
+
 ## 8. State of the art and what comes next
 
 Published reference points for pressure-based coupled solvers:
@@ -865,7 +889,7 @@ Rows in [`requirements.md`](../requirements.md).
 | D179 | Reduction multigrid (approximate ideal restriction) as the momentum sweep of the coupled preconditioner; `momentum_sweep`, `momentum_cycles`, `momentum_reuse`, `[solver.coupled.multigrid]` | stage 6 part 6f |
 | D180 | The reduction multigrid as the preconditioner of the turbulence equations of the k-ε family, kept hierarchies; the relaxations 0.995 with it; `[solver.turbulence] preconditioner = "reduction"`, `reuse` | stage 6 part 6g |
 | D181 | The pressure hierarchy of the coupled preconditioner rebuilt when its matrix has changed; the pressure solve to 0.3; `pressure_reuse`, `pressure_tolerance` | stage 6 part 6h |
-| L44 | A cheaper setup, a splitting-based multigrid for the pressure, a Schur complement without the cap | the next solver steps |
+| L44 | A cheaper setup (done in part, section 7.11), a splitting-based multigrid for the pressure, a Schur complement without the cap | parked by the owner 2026-11-18 |
 | L45 | Automatic step control (switched evolution relaxation) and a stop on monitored values | after L44 |
 | L46 | Newton–Krylov on the coupled system | after L45 |
 
