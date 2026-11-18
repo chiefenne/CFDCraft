@@ -16,21 +16,25 @@ k-ε-ζ-f₀ model of Popovac (2023) with its wall treatment
 ([below](#k-ε-ζ-f₀-and-the-compound-treatment-of-2023-part-6d2)), part 6e the
 coupled pressure–velocity algorithm and the pseudo-time steps that cut the
 iterations of the steady turbulent cases
-([below](#coupled-algorithm-and-pseudo-time-steps-part-6e)). The commands are in
+([below](#coupled-algorithm-and-pseudo-time-steps-part-6e)), part 6f the
+multigrid of its momentum sweep
+([below](#multigrid-for-the-momentum-sweep-part-6f)). The commands are in
 [recipe 63](../recipes/scalars.md#passive-scalars),
 [recipe 67](../recipes/boundary-conditions.md#periodic),
 [recipe 68](../recipes/turbulence.md#sst),
 [recipe 71](../recipes/turbulence.md#k-epsilon),
 [recipe 73](../recipes/turbulence.md#zeta-f),
-[recipe 74](../recipes/turbulence.md#zeta-f0) and
-[recipe 78](../recipes/flow.md#coupled), the pictures in
+[recipe 74](../recipes/turbulence.md#zeta-f0),
+[recipe 78](../recipes/flow.md#coupled) and
+[recipe 80](../recipes/flow.md#momentum-multigrid), the pictures in
 [gallery 63](../gallery/scalars.md#passive-scalars),
 [gallery 67](../gallery/boundary-conditions.md#periodic),
 [gallery 68](../gallery/turbulence.md#sst),
 [gallery 71](../gallery/turbulence.md#k-epsilon),
 [gallery 73](../gallery/turbulence.md#zeta-f),
-[gallery 74](../gallery/turbulence.md#zeta-f0) and
-[gallery 78](../gallery/flow.md#coupled), the generated
+[gallery 74](../gallery/turbulence.md#zeta-f0),
+[gallery 78](../gallery/flow.md#coupled) and
+[gallery 80](../gallery/flow.md#momentum-multigrid), the generated
 tables of every case in the [verification manual](manual.md).
 
 ## Passive scalars and the wall distance (part 6a)
@@ -581,4 +585,101 @@ the histories of the runs without them: the fine step gives x_r/H =
 6.27, 6.34, 6.37 after 170, 180, 190 iterations either way. Before that
 correction a result file shifted the path within this scatter (the SST
 count read 85 instead of 80).
+
+## Multigrid for the momentum sweep (part 6f)
+
+Specification: [requirements step 22](../requirements/step22-coupled-solver.md)
+sections 3.1 and 7.7 (D179).
+
+**The method** (`foehncraft-fv::amg::reduction`). The momentum sweep of
+the coupled preconditioner is one V-cycle of a reduction multigrid per
+velocity component instead of BiCGStab. Setup on the host, per level:
+strong dependencies (|a_ij| ≥ 0.3 max_{k≠i} |a_ik|); the first pass of
+the Ruge–Stüben splitting into coarse points C and fine points F; the
+restriction R = [Z I] with Z = −A_CF (2 D_F⁻¹ − D_F⁻¹ A_FF D_F⁻¹), an
+approximate ideal restriction; direct interpolation; A_c = R A P with
+the entries below 10⁻⁴ of the diagonal dropped; a dense inverse at 64
+unknowns or fewer. The cycle is the one of the scalar multigrid on the
+same level operations (CPU and GPU, float32 hierarchy), with an inverse
+diagonal that is zero on the C points: Jacobi on the F points, once
+before and once after the coarse correction.
+
+**In the coupled algorithm** (`foehncraft-flow::coupled`). One hierarchy
+per velocity component, shared by components with the same matrix and
+built when a sweep first needs it; kept while the momentum matrix has
+changed by at most 2 % since its setup (`momentum_reuse`) and while its
+cycle still halves the residual of the first sweep of an outer
+iteration; stored with its matrix in the restart file. A component
+whose part of a Krylov vector is zero up to rounding takes no sweep. A
+failed setup leaves the sweeps of that outer iteration to BiCGStab, with
+a warning in the log.
+
+**One thread without a pool** (`backend::cpu`, `device::cpu`). A pool of
+one thread and loops of one task run on the calling thread instead of
+being handed to a worker (same values); found with the measurements
+below.
+
+### Results
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| Splitting of a 5-point Laplacian and of a convection matrix | C and F points; every F point has a strong C neighbour; coarsening along the flow | – | asserted (`splitting_of_a_laplacian`, `splitting_follows_the_flow`) |
+| Convection–diffusion in a solid-body rotation, 32² to 256², cell Péclet number 0 to 300 | factor per cycle with the diagonal raised by 2 % (the cap 0.98); without; operator complexity | 0.35; 0.5 to 0.7; 4 | 0.07 to 0.22 (0.15 and 0.16 on 128² and 256²); 0.25 to 0.53; 2.4 to 3.5 |
+| Scalar transport on hexahedra, tetrahedra, polyhedra and a mixed mesh in 3D, cell Péclet number 0.5 and 20 (`tests/reduction.rs`, on the backend, float32 hierarchy) | residual after 8 cycles; operator complexity | 10⁻³; 5.5 | passes; 2.2 to 5.4 |
+| The same hierarchy in two multigrid slots, float32 and float64, repeated | cycles | bit-identical repeat; the precisions agree to 10⁻⁵ | asserted (`precision_and_slots`) |
+| Setup on 1 and 4 threads | hierarchy | identical | asserted (`setup_does_not_depend_on_threads`) |
+| Matrix without couplings; dense inverse of a non-symmetric matrix | cycle solves; A A⁻¹ = I | 10⁻¹² | asserted |
+| Cavity 24², converged to 10⁻¹¹ | lid force with the multigrid sweep, the BiCGStab sweep, two cycles, `momentum_reuse = 0`, a float64 hierarchy | 10⁻⁸ | asserted (`momentum_sweeps_give_the_same_result`) |
+| Cavity 12 × 12 × 6 with a symmetry plane (the components have different matrices) | result against the BiCGStab sweep; a hierarchy per component | 10⁻⁷ | asserted (`multigrid_sweep_with_symmetry_planes_in_3d`) |
+| Cavity 16² (restart at 10 of 24) and 24² (restart at 70 of 90, with kept hierarchies) | velocity, pressure, fluxes, kept hierarchies of the continued run | bit-identical | asserted (`coupled_restart_continues_bit_identically`) |
+| Cavity 150², 8 iterations, 1 and 4 threads | residuals, Krylov count, boundary forces | bit-identical | asserted |
+| Cavity 70² with `max_levels = 1` (the coarsest level would exceed the dense limit) | the run goes on with BiCGStab sweeps; one warning in `flow.log` | – | asserted (`failed_multigrid_setup_falls_back_to_bicgstab`) |
+| Input | ranges of `momentum_cycles`, `momentum_reuse`, `[solver.coupled.multigrid]` | refused with CASE005 | asserted |
+
+Runs on one thread, to the iteration from which x_r stays within 1 % of
+its final value (step) or to 10⁻⁸ (cavity); Krylov iterations per outer
+iteration in brackets:
+
+| Case | SIMPLEC | Coupled, BiCGStab sweep | Coupled, multigrid sweep |
+|---|---|---|---|
+| Step, k-ε-ζ-f₀, 8 200 cells (`backstep_zeta_f0_coupled.toml`) | 525 iterations, 18.7 s | 65 (10.0), 8.3 s | 65 (5.3), 7.0 s |
+| Step, k-ε-ζ-f₀, 32 800 cells | 1 600 iterations, 243 s | 175 (14.2), 131 s | 150 (6.0), 74 s |
+| Cavity at Re = 1000, 128² (`cavity_re1000_coupled.toml`) | 1 397 iterations, 28.3 s | 452 (2.2), 18.8 s | 449 (2.1), 12.1 s |
+| Step, k-ε (`scalable`) and k-ω SST, 8 200 cells | 600 and 675 iterations | 75 and 80 | 75 and 80 (2.2 and 5.1) |
+| Channel at Re_τ = 395, k-ε-ζ-f₀ | about 2 100 iterations | 323 | 324 |
+
+Final values as in part 6e: x_r/H = 6.385 (k-ε-ζ-f₀), 5.287 (k-ε), 6.81
+(SST), 6.35 on the fine mesh; the cavity deviates from Ghia et al. by
+0.0040 and 0.0136 with both sweeps.
+
+**Findings.** (1) One cycle per component replaces a BiCGStab sweep of
+10 iterations at a third of its cost, and the Krylov count per outer
+iteration halves on the step (so do the pressure solves). (2) The fine
+step settles in 150 iterations instead of 175 and in 74 s instead of
+131 s; against SIMPLEC the run time gains a factor of 2.7 on the coarse
+step, 3.3 on the fine one and 2.3 on the cavity. (3) A setup costs as
+much as twenty to thirty cycles, and while the flow forms the matrix
+changes by more than 2 % in most iterations: 96 setups in the 65
+iterations of the coarse step (1.4 s of 7.0 s, against 0.3 s for all
+cycles), 140 in 150 on the fine one, 28 in 449 on the cavity. A setup
+in every outer iteration made the cavity slower than with BiCGStab,
+which is why hierarchies are kept. Measured on step matrices, a
+hierarchy from a matrix 1.3 %, 2.7 % and 5.4 % away converges with 0.27,
+0.34 and 0.6 per cycle; from 6.4 % on it does not. (4) Without the cap
+on the local step (relaxation 0.999) the fine step settles in about 120
+iterations, but every outer iteration runs into the limit of 30 Krylov
+iterations: the cap stays at 0.98 until the Schur complement
+approximation is better. (5) The BiCGStab sweeps took a quarter of the
+run time on the fine mesh; the cycles and their setups take 16 %, and
+the turbulence equations and the pressure solves two thirds. (6) Thread hand-off: with a pool of one
+thread every kernel call went to the worker thread and back, about
+2 000 times per outer iteration of the cavity. Running such loops on
+the calling thread took the coarse step with SIMPLEC from 31 s to
+18.7 s and with the coupled algorithm and the BiCGStab sweep from 21 s
+to 8.3 s, without changing a value. The times of part 6e above are from
+before that change. (7) Larger pseudo-time steps on small laminar
+cases, which cost two to three times the default with the BiCGStab
+sweep (finding 7 of part 6e), are now as cheap as it: cavity at
+Re = 1000 on 64², SIMPLEC 584 iterations in 3.0 s, coupled with
+`factor` 1, 4, 20: 624, 275, 170 iterations in 3.7 s, 2.8 s, 2.6 s.
 
