@@ -420,6 +420,13 @@ pub fn cg(
     let mut rho = be.dot(V::R, V::Z)?;
     let mut rn = r0;
     for it in 1..=max_iter {
+        if rho == 0.0 {
+            // z = M⁻¹ r vanishes although r does not: the residual lies below
+            // the range of the float32 multigrid hierarchy (an exactly
+            // converged one-dimensional flow, about 1e-40 per cell), so no
+            // further step can change Phi. As in BiCGStab, stop.
+            return Ok((it - 1, rn / r0));
+        }
         be.spmv(V::P, V::Q)?;
         let pq = be.dot(V::P, V::Q)?;
         anyhow::ensure!(

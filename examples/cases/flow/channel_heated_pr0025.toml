@@ -1,0 +1,74 @@
+# Heated turbulent channel of a liquid metal (Pr = 0.025), standard k-ε
+# with scalable wall functions, the thermal wall function of Kader and the
+# turbulent Prandtl number of Kays & Crawford (stage 6 part 6f, D135).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_heated_pr0025.toml
+#
+# channel_heated_keps.toml at Pr = 0.025 (Γ = ν/Pr = 40 ν) and the bulk
+# Reynolds number Re_b = 2h U_b/ν = 14 147 of the DNS of Abe, Kawamura &
+# Matsuo (JAXA DNS database, Re_τ = 395, Pr = 0.025; Nu_2h = 6.60). The
+# turbulent heat flux of a liquid metal is weak against conduction
+# (Pe_t = (ν_t/ν) Pr < 1 almost everywhere), where Pr_t rises above its
+# log-layer value: with Kays & Crawford Nu_2h = 7.07 (+7.2 %), with the
+# constant Pr_t = 0.85 7.88 (+19.4 %). The Nusselt number follows as in
+# channel_heated_keps.toml: Nu = 2h q/(Γ (T_w − T_b)), T_b = 0 at xmin,
+# T_w the wall mean there minus Δ/2, Δ = Q/ṁ = 1e-3 × 0.02/3.5815.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 2.0, 0.1]
+cells = [2, 12, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.0025316455696202532   # 1/395
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[scalars.theta]
+diffusivity = 0.10126582278481013   # ν/Pr, Pr = 0.025
+initial = 0.0
+turbulent_prandtl = 0.85
+turbulent_prandtl_model = "kays-crawford"
+wall_function = "kader"
+
+[initial]
+velocity = [15.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 3.58152   # U_b = Re_b ν/(2h) = 17.908 m/s on 0.2 m²
+[boundary.xmin.scalar.theta]
+periodic = "heat-flux"
+bulk = 0.0
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.scalar.theta]
+flux = 1e-3
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.scalar.theta]
+flux = 1e-3
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 3000
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.0, 0.05], to = [0.05, 1.0, 0.05], points = 200 } ]

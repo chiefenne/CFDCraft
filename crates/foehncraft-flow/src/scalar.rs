@@ -147,6 +147,9 @@ pub struct TurbCoupling {
     pub wall: Buf,
     /// y⁺ per wall face (the wall treatment), if the flow has walls.
     pub y_plus: Option<Buf>,
+    /// The thermal law is taken at ỹ⁺ = max(y⁺, `y_floor`): 11.06 with the
+    /// scalable momentum treatment, 0 otherwise.
+    pub y_floor: f64,
 }
 
 /// The turbulent part of one scalar on the device (D135).
@@ -1156,6 +1159,7 @@ impl Scalars {
                         bc_a: f.bc_a,
                         law: f.turb.law,
                         prt: f.turb.prt,
+                        y_floor: tc.y_floor,
                         gamma: f.gamma,
                         bc_b: f.bc_b,
                         t_plus: None,

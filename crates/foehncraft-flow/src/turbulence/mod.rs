@@ -2278,6 +2278,11 @@ impl Turbulence {
             mu_eff: dev.face_viscosity(),
             wall: self.mask_b,
             y_plus: self.wd.map(|w| w.y_plus),
+            y_floor: if self.treatment == kwall::SCALABLE {
+                kwall::Y_PLUS_LOG
+            } else {
+                0.0
+            },
         }
     }
 
