@@ -14,7 +14,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes | 7, 8, 9, 11, 36 |
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
-| [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28 |
+| [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28, 78 |
 | [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | 63 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks | 68, 71, 73, 74 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 29, 67 |
@@ -73,6 +73,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="k-epsilon"></a>71 | [Run a case with the k-ε family and wall functions](recipes/turbulence.md#k-epsilon) | [Turbulence models](recipes/turbulence.md) |
 | <a id="zeta-f"></a>73 | [Run a case with k-ε-ζ-f and resolved walls](recipes/turbulence.md#zeta-f) | [Turbulence models](recipes/turbulence.md) |
 | <a id="zeta-f0"></a>74 | [Run a case with k-ε-ζ-f₀ at any first-cell y⁺](recipes/turbulence.md#zeta-f0) | [Turbulence models](recipes/turbulence.md) |
+| <a id="coupled"></a>78 | [Converge a steady case in fewer iterations with the coupled algorithm](recipes/flow.md#coupled) | [Incompressible flow](recipes/flow.md) |
 
 ## Adding a feature
 
