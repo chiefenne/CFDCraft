@@ -853,9 +853,19 @@ larger y⁺, so no switch is needed. Both kernels are single-source
 | Isothermal flat plate, Re = 5·10⁶ per unit length, 0.25 ≤ x ≤ 1 | St against 0.0287 Re_x^−0.2 Pr^−0.4 | ±10 % | +1.7 % at 0.29, +7.5 % at 0.97 (`heated_plate_meets_the_stanton_correlation`) |
 | Input | `turbulent_prandtl` ≤ 0, unknown wall function | refused | asserted |
 
-Not in this part: the channel Nusselt number at Re_τ 150 to 395 against
-DNS (the reference data are not stored with the project yet), the heated
-pipe with the other models (they take the same kernels through their
-y⁺), and the plate for x below 0.2, where the k-ε start of the turbulent
-layer, not the thermal law, sets St (50 % low).
+| Heated channel, Re_τ = 395, Pr = 0.71, 12 cells, y⁺ 32 | Nu on 2h against 36.39 of the DNS of Abe, Kawamura & Matsuo (JAXA DNS database, Re_b = 13 849) | ±7 % | −1.0 % (constant Pr_t), −2.0 % (Kays–Crawford) (`heated_channel_meets_the_dns_nusselt_number`) |
 
+The DNS data belong to JAXA (all rights reserved; citation of Abe et al.
+requested), so the repository holds only the published Nusselt number.
+`examples/studies/channel_heat_dns.py` downloads the tables to a
+git-ignored folder, recomputes U_b⁺, Θ_b⁺ and Nu for the eight cases
+(Re_τ 180, 395, 640, 1020 at Pr 0.71 and 0.025; the integrated Nu
+agrees with the file headers to 0.4 % except `ch1020pr0025.dat`, whose
+header repeats the Re_b of the Pr = 0.71 case and gives Nu = 278.71
+where the profiles give 9.81) and compares our run.
+
+Not in this part: the other Reynolds and Prandtl numbers (the scalable
+wall functions need first-cell y⁺ ≥ 30, so they need other meshes), the
+heated pipe with the other models, and the plate for x below 0.2, where
+the k-ε start of the turbulent layer, not the thermal law, sets St
+(50 % low).

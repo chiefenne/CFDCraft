@@ -15,6 +15,7 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 81 | [Use the multigrid of the turbulence equations and its larger steps](#turbulence-multigrid) |
 | 83 | [See and tune the pressure hierarchy of the coupled preconditioner](#pressure-hierarchy) |
 | 85 | [Add heat transfer to a turbulent flow: wall function and turbulent Prandtl number](#thermal-wall-function) |
+| 86 | [Compare the heated channel with the DNS Nusselt numbers](#heated-channel-dns) |
 
 ---
 
@@ -734,3 +735,28 @@ the molecular conduction where y⁺ is below 1. `none` is for comparison
 (Nu 39 % low at y⁺ 32). Use `kays-crawford` for fluids of low Prandtl
 number, where the molecular conduction reaches further into the layer.
 Roughness has no thermal correction: the smooth-wall T⁺ is used.
+
+---
+
+<a id="heated-channel-dns"></a>
+## 86. Compare the heated channel with the DNS Nusselt numbers
+
+```
+cargo build --release -p foehncraft-cli
+python examples/studies/channel_heat_dns.py --run
+```
+
+The script downloads the tables of the
+[JAXA DNS database](https://jaxa-dns-database.jaxa.jp/channelflow.html)
+(Re_τ 180, 395, 640 and 1020 at Pr 0.71 and 0.025) into `output/dns_jaxa`,
+which git ignores, prints U_b⁺, Re_b, Θ_b⁺ and Nu on 2h and 4h next to
+the Nu of each file's header, and with `--run` runs
+`examples/cases/flow/channel_heated_keps.toml` (Re_τ = 395, Pr 0.71) and
+prints its Nu against the DNS (−1.4 % against the integrated table, −1.0 %
+against the header). The data are JAXA's (all rights reserved, citation of
+Abe et al. requested): do not commit them.
+
+To compare another Re_τ or Pr, change `ν = 1/Re_τ`, the mass flow
+(ρ U_b 2h × depth with U_b⁺ from the table) and `diffusivity = ν/Pr` in a
+copy of the case; the scalable wall functions need a first-cell y⁺ of
+30 or more (first cell h/N with N chosen accordingly).

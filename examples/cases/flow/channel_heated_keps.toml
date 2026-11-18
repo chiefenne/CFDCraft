@@ -1,0 +1,71 @@
+# Heated turbulent channel, standard k-ε with scalable wall functions and
+# the thermal wall function of Kader (stage 6 part 6f, D135, specification
+# 9.4).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_heated_keps.toml
+#
+# The channel of channel_keps.toml (Re_τ ≈ 395) with a passive temperature
+# of Pr = 0.71 (Γ = ν/Pr) and the same uniform wall heat flux q on both
+# walls, on one periodic module with the heat-flux jump Δ = Q/ṁ of D109
+# (1). The Nusselt number Nu = 2h α/λ = 2h q/(Γ (T_w − T_b)) on the
+# channel width 2h follows from the bulk value T_b = 0 at xmin and the
+# wall value there (the mean over the walls minus Δ/2); the case file
+# comments of channel_heated_periodic.toml give the same recipe.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 2.0, 0.1]
+cells = [2, 12, 1]
+
+[fluid]
+density = 1.0
+viscosity = 0.0025316455696202532   # 1/395
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[scalars.theta]
+diffusivity = 0.0035661218424962853   # ν/Pr, Pr = 0.71
+initial = 0.0
+turbulent_prandtl = 0.85
+wall_function = "kader"
+
+[initial]
+velocity = [15.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 3.51
+[boundary.xmin.scalar.theta]
+periodic = "heat-flux"
+bulk = 0.0
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.scalar.theta]
+flux = 1e-3
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.scalar.theta]
+flux = 1e-3
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 3000
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.0, 0.05], to = [0.05, 1.0, 0.05], points = 200 } ]
