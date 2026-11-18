@@ -1581,6 +1581,41 @@ pub struct WallProbeValue {
     pub skin_friction: Option<f64>,
     /// First-cell y⁺ there (with a turbulence model: of its wall treatment).
     pub y_plus: f64,
+    /// The passive scalars there: wall value and diffusive flux into the
+    /// domain (the Nusselt number of a heated wall, stage 6 part 6g).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub scalars: Vec<WallProbeScalar>,
+}
+
+/// A passive scalar at a wall probe.
+#[derive(Debug, Clone, Serialize)]
+pub struct WallProbeScalar {
+    /// The scalar.
+    pub name: String,
+    /// Its value on the wall.
+    pub wall: f64,
+    /// The diffusive flux into the domain per unit area (the unit of the
+    /// scalar times m/s).
+    pub flux: f64,
+}
+
+/// The wall value and the diffusive flux into the domain of the scalar
+/// `st` at the wall face `f`: φ_b = a φ_P + b, flux = Γ_f/ρ (|S|/d_n)
+/// (φ_b − φ_P). None where the scalar has no wall data.
+fn scalar_wall_face(
+    fl: &Solution,
+    geo: &Geometry,
+    st: &crate::scalar::ScalarState,
+    f: usize,
+    ni: usize,
+) -> Option<(f64, f64)> {
+    let w = st.wall.as_ref()?;
+    let fb = f - ni;
+    let c = fl.disc.owner[f] as usize;
+    let pp = st.phi[c];
+    let pb = w.a[fb] * pp + w.b[fb];
+    let ex = w.gamma[fb] / fl.phys.rho * fl.disc.dgeo[f] / norm(geo.face_area[f]);
+    Some((pb, ex * (pb - pp)))
 }
 
 /// The log line of a wall probe.
@@ -1596,7 +1631,11 @@ pub(crate) fn wall_probe_line(w: &WallProbeValue) -> String {
             .map(|c| format!(", C_f {c:.6e}"))
             .unwrap_or_default(),
         w.y_plus
-    )
+    ) + &w
+        .scalars
+        .iter()
+        .map(|s| format!(", {} wall {:.6e}, flux {:.6e}", s.name, s.wall, s.flux))
+        .collect::<String>()
 }
 
 /// A wall crossing at the end of a solve.
@@ -1798,6 +1837,20 @@ pub(crate) fn wall_probes(
         let (t2, y2) = val(f2);
         let tau: [f64; 3] = std::array::from_fn(|i| (1.0 - t) * t1[i] + t * t2[i]);
         let magnitude = norm(tau);
+        let scalars = fl
+            .state
+            .scalars
+            .iter()
+            .filter_map(|st| {
+                let (w1, q1) = scalar_wall_face(fl, geo, st, f1, ni)?;
+                let (w2, q2) = scalar_wall_face(fl, geo, st, f2, ni)?;
+                Some(WallProbeScalar {
+                    name: st.name.clone(),
+                    wall: (1.0 - t) * w1 + t * w2,
+                    flux: (1.0 - t) * q1 + t * q2,
+                })
+            })
+            .collect();
         out.push(WallProbeValue {
             name: wp.name.clone(),
             at: std::array::from_fn(|i| x1[i] + t * e[i]),
@@ -1805,6 +1858,7 @@ pub(crate) fn wall_probes(
             magnitude,
             skin_friction: q.map(|q| magnitude / q),
             y_plus: (1.0 - t) * y1 + t * y2,
+            scalars,
         });
     }
     out
@@ -3587,16 +3641,16 @@ pub(crate) fn write_outputs(
                     if let Some(t) = turb {
                         let _ = write!(r, ",{:e},{:e}", t.y_plus[f - ni], t.u_tau[f - ni]);
                     }
-                    // scalars: φ_b = a φ_P + b, flux = Γ_f/ρ (|S|/d_n) (φ_b − φ_P)
-                    let c = fl.disc.owner[f] as usize;
+                    // scalars: wall value, flux and exchange velocity
                     let area = norm(geo.face_area[f]);
                     for st in &fl.state.scalars {
                         let Some(w) = &st.wall else { continue };
+                        let Some((pb, flux)) = scalar_wall_face(fl, geo, st, f, ni) else {
+                            continue;
+                        };
                         let fb = f - ni;
-                        let pp = st.phi[c];
-                        let pb = w.a[fb] * pp + w.b[fb];
                         let ex = w.gamma[fb] / fl.phys.rho * fl.disc.dgeo[f] / area;
-                        let _ = write!(r, ",{pb:e},{:e},{ex:e}", ex * (pb - pp));
+                        let _ = write!(r, ",{pb:e},{flux:e},{ex:e}");
                         if let Some(t) = turb {
                             let _ = write!(r, ",{:e}", t.u_tau[fb] / ex);
                         }

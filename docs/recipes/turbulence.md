@@ -10,6 +10,7 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 | 74 | [Run a case with k-ε-ζ-f₀ at any first-cell y⁺](#zeta-f0) |
 | 88 | [Run a case with the elliptic-blending k-ε](#elliptic-blending) |
 | 89 | [Validate the turbulence models on the backward-facing step](#step-validation) |
+| 90 | [Feed a jet with a developed pipe profile and compute the Nusselt number](#impinging-jet) |
 
 ---
 
@@ -480,5 +481,103 @@ again. On four cores the four coupled models take about an hour
 together (k-ε 23 minutes for its three meshes, SST 36); ζ-f and EB need
 hours with SIMPLEC on the finest mesh, and `--models zf,eb --levels 0,1`
 runs their two coarser meshes in about an hour.
+
+[↑ back to top](#turbulence-models)
+
+<a id="impinging-jet"></a>
+## 90. Feed a jet with a developed pipe profile and compute the Nusselt number
+
+The jet of specification 9.6 leaves a long pipe, so its inlet carries
+the developed velocity *and* turbulence of a pipe flow. Two cases do it:
+a periodic pipe on a wedge (`jet_pipe_profile.toml`, 0.3 s) and the jet
+on a heated plate (`impinging_jet.toml`, about a minute on four cores).
+
+**1. The developed profile.** The periodic pipe at the jet's Reynolds
+number samples the radius with a line from the axis to the wall:
+
+```
+target/release/foehn flow examples/cases/flow/jet_pipe_profile.toml --out output/jet_pipe
+```
+
+**2. The inlet table.** The line samples the turbulence variables as
+cell values; `foehncraft.profiles` takes one row per cell (the centre of
+its run of equal samples, the velocity there) and adds a wall row
+(u = 0, k = 0, ζ = 0, ε of the wall cell):
+
+```
+python3 -m foehncraft.profiles output/jet_pipe/line_profile.csv \
+    examples/cases/flow/impinging_jet_profile.csv
+```
+
+The header of the table names its columns: the coordinate, then the
+velocity as `u_n` (along the inlet normal; here along
+`table_direction`) or `u_x`, `u_y`, `u_z`, and the turbulence as `k`
+with `epsilon` or `omega`, and `zeta`:
+
+```toml
+[boundary.xmax]
+type = "velocity-inlet"
+profile = "table"
+table = "impinging_jet_profile.csv"   # r, u_n, k, epsilon, zeta
+table_coordinate = "radius"
+table_direction = [1.0, 0.0, 0.0]
+```
+
+With turbulence columns the boundary gives no turbulence values of its
+own; `turbulence_intensity`, `k`, … or `zeta` next to such a table is
+refused (BC029), and so is a column name the profile does not know
+(BC019). A table of another model works the same way (`omega` for SST;
+`zeta` is φ for the elliptic-blending k-ε).
+
+**3. The Nusselt number.** The plate is a wall with a uniform flux of
+the passive temperature θ (Pr = 0.71), and both inlets bring θ = 0, so
+Nu(r) = q D/(Γ θ_w(r)) with Γ = ν/Pr from the column `theta_wall` of
+`wall_xmin.csv`. A wall probe reports the wall value and the flux of
+every scalar at a point, here at the stagnation point and at r/D = 0.1:
+
+```toml
+[output]
+wall_csv = true
+wall_probes = [
+  { name = "stag", boundary = "xmin", point = [0.0, 0.0, 0.0] },
+  { name = "r01", boundary = "xmin", point = [0.0, 0.1, 0.0] },
+]
+```
+
+```
+target/release/foehn flow examples/cases/flow/impinging_jet.toml
+grep "wall probe" output/impinging_jet/flow.log
+```
+
+The log prints both (`wall probe stag at (0, 2.94e-2, 0) m: … theta
+wall 1.085e-1, flux 1.000e-3`). A probe interpolates between the two
+wall faces nearest its point and is clamped to the nearest face beyond
+them, so `stag` reports the face next to the axis (r/D = 0.03 on this
+mesh). In a sweep over three meshes `wall_probes.stag.theta_wall` and
+`wall_probes.r01.theta_wall` get their observed order and GCI (D67), and
+so Nu₀ (to first order the same relative GCI). The two differ by 1 % on
+this mesh and by up to 7 % on 41 600 cells: the axis cells of the wedge
+lower Nu of the faces next to the axis with the turbulence models (a
+finding of 6g, see the verification page).
+
+**All models, three meshes, the limiters.** The study runs the pipe and
+the jet for six models (`verification.levels` 0, 1, 2: 2 600, 10 400
+and 41 600 cells) and the cases of the stagnation-point anomaly (k-ε and
+SST with each production limiter on the 10 400 cells), then writes
+`summary.md`; the experiment enters when its data are in
+`examples/studies/impinging_jet/data`:
+
+```
+pip install ./python
+python3 examples/studies/impinging_jet.py output/impinging_jet_study --jobs 2 \
+    --chart docs/figures/gallery
+cat output/impinging_jet_study/summary.md
+```
+
+`--models zf0,sst` runs a subset, `--levels 1,2,3` the finer meshes
+(166 400 cells on the finest), `--no-limiters` leaves the anomaly out
+and `--report-only` evaluates what is there. ζ-f and EB run with SIMPLEC
+and the relaxation ramp of the step (the coupled algorithm does not
+converge them here either).
 
 [↑ back to top](#turbulence-models)

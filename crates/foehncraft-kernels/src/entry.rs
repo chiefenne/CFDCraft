@@ -2169,7 +2169,7 @@ pub struct ScalarWallArgs {
     pub m: Mesh,
     /// The wall faces (global face index).
     pub faces: Raw<u32>,
-    /// y⁺ per wall face (the wall treatment).
+    /// y⁺ of the thermal law per wall face (`y_star` of [`WallFaces`]).
     pub y_plus: Raw<f64>,
     /// Laminar viscosity μ per face.
     pub mu: Raw<f64>,
@@ -2196,9 +2196,11 @@ pub struct ScalarWallArgs {
 }
 
 /// The thermal wall function per wall face: the face diffusivity is
-/// Γ_w = μ y⁺/T⁺(ỹ⁺), so that its conductance is h_w = ρ u*/T⁺(ỹ⁺), with
-/// ỹ⁺ = max(y⁺, `y_floor`): with the scalable treatment the thermal law
-/// sees the same virtual wall distance as the momentum law.
+/// Γ_w = μ y*/T⁺(ỹ*), so that its conductance is h_w = ρ u*/T⁺(ỹ*), with
+/// ỹ* = max(y*, `y_floor`): with the scalable treatment the thermal law
+/// sees the same virtual wall distance as the momentum law. The velocity
+/// scale u* = C_μ^¼ k_P^½ of the k-ε family stays finite where the wall
+/// shear vanishes (a stagnation point or a reattachment line).
 pub struct ScalarWallFaces;
 impl Entry for ScalarWallFaces {
     type Args = ScalarWallArgs;
@@ -2265,6 +2267,10 @@ pub struct WallFaceArgs {
     pub u_tau: Raw<f64>,
     /// Output y⁺ per wall face.
     pub y_plus: Raw<f64>,
+    /// Output per wall face: the y⁺ of the thermal wall law, y* = u* y_P/ν
+    /// with u* = C_μ^¼ k_P^½ for the k-ε family and ζ-f/EB, the y⁺ of the
+    /// blended u_τ for SST (section 5.2 of the stage-6 specification).
+    pub y_star: Raw<f64>,
     /// Output ω per wall face.
     pub omega: Raw<f64>,
     /// Output: the viscous weight of the blending per wall face.
@@ -2331,8 +2337,11 @@ impl Entry for WallFaces {
                     a.ke.e_wall,
                 );
                 let u_tau = foehncraft_core::math::sqrt(nu * ut / y);
+                let u_star = foehncraft_core::math::sqrt(foehncraft_core::math::sqrt(a.ke.c_mu))
+                    * foehncraft_core::math::sqrt(ld(a.k.get(), p).max(0.0));
                 *a.u_tau.out().add(i) = u_tau;
                 *a.y_plus.out().add(i) = u_tau * y / nu;
+                *a.y_star.out().add(i) = u_star * y / nu;
                 *a.omega.out().add(i) = 0.0;
                 *a.blending.out().add(i) = 1.0;
                 *a.pk.out().add(i) = 0.0;
@@ -2377,6 +2386,7 @@ impl Entry for WallFaces {
                 let r = crate::turb::wall::keps_wall_face(&inp, &a.ke, a.treatment);
                 *a.u_tau.out().add(i) = r.u_tau;
                 *a.y_plus.out().add(i) = r.y_plus;
+                *a.y_star.out().add(i) = r.y_star;
                 *a.omega.out().add(i) = r.epsilon;
                 *a.blending.out().add(i) = 0.0;
                 *a.pk.out().add(i) = r.pk_wall;
@@ -2411,6 +2421,7 @@ impl Entry for WallFaces {
             let m = 1.0 - r.blending;
             *a.u_tau.out().add(i) = r.u_tau;
             *a.y_plus.out().add(i) = r.y_plus;
+            *a.y_star.out().add(i) = r.y_plus;
             *a.omega.out().add(i) = r.omega;
             *a.blending.out().add(i) = r.blending;
             *a.pk.out().add(i) = m * r.pk_wall;

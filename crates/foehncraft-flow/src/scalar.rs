@@ -145,7 +145,8 @@ pub struct TurbCoupling {
     pub mu_eff: Buf,
     /// 1 on the wall faces (per boundary face).
     pub wall: Buf,
-    /// y⁺ per wall face (the wall treatment), if the flow has walls.
+    /// The y⁺ of the thermal law per wall face (y* = C_μ^¼ k_P^½ y_P/ν of
+    /// the k-ε family and ζ-f/EB, y⁺ of SST), if the flow has walls.
     pub y_plus: Option<Buf>,
     /// The thermal law is taken at ỹ⁺ = max(y⁺, `y_floor`): 11.06 with the
     /// scalable momentum treatment, 0 otherwise.

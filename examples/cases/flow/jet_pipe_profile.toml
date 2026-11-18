@@ -1,0 +1,64 @@
+# Developed pipe flow at Re = 23 750 for the inlet of the impinging jet
+# (impinging_jet.toml, stage 6 part 6g, specification 9.6), k-ε-ζ-f₀
+# with the coupled algorithm.
+#
+#   target/release/foehn flow examples/cases/flow/jet_pipe_profile.toml --out output/jet_pipe
+#   python3 -m foehncraft.profiles output/jet_pipe/line_profile.csv examples/cases/flow/impinging_jet_profile.csv
+#
+# Pipe of diameter D = 1 m (R = 0.5 m) on an axisymmetric wedge of 0.5°,
+# a periodic module of 0.1 m driven by the mass flow of the bulk speed
+# U = 1 m/s (ν = 1/23 750 m²/s, Re = U D/ν = 23 750, the Reynolds number
+# of the heat transfer experiments of Baughn & Shimizu 1989). 48 cells
+# across the radius, graded towards the wall (first-cell y⁺ about 1). The
+# line `profile` samples the radius from the axis to the wall;
+# `foehncraft.profiles` turns it into the inlet table of the jet: one row
+# per cell (the centre of the run of equal samples) and a wall row (u = 0,
+# k = 0, ζ = 0, ε of the wall cell), with the columns r, u_n, k, epsilon
+# and zeta.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 0.5, 0.1]
+cells = [2, 48, 1]
+grading = { y = { ratio = 0.045 } }
+wedge = 0.5            # degrees about the x axis; y is the radius
+
+[fluid]
+density = 1.0
+viscosity = 4.2105263157894736e-5
+
+[turbulence]
+model = "k-epsilon-zeta-f0"
+wall_treatment = "compound-2023"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 1.0908169e-3     # kg/s: ρ U ½ R² sin(0.5°)
+[boundary.xmax]
+type = "periodic"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-7
+max_iterations = 3000
+log_every = 100
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.0, 0.0], to = [0.05, 0.5, 0.0], points = 4001 } ]

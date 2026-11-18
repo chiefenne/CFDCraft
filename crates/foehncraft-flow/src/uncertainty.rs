@@ -193,6 +193,20 @@ pub fn quantities(solve: &serde_json::Value) -> Vec<(String, f64)> {
                     out.push((format!("wall_probes.{name}.{k}"), v));
                 }
             }
+            // the passive scalars at the probe: wall value and flux
+            for sc in p
+                .get("scalars")
+                .and_then(|s| s.as_array())
+                .into_iter()
+                .flatten()
+            {
+                let s = sc.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+                for k in ["wall", "flux"] {
+                    if let Some(v) = sc.get(k).and_then(num) {
+                        out.push((format!("wall_probes.{name}.{s}_{k}"), v));
+                    }
+                }
+            }
         }
     }
     if let Some(ps) = solve.get("wall_crossings").and_then(|p| p.as_array()) {

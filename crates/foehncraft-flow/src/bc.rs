@@ -114,7 +114,10 @@ pub enum Backflow {
 
 /// A velocity profile read from a table file (D29): rows of a coordinate
 /// and either the normal speed into the domain (two columns) or the three
-/// velocity components (four columns), the coordinate increasing.
+/// velocity components (four columns), the coordinate increasing. A
+/// header that names the columns may add the turbulence of the profile
+/// (stage 6 specification 7.1): `k` with `epsilon` or `omega`, and `zeta`
+/// ([`ProfileColumns`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProfileTable {
     /// The file it was read from.
@@ -123,9 +126,69 @@ pub struct ProfileTable {
     pub sha256: String,
     /// Coordinate values, strictly increasing.
     pub s: Vec<f64>,
-    /// Values per row: `[u_n]` or `[u_x, u_y, u_z]`.
+    /// Values per row (the columns after the coordinate).
     pub values: Vec<Vec<f64>>,
+    /// The names of the value columns from the header (trimmed, lower
+    /// case); empty without a header.
+    pub names: Vec<String>,
 }
+
+/// The velocity columns of a profile table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VelocityColumns {
+    /// The speed into the domain, normal to the face.
+    Normal(usize),
+    /// The three components.
+    Components([usize; 3]),
+}
+
+/// What the value columns of a profile table hold (indices into a row of
+/// [`ProfileTable::values`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProfileColumns {
+    /// The velocity.
+    pub velocity: VelocityColumns,
+    /// k (m²/s²).
+    pub k: Option<usize>,
+    /// ε (m²/s³).
+    pub epsilon: Option<usize>,
+    /// ω (1/s).
+    pub omega: Option<usize>,
+    /// ζ = v²/k of k-ε-ζ-f and φ of the elliptic-blending k-ε.
+    pub zeta: Option<usize>,
+}
+
+impl ProfileColumns {
+    /// True when the table gives k with ε or ω.
+    pub fn has_turbulence(&self) -> bool {
+        self.k.is_some()
+    }
+}
+
+/// A loaded table profile and where its coordinate is measured.
+#[derive(Debug, Clone)]
+pub struct TableProfile {
+    /// The table.
+    pub table: Arc<ProfileTable>,
+    /// Its coordinate.
+    pub coordinate: TableCoordinate,
+    /// A point on the axis of a radius.
+    pub origin: [f64; 3],
+    /// The axis of a radius.
+    pub direction: Option<[f64; 3]>,
+}
+
+impl TableProfile {
+    /// The values of the table row at point `x` (None without the axis of
+    /// a radius).
+    pub fn at(&self, x: [f64; 3]) -> Option<Vec<f64>> {
+        table_position(x, self.coordinate, self.origin, self.direction).map(|s| self.table.at(s).0)
+    }
+}
+
+/// The column names of a profile table.
+pub const PROFILE_COLUMNS: [&str; 8] =
+    ["u_n", "u_x", "u_y", "u_z", "k", "epsilon", "omega", "zeta"];
 
 impl ProfileTable {
     /// Reads and parses a table file.
@@ -145,6 +208,7 @@ impl ProfileTable {
         let mut s = Vec::new();
         let mut values = Vec::new();
         let mut width = None;
+        let mut names = Vec::new();
         for (i, raw) in text.lines().enumerate() {
             let line = raw.split('#').next().unwrap_or("").trim();
             if line.is_empty() {
@@ -160,14 +224,19 @@ impl ProfileTable {
                 if s.is_empty() && width.is_none() {
                     // the header
                     width = Some(cols.len());
+                    names = cols[1..].iter().map(|c| c.to_lowercase()).collect();
                     continue;
                 }
                 return Err(format!("line {}: not a number in `{line}`", i + 1));
             };
-            if nums.len() != 2 && nums.len() != 4 {
+            // a header may name the columns of other widths (the
+            // turbulence of a profile, [`Self::columns`]); without one a
+            // table has 2 or 4
+            let named = width.is_some();
+            if nums.len() < 2 || (!named && nums.len() != 2 && nums.len() != 4) {
                 return Err(format!(
                     "line {}: {} columns; a table has 2 (coordinate, normal speed) or 4 \
-                     (coordinate, u_x, u_y, u_z)",
+                     (coordinate, u_x, u_y, u_z), or a header that names its columns",
                     i + 1,
                     nums.len()
                 ));
@@ -206,12 +275,103 @@ impl ProfileTable {
             sha256: String::new(),
             s,
             values,
+            names,
         })
     }
 
     /// True for a table of the normal speed (two columns).
     pub fn is_normal(&self) -> bool {
         self.values[0].len() == 1
+    }
+
+    /// What the columns of a profile table hold. A header that uses the
+    /// names of [`PROFILE_COLUMNS`] names every value column: `u_n` or
+    /// `u_x`, `u_y`, `u_z`, optionally `k` with `epsilon` or `omega`, and
+    /// `zeta`, in any order. Without such a header two columns are the
+    /// coordinate and the normal speed, four the coordinate and the
+    /// components.
+    pub fn columns(&self) -> std::result::Result<ProfileColumns, String> {
+        let width = self.values[0].len();
+        let named = self
+            .names
+            .iter()
+            .any(|n| PROFILE_COLUMNS.contains(&n.as_str()));
+        if !named {
+            return match width {
+                1 => Ok(ProfileColumns {
+                    velocity: VelocityColumns::Normal(0),
+                    k: None,
+                    epsilon: None,
+                    omega: None,
+                    zeta: None,
+                }),
+                3 => Ok(ProfileColumns {
+                    velocity: VelocityColumns::Components([0, 1, 2]),
+                    k: None,
+                    epsilon: None,
+                    omega: None,
+                    zeta: None,
+                }),
+                n => Err(format!(
+                    "{} value columns without a header that names them ({})",
+                    n,
+                    PROFILE_COLUMNS.join(", ")
+                )),
+            };
+        }
+        let mut at: BTreeMap<&str, usize> = BTreeMap::new();
+        for (i, n) in self.names.iter().enumerate() {
+            let Some(&known) = PROFILE_COLUMNS.iter().find(|&&c| c == n) else {
+                return Err(format!(
+                    "column `{n}` of the header is not one of {}",
+                    PROFILE_COLUMNS.join(", ")
+                ));
+            };
+            if at.insert(known, i).is_some() {
+                return Err(format!("column `{n}` twice in the header"));
+            }
+        }
+        let comps = [at.get("u_x"), at.get("u_y"), at.get("u_z")];
+        let velocity = match (at.get("u_n"), comps) {
+            (Some(&i), [None, None, None]) => VelocityColumns::Normal(i),
+            (None, [Some(&x), Some(&y), Some(&z)]) => VelocityColumns::Components([x, y, z]),
+            _ => {
+                return Err(
+                    "the header names the velocity as `u_n` or as `u_x`, `u_y`, `u_z`, one of the two"
+                        .into(),
+                );
+            }
+        };
+        let c = ProfileColumns {
+            velocity,
+            k: at.get("k").copied(),
+            epsilon: at.get("epsilon").copied(),
+            omega: at.get("omega").copied(),
+            zeta: at.get("zeta").copied(),
+        };
+        if c.epsilon.is_some() && c.omega.is_some() {
+            return Err("columns `epsilon` and `omega` together: give one (with `k`)".into());
+        }
+        if c.k.is_some() != (c.epsilon.is_some() || c.omega.is_some()) {
+            return Err("column `k` goes with `epsilon` or `omega`".into());
+        }
+        if c.zeta.is_some() && c.k.is_none() {
+            return Err("column `zeta` goes with `k` and `epsilon` or `omega`".into());
+        }
+        Ok(c)
+    }
+
+    /// The velocity columns ([`Self::columns`]; the legacy forms when the
+    /// header does not name them).
+    pub fn velocity_columns(&self) -> VelocityColumns {
+        self.columns().map_or(
+            if self.is_normal() {
+                VelocityColumns::Normal(0)
+            } else {
+                VelocityColumns::Components([0, 1, 2])
+            },
+            |c| c.velocity,
+        )
     }
 
     /// The values at coordinate `x`, linear between the rows and constant
@@ -360,7 +520,9 @@ pub enum BoundaryCondition {
         #[serde(default)]
         profile_axes: Vec<Axis>,
         /// The table of a table profile (a file relative to the case file:
-        /// coordinate and normal speed, or coordinate and u_x, u_y, u_z).
+        /// coordinate and normal speed, or coordinate and u_x, u_y, u_z; a
+        /// header that names the columns `u_n` or `u_x`, `u_y`, `u_z` may
+        /// add the turbulence `k` with `epsilon` or `omega`, and `zeta`).
         #[serde(default)]
         table: Option<PathBuf>,
         /// The coordinate of the table.
@@ -726,6 +888,28 @@ impl BoundaryCondition {
         }
     }
 
+    /// The table of a table profile with its coordinate, the origin and
+    /// the direction of its axis (the turbulence columns of the inlet,
+    /// stage 6 specification 7.1).
+    pub fn table_profile(&self) -> Option<TableProfile> {
+        match self {
+            Self::VelocityInlet {
+                profile: Some(InletProfile::Table),
+                table_coordinate: Some(c),
+                table_origin,
+                table_direction,
+                table_data: Some(t),
+                ..
+            } => Some(TableProfile {
+                table: t.clone(),
+                coordinate: *c,
+                origin: *table_origin,
+                direction: *table_direction,
+            }),
+            _ => None,
+        }
+    }
+
     /// The file of a table profile.
     pub fn table_path(&self) -> Option<&Path> {
         match self {
@@ -757,12 +941,18 @@ impl BoundaryCondition {
         } = self
         {
             let path = dir.join(&*t);
-            let data = ProfileTable::read(&path).map_err(|e| {
-                diag::err(diag::Diagnostic::new(
-                    diag::BC_TABLE,
-                    format!("table profile: {e}"),
-                ))
-            })?;
+            let data = ProfileTable::read(&path)
+                .and_then(|d| {
+                    d.columns()
+                        .map_err(|e| format!("{}: {e}", path.display()))
+                        .map(|_| d)
+                })
+                .map_err(|e| {
+                    diag::err(diag::Diagnostic::new(
+                        diag::BC_TABLE,
+                        format!("table profile: {e}"),
+                    ))
+                })?;
             *table_data = Some(Arc::new(data));
         }
         Ok(())
@@ -1147,10 +1337,9 @@ pub fn inlet_velocity(
         let x = table_position(geo.face_centroid[f], c, *table_origin, *table_direction)?;
         let (v, _) = t.at(x);
         let s = geo.face_area[f];
-        return Some(if t.is_normal() {
-            scale(s, -v[0] / norm(s))
-        } else {
-            [v[0], v[1], v[2]]
+        return Some(match t.velocity_columns() {
+            VelocityColumns::Normal(i) => scale(s, -v[i] / norm(s)),
+            VelocityColumns::Components([a, b, c]) => [v[a], v[b], v[c]],
         });
     }
     if let Some(InletProfile::Parabolic) = profile {
