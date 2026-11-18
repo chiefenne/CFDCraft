@@ -838,7 +838,10 @@ h_w = ρ u\*/T⁺ with T⁺ of Kader (1981; all y⁺, any Pr; the default) or
 Jayatilleke (1969; log region, blended to Pr y⁺ by Kader's Γ). Fixed-flux
 walls take b = q d_n/Γ_w, so the wall value is φ_P + q/h_w. y⁺ is that of
 the momentum wall treatment (u\* of the k-ε family, the blended u_τ of
-SST). The default is `kader` where the specification wrote `none` with
+SST); with the scalable treatment T⁺ is taken at ỹ⁺ = max(y⁺, 11.06),
+the virtual wall distance of its log law (part 6f, pull request 87:
+before, the thermal law saw the true y⁺ and the channel Nu was +28 % on a
+y⁺ ≈ 8 mesh). The default is `kader` where the specification wrote `none` with
 `low-re`: the two agree for y⁺ below 1, and `kader` is also right at
 larger y⁺, so no switch is needed. Both kernels are single-source
 (GPU and CPU). Cases without a turbulence model do not run them.
@@ -852,8 +855,47 @@ larger y⁺, so no switch is needed. Both kernels are single-source
 | Heated pipe, Re = 10⁵, Pr = 0.71, k-ε scalable, 36 cells | Nu against Gnielinski (1976), 180.2 | ±10 % | +1.3 % (Kader), +0.6 % (Kays–Crawford), +4.7 % (Jayatilleke); `none` −39 % (`heated_pipe_meets_gnielinski`) |
 | Isothermal flat plate, Re = 5·10⁶ per unit length, 0.25 ≤ x ≤ 1 | St against 0.0287 Re_x^−0.2 Pr^−0.4 | ±10 % | +1.7 % at 0.29, +7.5 % at 0.97 (`heated_plate_meets_the_stanton_correlation`) |
 | Input | `turbulent_prandtl` ≤ 0, unknown wall function | refused | asserted |
+| Heated channel, Re_τ = 395, Pr = 0.71, 12 cells, y⁺ 32 (`channel_heated_keps.toml`) | Nu on 2h against 36.39 of the DNS of Abe, Kawamura & Matsuo (JAXA DNS database, Re_b = 13 849) | ±7 % | −1.0 % (constant Pr_t), −2.0 % (Kays–Crawford) |
+| Heated channel, Re_τ 180 … 1020, Pr 0.71 and 0.025 (table below) | Nu on 2h against the DNS | Pr 0.71: ±7 % both models; Pr 0.025: ±8 % Kays–Crawford | asserted for all eight points (`heated_channel_meets_the_dns_nusselt_number`) |
+| Heated channel, Re_τ = 395, Pr = 0.71, 48 cells, y⁺ 7.8 | thermal law at the scalable floor | ±13 % | +10.5 % (+28 % with T⁺ at the true y⁺) (`the_thermal_law_follows_the_scalable_floor`) |
 
-| Heated channel, Re_τ = 395, Pr = 0.71, 12 cells, y⁺ 32 | Nu on 2h against 36.39 of the DNS of Abe, Kawamura & Matsuo (JAXA DNS database, Re_b = 13 849) | ±7 % | −1.0 % (constant Pr_t), −2.0 % (Kays–Crawford) (`heated_channel_meets_the_dns_nusselt_number`) |
+**The channel at all DNS points** (pull request 87). The case of
+`channel_heated_keps.toml` with ν = 1/Re_τ, Γ = ν/Pr, the mass flow of
+each DNS bulk Reynolds number (the Re_b of the file header of each
+thermal case) and N uniform cells across 2h, chosen for a first-cell
+y⁺ ≈ 30, the claimed band of the scalable wall functions. Reference: the
+Nu of each file header, except Re_τ = 1020, Pr = 0.025 (header 278.71,
+see below), where the Nu of the database's own profiles is used (9.81).
+y⁺ and Re_τ are those of the run (u_τ from the driving force; standard
+k-ε predicts a friction 3–7 % low at the fixed mass flow).
+
+| Re_τ | Pr | Re_b | N | y⁺ | Nu DNS | Nu, Pr_t 0.85 | Nu, Kays–Crawford |
+|---|---|---|---|---|---|---|---|
+| 180 | 0.71 | 5 546 | 6 | 28.1 | 18.25 | 18.43 (+1.0 %) | 18.22 (−0.2 %) |
+| 395 | 0.71 | 13 849 | 12 | 31.5 | 36.39 | 35.98 (−1.1 %) | 35.62 (−2.1 %) |
+| 640 | 0.71 | 24 095 | 20 | 30.9 | 55.57 | 54.62 (−1.7 %) | 54.10 (−2.6 %) |
+| 1020 | 0.71 | 41 441 | 32 | 31.3 | 83.00 | 82.87 (−0.2 %) | 82.15 (−1.0 %) |
+| 180 | 0.025 | 5 731 | 6 | 28.9 | 5.48 | 6.16 (+12.4 %) | 5.80 (+5.9 %) |
+| 395 | 0.025 | 14 147 | 12 | 32.1 | 6.60 | 7.88 (+19.4 %) | 7.07 (+7.2 %) |
+| 640 | 0.025 | 24 428 | 20 | 31.3 | 7.89 | 9.57 (+21.3 %) | 8.42 (+6.7 %) |
+| 1020 | 0.025 | 41 441 | 32 | 31.3 | 9.81 | 11.98 (+22.1 %) | 10.49 (+6.9 %) |
+
+At Pr 0.71 both Pr_t models are within 2.6 % at every Re_τ. At Pr 0.025
+(a liquid metal) conduction dominates: Pe_t = (ν_t/ν) Pr stays below
+about 2, where the real Pr_t rises well above 0.85. The constant Pr_t
+then over-predicts the turbulent heat flux and Nu by 12–22 %, growing
+with Re_τ; Kays & Crawford, whose Pr_t tends to 2 Pr_t∞ at small Pe_t,
+brings it to +6 … +7 %. The rest is not the mesh: at Re_τ 395, Pr 0.025,
+Nu is 6.94, 7.07, 7.13 and 7.08 on 8, 12, 24 and 48 cells. At Pr 0.71
+the k-ε model without damping sets the limit below y⁺ 30: Nu 35.52,
+35.62, 38.21, 40.20 on 8, 12, 24, 48 cells (y⁺ 47, 32, 16, 8). Meshes
+finer than y⁺ ≈ 30 near heated walls take ζ-f or EB with the compound
+treatment, not the k-ε family.
+
+The Re_τ = 180 channel on 6 cells is exactly one-dimensional; its pressure
+residual (about 10⁻⁴⁰) lies below the float32 range of the multigrid
+hierarchy, so the preconditioned residual vanished and CG reported a
+breakdown. CG now stops there, as BiCGStab did already.
 
 The DNS data belong to JAXA (all rights reserved; citation of Abe et al.
 requested), so the repository holds only the published Nusselt number.
@@ -864,8 +906,6 @@ agrees with the file headers to 0.4 % except `ch1020pr0025.dat`, whose
 header repeats the Re_b of the Pr = 0.71 case and gives Nu = 278.71
 where the profiles give 9.81) and compares our run.
 
-Not in this part: the other Reynolds and Prandtl numbers (the scalable
-wall functions need first-cell y⁺ ≥ 30, so they need other meshes), the
-heated pipe with the other models, and the plate for x below 0.2, where
+Not in this part: the heated pipe with the other models, and the plate for x below 0.2, where
 the k-ε start of the turbulent layer, not the thermal law, sets St
 (50 % low).

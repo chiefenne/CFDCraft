@@ -65,6 +65,8 @@ entries! {
     flow_keps_cells => e::KepsCells,
     flow_zeta_f_cells => e::ZetaFCells,
     flow_turb_faces => e::TurbFaces,
+    flow_scalar_turb_faces => e::ScalarTurbFaces,
+    flow_scalar_wall_faces => e::ScalarWallFaces,
     flow_wall_faces => e::WallFaces,
     flow_wall_cells => e::WallCells,
     flow_floor => e::Floor,

@@ -756,7 +756,32 @@ prints its Nu against the DNS (−1.4 % against the integrated table, −1.0 %
 against the header). The data are JAXA's (all rights reserved, citation of
 Abe et al. requested): do not commit them.
 
-To compare another Re_τ or Pr, change `ν = 1/Re_τ`, the mass flow
-(ρ U_b 2h × depth with U_b⁺ from the table) and `diffusivity = ν/Pr` in a
-copy of the case; the scalable wall functions need a first-cell y⁺ of
-30 or more (first cell h/N with N chosen accordingly).
+For the other Reynolds and Prandtl numbers see [recipe 87](#channel-dns-reynolds).
+
+<a id="channel-dns-reynolds"></a>
+## 87. Run the heated channel at another Re_τ or Pr
+
+```
+cargo build --release -p foehncraft-cli
+python examples/studies/channel_heat_dns.py --run
+```
+
+runs all eight DNS points (Re_τ 180, 395, 640, 1020 at Pr 0.71 and
+0.025) with both Pr_t models and prints Nu against the DNS. Each case is
+`channel_heated_keps.toml` with
+
+- `fluid.viscosity = 1/Re_τ` (u_τ = 1 m/s, h = 1 m),
+- `scalars.theta.diffusivity = ν/Pr`,
+- `mass_flow = ρ U_b × 0.2 m²` with U_b = Re_b ν/(2h) from the DNS bulk
+  Reynolds number,
+- `cells = [2, N, 1]` with N ≈ Re_τ/30, so that the first cell centre
+  h/N sits at y⁺ ≈ 30.
+
+For a liquid metal (Pr ≲ 0.1) set `turbulent_prandtl_model =
+"kays-crawford"` (`channel_heated_pr0025.toml`): the constant Pr_t = 0.85
+gives Nu 12–22 % high. With the k-ε family keep the first-cell y⁺ near 30
+on heated walls: the scalable treatment takes the momentum and the
+thermal law at y⁺ ≥ 11.06, but the model itself has no damping, and Nu
+rises to +5 % at y⁺ 16 and +10 % at y⁺ 8. For wall-resolved meshes
+(y⁺ ≲ 1) use ζ-f or EB with the compound treatment.
+

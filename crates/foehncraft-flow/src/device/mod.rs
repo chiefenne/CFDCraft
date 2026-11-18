@@ -500,6 +500,9 @@ pub struct ScalarWallOps {
     pub law: u32,
     /// Pr_t of the log layer.
     pub prt: f64,
+    /// T⁺ is taken at ỹ⁺ = max(y⁺, `y_floor`) (11.06 with the scalable
+    /// momentum treatment, else 0).
+    pub y_floor: f64,
     /// Output: the wall-face diffusivity (per face).
     pub gamma: Buf,
     /// Output: b of the flux faces (per boundary face).

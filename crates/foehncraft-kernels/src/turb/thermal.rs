@@ -136,10 +136,17 @@ pub fn prandtl_t<T: Real>(model: u32, prt: T, nut_over_nu: T, pr: T) -> T {
 /// face; μ/Pr (the molecular value) where y⁺ vanishes.
 #[inline(always)]
 pub fn wall_conductance<T: Real>(law: u32, mu: T, yp: T, pr: T, prt: T) -> T {
-    if yp.to_f64() < 1e-10 {
+    wall_conductance_at(law, mu, yp, yp, pr, prt)
+}
+
+/// Γ_w = μ y⁺/T⁺(ỹ⁺): the conductance h_w = ρ u*/T⁺ with the thermal law
+/// taken at ỹ⁺ ≥ y⁺ (the scalable treatment's virtual wall distance).
+#[inline(always)]
+pub fn wall_conductance_at<T: Real>(law: u32, mu: T, yp: T, yt: T, pr: T, prt: T) -> T {
+    if yt.to_f64() < 1e-10 {
         return mu / pr;
     }
-    mu * yp / t_plus(law, yp, pr, prt)
+    mu * yp / t_plus(law, yt, pr, prt)
 }
 
 #[cfg(test)]
@@ -148,6 +155,29 @@ mod tests {
 
     fn close(a: f64, b: f64) {
         assert!((a - b).abs() <= 1e-12 * b.abs(), "{a} against {b}");
+    }
+
+    #[test]
+    fn the_conductance_takes_the_thermal_law_at_the_floor() {
+        let (mu, pr, prt) = (1e-3, 0.71, 0.85);
+        for law in [KADER, JAYATILLEKE] {
+            for yp in [0.5, 5.0, 30.0] {
+                close(
+                    wall_conductance_at(law, mu, yp, yp, pr, prt),
+                    wall_conductance(law, mu, yp, pr, prt),
+                );
+                let yt = f64::max(yp, 11.06);
+                close(
+                    wall_conductance_at(law, mu, yp, yt, pr, prt),
+                    mu * yp / t_plus(law, yt, pr, prt),
+                );
+            }
+        }
+        // the floor lowers the conductance below y⁺ = 11.06 only
+        assert!(
+            wall_conductance_at(KADER, mu, 5.0, 11.06, pr, prt)
+                < wall_conductance(KADER, mu, 5.0, pr, prt)
+        );
     }
 
     #[test]

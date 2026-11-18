@@ -2106,6 +2106,10 @@ pub struct ScalarWallArgs {
     pub law: u32,
     /// Pr_t of the log layer.
     pub prt: f64,
+    /// The y⁺ at which T⁺ is taken at least: 11.06 with the scalable
+    /// momentum treatment (its log law at ỹ⁺ = max(y⁺, 11.06), section 4.3
+    /// of the stage-6 specification), 0 otherwise.
+    pub y_floor: f64,
     /// Output Γ_w = h_w y_P per face (the wall faces).
     pub gamma: Raw<f64>,
     /// Output (per boundary face): q d_n/Γ_w on flux faces.
@@ -2115,7 +2119,9 @@ pub struct ScalarWallArgs {
 }
 
 /// The thermal wall function per wall face: the face diffusivity is
-/// Γ_w = μ y⁺/T⁺, so that its conductance is h_w = ρ u*/T⁺.
+/// Γ_w = μ y⁺/T⁺(ỹ⁺), so that its conductance is h_w = ρ u*/T⁺(ỹ⁺), with
+/// ỹ⁺ = max(y⁺, `y_floor`): with the scalable treatment the thermal law
+/// sees the same virtual wall distance as the momentum law.
 pub struct ScalarWallFaces;
 impl Entry for ScalarWallFaces {
     type Args = ScalarWallArgs;
@@ -2129,13 +2135,14 @@ impl Entry for ScalarWallFaces {
             let mu = ld(a.mu.get(), f);
             let pr = mu / ld(a.gamma0.get(), f);
             let yp = ld(a.y_plus.get(), i);
-            let g = crate::turb::thermal::wall_conductance(a.law, mu, yp, pr, a.prt);
+            let yt = yp.max(a.y_floor);
+            let g = crate::turb::thermal::wall_conductance_at(a.law, mu, yp, yt, pr, a.prt);
             *a.gamma.out().add(f) = g;
             if ld(a.bc_a.get(), fb) > 0.5 {
                 *a.bc_b.out().add(fb) = ld(a.fq.get(), fb) / g;
             }
             if a.t_plus.len > 0 {
-                *a.t_plus.out().add(i) = crate::turb::thermal::t_plus(a.law, yp, pr, a.prt);
+                *a.t_plus.out().add(i) = crate::turb::thermal::t_plus(a.law, yt, pr, a.prt);
             }
         }
     }

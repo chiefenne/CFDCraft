@@ -636,3 +636,31 @@ Abe, Kawamura & Matsuo (JAXA DNS database, 36.39 at Re_b = 13 849):
 
 The DNS tables are JAXA's property and are fetched by
 `examples/studies/channel_heat_dns.py`, not stored; see [recipe 86](../recipes/flow.md#heated-channel-dns).
+
+<a id="channel-dns-reynolds"></a>
+## 87. The heated channel at every DNS point: Re_τ 180 to 1020, Pr 0.71 and 0.025
+
+The channel of [gallery 86](#heated-channel-dns)
+at the eight points of the DNS of Abe, Kawamura & Matsuo (JAXA DNS
+database): Re_τ 180, 395, 640 and 1020 at Pr 0.71 (air) and 0.025 (a
+liquid metal, `channel_heated_pr0025.toml` at Re_τ 395). Standard k-ε
+with scalable wall functions on 6, 12, 20 and 32 uniform cells across 2h
+(first-cell y⁺ ≈ 30), the mass flow of each DNS bulk Reynolds number.
+Nusselt number on 2h:
+
+| Re_τ | Pr | DNS | Pr_t 0.85 | Kays–Crawford |
+|---|---|---|---|---|
+| 180 | 0.71 | 18.25 | +1.0 % | −0.2 % |
+| 395 | 0.71 | 36.39 | −1.1 % | −2.1 % |
+| 640 | 0.71 | 55.57 | −1.7 % | −2.6 % |
+| 1020 | 0.71 | 83.00 | −0.2 % | −1.0 % |
+| 180 | 0.025 | 5.48 | +12.4 % | +5.9 % |
+| 395 | 0.025 | 6.60 | +19.4 % | +7.2 % |
+| 640 | 0.025 | 7.89 | +21.3 % | +6.7 % |
+| 1020 | 0.025 | 9.81 | +22.1 % | +6.9 % |
+
+For air any Pr_t model is good to 3 %. For a liquid metal the constant
+Pr_t over-predicts the turbulent heat flux; Kays & Crawford cuts the
+error to between a half and a third. The whole table runs in about 2 s
+(`python examples/studies/channel_heat_dns.py --run`, [recipe 87](../recipes/flow.md#channel-dns-reynolds)).
+

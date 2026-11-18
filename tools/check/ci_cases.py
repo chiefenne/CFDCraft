@@ -32,7 +32,7 @@ FLOW = {
         "couette_mixed", "couette_poly", "couette_tet", "channel_slip", "poiseuille_table",
         "couette_derived", "couette_viscosity", "couette_transpiration", "poiseuille_water",
         "pipe_gmsh_raw", "channel_heated", "channel_sst", "channel_keps", "channel_zeta_f",
-        "channel_zeta_f0", "cavity_re1000_coupled", "channel_heated_keps",
+        "channel_zeta_f0", "cavity_re1000_coupled", "channel_heated_keps", "channel_heated_pr0025",
     ],
     "linux-2": [
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",

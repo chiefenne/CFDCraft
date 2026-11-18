@@ -1345,6 +1345,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             bc_a: self.r(a.bc_a),
             law: a.law,
             prt: a.prt,
+            y_floor: a.y_floor,
             gamma: self.r(a.gamma),
             bc_b: self.r(a.bc_b),
             t_plus: a.t_plus.map_or(Raw::EMPTY, |b| self.r(b)),
