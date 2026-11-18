@@ -17,7 +17,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
-| [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89 |
+| [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
@@ -73,6 +73,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="channel-dns-reynolds"></a>87 | [The heated channel at every DNS point: Re_τ 180 to 1020, Pr 0.71 and 0.025](gallery/flow.md#channel-dns-reynolds) | [Incompressible flow](gallery/flow.md) |
 | <a id="elliptic-blending"></a>88 | [Elliptic-blending k-ε: channel at three Re_τ, flat plate, backward-facing step](gallery/turbulence.md#elliptic-blending) | [Turbulence models](gallery/turbulence.md) |
 | <a id="step-validation"></a>89 | [Backward-facing step against the experiment: six models, three meshes](gallery/turbulence.md#step-validation) | [Turbulence models](gallery/turbulence.md) |
+| <a id="impinging-jet"></a>90 | [Impinging jet at H/D = 2: a pipe profile as the inlet, Nusselt number, the stagnation-point anomaly](gallery/turbulence.md#impinging-jet) | [Turbulence models](gallery/turbulence.md) |
 
 ## Adding a feature
 
