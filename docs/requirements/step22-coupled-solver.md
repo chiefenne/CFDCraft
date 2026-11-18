@@ -36,9 +36,10 @@ Contents
   from replacing under-relaxation, which is a local time step that shrinks
   with the cell, by pseudo-time steps on physical scales: one step for all
   cells in the momentum equations and the time scale of the turbulence
-  model in the turbulence equations. Together: 65 to 90 iterations on the
-  coarse step for the three models, 145 on the fine mesh, 423 instead of
-  1 397 on the cavity at Re = 1000.
+  model in the turbulence equations. Together: 65 to 85 iterations on the
+  coarse step for the three models instead of 525 to 675, 170 to 180 on
+  the fine mesh instead of 1 750, 452 instead of 1 397 on the cavity at
+  Re = 1000.
 - **Same equations, same result.** The coupled algorithm solves the
   discrete equations of SIMPLEC in increment form. The converged result is
   the SIMPLEC one and depends neither on the step nor on the cap on the
@@ -50,7 +51,10 @@ Contents
   matrix and its hierarchy (section 2b of the requirements) is not needed.
 - **What limits it today** is the momentum sweep of the preconditioner
   (BiCGStab with a diagonal preconditioner): it sets the cap on the local
-  step, and the cap sets the count on fine meshes. A multigrid for
+  step, and the cap sets the count on fine meshes. It also makes a
+  coupled iteration cost five to seven SIMPLEC iterations, so the run
+  time of the step case gains a factor of about 1.5 where the iteration
+  count gains 8 to 10 (section 7.5). A multigrid for
   convection-dominated matrices removes it (L44).
 
 ## 2. Why SIMPLEC needs so many iterations
@@ -165,8 +169,12 @@ The step is the same in every cell. Default (automatic):
 
 with A_b the areas of the boundary faces without symmetry planes
 (periodic faces are interior faces) and U the larger of the largest
-boundary speed and the root mean square of the cell speeds, evaluated in
-every outer iteration. L is the half height of a plane channel, a quarter
+prescribed boundary speed (inlets, moving walls) and the root mean square
+of the cell speeds, evaluated in every outer iteration. Outlets and
+symmetry planes take their velocity from the cells and do not count: on a
+mesh of one cell layer the symmetry planes carry the whole field, and its
+largest velocity components shortened the step of the cavity by a fifth
+(567 instead of 452 iterations). L is the half height of a plane channel, a quarter
 of the diameter of a pipe, 7.3 H on the step case, and does not depend on
 the thickness of a mesh of one cell layer, unlike the cube root of the
 volume that is common practice in three dimensions. On the step the count
@@ -275,15 +283,26 @@ final value. Coarse: 8 200 cells; fine: 32 800 cells.
 
 | Case | SIMPLEC (0.5, then 0.8) | Coupled, relaxation only | Coupled with pseudo-time steps |
 |---|---|---|---|
-| k-ε-ζ-f₀, coarse | 550 to 600 | 300 | 65 to 70 |
-| k-ε, coarse | 600 | | 75 to 80 |
-| k-ω SST, coarse | 600 | | 90 |
-| k-ε-ζ-f₀, fine | 1 750 | 700 to 800 | 145 |
-| Cavity Re = 1000, 128², residual 10⁻⁸ | 1 397 (α = 0.9) | | 423 |
+| k-ε-ζ-f₀, coarse | 525 | 300 | 65 |
+| k-ε, coarse | 600 | | 75 |
+| k-ω SST, coarse | 675 | | 85 |
+| k-ε-ζ-f₀, fine | 1 750 | 700 to 800 | 170 to 180 |
+| Channel Re_τ = 395, k-ε-ζ-f₀, residual 10⁻⁶ | about 2 100 | | 323 |
+| Cavity Re = 1000, 128², residual 10⁻⁸ | 1 397 (α = 0.9) | | 452 |
 
 The final x_r is the one of SIMPLEC (6.385, 5.287, 6.81 H on the coarse
-mesh). The fine mesh needs twice the count of the coarse one because of
-the cap on the local step (section 7.2).
+mesh), the bulk velocity of the channel too (U_b⁺ = 17.79). The fine mesh
+needs more than twice the count of the coarse one because of the cap on
+the local step (section 7.2). The counts are good to about 10 %
+(section 7.6).
+
+Small laminar cases are the exception: the cavity at Re = 400 on 48²
+cells takes 255 iterations with SIMPLEC at α = 0.9 and 292 with the
+coupled algorithm and the automatic step; `factor` 4 and 20 give 130 and
+84 iterations at a higher cost per iteration (at Re = 1000 on 64²: 584
+iterations in 8 s with SIMPLEC; 625 in 13 s, 276 in 24 s, 178 in 43 s
+with `factor` 1, 4, 20). The automatic step is a careful one, and the
+momentum sweep makes larger steps expensive (L44).
 
 ### 7.2 The step and the cap
 
@@ -299,8 +318,8 @@ k-ε-ζ-f₀, coarse mesh, cap 0.98, 150 iterations each:
 
 The cap at Δτ = 5 H/U: 0.95 needs 85 iterations (3.3 Krylov iterations
 each), 0.98 65 to 70 (7), 0.999 60 to 65 (13 and more). On the fine mesh
-0.95 needs about 200 and 0.98 145. On the cavity (Δτ = 0.25 L/U): 0.95
-1 012, 0.98 423, and 0.999 with Δτ = L/U 166 iterations, at four times
+0.95 needs about 200 and 0.98 145. On the cavity (Δτ = 0.25 s given): 0.95
+1 012, 0.98 423, and 0.999 with Δτ = 1 s 166 iterations, at four times
 the run time of 0.98; a tighter coupled solve (0.01) changes nothing
 (167).
 
@@ -334,6 +353,41 @@ times the cell thickness; lid power 2.7628 × 10⁻⁴):
 | of it schemes | −2.2357 × 10⁻⁶ | −2.2369 × 10⁻⁶ |
 | Deviation from Ghia et al. (u, v) | 0.0040, 0.0136 | 0.0040, 0.0136 |
 
+### 7.5 Run time
+
+k-ε-ζ-f₀ on the step, one thread, each run to the iteration from which
+x_r stays within 1 %:
+
+| Mesh | SIMPLEC (0.5, then 0.8) | Coupled | Time per outer iteration |
+|---|---|---|---|
+| Coarse, 8 200 cells | 525 iterations, 31 s | 65 iterations, 21 s | 0.06 s and 0.32 s |
+| Fine, 32 800 cells | 1 750 iterations, 342 s | 175 iterations, 235 s | 0.20 s and 1.35 s |
+
+A coupled iteration costs five to seven SIMPLEC iterations: it takes 10
+(coarse) and 14 (fine) Krylov iterations, each with a momentum sweep that
+runs into its limit of 10 iterations and with a pressure solve. So the
+run time gains a factor of about 1.5 where the iteration count gains 8 to
+10. The sweep is where the run time is to be won: it decides the number
+of Krylov iterations and the cap on the local step (sections 7.2 and
+7.3), and L44 replaces it.
+
+### 7.6 Scatter of the counts
+
+A run repeats bit by bit for the same input, on any number of threads
+and across a restart. But the count reacts to the last digit of an
+input. The cavity needs 423 iterations with Δτ = 0.25 s given and 452
+with the automatic step, which is 0.25 s less one unit in the 17th
+digit; the fine step needed 145 iterations with a slightly shorter step
+(a velocity scale that counted the symmetry planes) and needs 170 to 180
+at 7.3 H/U. The cause: the coupled solve stops at a tolerance of 0.1,
+its momentum sweep is cut off after 10 iterations and the multigrid
+cycle of its pressure solve runs in single precision, so two runs
+separate in the fifth digit within one outer iteration and reach the
+criterion on different paths. The converged result is the same
+(section 7.4). Counts are therefore quoted to about 10 %; a smooth
+dependence of the count on the step needs a converging sweep (L44) and
+the step control of L45.
+
 ## 8. State of the art and what comes next
 
 Published reference points for pressure-based coupled solvers:
@@ -354,10 +408,11 @@ Published reference points for pressure-based coupled solvers:
 
 Where Foehncraft stands after this step: the iteration counts are in the
 published range on the coarse mesh (7 to 9 times fewer iterations than
-SIMPLEC), the count still grows with the mesh (145 on the fine mesh
-against 65 to 70), and the gain in run time is smaller than the gain in
-iterations (coarse step: 13 to 18 s against 42 s) because of the momentum
-sweeps. The turbulence step from the model time scale is our own
+SIMPLEC), the count still grows with the mesh (170 to 180 on the fine
+mesh against 65), and the gain in run time is far smaller than the gain in
+iterations (a factor of about 1.5 on the step, section 7.5, where the
+published coupled solvers with a block multigrid report 8 to 40) because
+of the momentum sweeps. The turbulence step from the model time scale is our own
 addition; the published solvers leave the turbulence equations on the
 global step.
 
@@ -387,7 +442,7 @@ Rows in [`requirements.md`](../requirements.md).
 | D176 | Coupled pressure–velocity algorithm (steady), matrix-free, flexible GMRES with a SIMPLE-type preconditioner; `algorithm = "coupled"`, `[solver.coupled]` | stage 6 part 6e |
 | D177 | Pseudo-time step of the momentum equations, automatic from ΣV/ΣA_b over a velocity scale; α_u as the cap on the local Courant number; `[solver.pseudo_time]` | stage 6 part 6e |
 | D178 | Pseudo-time step of the turbulence equations from the model time scale, min(Δτ, c_T T) | stage 6 part 6e |
-| L44 | Multigrid for convection-dominated matrices (approximate ideal restriction) for the momentum sweep and the turbulence equations | next, before stage 7 closes |
+| L44 | Multigrid for convection-dominated matrices (approximate ideal restriction) for the momentum sweep and the turbulence equations | the next solver step |
 | L45 | Automatic step control (switched evolution relaxation) and a stop on monitored values | after L44 |
 | L46 | Newton–Krylov on the coupled system | after L45 |
 

@@ -1,0 +1,69 @@
+# Lid-driven cavity at Re = 1000 on 128 x 128 hexahedra with the coupled
+# pressure–velocity algorithm (stage 6 part 6e, D176, D177).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cavity_re1000_coupled.toml
+#
+# The case cavity_re1000.toml with `algorithm = "coupled"`: momentum and
+# continuity of an outer iteration are solved as one system, and the
+# momentum equations take one pseudo-time step for all cells (automatic:
+# the volume over the boundary area, here 0.25 m, over the lid speed)
+# instead of under-relaxation; the relaxation 0.98 (the default with
+# "coupled") only caps the local Courant number at 49.
+#
+# Result: 452 outer iterations to 10⁻⁸ against 1 397 with SIMPLEC at
+# α_u = 0.9, the same deviation from Ghia, Ghia & Shin (1982), 0.0040 and
+# 0.0136 of the lid speed, and the same kinetic-energy ledger (numerical
+# dissipation 0.637 % of the lid power). The column K of the log shows the
+# Krylov iterations of the coupled solve. A larger step
+# (`[solver.pseudo_time] factor = 4`) needs fewer iterations (about 360) and
+# more run time, because the momentum sweeps of the preconditioner get
+# dearer (requirements step 22, section 7).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.0078125]
+cells = [128, 128, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.001
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-8
+max_iterations = 2000
+
+[verification]
+reference = "ghia-re1000"
+reference_tolerance = 0.02
+lid_velocity = 1.0
+require_convergence = true
+
+[[output.lines]]
+name = "vertical"            # u along x = 0.5
+from = [0.5, 0.0, 0.00390625]
+to = [0.5, 1.0, 0.00390625]
+[[output.lines]]
+name = "horizontal"          # v along y = 0.5
+from = [0.0, 0.5, 0.00390625]
+to = [1.0, 0.5, 0.00390625]

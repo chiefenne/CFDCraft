@@ -2407,6 +2407,9 @@ pub fn run_steered(
                     });
                     if coupled {
                         row["krylov"] = serde_json::json!(res.coupled_iterations);
+                        if let Some(dt) = res.pseudo_step {
+                            row["pseudo_step"] = serde_json::json!(dt);
+                        }
                     }
                     steer.record.row(&row);
                 }
@@ -2551,6 +2554,20 @@ pub fn run_steered(
                 },
             );
             f.push_kv("Largest scaled residual", crate::console::sci3(res.max()));
+            if let Some(dt) = res.pseudo_step {
+                f.push_kv(
+                    "Pseudo-time step",
+                    format!(
+                        "{} s  ({}, last iteration)",
+                        crate::console::sci3(dt),
+                        if case.solver.pseudo_time.step.is_some() {
+                            "given"
+                        } else {
+                            "automatic"
+                        }
+                    ),
+                );
+            }
             f.push_kv(
                 "Solve time",
                 format!(

@@ -32,7 +32,7 @@ FLOW = {
         "couette_mixed", "couette_poly", "couette_tet", "channel_slip", "poiseuille_table",
         "couette_derived", "couette_viscosity", "couette_transpiration", "poiseuille_water",
         "pipe_gmsh_raw", "channel_heated", "channel_sst", "channel_keps", "channel_zeta_f",
-        "channel_zeta_f0",
+        "channel_zeta_f0", "cavity_re1000_coupled",
     ],
     "linux-2": [
         "cylinder_re20", "cavity_re1000", "taylor_green_cfl10", "poiseuille_tet",
@@ -45,7 +45,7 @@ FLOW = {
         "cavity_re100_poly3d", "cavity_re100_tet3d", "pipe_wedge", "poiseuille_expression",
         "taylor_green_expression", "channel_ramp", "scalar_front_bdf2",
         "poiseuille_periodic", "channel_heated_periodic", "pipe_heated_periodic",
-        "pipe_rough_keps",
+        "pipe_rough_keps", "backstep_zeta_f0_coupled",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_convective", "cylinder_re20_gci",

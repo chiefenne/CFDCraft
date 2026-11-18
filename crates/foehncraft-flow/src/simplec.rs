@@ -619,6 +619,10 @@ pub struct Residuals {
     /// algorithm).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub coupled_iterations: usize,
+    /// The pseudo-time step Δτ of the momentum equations in s (coupled
+    /// algorithm, D177); none where only the relaxation acts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pseudo_step: Option<f64>,
     /// The passive scalars (D51): residuals and iterations per scalar, in
     /// name order.
     #[serde(
@@ -852,6 +856,9 @@ pub struct Flow {
     /// The length of the automatic pseudo-time step (computed at its first
     /// use).
     pub(crate) pseudo_length: Option<f64>,
+    /// The largest prescribed boundary speed for that step (computed at
+    /// its first use, again after new boundary velocities).
+    pub(crate) pseudo_speed: Option<f64>,
 }
 
 /// The driving of one periodic pair: a uniform body force β t̂ along the
@@ -1278,6 +1285,7 @@ impl Flow {
             unit_flux,
             coupled: None,
             pseudo_length: None,
+            pseudo_speed: None,
         })
     }
 
@@ -1739,6 +1747,10 @@ impl Flow {
     /// New prescribed boundary velocity (time-dependent conditions); faces
     /// with another update rule ignore it.
     pub fn set_boundary_velocity(&mut self, ub: &[Vec<f64>; 3]) -> Result<()> {
+        for (own, new) in self.bc.ub.iter_mut().zip(ub) {
+            own.copy_from_slice(new);
+        }
+        self.pseudo_speed = None;
         let s = self.f.ub_set;
         self.dev.upload(s.x, &ub[0])?;
         self.dev.upload(s.y, &ub[1])?;

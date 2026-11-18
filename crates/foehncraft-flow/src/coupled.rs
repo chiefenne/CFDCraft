@@ -43,9 +43,10 @@
 //! with L the volume of the domain over the area of its boundaries
 //! (without symmetry planes: the half height of a plane channel, a quarter
 //! of the diameter of a pipe, and no function of the thickness of a mesh
-//! of one cell layer) and U the larger of the largest boundary speed and
-//! the root mean square of the cell speeds; α_u (close to 1) only caps the
-//! local Courant number at α/(1 − α). The turbulence equations take
+//! of one cell layer) and U the larger of the largest prescribed boundary
+//! speed (inlets, moving walls) and the root mean square of the cell
+//! speeds; α_u (close to 1) only caps the local Courant number at
+//! α/(1 − α). The turbulence equations take
 //! min(Δτ, c_T T) per cell with the time scale T of the model
 //! ([`crate::turbulence`]): their sources are stiff on that scale.
 //!
@@ -149,8 +150,9 @@ pub struct PseudoTimeSettings {
     /// The step Δτ in s, the same in every cell. Default: automatic,
     /// `factor` × L / U in every outer iteration, with L the volume of the
     /// domain over the area of its boundaries (without symmetry planes and
-    /// periodic boundaries) and U the larger of the largest boundary speed
-    /// and the root mean square of the cell speeds.
+    /// periodic boundaries) and U the larger of the largest prescribed
+    /// boundary speed (inlets, moving walls) and the root mean square of
+    /// the cell speeds.
     pub step: Option<f64>,
     /// Factor on the automatic step.
     pub factor: f64,
@@ -497,10 +499,10 @@ impl Flow {
             let (vj, zj) = self.krylov_vectors(j)?;
             self.coupled_preconditioner(vj, zj, sc, sym, &mut n)?;
             self.coupled_operator(zj, wv, sc, sym)?;
-            for i in 0..=j {
+            for (i, hi) in h[j].iter_mut().enumerate().take(j + 1) {
                 let vi = self.coupled.as_ref().expect("coupled work").v[i];
-                h[j][i] = self.dot4(wv, vi)?;
-                self.lincomb4(wv, 1.0, wv, -h[j][i], vi)?;
+                *hi = self.dot4(wv, vi)?;
+                self.lincomb4(wv, 1.0, wv, -*hi, vi)?;
             }
             let hn = self.norm4(wv)?;
             h[j][j + 1] = hn;
@@ -574,24 +576,44 @@ impl Flow {
         l
     }
 
+    /// The largest prescribed boundary speed: the faces that keep their
+    /// velocity (inlets, moving walls). Symmetry planes and outlets take
+    /// their velocity from the cells and do not count; on a mesh of one
+    /// layer the symmetry planes would carry the whole field.
+    fn prescribed_speed(&mut self) -> f64 {
+        if let Some(u) = self.pseudo_speed {
+            return u;
+        }
+        let b = &self.bc;
+        let mut sq: f64 = 0.0;
+        for (fb, rule) in b.ub_rule.iter().enumerate() {
+            if *rule == k::UB_FIXED {
+                sq = sq.max(b.ub[0][fb].powi(2) + b.ub[1][fb].powi(2) + b.ub[2][fb].powi(2));
+            }
+        }
+        let u = sq.sqrt();
+        self.pseudo_speed = Some(u);
+        u
+    }
+
     /// The pseudo-time step Δτ of this outer iteration (`[solver.pseudo_time]`):
     /// the given one, else `factor` × L / U with L of
     /// [`pseudo_length`](Self::pseudo_length) and U the larger of the
-    /// largest boundary speed (bounded by the largest components) and the
-    /// root mean square of the cell speeds; none in a fluid at rest.
+    /// largest prescribed boundary speed
+    /// ([`prescribed_speed`](Self::prescribed_speed)) and the root mean
+    /// square of the cell speeds; none in a fluid at rest.
     pub(crate) fn pseudo_step(&mut self) -> Result<Option<f64>> {
         let s = self.settings.pseudo_time.clone();
         if let Some(dt) = s.step {
             return Ok(Some(dt));
         }
         let length = self.pseudo_length();
-        let (mut cells, mut bnd) = (0.0, 0.0);
-        for (u, ub) in self.f.u.all().into_iter().zip(self.f.ub.all()) {
+        let bnd = self.prescribed_speed();
+        let mut cells = 0.0;
+        for u in self.f.u.all() {
             cells += self.dev.sum_sq(u)?;
-            let (lo, hi) = self.dev.min_max(ub)?;
-            bnd += lo.abs().max(hi.abs()).powi(2);
         }
-        let speed = (cells / self.disc.n_cells as f64).sqrt().max(bnd.sqrt());
+        let speed = (cells / self.disc.n_cells as f64).sqrt().max(bnd);
         Ok((speed > 0.0 && speed.is_finite()).then(|| s.factor * length / speed))
     }
 
@@ -646,6 +668,7 @@ impl Flow {
         self.gradients()?;
         let step = self.pseudo_step()?;
         let dt = step.filter(|_| s.pseudo_time.momentum);
+        res.pseudo_step = dt;
         let tau = dt.map_or(0.0, |dt| self.phys.rho / dt);
         self.dev.sync()?;
         self.timings.gradients += tm.elapsed().as_secs_f64();

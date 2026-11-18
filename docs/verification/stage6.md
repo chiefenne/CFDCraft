@@ -13,19 +13,24 @@ functions ([below](#k-ε-family-part-6c)), part 6d the k-ε-ζ-f model and
 the multigrid of the turbulence equations
 ([below](#k-ε-ζ-f-and-the-scalar-multigrid-part-6d)), part 6d2 the
 k-ε-ζ-f₀ model of Popovac (2023) with its wall treatment
-([below](#k-ε-ζ-f₀-and-the-compound-treatment-of-2023-part-6d2)). The commands are in
+([below](#k-ε-ζ-f₀-and-the-compound-treatment-of-2023-part-6d2)), part 6e the
+coupled pressure–velocity algorithm and the pseudo-time steps that cut the
+iterations of the steady turbulent cases
+([below](#coupled-algorithm-and-pseudo-time-steps-part-6e)). The commands are in
 [recipe 63](../recipes/scalars.md#passive-scalars),
 [recipe 67](../recipes/boundary-conditions.md#periodic),
 [recipe 68](../recipes/turbulence.md#sst),
 [recipe 71](../recipes/turbulence.md#k-epsilon),
-[recipe 73](../recipes/turbulence.md#zeta-f) and
-[recipe 74](../recipes/turbulence.md#zeta-f0), the pictures in
+[recipe 73](../recipes/turbulence.md#zeta-f),
+[recipe 74](../recipes/turbulence.md#zeta-f0) and
+[recipe 78](../recipes/flow.md#coupled), the pictures in
 [gallery 63](../gallery/scalars.md#passive-scalars),
 [gallery 67](../gallery/boundary-conditions.md#periodic),
 [gallery 68](../gallery/turbulence.md#sst),
 [gallery 71](../gallery/turbulence.md#k-epsilon),
-[gallery 73](../gallery/turbulence.md#zeta-f) and
-[gallery 74](../gallery/turbulence.md#zeta-f0), the generated
+[gallery 73](../gallery/turbulence.md#zeta-f),
+[gallery 74](../gallery/turbulence.md#zeta-f0) and
+[gallery 78](../gallery/flow.md#coupled), the generated
 tables of every case in the [verification manual](manual.md).
 
 ## Passive scalars and the wall distance (part 6a)
@@ -464,3 +469,112 @@ relaxation sets a local pseudo time step of a few cell transit times, and
 the bubble needs a fixed time to form. The scaled residual is 5·10⁻⁵ to
 2·10⁻⁴ when x_r has settled; a residual tolerance does not show when the
 step result is done.
+
+## Coupled algorithm and pseudo-time steps (part 6e)
+
+Specification: [requirements step 22](../requirements/step22-coupled-solver.md)
+(D176 to D178), which also holds the measurements behind the choices.
+
+**The algorithm** (D176, `foehncraft-flow::coupled`). One outer
+iteration solves
+
+    | A  G | |δu|   |r_u|
+    | D  L | |δp| = |r_c|
+
+for the increments, with the momentum rows A, the residuals and the
+Rhie–Chow fluxes of SIMPLEC; then u += δu, p += δp, the fluxes follow
+from the same increments, and one pressure correction removes the
+continuity defect that the loose linear solve (0.1) leaves. The operator
+is applied with the operations of the device (no block matrix); flexible
+GMRES, right-preconditioned with a SIMPLE-type sweep: BiCGStab on the
+momentum rows to 10⁻², the pressure matrix with ρ(D̄ + D̂̄) by CG and the
+multigrid of the pressure, the velocity correction with
+D̂ = min(D^C, V/((1 − α) a_P/α + ρV/(αΔτ))) (kernel `schur_diagonal`).
+
+**The pseudo-time steps** (D177, D178). Momentum: ρV/Δτ (u − uᵏ) on the
+rows through the time term of the transient solver and the
+time-step-independent Rhie–Chow flux (D27) with the current iterate as
+the old level; Δτ = `factor` × ΣV/ΣA_b / U, one value for all cells;
+α_u = 0.98 as the cap on the local Courant number. Turbulence:
+ρV max(1/Δτ, 1/(c_T T)) (φ − φᵏ) on the scalar rows (kernel
+`pseudo_coefficient`), c_T = 0.5, relaxation 0.98; the residual scale
+does not contain the term.
+
+### Results
+
+Backward-facing step of part 6d2, uniform start, iterations until x_r
+stays within 1 % of its final value (a result every 5 iterations for the
+coupled runs, every 25 for SIMPLEC):
+
+| Test | Check | SIMPLEC (0.5, then 0.8 from 100) | Coupled |
+|---|---|---|---|
+| Step, k-ε-ζ-f₀, 8 200 cells (`backstep_zeta_f0_coupled.toml`) | iterations to 1 %; final x_r/H | 525; 6.384 | 65; 6.385 |
+| Step, k-ε (`scalable`), 8 200 cells | the same | 600; 5.287 | 75; 5.287 |
+| Step, k-ω SST, 8 200 cells | the same | 675; 6.82 | 85; 6.81 |
+| Step, k-ε-ζ-f₀, 32 800 cells | the same | 1 750; 6.36 | 170 to 180; 6.38 |
+| Channel at Re_τ = 395, k-ε-ζ-f₀ (`channel_zeta_f0.toml`) | iterations to 10⁻⁶; U_b⁺ | about 2 100; 17.79 | 323; 17.79 |
+| Cavity at Re = 1000, 128² (`cavity_re1000_coupled.toml`) | iterations to 10⁻⁸; deviation from Ghia (u, v) | 1 397 (α = 0.9); 0.0040, 0.0136 | 452; 0.0040, 0.0136 |
+| The same cavity, kinetic-energy ledger (D88) | numerical dissipation over lid power; its pressure part (W) | 0.637 %; 3.996223 × 10⁻⁶ | 0.637 %; 3.996224 × 10⁻⁶ |
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| Cavity 16², Re = 100, converged to 10⁻¹¹ | lid force against SIMPLEC, for the automatic step, Δτ = 0.02 s, `factor = 20` with α = 0.9, and relaxation only | 10⁻⁸ | asserted (`coupled_result_is_the_simplec_result`) |
+| Cavity 48², Re = 400 | iterations: SIMPLEC at α = 0.9; coupled with `factor` 1, 4, 20 | factor 4 at most 0.7 of SIMPLEC, 20 fewer than 4 | 255; 292, 130, 84 |
+| Cavity 16², 10 iterations, lid speed 1 and 2 m/s | the automatic step (L = 0.25 m over the lid speed; the symmetry planes of the one cell layer must not enter); `factor`, `step`, `momentum = false` | 0.25 s and 0.125 s to 10⁻¹² | asserted (`automatic_step_is_the_length_over_the_prescribed_speed`) |
+| Cavity 16², 24 iterations, restart at 10 | velocity, pressure, fluxes, multigrid matrix of the continued run | bit-identical | asserted |
+| Cavity 150², 8 iterations, 1 and 4 threads | residuals, Krylov count, boundary forces | bit-identical | asserted |
+| Input | `[time]` with `coupled`, relaxation 1, ranges of `[solver.coupled]` and `[solver.pseudo_time]`, the defaults | refused with CASE004 / CASE005 | asserted |
+| Kernels | pseudo-time term of the scalar row and its residual scale, `pseudo_coefficient`, `schur_diagonal` | – | kernel tests |
+
+Run time of the step with k-ε-ζ-f₀ until x_r has settled, one thread:
+21 s against 31 s on the coarse mesh (65 against 525 iterations), about
+235 s against 342 s on the fine one (175 against 1 750). A coupled
+iteration costs five to seven SIMPLEC iterations (10 and 14 Krylov
+iterations, each with a momentum sweep of 10 iterations and a pressure
+solve), so the run time gains a factor of about 1.5 where the count
+gains 8 to 10.
+
+**Findings.** (1) The coupled solve alone, with relaxation as before,
+halves the count (300 on the coarse step, 700 to 800 on the fine one):
+the larger part of the gain is the pseudo-time step. (2) On the step the
+count does not depend on Δτ between 5 and 29 H/U, nor on having a global
+step at all once the cap is 0.98; the global step makes the linear
+solves cheaper (8 instead of 18 Krylov iterations per outer iteration).
+(3) The cap on the local step sets the count on fine meshes and on the
+cavity (Δτ given; 0.95: 1 012, 0.98: 423, 0.999: 166 iterations); a tighter
+coupled solve does not (167). At 0.999 the momentum sweeps cost four
+times the run time, so 0.98 is the default. (4) The momentum sweep must
+reach 10⁻² to 10⁻³; truncated sweeps make the Krylov count and x_r
+erratic. On the momentum matrix of the step at Δτ = 5 H/U, BiCGStab
+needs 113 to 137 iterations with a diagonal preconditioner, 21 to 24
+with symmetric Gauss–Seidel, 90 to 194 with the aggregation multigrid of
+the symmetric part and 1 with a multigrid of approximate ideal
+restriction (L44). (5) Turbulence: a global step is limited to 0.5 H/U;
+with the time-scale rule c_T = 0.25, 0.5, 1 gives 75, 55, 45 to 50
+iterations (cap 0.999); relaxation 1 lets k-ε diverge at the start, 0.9
+makes the turbulence lag the momentum equations (x_r overshoots to 11 H
+and has not settled after 150 iterations). (6) With SIMPLEC the
+time-scale rule alone (`solver.pseudo_time.turbulence = 0.5`) gives 230
+iterations at α_u = 0.8; it is off by default there. (7) On small
+laminar cavities the coupled algorithm is not faster than SIMPLEC at
+α = 0.9: the automatic step (0.25 L/U) is a careful one, and larger
+steps cost more per iteration than they save (cavity at Re = 1000 on
+64²: 584 iterations in 8 s with SIMPLEC; 625 in 13 s, 276 in 24 s and
+178 in 43 s with `factor` 1, 4 and 20). The momentum sweep is the limit
+in every one of these findings. (8) A run repeats bit by bit for the
+same input, but its count reacts to the last digit of an input: the
+cavity needs 423 iterations with Δτ = 0.25 s given and 452 with the
+automatic step, which differs from 0.25 s in the 17th digit; the fine
+step needed 145 iterations with a slightly shorter step (a velocity
+scale that counted the symmetry planes) and needs 170 to 180 at
+7.3 H/U. The
+coupled solve stops at 0.1, its momentum sweep is cut off after 10
+iterations and the multigrid cycle runs in single precision, so two runs
+separate in the fifth digit within one outer iteration. The converged
+result does not change; the counts of this section are good to about
+10 %. The histories of the figure of gallery 78 come from intermediate
+results every 5 iterations; an intermediate result updates the boundary
+values and gradients once more and shifts the path within this scatter
+(fine step without them: x_r/H = 6.27, 6.34, 6.37 after 170, 180, 190
+iterations).
+

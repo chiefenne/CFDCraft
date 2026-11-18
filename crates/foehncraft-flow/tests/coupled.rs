@@ -166,6 +166,52 @@ fn a_larger_step_needs_fewer_iterations() {
     );
 }
 
+/// D177: the automatic step is L/U with L the volume over the area of the
+/// boundaries without symmetry planes (a quarter in the unit cavity) and U
+/// the largest prescribed boundary speed (the lid). The symmetry planes of
+/// a mesh of one cell layer carry the whole field and must not enter U:
+/// the step is still 0.25 s after the flow has developed for some
+/// iterations, and 0.125 s at twice the lid speed. The step is compared,
+/// not the iteration count of a run: that reacts to the last digit of the
+/// step.
+#[test]
+fn automatic_step_is_the_length_over_the_prescribed_speed() {
+    let step = |name: &str, lid: f64, pseudo: &str| {
+        let text = cavity_text(
+            16,
+            0.0025 * lid,
+            &format!(
+                "[solver]\nalgorithm = \"coupled\"\nmax_iterations = 10\n{pseudo}[verification]\nrequire_convergence = false\n"
+            ),
+        )
+        .replace(
+            "velocity = [1.0, 0.0, 0.0]",
+            &format!("velocity = [{lid:?}, 0.0, 0.0]"),
+        );
+        let rep = run_case(&FlowCase::from_toml(&text, Path::new(".")).unwrap(), name);
+        rep.solves[0].residuals.pseudo_step
+    };
+    for (lid, expected) in [(1.0, 0.25), (2.0, 0.125)] {
+        let dt = step(&format!("step_automatic_{lid}"), lid, "").expect("a step");
+        assert!(
+            (dt - expected).abs() < 1e-12,
+            "lid speed {lid}: automatic step {dt} s"
+        );
+    }
+    assert_eq!(
+        step("step_factor", 1.0, "[solver.pseudo_time]\nfactor = 4.0\n").map(|dt| dt.round()),
+        Some(1.0)
+    );
+    assert_eq!(
+        step("step_given", 1.0, "[solver.pseudo_time]\nstep = 0.3\n"),
+        Some(0.3)
+    );
+    assert_eq!(
+        step("step_none", 1.0, "[solver.pseudo_time]\nmomentum = false\n"),
+        None
+    );
+}
+
 /// D31: the result does not depend on the number of threads.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]

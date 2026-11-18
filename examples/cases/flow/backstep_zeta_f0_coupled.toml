@@ -1,0 +1,81 @@
+# Backward-facing step of Driver & Seegmiller (1985), k-ε-ζ-f₀, with the
+# coupled pressure–velocity algorithm and pseudo-time steps (stage 6 part
+# 6e, D176 to D178).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/backstep_zeta_f0_coupled.toml
+#
+# The case backstep_zeta_f0.toml (8 200 cells) with `algorithm =
+# "coupled"` and nothing else: no relaxation ramp, no schedule. The
+# momentum equations take one pseudo-time step for all cells (automatic:
+# volume over boundary area, 7.3 H, over the inflow speed), the
+# turbulence equations the step min(Δτ, 0.5 T) with the time scale T of
+# the model; the relaxation 0.98 of both only caps the local Courant
+# number.
+#
+# Result: the reattachment length is within 1 % of its final value after
+# 65 to 70 outer iterations, against about 525 with SIMPLEC and its
+# relaxation ramp, and ends at the same x_r/H = 6.385 (+2 % from the
+# experiment's 6.26). The case runs 150 iterations. With
+# `model = "k-epsilon"` (and `wall_treatment = "scalable"`) it takes 75
+# to 80 iterations, with `"k-omega-sst"` 85 to 90. The residual stalls
+# near 10⁻⁴ as with SIMPLEC, so the run has a fixed budget (recipe 78
+# shows how to see that x_r has settled).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-85.0, 0.0, 0.0]
+upper = [40.0, 9.0, 0.1]
+cells = [125, 80, 1]
+segments = { x = [ { to = 0.0, cells = 50, ratio = 0.0136845 }, { to = 40.0, cells = 75, ratio = 15.5955 } ], y = [ { to = 0.5, cells = 18, ratio = 36.8448 }, { to = 1.0, cells = 18, ratio = 0.0271409 }, { to = 9.0, cells = 44, ratio = 367.941 } ] }
+remove = [ { lower = [-85.0, 0.0, 0.0], upper = [0.0, 1.0, 0.1], name = "step" } ]
+
+[fluid]
+density = 1.0
+viscosity = 2.7777777777777777e-5
+
+[turbulence]
+model = "k-epsilon-zeta-f0"
+wall_treatment = "compound-2023"
+ambient = { k = 1.5e-4, epsilon = 7.29e-6 }
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+k = 1.0e-3
+epsilon = 3.24e-5
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+k = 1.5e-4
+epsilon = 7.29e-6
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "symmetry"
+[boundary.ymin]
+type = "wall"
+[boundary.step]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-6
+max_iterations = 150
+log_every = 10
+
+[verification]
+require_convergence = false
+
+[output]
+vtkhdf = false
+wall_csv = true
+wall_probes = [ { name = "x-4", boundary = "step", point = [-4.0, 1.0, 0.05] } ]
+reference = { velocity = 1.0 }
