@@ -536,7 +536,8 @@ target/release/foehn flow examples/cases/flow/backstep_zeta_f0_coupled.toml
 ```
 
 The step settles in about 40 outer iterations and converges to its
-tolerance in about 120.
+tolerance in about 110 (120 with the pressure tolerance 0.1 of the
+coupled preconditioner before #82).
 
 **Reading the report.** `flow.md` counts the hierarchies built for the
 turbulence equations after those of the momentum sweeps:
