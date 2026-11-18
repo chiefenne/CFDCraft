@@ -2270,6 +2270,17 @@ impl Turbulence {
         })
     }
 
+    /// The buffers a passive scalar couples to (D135): the laminar and the
+    /// effective face viscosity, the wall faces and their y⁺.
+    pub(crate) fn scalar_coupling(&self, dev: &dyn FlowDevice) -> crate::scalar::TurbCoupling {
+        crate::scalar::TurbCoupling {
+            mu: self.mu_lam,
+            mu_eff: dev.face_viscosity(),
+            wall: self.mask_b,
+            y_plus: self.wd.map(|w| w.y_plus),
+        }
+    }
+
     /// The velocity gradient of `u` with the boundary values `ub`.
     fn velocity_gradient(&self, dev: &mut dyn FlowDevice, u: Buf3, ub: Buf3) -> Result<()> {
         for ((ui, bi), g) in u.all().into_iter().zip(ub.all()).zip(self.gu) {

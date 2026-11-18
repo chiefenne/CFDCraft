@@ -3359,16 +3359,27 @@ pub(crate) fn write_outputs(
                 at,
                 if turb.is_some() {
                     "x y z m (face centroid), pressure Pa, tau_x tau_y tau_z Pa (wall shear \
-                     stress), y_plus - (first cell), u_tau m/s (wall treatment)"
+                     stress), y_plus - (first cell), u_tau m/s (wall treatment), per scalar \
+                     <name>_wall (wall value), <name>_flux (diffusive flux into the domain per \
+                     unit area, scalar unit m/s), <name>_h (exchange velocity flux/(wall - cell \
+                     value), m/s: h_w/(rho c_p) of a temperature) and <name>_t_plus (u_tau/h)"
                 } else {
                     "x y z m (face centroid), pressure Pa, tau_x tau_y tau_z Pa (wall shear stress)"
                 },
             );
             csv.push_str(if turb.is_some() {
-                "x,y,z,pressure,tau_x,tau_y,tau_z,y_plus,u_tau\n"
+                "x,y,z,pressure,tau_x,tau_y,tau_z,y_plus,u_tau"
             } else {
-                "x,y,z,pressure,tau_x,tau_y,tau_z\n"
+                "x,y,z,pressure,tau_x,tau_y,tau_z"
             });
+            for st in fl.state.scalars.iter().filter(|s| s.wall.is_some()) {
+                let n = &st.name;
+                let _ = write!(csv, ",{n}_wall,{n}_flux,{n}_h");
+                if turb.is_some() {
+                    let _ = write!(csv, ",{n}_t_plus");
+                }
+            }
+            csv.push('\n');
             let mut rows: Vec<(u64, String)> = p
                 .range()
                 .map(|f| {
@@ -3380,6 +3391,20 @@ pub(crate) fn write_outputs(
                     );
                     if let Some(t) = turb {
                         let _ = write!(r, ",{:e},{:e}", t.y_plus[f - ni], t.u_tau[f - ni]);
+                    }
+                    // scalars: φ_b = a φ_P + b, flux = Γ_f/ρ (|S|/d_n) (φ_b − φ_P)
+                    let c = fl.disc.owner[f] as usize;
+                    let area = norm(geo.face_area[f]);
+                    for st in &fl.state.scalars {
+                        let Some(w) = &st.wall else { continue };
+                        let fb = f - ni;
+                        let pp = st.phi[c];
+                        let pb = w.a[fb] * pp + w.b[fb];
+                        let ex = w.gamma[fb] / fl.phys.rho * fl.disc.dgeo[f] / area;
+                        let _ = write!(r, ",{pb:e},{:e},{ex:e}", ex * (pb - pp));
+                        if let Some(t) = turb {
+                            let _ = write!(r, ",{:e}", t.u_tau[fb] / ex);
+                        }
                     }
                     (mesh.face_id[f], r)
                 })

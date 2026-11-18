@@ -1,0 +1,73 @@
+# Turbulent heated pipe, standard k-ε with scalable wall functions and the
+# thermal wall function of Kader (stage 6 part 6f, D135, specification 5 and
+# 9.7).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pipe_heated_keps.toml
+#
+# Pipe of radius R = 0.5 m (D = 1 m) on an axisymmetric wedge of 0.5°, a
+# periodic module of 0.1 m driven by the mass flow of U = 1 m/s (Re =
+# U D/ν = 10⁵, ν = 1e-5 m²/s). A passive temperature with Pr = 0.71
+# (Γ = ν/Pr) takes the uniform wall flux q = 1e-3 K m/s and crosses the
+# periodic pair with the heat-flux jump of D109 (1). The turbulent
+# diffusivity is ν/Pr + ν_t/Pr_t (Pr_t = 0.85, or the correlation of Kays &
+# Crawford with `turbulent_prandtl_model = "kays-crawford"`), and the
+# wall face carries the conductance h_w = ρ u*/T⁺ of Kader's profile.
+# With the bulk value T_b = 0 at the periodic plane xmin the Nusselt number
+# is Nu = q D/(Γ (T_w − T_b)) with T_w the wall temperature at that plane
+# (the mean over the wall minus G L/2, G = 2 q/(U R)). Gnielinski (1976)
+# gives Nu = 180.3 at Re = 10⁵, Pr = 0.71 (band ±10 %); the verification
+# page lists the result.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 0.5, 0.1]
+cells = [2, 36, 1]
+wedge = 0.5            # degrees about the x axis; y is the radius
+
+[fluid]
+density = 1.0
+viscosity = 1e-5
+
+[turbulence]
+model = "k-epsilon"
+wall_treatment = "scalable"
+
+[scalars.theta]
+diffusivity = 1.4084507042253522e-5   # ν/Pr, Pr = 0.71
+initial = 0.0
+turbulent_prandtl = 0.85
+wall_function = "kader"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 1.0908169e-3     # kg/s: ρ U ½ R² sin(0.5°)
+[boundary.xmin.scalar.theta]
+periodic = "heat-flux"
+bulk = 0.0                   # the bulk value at xmin
+[boundary.xmax]
+type = "periodic"
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.scalar.theta]
+flux = 1e-3                  # q = wall heat flux over ρ c_p (K m/s)
+[boundary.zmin]
+type = "wedge"
+[boundary.zmax]
+type = "wedge"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 4000
+
+[output]
+vtkhdf = false
+wall_csv = true

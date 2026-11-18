@@ -2027,6 +2027,120 @@ impl Entry for TurbFaces {
     }
 }
 
+/// Arguments of [`ScalarTurbFaces`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ScalarTurbArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// Laminar viscosity μ per face.
+    pub mu: Raw<f64>,
+    /// μ + ρ ν_t per face (the face viscosity of the flow).
+    pub mu_eff: Raw<f64>,
+    /// ρ Γ per face: the molecular diffusivity of the scalar.
+    pub gamma0: Raw<f64>,
+    /// 1 on the wall faces (per boundary face).
+    pub wall: Raw<f64>,
+    /// q d_n per boundary face (fixed-flux faces; 0 elsewhere).
+    pub fq: Raw<f64>,
+    /// 0 on fixed-value faces, 1 otherwise (per boundary face).
+    pub bc_a: Raw<f64>,
+    /// Model of the turbulent Prandtl number ([`crate::turb::thermal`]).
+    pub prt_model: u32,
+    /// Its constant value.
+    pub prt: f64,
+    /// Output ρ(Γ + ν_t/Pr_t) per face.
+    pub gamma: Raw<f64>,
+    /// Output (per boundary face, flux faces off the walls): q d_n/Γ_f.
+    pub bc_b: Raw<f64>,
+}
+
+/// The turbulent diffusivity of a scalar per face: ρ Γ + (μ_eff − μ)/Pr_t,
+/// the owner value on boundary faces; walls keep ρ Γ ([`ScalarWallFaces`]).
+pub struct ScalarTurbFaces;
+impl Entry for ScalarTurbFaces {
+    type Args = ScalarTurbArgs;
+    const NAME: &'static str = "scalar_turb_faces";
+    #[inline(always)]
+    unsafe fn run(f: usize, a: &ScalarTurbArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let ni = a.m.n_interior as usize;
+            let g0 = ld(a.gamma0.get(), f);
+            let wall = f >= ni && ld(a.wall.get(), f - ni) > 0.0;
+            let mut g = g0;
+            if !wall {
+                let mu = ld(a.mu.get(), f);
+                let mt = foehncraft_core::math::pmax(ld(a.mu_eff.get(), f) - mu, 0.0);
+                let pr = mu / g0;
+                let prt = crate::turb::thermal::prandtl_t(a.prt_model, a.prt, mt / mu, pr);
+                g = g0 + mt / prt;
+            }
+            *a.gamma.out().add(f) = g;
+            if f >= ni && !wall && ld(a.bc_a.get(), f - ni) > 0.5 {
+                *a.bc_b.out().add(f - ni) = ld(a.fq.get(), f - ni) / g;
+            }
+        }
+    }
+}
+
+/// Arguments of [`ScalarWallFaces`].
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ScalarWallArgs {
+    /// Mesh.
+    pub m: Mesh,
+    /// The wall faces (global face index).
+    pub faces: Raw<u32>,
+    /// y⁺ per wall face (the wall treatment).
+    pub y_plus: Raw<f64>,
+    /// Laminar viscosity μ per face.
+    pub mu: Raw<f64>,
+    /// ρ Γ per face.
+    pub gamma0: Raw<f64>,
+    /// q d_n per boundary face.
+    pub fq: Raw<f64>,
+    /// 0 on fixed-value faces, 1 otherwise (per boundary face).
+    pub bc_a: Raw<f64>,
+    /// Thermal wall law ([`crate::turb::thermal::KADER`], …).
+    pub law: u32,
+    /// Pr_t of the log layer.
+    pub prt: f64,
+    /// Output Γ_w = h_w y_P per face (the wall faces).
+    pub gamma: Raw<f64>,
+    /// Output (per boundary face): q d_n/Γ_w on flux faces.
+    pub bc_b: Raw<f64>,
+    /// Output T⁺ per wall face (or [`Raw::EMPTY`]).
+    pub t_plus: Raw<f64>,
+}
+
+/// The thermal wall function per wall face: the face diffusivity is
+/// Γ_w = μ y⁺/T⁺, so that its conductance is h_w = ρ u*/T⁺.
+pub struct ScalarWallFaces;
+impl Entry for ScalarWallFaces {
+    type Args = ScalarWallArgs;
+    const NAME: &'static str = "scalar_wall_faces";
+    #[inline(always)]
+    unsafe fn run(i: usize, a: &ScalarWallArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let f = ld(a.faces.get(), i) as usize;
+            let fb = f - a.m.n_interior as usize;
+            let mu = ld(a.mu.get(), f);
+            let pr = mu / ld(a.gamma0.get(), f);
+            let yp = ld(a.y_plus.get(), i);
+            let g = crate::turb::thermal::wall_conductance(a.law, mu, yp, pr, a.prt);
+            *a.gamma.out().add(f) = g;
+            if ld(a.bc_a.get(), fb) > 0.5 {
+                *a.bc_b.out().add(fb) = ld(a.fq.get(), fb) / g;
+            }
+            if a.t_plus.len > 0 {
+                *a.t_plus.out().add(i) = crate::turb::thermal::t_plus(a.law, yp, pr, a.prt);
+            }
+        }
+    }
+}
+
 /// Arguments of [`WallFaces`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -2372,7 +2486,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 44] = [
+pub const NAMES: [&str; 46] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SchurDiagonal::NAME,
@@ -2414,6 +2528,8 @@ pub const NAMES: [&str; 44] = [
     KepsCells::NAME,
     ZetaFCells::NAME,
     TurbFaces::NAME,
+    ScalarTurbFaces::NAME,
+    ScalarWallFaces::NAME,
     WallFaces::NAME,
     WallCells::NAME,
     Floor::NAME,

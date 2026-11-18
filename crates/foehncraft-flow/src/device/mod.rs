@@ -460,6 +460,54 @@ pub struct TurbFaceOps {
     pub zeta_f: Option<[Buf; 4]>,
 }
 
+/// Inputs and outputs of [`FlowDevice::scalar_turb_faces`].
+#[derive(Debug, Clone, Copy)]
+pub struct ScalarTurbOps {
+    /// Laminar viscosity per face.
+    pub mu: Buf,
+    /// The face viscosity of the flow (μ + ρ ν_t).
+    pub mu_eff: Buf,
+    /// ρ Γ per face (molecular).
+    pub gamma0: Buf,
+    /// 1 on the wall faces (per boundary face).
+    pub wall: Buf,
+    /// q d_n per boundary face.
+    pub fq: Buf,
+    /// 0 on fixed-value faces, 1 otherwise (per boundary face).
+    pub bc_a: Buf,
+    /// Model of Pr_t (`turb::thermal::PRT_*`) and its constant.
+    pub prt: (u32, f64),
+    /// Output: the face diffusivity.
+    pub gamma: Buf,
+    /// Output: b of the flux faces (per boundary face).
+    pub bc_b: Buf,
+}
+
+/// Inputs and outputs of [`FlowDevice::scalar_wall_faces`].
+#[derive(Debug, Clone, Copy)]
+pub struct ScalarWallOps {
+    /// y⁺ per wall face.
+    pub y_plus: Buf,
+    /// Laminar viscosity per face.
+    pub mu: Buf,
+    /// ρ Γ per face (molecular).
+    pub gamma0: Buf,
+    /// q d_n per boundary face.
+    pub fq: Buf,
+    /// 0 on fixed-value faces, 1 otherwise (per boundary face).
+    pub bc_a: Buf,
+    /// Thermal wall law (`turb::thermal::KADER`, …).
+    pub law: u32,
+    /// Pr_t of the log layer.
+    pub prt: f64,
+    /// Output: the wall-face diffusivity (per face).
+    pub gamma: Buf,
+    /// Output: b of the flux faces (per boundary face).
+    pub bc_b: Buf,
+    /// Output T⁺ per wall face, if wanted.
+    pub t_plus: Option<Buf>,
+}
+
 /// Inputs and outputs of [`FlowDevice::wall_faces`].
 #[derive(Debug, Clone, Copy)]
 pub struct WallFaceOps {
@@ -769,6 +817,11 @@ pub trait FlowDevice {
     fn zeta_f_cells(&mut self, a: &ZetaFCellOps) -> Result<()>;
     /// Face viscosities of a turbulent flow.
     fn turb_faces(&mut self, a: &TurbFaceOps) -> Result<()>;
+    /// The turbulent diffusivity of a passive scalar per face (D135).
+    fn scalar_turb_faces(&mut self, a: &ScalarTurbOps) -> Result<()>;
+    /// The thermal wall function per wall face (D135, after
+    /// [`scalar_turb_faces`](Self::scalar_turb_faces)).
+    fn scalar_wall_faces(&mut self, a: &ScalarWallOps) -> Result<()>;
     /// The wall treatment per wall face (after [`wall_setup`](Self::wall_setup)).
     fn wall_faces(&mut self, a: &WallFaceOps) -> Result<()>;
     /// The area-weighted wall-face values `omega` of the near-wall cells
