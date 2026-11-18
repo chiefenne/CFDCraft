@@ -14,6 +14,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 81 | [A multigrid for the turbulence equations: the step settles in 40 and 65 iterations](#turbulence-multigrid) | 6 | `solver.turbulence.preconditioner`, `solver.turbulence.reuse`, relaxations 0.995 |
 | 83 | [The pressure hierarchy follows its matrix: the fine step 6 times faster than SIMPLEC](#pressure-hierarchy) | 6 | `solver.coupled.pressure_reuse`, `solver.coupled.pressure_tolerance` |
 | 85 | [Heat transfer in turbulent flow: the heated pipe and the heated flat plate](#thermal-wall-function) | 6 | `scalars.<name>.wall_function`, `turbulent_prandtl`, `turbulent_prandtl_model`, wall file columns of a scalar |
+| 86 | [The heated channel against DNS: Nu at Re_τ = 395](#heated-channel-dns) | 6 | `channel_heated_keps.toml`, `examples/studies/channel_heat_dns.py` |
 
 ---
 
@@ -615,3 +616,23 @@ there; the correlation is for the turbulent layer.
 
 The commands are in [recipe 85](../recipes/flow.md#thermal-wall-function),
 the numbers on the [verification page](../verification/stage6.md#thermal-wall-function-and-turbulent-prandtl-number-part-6f).
+
+---
+
+<a id="heated-channel-dns"></a>
+## 86. The heated channel against DNS: Nu at Re_τ = 395
+
+The channel of [gallery 85](#thermal-wall-function)'s family at Re_τ = 395
+(`channel_heated_keps.toml`, 12 cells across 2h, first-cell y⁺ 32,
+standard k-ε with scalable wall functions) with a passive temperature,
+Pr = 0.71, the same uniform heat flux on both walls and the periodic
+heat-flux jump. Nusselt number on the channel width 2h against the DNS of
+Abe, Kawamura & Matsuo (JAXA DNS database, 36.39 at Re_b = 13 849):
+
+| Pr_t | Nu | Deviation |
+|---|---|---|
+| constant 0.85 | 36.01 | −1.0 % |
+| Kays–Crawford | 35.65 | −2.0 % |
+
+The DNS tables are JAXA's property and are fetched by
+`examples/studies/channel_heat_dns.py`, not stored; see [recipe 86](../recipes/flow.md#heated-channel-dns).
