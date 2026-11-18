@@ -1,0 +1,82 @@
+# Turbulent flat plate of the NASA Turbulence Modeling Resource (TMR,
+# 2D zero-pressure-gradient case), the elliptic-blending k-ε of Billard &
+# Laurence (2012) with the compound wall treatment (stage 6 part 6e, D133,
+# D134, specification 9.3).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tmr_plate_eb.toml
+#
+# The geometry, the mesh (64 × 48 cells, first-cell y⁺ 1 at x = 0.97),
+# the free stream and the turbulent start of tmr_plate_zeta_f.toml
+# (k = 10⁻⁴, ε = 4.5·10⁻⁵); the inlet keeps the TMR values.
+#
+# Result: C_f(0.97) = 2.889·10⁻³, +0.5 % from White's correlation
+# (2.875·10⁻³, band ±3 %); the boundary layer is laminar to x ≈ 0.12.
+# From the TMR free stream instead (`--set initial.k=2.25e-7 --set
+# initial.epsilon=2.53125e-6`) it turns turbulent on its own at x ≈ 0.25,
+# which ζ-f does not do, and C_f(0.97) is +2.5 %. With the variable C*_ε2
+# switched off (`constants = { c_epsilon4 = 1.83 }`) C_f(0.97) is +4.9 %,
+# as with ζ-f. As with ζ-f, the positivity floors hold k and φ in the
+# laminar part near the leading edge, so their residuals stay at 5·10⁻⁶
+# and 1.4·10⁻⁵ (TURB002; finding, hence `require_convergence = false`);
+# every other field converges to round-off.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-0.3333333333333333, 0.0, 0.0]
+upper = [2.0, 1.0, 1.0]
+cells = [64, 48, 1]
+grading = { y = { ratio = 17554.734 } }
+segments = { x = [ { to = 0.0, cells = 16, ratio = 0.1 }, { to = 2.0, cells = 48, ratio = 20.0 } ] }
+split = [ { boundary = "ymin", axis = "x", at = 0.0, name = "plate" } ]
+
+[fluid]
+density = 1.0
+viscosity = 2.0e-7
+
+[turbulence]
+model = "elliptic-blending-k-epsilon"
+wall_treatment = "compound"
+ambient = { k = 2.25e-7, epsilon = 2.53125e-6 }
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+k = 1.0e-4                # a turbulent start (see above)
+epsilon = 4.5e-5
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+k = 2.25e-7
+epsilon = 2.53125e-6
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "symmetry"
+[boundary.plate]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-7
+max_iterations = 4000
+log_every = 200
+
+[verification]
+require_convergence = false   # the k floor of the laminar leading edge (see above)
+
+[output]
+vtkhdf = false
+wall_csv = true
+wall_probes = [ { name = "x097", boundary = "plate", point = [0.970084, 0.0, 0.5] } ]
+reference = { velocity = 1.0 }
+lines = [ { name = "x097", from = [0.97, 0.0, 0.5], to = [0.97, 0.05, 0.5], points = 400 } ]

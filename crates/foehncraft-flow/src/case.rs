@@ -185,7 +185,8 @@ pub struct InitialSection {
     /// the k-ε family).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub epsilon: Option<crate::expr::Scalar>,
-    /// Start ζ = v²/k (k-ε-ζ-f; default 2/3, isotropy; in (0, 2]).
+    /// Start ζ = v²/k (k-ε-ζ-f; φ of the elliptic-blending k-ε; default
+    /// 2/3, isotropy; in (0, 2]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub zeta: Option<f64>,
 }
@@ -1530,8 +1531,18 @@ pub(crate) fn turbulence_summary<F: FnMut(&str)>(
     let h = &sm.health;
     let zeta = if h.floor_cells_max.len() > 3 {
         format!(
-            ", ζ at most {} cells ({}, {})",
-            h.floor_cells_max[3], h.floor_iterations[3], h.floor_iterations_late[3]
+            ", {} at most {} cells ({}, {})",
+            if sm
+                .model
+                .starts_with(crate::turbulence::TurbulenceModel::EllipticBlendingKEpsilon.name(),)
+            {
+                "φ"
+            } else {
+                "ζ"
+            },
+            h.floor_cells_max[3],
+            h.floor_iterations[3],
+            h.floor_iterations_late[3]
         )
     } else {
         String::new()
@@ -3431,8 +3442,13 @@ pub(crate) fn write_outputs(
                 head.push_str(",k,omega,nu_t,wall_distance");
             }
             if t.zeta.is_some() {
-                units.push_str(", zeta -, f 1/s (cell values)");
-                head.push_str(",zeta,f");
+                if case.turbulence.model.is_eb() {
+                    units.push_str(", phi -, alpha - (cell values)");
+                    head.push_str(",phi,alpha");
+                } else {
+                    units.push_str(", zeta -, f 1/s (cell values)");
+                    head.push_str(",zeta,f");
+                }
             }
         }
         for st in &fl.state.scalars {
@@ -3588,9 +3604,11 @@ pub(crate) fn write_fields(
         }
         if let Some(z) = &t.zeta {
             v2 = z.zeta.iter().zip(&t.k).map(|(z, k)| z * k).collect();
+            // the elliptic-blending k-ε: φ and α in the slots of ζ and f
+            let eb = case.turbulence.model.is_eb();
             for (name, values) in [
-                ("zeta", &z.zeta),
-                ("f", &z.f),
+                (if eb { "phi" } else { "zeta" }, &z.zeta),
+                (if eb { "alpha" } else { "f" }, &z.f),
                 ("turbulent_time_scale", &z.t),
                 ("v2", &v2),
             ] {

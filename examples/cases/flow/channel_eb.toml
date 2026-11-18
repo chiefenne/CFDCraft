@@ -1,0 +1,71 @@
+# Fully developed turbulent channel flow at Re_τ ≈ 395, the
+# elliptic-blending k-ε of Billard & Laurence (2012, "BL-v²/k") with the
+# compound wall treatment (stage 6 part 6e, D133, D134, specification 9.4).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_eb.toml
+#
+# The channel of channel_sst.toml (0 < y < 2h, h = 1 m, ν = 1/395 m²/s,
+# periodic module of 0.1 m, mass flow 3.51 kg/s: U_b = 17.55 m/s, the DNS
+# bulk velocity of Moser, Kim & Mansour (1999) at u_τ = 1 m/s). The
+# solver adjusts the body force F = τ_w/h, so u_τ = √(F h/ρ) and
+# U_b⁺ = 17.55/√F follow from the driving force in the log; at the fixed
+# mass flow F is also C_f over the C_f of the DNS.
+#
+# 96 cells across, graded symmetrically (ratio 60 between the centre and
+# the wall cell): the first-cell y⁺ is 0.28, where the compound treatment
+# is the integration to the wall (k = φ = α = 0, ε_w = ν k/y²). The
+# profile line gives U, k, ε, ν_t, φ = v²/k and α across the channel.
+#
+# Result: F = 0.990, C_f at 99.0 % of the DNS, where the paper reports
+# 98 % (its Table 6, the acceptance target of specification 3.4);
+# U_b⁺ = 17.64, +0.5 % (band ±3 %), in 2 900 iterations. On 192 cells
+# 98.8 %. Re_τ 180 (mass flow 3.102) and 590 (3.7124, 128 cells, ratio
+# 80) give 97.8 and 99.1 % (paper 100 and 100 %); at Re_τ 180 the start
+# needs `turbulence_intensity = 0.15` and `viscosity_ratio = 20`: from
+# the start below the channel turns laminar.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 2.0, 0.1]
+cells = [2, 96, 1]
+grading = { y = { ratio = 60.0, symmetric = true } }
+
+[fluid]
+density = 1.0
+viscosity = 0.0025316455696202532   # 1/395
+
+[turbulence]
+model = "elliptic-blending-k-epsilon"
+wall_treatment = "compound"
+
+[initial]
+velocity = [15.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 100.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 3.51
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 5000
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.0, 0.05], to = [0.05, 1.0, 0.05], points = 200 } ]

@@ -99,6 +99,10 @@ pub enum TurbulenceModel {
     /// k-ε-ζ-f₀ (Popovac 2023): ζ-f with f₀ = 0 at the wall, and the
     /// compound wall treatment of the same paper by default.
     KEpsilonZetaF0,
+    /// Elliptic-blending k-ε (Billard & Laurence 2012, the "BL-v²/k"
+    /// model, D133): φ = v²/k and the blending parameter α on the fields
+    /// and solvers of k-ε-ζ-f, the compound wall treatment by default.
+    EllipticBlendingKEpsilon,
 }
 
 impl TurbulenceModel {
@@ -106,7 +110,11 @@ impl TurbulenceModel {
     pub fn is_epsilon(self) -> bool {
         matches!(
             self,
-            Self::KEpsilon | Self::RealizableKEpsilon | Self::KEpsilonZetaF | Self::KEpsilonZetaF0
+            Self::KEpsilon
+                | Self::RealizableKEpsilon
+                | Self::KEpsilonZetaF
+                | Self::KEpsilonZetaF0
+                | Self::EllipticBlendingKEpsilon
         )
     }
 
@@ -116,9 +124,27 @@ impl TurbulenceModel {
         matches!(self, Self::KEpsilon | Self::RealizableKEpsilon)
     }
 
-    /// The model solves ζ = v²/k and the elliptic f (k-ε-ζ-f, ζ-f₀).
+    /// The model solves ζ = v²/k and the elliptic f (k-ε-ζ-f, ζ-f₀), or
+    /// φ = v²/k and the elliptic α in their places (elliptic blending).
     pub fn has_zeta(self) -> bool {
-        matches!(self, Self::KEpsilonZetaF | Self::KEpsilonZetaF0)
+        matches!(
+            self,
+            Self::KEpsilonZetaF | Self::KEpsilonZetaF0 | Self::EllipticBlendingKEpsilon
+        )
+    }
+
+    /// The elliptic-blending k-ε.
+    pub fn is_eb(self) -> bool {
+        self == Self::EllipticBlendingKEpsilon
+    }
+
+    /// The label of the ζ-f family in messages.
+    pub fn zeta_label(self) -> &'static str {
+        if self.is_eb() {
+            "the elliptic-blending k-ε"
+        } else {
+            "k-ε-ζ-f"
+        }
     }
 
     /// The name in the case file.
@@ -130,6 +156,7 @@ impl TurbulenceModel {
             Self::RealizableKEpsilon => "realizable-k-epsilon",
             Self::KEpsilonZetaF => "k-epsilon-zeta-f",
             Self::KEpsilonZetaF0 => "k-epsilon-zeta-f0",
+            Self::EllipticBlendingKEpsilon => "elliptic-blending-k-epsilon",
         }
     }
 }
@@ -249,10 +276,11 @@ pub struct Ambient {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct TurbulenceSection {
-    /// Turbulence model (D12, D130).
+    /// Turbulence model (D12, D130–D133).
     pub model: TurbulenceModel,
     /// Momentum wall treatment (D134; SST default `automatic`, k-ε family
-    /// `scalable`).
+    /// `scalable`, k-ε-ζ-f and the elliptic-blending k-ε `compound`,
+    /// k-ε-ζ-f₀ `compound-2023`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wall_treatment: Option<WallTreatment>,
     /// Production form of SST (default `menter`) and of the standard k-ε
@@ -277,7 +305,13 @@ pub struct TurbulenceSection {
     /// `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`,
     /// `sigma_k2`, `sigma_omega1`, `sigma_omega2`; k-ε: `c_mu`,
     /// `c_epsilon1`, `c_epsilon2`, `sigma_k`, `sigma_epsilon`, `a0`,
-    /// `kappa`); TURB007.
+    /// `kappa`; k-ε-ζ-f and ζ-f₀: `c_mu`, `c_epsilon1`,
+    /// `c_epsilon1_zeta`, `c_epsilon2`, `c_1`, `c_2`, `sigma_k`,
+    /// `sigma_epsilon`, `sigma_zeta`, `a`, `c_t`, `c_l`, `c_eta`, `kappa`,
+    /// `n_zeta` (ζ-f₀ only); the elliptic-blending k-ε: `c_mu`, `c_epsilon1` …
+    /// `c_epsilon4`, `c_1`, `c_2`, `sigma_k`, `sigma_epsilon`, `sigma_phi`,
+    /// `a`, `c_t`, `c_l`, `c_eta`, `kappa`, where `c_epsilon4 = 1.83`
+    /// makes C*_ε2 constant); TURB007.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub constants: BTreeMap<String, f64>,
 }
@@ -341,6 +375,27 @@ pub const ZETA_F_CONSTANTS: &[&str] = &[
     "c_eta",
     "kappa",
     "n_zeta",
+];
+
+/// The names of the elliptic-blending k-ε constants that
+/// `[turbulence.constants]` takes (`a`: the coefficient of the
+/// realizability bound of T in ν_t).
+pub const EB_CONSTANTS: &[&str] = &[
+    "c_mu",
+    "c_epsilon1",
+    "c_epsilon2",
+    "c_epsilon3",
+    "c_epsilon4",
+    "c_1",
+    "c_2",
+    "sigma_k",
+    "sigma_epsilon",
+    "sigma_phi",
+    "a",
+    "c_t",
+    "c_l",
+    "c_eta",
+    "kappa",
 ];
 
 /// Relative width of the smooth switches with `smooth_limits = true`.
@@ -443,25 +498,33 @@ impl TurbulenceSection {
         Ok(c)
     }
 
-    /// The constants of k-ε-ζ-f with the overrides.
+    /// The constants of k-ε-ζ-f (or of the elliptic-blending k-ε) with the
+    /// overrides.
     pub fn zeta_f_constants(&self) -> Result<ZetaFConstants> {
         let f0 = self.model == TurbulenceModel::KEpsilonZetaF0;
-        let mut c = if f0 {
+        let eb = self.model.is_eb();
+        let mut c = if eb {
+            ZetaFConstants::billard_laurence_2012()
+        } else if f0 {
             ZetaFConstants::popovac_2023()
         } else {
             ZetaFConstants::paper()
         };
+        let names = if eb { EB_CONSTANTS } else { ZETA_F_CONSTANTS };
         for (name, &v) in &self.constants {
             let slot = match name.as_str() {
                 "c_mu" => &mut c.c_mu,
                 "c_epsilon1" => &mut c.c_e1,
-                "c_epsilon1_zeta" => &mut c.c_e1_zeta,
+                "c_epsilon1_zeta" if !eb => &mut c.c_e1_zeta,
                 "c_epsilon2" => &mut c.c_e2,
+                "c_epsilon3" if eb => &mut c.c_e3,
+                "c_epsilon4" if eb => &mut c.c_e4,
                 "c_1" => &mut c.c1,
                 "c_2" => &mut c.c2,
                 "sigma_k" => &mut c.sigma_k,
                 "sigma_epsilon" => &mut c.sigma_e,
-                "sigma_zeta" => &mut c.sigma_z,
+                "sigma_zeta" if !eb => &mut c.sigma_z,
+                "sigma_phi" if eb => &mut c.sigma_z,
                 "a" => &mut c.a,
                 "c_t" => &mut c.c_t,
                 "c_l" => &mut c.c_l,
@@ -469,7 +532,7 @@ impl TurbulenceSection {
                 "kappa" => &mut c.kappa,
                 "n_zeta" if f0 => &mut c.n_zeta,
                 _ => {
-                    let hint = crate::bc::did_you_mean(name, ZETA_F_CONSTANTS.iter().copied())
+                    let hint = crate::bc::did_you_mean(name, names.iter().copied())
                         .map(|h| format!(" (did you mean `{h}`?)"))
                         .unwrap_or_default();
                     return Err(diag::err(
@@ -477,8 +540,9 @@ impl TurbulenceSection {
                             diag::CASE_UNKNOWN_KEY,
                             format!(
                                 "[turbulence.constants] has no constant `{name}`{hint}; the \
-                                 k-ε-ζ-f constants are {}",
-                                ZETA_F_CONSTANTS.join(", ")
+                                 constants of {} are {}",
+                                self.model.zeta_label(),
+                                names.join(", ")
                             ),
                         )
                         .key(format!("turbulence.constants.{name}")),
@@ -605,6 +669,16 @@ impl TurbulenceSection {
             return Ok(());
         }
         let t = self.treatment();
+        if self.model.is_eb() {
+            self.zeta_f_constants()?;
+            crate::need!(
+                matches!(t, WallTreatment::Compound | WallTreatment::LowRe),
+                CASE_INCONSISTENT,
+                "turbulence.wall_treatment = \"{}\" is not a treatment of the \
+                 elliptic-blending k-ε; use \"compound\" (any y⁺) or \"low-re\" (y⁺ ≲ 1)",
+                t.name()
+            );
+        }
         if self.model.has_zeta() {
             self.zeta_f_constants()?;
             crate::need!(
@@ -623,14 +697,16 @@ impl TurbulenceSection {
                     None | Some(ProductionLimiter::None)
                 ),
                 CASE_INCONSISTENT,
-                "turbulence.production_limiter: k-ε-ζ-f bounds its time scale by \
-                 realizability itself and takes no production limiter (use \"none\")"
+                "turbulence.production_limiter: {} bounds its time scale by \
+                 realizability itself and takes no production limiter (use \"none\")",
+                self.model.zeta_label()
             );
             if let Some(a) = self.ambient {
                 crate::need!(
                     a.epsilon.is_some() && a.omega.is_none(),
                     CASE_INCONSISTENT,
-                    "turbulence.ambient of k-ε-ζ-f takes k and epsilon"
+                    "turbulence.ambient of {} takes k and epsilon",
+                    self.model.zeta_label()
                 );
             }
         } else if self.model.is_epsilon() {
@@ -924,8 +1000,9 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
             crate::need!(
                 !(t.treatment() == WallTreatment::LowRe && bc.roughness() > 0.0),
                 CASE_INCONSISTENT,
-                "[boundary.{name}] roughness with k-ε-ζ-f needs the compound wall treatment \
-                 (its log-law shift); the integration to the wall has no rough-wall form"
+                "[boundary.{name}] roughness with {} needs the compound wall treatment \
+                 (its log-law shift); the integration to the wall has no rough-wall form",
+                t.model.zeta_label()
             );
         }
     }
@@ -1015,7 +1092,7 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
             format!(
                 "{} constants changed in [turbulence.constants]: {}",
                 if t.model.has_zeta() {
-                    "k-ε-ζ-f"
+                    t.model.zeta_label()
                 } else if t.model.is_epsilon() {
                     "k-ε"
                 } else {
@@ -1037,7 +1114,9 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
         push(
             Level::Note,
             diag::TURB_NO_WALL,
-            if t.model.has_zeta() {
+            if t.model.is_eb() {
+                "no wall boundary: no wall treatment acts (α = 1, φ relaxes to 2/3)".into()
+            } else if t.model.has_zeta() {
                 "no wall boundary: no wall treatment acts (ζ-f relaxes ζ to 2/3)".into()
             } else if t.model.is_epsilon() {
                 "no wall boundary: no wall treatment acts".into()
@@ -1083,7 +1162,9 @@ impl TurbResiduals {
 /// The names of the equations, in the order of the solves and of the
 /// residuals.
 pub fn equations(model: TurbulenceModel) -> &'static [&'static str] {
-    if model.has_zeta() {
+    if model.is_eb() {
+        &["k", "epsilon", "alpha", "phi"]
+    } else if model.has_zeta() {
         &["k", "epsilon", "f", "zeta"]
     } else if model.is_epsilon() {
         &["k", "epsilon"]
@@ -1207,13 +1288,31 @@ struct ZetaFDev {
     /// ρ(ν + ν_t/σ_ζ) and ρL² per face.
     gamma_z: Buf,
     gamma_f: Buf,
-    /// S_u, S_p of ζ and the right-hand side of f.
-    src: [Buf; 3],
-    /// −1 per cell (S_p of the f equation).
-    minus_one: Buf,
+    /// S_u, S_p of ζ and S_u (the right-hand side), S_p of f.
+    src: [Buf; 4],
     /// The values of the transported variable before its solve (the
     /// relative lower bound, [`ZETA_F_DROP`]).
     prev: Buf,
+}
+
+/// The extra inputs of the elliptic-blending k-ε on the device: the
+/// second derivatives of the velocity (the E term) and the turbulent
+/// transport of k (C*_ε2), from gradients of the gradients with zero
+/// normal gradient on every boundary (∂²U/∂y² = ∂p/∂x/μ ≈ 0 at a wall).
+#[derive(Debug, Clone, Copy)]
+struct EbDev {
+    /// Σ_ijl (∂_l ∂_j U_i)² per cell.
+    g2: Buf,
+    /// ∇·(ν_t/σ_k ∇k) per cell.
+    dkt: Buf,
+    /// A gradient and the flux ν_t/σ_k ∇k per cell.
+    tmp: Buf3,
+    q: Buf3,
+    /// The least-squares weights with every boundary point at the owner
+    /// value, and the boundary coefficients a = 1, b = 0.
+    lsq: Buf3,
+    ones: Buf,
+    zeros: Buf,
 }
 
 /// The pseudo-time step of the turbulence transport equations in a steady
@@ -1353,6 +1452,8 @@ pub struct Turbulence {
     inlets: Inlets,
     /// k-ε-ζ-f: ζ and f.
     zf: Option<ZetaFDev>,
+    /// The elliptic-blending k-ε (with `zf`).
+    eb: Option<EbDev>,
     /// Multigrid settings of the turbulence and elliptic solves (those of
     /// the pressure).
     amg: foehncraft_fv::amg::AmgSettings,
@@ -1615,8 +1716,6 @@ impl Turbulence {
         let k = var(dev, VarKind::K)?;
         let w = var(dev, VarKind::Second)?;
         let zf = if model.has_zeta() {
-            let minus_one = dev.alloc(nc)?;
-            dev.fill(minus_one, -1.0)?;
             Some(ZetaFDev {
                 c: zc,
                 o: section.zeta_f_options(&settings),
@@ -1627,9 +1726,46 @@ impl Turbulence {
                 dz: dev.alloc(nc)?,
                 gamma_z: dev.alloc(nf)?,
                 gamma_f: dev.alloc(nf)?,
-                src: [dev.alloc(nc)?, dev.alloc(nc)?, dev.alloc(nc)?],
-                minus_one,
+                src: [
+                    dev.alloc(nc)?,
+                    dev.alloc(nc)?,
+                    dev.alloc(nc)?,
+                    dev.alloc(nc)?,
+                ],
                 prev: dev.alloc(nc)?,
+            })
+        } else {
+            None
+        };
+        let eb = if model.is_eb() {
+            let points = mesh
+                .boundaries
+                .iter()
+                .map(|p| (p.name.clone(), BoundaryKind::ZeroGradient))
+                .collect();
+            let lsq = crate::simplec::disc_with(mesh, geo, &points)?.lsq;
+            let ones = dev.alloc(nb)?;
+            dev.fill(ones, 1.0)?;
+            Some(EbDev {
+                g2: dev.alloc(nc)?,
+                dkt: dev.alloc(nc)?,
+                tmp: Buf3 {
+                    x: dev.alloc(nc)?,
+                    y: dev.alloc(nc)?,
+                    z: dev.alloc(nc)?,
+                },
+                q: Buf3 {
+                    x: dev.alloc(nc)?,
+                    y: dev.alloc(nc)?,
+                    z: dev.alloc(nc)?,
+                },
+                lsq: Buf3 {
+                    x: up(dev, &lsq.x)?,
+                    y: up(dev, &lsq.y)?,
+                    z: up(dev, &lsq.z)?,
+                },
+                ones,
+                zeros: dev.alloc(nb)?,
             })
         } else {
             None
@@ -1740,6 +1876,7 @@ impl Turbulence {
             work: dev.alloc(nc)?,
             inlets,
             zf,
+            eb,
             amg: case.solver.pressure.amg.clone(),
             elliptic: case.solver.elliptic.clone(),
             amg_rebuild: true,
@@ -1782,9 +1919,9 @@ impl Turbulence {
         dev.upload(t.w.phi, &w0)?;
         if let Some(z) = &mut t.zf {
             // ζ = 2/3 (isotropy) unless given, f = 0 at the start
-            // (specification 7.3)
+            // (specification 7.3); α = 1, its value away from walls
             dev.fill(z.z.phi, case.initial.zeta.unwrap_or(2.0 / 3.0))?;
-            dev.fill(z.f.phi, 0.0)?;
+            dev.fill(z.f.phi, if model.is_eb() { 1.0 } else { 0.0 })?;
             z.z.floor = kzf::ZETA_MIN;
         }
         let ne = equations(model).len();
@@ -2152,11 +2289,13 @@ impl Turbulence {
                     z.src[0],
                     z.src[1],
                     z.src[2],
+                    z.src[3],
                 ]),
                 dk: self.dk,
                 de: self.dw,
                 dz: z.dz,
                 capped: self.capped,
+                eb: self.eb.map(|e| (self.k.grad, z.z.grad, e.g2, e.dkt)),
             });
         }
         if self.eps {
@@ -2267,7 +2406,32 @@ impl Turbulence {
             gamma_k: self.gamma_k,
             gamma_w: self.gamma_w,
             zeta_f: self.zf.map(|z| [z.dz, z.l2, z.gamma_z, z.gamma_f]),
+            mol: self.zf.map_or(1.0, |z| z.c.mol),
         })
+    }
+
+    /// The inputs of the elliptic-blending k-ε that need gradients of
+    /// gradients: Σ (∂_l ∂_j U_i)² from the gradients of the nine
+    /// velocity-gradient components, and ∇·(ν_t/σ_k ∇k) from the
+    /// gradients of the flux q = ν_t/σ_k ∇k (ν_t of the last evaluation;
+    /// the zero-gradient boundary values of [`EbDev`]).
+    fn eb_inputs(&self, dev: &mut dyn FlowDevice) -> Result<()> {
+        let Some(e) = self.eb else { return Ok(()) };
+        dev.fill(e.g2, 0.0)?;
+        for g in self.gu {
+            for c in g.all() {
+                dev.gradient_with(e.lsq, c, e.ones, e.zeros, None, e.tmp)?;
+                dev.squares_add(e.tmp, e.g2)?;
+            }
+        }
+        dev.scale_vector(self.dk, self.k.grad, e.q)?;
+        dev.gradient_with(e.lsq, e.q.x, e.ones, e.zeros, None, e.tmp)?;
+        dev.copy(e.tmp.x, e.dkt)?;
+        dev.gradient_with(e.lsq, e.q.y, e.ones, e.zeros, None, e.tmp)?;
+        dev.lincomb(e.dkt, 1.0, e.dkt, 1.0, e.tmp.y)?;
+        dev.gradient_with(e.lsq, e.q.z, e.ones, e.zeros, None, e.tmp)?;
+        dev.lincomb(e.dkt, 1.0, e.dkt, 1.0, e.tmp.z)?;
+        Ok(())
     }
 
     /// The buffers a passive scalar couples to (D135): the laminar and the
@@ -2354,6 +2518,7 @@ impl Turbulence {
         self.walls(dev, u, ub, Some(grad_p))?;
         self.boundary_values(dev)?;
         self.gradients(dev)?;
+        self.eb_inputs(dev)?;
         // 2. the sources and the diffusivities from the fields at the start
         self.cells(dev, true)?;
         self.faces(dev)?;
@@ -2419,6 +2584,12 @@ impl Turbulence {
             let r = self.elliptic(dev, z, tr)?;
             out.residual.push(r.0);
             out.iterations.push(r.1);
+            // α in [0, 1] (the discrete maximum principle holds only on
+            // M-matrices, and the solve stops at its tolerance: not counted
+            // as a floor, since α = 1 ± the tolerance in the outer flow)
+            if self.eb.is_some() {
+                dev.floor(z.f.phi, 0.0, 1.0, None, self.work)?;
+            }
             out.floors.push(0);
             self.cells(dev, true)?;
             let r = self.transport(
@@ -2709,7 +2880,7 @@ impl Turbulence {
             mass_flux: self.zero_face,
             phi: v.phi,
             su: Some(z.src[2]),
-            sp: Some(z.minus_one),
+            sp: Some(z.src[3]),
             alpha: 1.0,
             time: None,
             fix: None,
@@ -2969,8 +3140,9 @@ impl Turbulence {
                 }
                 None => {
                     // a restart of a two-equation model: ζ = 2/3, f = 0
+                    // (α = 1)
                     dev.fill(z.z.phi, 2.0 / 3.0)?;
-                    dev.fill(z.f.phi, 0.0)?;
+                    dev.fill(z.f.phi, if self.model.is_eb() { 1.0 } else { 0.0 })?;
                     if let Some((o1, _, _)) = z.z.old {
                         dev.fill(o1, 2.0 / 3.0)?;
                     }
@@ -3208,7 +3380,9 @@ pub fn summary(
                     "wall `{b}`: first-cell y⁺ above 2 on {:.0} % of the area with the low-Re \
                      treatment (it needs y⁺ ≲ 1; the {} treatment takes any y⁺)",
                     100.0 * out,
-                    if t.zf.is_some() {
+                    if t.model.is_eb() {
+                        "compound"
+                    } else if t.zf.is_some() {
                         "compound-2023 or compound"
                     } else {
                         "automatic"

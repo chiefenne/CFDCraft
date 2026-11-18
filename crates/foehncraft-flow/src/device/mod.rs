@@ -423,9 +423,9 @@ pub struct ZetaFCellOps {
     pub l2: Buf,
     /// Output P_k.
     pub pk: Buf,
-    /// Outputs S_u, S_p of k, of ε and of ζ, and the right-hand side of f
-    /// (None: ν_t, T, L², P_k only).
-    pub sources: Option<[Buf; 7]>,
+    /// Outputs S_u, S_p of k, of ε and of ζ, and S_u (the right-hand
+    /// side) and S_p of f (None: ν_t, T, L², P_k only).
+    pub sources: Option<[Buf; 8]>,
     /// Output ν_t/σ_k.
     pub dk: Buf,
     /// Output ν_t/σ_ε.
@@ -434,6 +434,9 @@ pub struct ZetaFCellOps {
     pub dz: Buf,
     /// Output: 1 where the ν_t cap acted.
     pub capped: Buf,
+    /// The elliptic-blending model: ∇k, ∇φ, Σ (∂_l ∂_j U_i)² and
+    /// ∇·(ν_t/σ_k ∇k) per cell.
+    pub eb: Option<(Buf3, Buf3, Buf, Buf)>,
 }
 
 /// Inputs and outputs of [`FlowDevice::turb_faces`].
@@ -458,6 +461,9 @@ pub struct TurbFaceOps {
     /// k-ε-ζ-f: ν_t/σ_ζ and L² per cell, and the outputs ρ(ν + ν_t/σ_ζ)
     /// and ρ L² per face.
     pub zeta_f: Option<[Buf; 4]>,
+    /// Factor of the molecular viscosity in the diffusivities of k, ε/ω
+    /// and ζ: 1; ½ for the elliptic-blending model.
+    pub mol: f64,
 }
 
 /// Inputs and outputs of [`FlowDevice::scalar_turb_faces`].
@@ -648,6 +654,10 @@ pub trait FlowDevice {
     ) -> Result<()>;
     /// out = a x + b y; `out` may be `x` or `y`.
     fn lincomb(&mut self, out: Buf, a: f64, x: Buf, b: f64, y: Buf) -> Result<()>;
+    /// out += v_x² + v_y² + v_z² per entry.
+    fn squares_add(&mut self, v: Buf3, out: Buf) -> Result<()>;
+    /// out = s v per entry (`out` may be `v`).
+    fn scale_vector(&mut self, s: Buf, v: Buf3, out: Buf3) -> Result<()>;
     /// Σ x² in the fixed block order.
     fn sum_sq(&mut self, x: Buf) -> Result<f64>;
     /// Σ x y in the fixed block order (x and y of equal length).

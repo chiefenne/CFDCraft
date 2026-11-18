@@ -8,6 +8,7 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 | 71 | [Run a case with the k-ε family and wall functions](#k-epsilon) |
 | 73 | [Run a case with k-ε-ζ-f and resolved walls](#zeta-f) |
 | 74 | [Run a case with k-ε-ζ-f₀ at any first-cell y⁺](#zeta-f0) |
+| 88 | [Run a case with the elliptic-blending k-ε](#elliptic-blending) |
 
 ---
 
@@ -335,5 +336,72 @@ script is a starting point for other 2D cases: it reads `fields.vtkhdf`,
 cuts the mesh at mid-depth, and sets the camera window, the colour map
 and the axis text itself, so the picture does not depend on the ParaView
 version (tested with 5.11 and 6.2).
+
+[↑ back to top](#turbulence-models)
+
+<a id="elliptic-blending"></a>
+## 88. Run a case with the elliptic-blending k-ε
+
+The elliptic-blending k-ε of Billard & Laurence (2012)
+(`elliptic-blending-k-epsilon`) resolves the wall like ζ-f: keep the
+first-cell y⁺ near 1 or below. `compound` is its default treatment,
+`low-re` (y⁺ ≲ 1) the alternative; the wall functions of the k-ε family
+and `compound-2023` are refused (CASE005):
+
+```toml
+[turbulence]
+model = "elliptic-blending-k-epsilon"
+wall_treatment = "compound"   # default; "low-re"
+```
+
+Inlets and `[initial]` take k and ε (or ω) as for ζ-f; the key `zeta`
+sets φ = v²/k (default 2/3). α needs no value: it starts at 1 and
+follows from k and ε. The log shows the residuals `ResPhi` and
+`ResAlpha`; the output fields are `phi` and `alpha`.
+
+Low Reynolds numbers need a strong start: the channel at Re_τ 180 turns
+laminar from I = 0.05 and ν_t/ν = 100 and stays turbulent from
+
+```toml
+[initial]
+turbulence_intensity = 0.15
+viscosity_ratio = 20.0
+```
+
+Separated flows: the paper's variable C*_ε2 lengthens the bubble of the
+backward-facing step to x_r/H = 7.59 (+21 %). A constant C_ε2 gives
+6.24, at the price of +4.9 % on the C_f of the flat plate:
+
+```toml
+[turbulence]
+constants = { c_epsilon4 = 1.83 }   # C*_ε2 = C_ε2 = 1.83 everywhere
+```
+
+On the step, use SIMPLEC with the relaxation ramp of
+`backstep_eb.toml`; with `algorithm = "coupled"` the step does not
+converge (the residual of ε stays at 10⁻³).
+
+Run the channel, the plate and the step of the gallery:
+
+```
+target/release/foehn flow examples/cases/flow/channel_eb.toml
+target/release/foehn flow examples/cases/flow/tmr_plate_eb.toml
+target/release/foehn flow examples/cases/flow/backstep_eb.toml
+grep -E "wall probe|periodic xmin|first-cell|floors" output/*_eb/flow.log
+```
+
+The channels at Re_τ 590 (128 cells, grading 80, first-cell y⁺ 0.25)
+and 180 of the gallery, with ν = 1/Re_τ and the mass flow of the DNS
+bulk velocity; C_f/C_f,DNS is the driving force in the log:
+
+```
+target/release/foehn flow examples/cases/flow/channel_eb.toml --out output/channel_eb_590 \
+    --set 'mesh.generate.cells=[2,128,1]' --set mesh.generate.grading.y.ratio=80.0 \
+    --set fluid.viscosity=0.001694915254237288 --set boundary.xmin.mass_flow=3.7124
+target/release/foehn flow examples/cases/flow/channel_eb.toml --out output/channel_eb_180 \
+    --set fluid.viscosity=0.005555555555555556 --set boundary.xmin.mass_flow=3.102 \
+    --set initial.turbulence_intensity=0.15 --set initial.viscosity_ratio=20.0
+grep "periodic xmin" output/channel_eb_590/flow.log output/channel_eb_180/flow.log
+```
 
 [↑ back to top](#turbulence-models)

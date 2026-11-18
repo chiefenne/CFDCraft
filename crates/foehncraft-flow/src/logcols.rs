@@ -693,6 +693,8 @@ fn layout(s: &Spec, d: usize, transient: bool) -> Vec<Column> {
                         "epsilon" => "ResEps",
                         "omega" => "ResOm",
                         "zeta" => "ResZeta",
+                        "phi" => "ResPhi",
+                        "alpha" => "ResAlpha",
                         _ => "ResF",
                     },
                 )

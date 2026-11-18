@@ -1,0 +1,87 @@
+# Backward-facing step of Driver & Seegmiller (1985), the elliptic-blending
+# k-ε of Billard & Laurence (2012) with the compound wall treatment
+# (stage 6 part 6e, D133, specification 9.5).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/backstep_eb.toml
+#
+# The mesh, the inflow and the solver settings of backstep_zeta_f0.toml
+# (8 200 cells, SIMPLEC with the momentum under-relaxation 0.5 while the
+# bubble forms and 0.8 from iteration 100); only the model differs.
+#
+# Result: x_r/H = 7.59, +21 % from the experiment's 6.26 (band ±10 %;
+# finding), converged to 10⁻⁶ in about 2 500 iterations (x_r is final
+# after 1 500); 7.68 on 32 800 cells (each interval halved). The
+# variable C*_ε2 of the paper makes the bubble long: it lowers C_ε2
+# towards C_ε4 = 0.4 where the turbulent transport of k is large against
+# ε, at the edge of the shear layer and below it, so ε grows and ν_t
+# drops. With `constants = { c_epsilon4 = 1.83 }` (C*_ε2 =
+# C_ε2 everywhere) x_r/H = 6.24 (−0.3 %), but the flat plate then misses
+# White's C_f by +4.9 % instead of +0.5 % (tmr_plate_eb.toml). ζ-f of
+# 2004 gives 7.82 on this step, ζ-f₀ 6.38. With `algorithm = "coupled"`
+# the run does not converge: the residual of ε stays at 10⁻³ and x_r
+# moves between 7.74 and 7.77 (finding).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-85.0, 0.0, 0.0]
+upper = [40.0, 9.0, 0.1]
+cells = [125, 80, 1]
+segments = { x = [ { to = 0.0, cells = 50, ratio = 0.0136845 }, { to = 40.0, cells = 75, ratio = 15.5955 } ], y = [ { to = 0.5, cells = 18, ratio = 36.8448 }, { to = 1.0, cells = 18, ratio = 0.0271409 }, { to = 9.0, cells = 44, ratio = 367.941 } ] }
+remove = [ { lower = [-85.0, 0.0, 0.0], upper = [0.0, 1.0, 0.1], name = "step" } ]
+
+[fluid]
+density = 1.0
+viscosity = 2.7777777777777777e-5
+
+[turbulence]
+model = "elliptic-blending-k-epsilon"
+wall_treatment = "compound"
+ambient = { k = 1.5e-4, epsilon = 7.29e-6 }
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+k = 1.0e-3
+epsilon = 3.24e-5
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+k = 1.5e-4
+epsilon = 7.29e-6
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymax]
+type = "symmetry"
+[boundary.ymin]
+type = "wall"
+[boundary.step]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 3000
+log_every = 200
+
+[solver.momentum]
+relaxation = 0.5
+
+[[schedule]]
+at_iteration = 100
+set = { solver.momentum.relaxation = 0.8 }
+
+[verification]
+require_convergence = false
+
+[output]
+vtkhdf = false
+wall_csv = true
+wall_probes = [ { name = "x-4", boundary = "step", point = [-4.0, 1.0, 0.05] } ]
+reference = { velocity = 1.0 }

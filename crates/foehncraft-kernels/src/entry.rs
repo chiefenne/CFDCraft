@@ -375,6 +375,52 @@ impl Entry for SchurDiagonal {
     }
 }
 
+/// Arguments of the element-wise entries on three-component arrays.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct VecArgs {
+    /// A factor per entry ([`ScaleVector`]).
+    pub s: Raw<f64>,
+    /// The three components.
+    pub v: Raw3,
+    /// Output of [`ScaleVector`] (may be `v`).
+    pub out3: Raw3,
+    /// Output of [`SquaresAdd`].
+    pub out: Raw<f64>,
+}
+
+/// out += v_x² + v_y² + v_z².
+pub struct SquaresAdd;
+impl Entry for SquaresAdd {
+    type Args = VecArgs;
+    const NAME: &'static str = "squares_add";
+    #[inline(always)]
+    unsafe fn run(i: usize, a: &VecArgs) {
+        // SAFETY: guaranteed by the caller; index i only.
+        unsafe {
+            let (x, y, z) = (a.v.x.read(i), a.v.y.read(i), a.v.z.read(i));
+            *a.out.out().add(i) = a.out.read(i) + (x * x + y * y + z * z);
+        }
+    }
+}
+
+/// out3 = s v.
+pub struct ScaleVector;
+impl Entry for ScaleVector {
+    type Args = VecArgs;
+    const NAME: &'static str = "scale_vector";
+    #[inline(always)]
+    unsafe fn run(i: usize, a: &VecArgs) {
+        // SAFETY: guaranteed by the caller; index i only.
+        unsafe {
+            let s = a.s.read(i);
+            *a.out3.x.out().add(i) = s * a.v.x.read(i);
+            *a.out3.y.out().add(i) = s * a.v.y.read(i);
+            *a.out3.z.out().add(i) = s * a.v.z.read(i);
+        }
+    }
+}
+
 /// Arguments of [`PseudoCoefficient`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -1869,6 +1915,8 @@ pub struct ZetaFCellArgs {
     pub sp_z: Raw<f64>,
     /// Output: the right-hand side of the f equation.
     pub rhs_f: Raw<f64>,
+    /// Output: S_p of the f (α) equation.
+    pub sp_f: Raw<f64>,
     /// Output ν_t/σ_k.
     pub dk: Raw<f64>,
     /// Output ν_t/σ_ε.
@@ -1877,6 +1925,14 @@ pub struct ZetaFCellArgs {
     pub dz: Raw<f64>,
     /// Output 1 where the cap of ν_t/ν acted.
     pub capped: Raw<f64>,
+    /// ∇k per cell (the elliptic-blending model; empty otherwise).
+    pub grad_k: Raw3,
+    /// ∇φ per cell (with `grad_k`).
+    pub grad_z: Raw3,
+    /// Σ_ijk (∂²U_i/∂x_j∂x_k)² per cell (with `grad_k`).
+    pub g2: Raw<f64>,
+    /// ∇·(ν_t/σ_k ∇k) per cell (with `grad_k`).
+    pub dkt: Raw<f64>,
 }
 
 /// The k-ε-ζ-f model per cell ([`crate::turb::zeta_f::zeta_f_cell`]).
@@ -1903,6 +1959,22 @@ impl Entry for ZetaFCells {
                 nu: a.nu,
                 wall_m: wm,
                 wall_pk: wp,
+                grad_k: if a.grad_k.x.len > 0 {
+                    a.grad_k.v().at(c)
+                } else {
+                    [0.0; 3]
+                },
+                grad_z: if a.grad_z.x.len > 0 {
+                    a.grad_z.v().at(c)
+                } else {
+                    [0.0; 3]
+                },
+                g2: if a.g2.len > 0 { ld(a.g2.get(), c) } else { 0.0 },
+                dkt: if a.dkt.len > 0 {
+                    ld(a.dkt.get(), c)
+                } else {
+                    0.0
+                },
             };
             let r = crate::turb::zeta_f::zeta_f_cell(&inp, &a.c, &a.o);
             *a.nu_t.out().add(c) = r.nu_t;
@@ -1931,6 +2003,7 @@ impl Entry for ZetaFCells {
                 *a.su_z.out().add(c) = r.su_z + az.max(0.0);
                 *a.sp_z.out().add(c) = r.sp_z + az.min(0.0) / inp.zeta.max(lo);
                 *a.rhs_f.out().add(c) = r.rhs_f;
+                *a.sp_f.out().add(c) = r.sp_f;
             }
         }
     }
@@ -1955,6 +2028,9 @@ pub struct TurbFaceArgs {
     pub wall: Raw<f64>,
     /// Density.
     pub rho: f64,
+    /// Factor of the molecular viscosity in the diffusivities of k, ε/ω
+    /// and ζ: 1; ½ for the elliptic-blending model.
+    pub mol: f64,
     /// Output μ + ρ ν_t per face.
     pub mu_eff: Raw<f64>,
     /// Output ρ(ν + σ_k ν_t) per face.
@@ -2005,8 +2081,9 @@ impl Entry for TurbFaces {
             if !wall {
                 *a.mu_eff.out().add(f) = mu + a.rho * nt;
             }
-            *a.gamma_k.out().add(f) = mu + a.rho * gk;
-            *a.gamma_w.out().add(f) = mu + a.rho * gw;
+            let mm = a.mol * mu;
+            *a.gamma_k.out().add(f) = mm + a.rho * gk;
+            *a.gamma_w.out().add(f) = mm + a.rho * gw;
             if a.dz.len > 0 {
                 let (gz, gf) = if f < ni {
                     let n = ld(a.m.neighbour.get(), f) as usize;
@@ -2020,7 +2097,7 @@ impl Entry for TurbFaces {
                     let s = 1.0 - ld(a.wall.get(), f - ni);
                     (s * ld(a.dz.get(), p), ld(a.l2.get(), p))
                 };
-                *a.gamma_z.out().add(f) = mu + a.rho * gz;
+                *a.gamma_z.out().add(f) = mm + a.rho * gz;
                 *a.gamma_f.out().add(f) = a.rho * gf;
             }
         }
@@ -2251,6 +2328,7 @@ impl Entry for WallFaces {
                     nu,
                     1.0,
                     a.n_zeta,
+                    a.ke.e_wall,
                 );
                 let u_tau = foehncraft_core::math::sqrt(nu * ut / y);
                 *a.u_tau.out().add(i) = u_tau;
@@ -2316,6 +2394,7 @@ impl Entry for WallFaces {
                         a.nu,
                         r.viscous,
                         a.n_zeta,
+                        a.ke.e_wall,
                     );
                     *a.f_b.out().add(fb) = f_w;
                 }
@@ -2460,6 +2539,7 @@ impl Entry for Floor {
 
 send_sync!(
     LinArgs,
+    VecArgs,
     PseudoArgs,
     BlockArgs,
     DotArgs,
@@ -2493,9 +2573,11 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 46] = [
+pub const NAMES: [&str; 48] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
+    SquaresAdd::NAME,
+    ScaleVector::NAME,
     SchurDiagonal::NAME,
     PseudoCoefficient::NAME,
     Fill::NAME,
@@ -2640,7 +2722,36 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 46);
+        assert_eq!(NAMES.len(), 48);
+        // the elliptic-blending helpers: out += |v|², out3 = s v
+        let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
+        let s = [0.5, -2.0];
+        let mut acc = [1.0, 0.0];
+        let (mut ox, mut oy, mut oz) = ([0.0; 2], [0.0; 2], [0.0; 2]);
+        let w = |v: &mut [f64]| Raw::<f64>::new(v.as_mut_ptr() as u64, v.len());
+        let a = VecArgs {
+            s: r(&s),
+            v: Raw3 {
+                x: r(&vx),
+                y: r(&vy),
+                z: r(&vz),
+            },
+            out3: Raw3 {
+                x: w(&mut ox),
+                y: w(&mut oy),
+                z: w(&mut oz),
+            },
+            out: w(&mut acc),
+        };
+        for i in 0..2 {
+            // SAFETY: index i of arrays of length 2.
+            unsafe {
+                SquaresAdd::run(i, &a);
+                ScaleVector::run(i, &a);
+            }
+        }
+        assert_eq!(acc, [10.0, 25.0]);
+        assert_eq!((ox, oy, oz), ([0.5, 0.0], [1.0, 6.0], [1.0, -8.0]));
     }
 
     /// The pseudo-time kernels of the coupled algorithm (D176 to D178).
