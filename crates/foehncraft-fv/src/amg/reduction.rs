@@ -43,10 +43,9 @@
 //! odd number of sweeps leaves error modes with a factor near −1.
 
 use super::Precision;
-use super::csr::Csr;
+use super::csr::{Csr, RowAccumulator};
 use super::setup::{Hierarchy, HierarchyInfo, Level};
 use anyhow::{Result, bail, ensure};
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -116,23 +115,57 @@ fn largest_neighbour(a: &Csr, i: usize) -> f64 {
         .fold(0.0f64, |m, (_, v)| m.max(v.abs()))
 }
 
+/// A graph in compressed rows: the points `idx[ptr[i]..ptr[i + 1]]` of
+/// point i, ascending.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Graph {
+    /// Start of each row (length: points + 1).
+    pub ptr: Vec<usize>,
+    /// The points of all rows.
+    pub idx: Vec<u32>,
+}
+
+impl Graph {
+    /// Number of points.
+    pub fn len(&self) -> usize {
+        self.ptr.len().saturating_sub(1)
+    }
+
+    /// Whether the graph has no points.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// The points of row `i`.
+    pub fn row(&self, i: usize) -> &[u32] {
+        &self.idx[self.ptr[i]..self.ptr[i + 1]]
+    }
+}
+
 /// Strong dependencies of every row, columns ascending: j ≠ i with
 /// |a_ij| ≥ θ max_{k≠i} |a_ik|.
-pub fn strong(a: &Csr, theta: f64) -> Vec<Vec<u32>> {
-    (0..a.n_rows)
-        .into_par_iter()
-        .with_min_len(4096)
-        .map(|i| {
+pub fn strong(a: &Csr, theta: f64) -> Graph {
+    // the pattern of a CSR matrix with the values unused
+    let g = Csr::build_rows(
+        a.n_rows,
+        a.n_cols,
+        || (),
+        |_, i, col, _| {
             let m = largest_neighbour(a, i);
             if m == 0.0 {
-                return Vec::new();
+                return;
             }
-            a.row(i)
-                .filter(|&(j, v)| j != i && v.abs() >= theta * m)
-                .map(|(j, _)| j as u32)
-                .collect()
-        })
-        .collect()
+            col.extend(
+                a.row(i)
+                    .filter(|&(j, v)| j != i && v.abs() >= theta * m)
+                    .map(|(j, _)| j as u32),
+            );
+        },
+    );
+    Graph {
+        ptr: g.row_ptr,
+        idx: g.col,
+    }
 }
 
 /// First pass of the Ruge–Stüben splitting on the graph of strong
@@ -146,25 +179,23 @@ pub fn strong(a: &Csr, theta: f64) -> Vec<Vec<u32>> {
 /// other points they depend on; the measure of the points the new C point
 /// depends on falls by one. Points on which nobody depends are F from the
 /// start. The result depends on the graph only, not on threads.
-pub fn split(strong: &[Vec<u32>]) -> Vec<bool> {
+pub fn split(strong: &Graph) -> Vec<bool> {
     const U: u8 = 0;
     const F: u8 = 1;
     const C: u8 = 2;
     let n = strong.len();
     // the transposed graph: the points that depend on i
     let mut ptr = vec![0usize; n + 1];
-    for s in strong {
-        for &j in s {
-            ptr[j as usize + 1] += 1;
-        }
+    for &j in &strong.idx {
+        ptr[j as usize + 1] += 1;
     }
     for i in 0..n {
         ptr[i + 1] += ptr[i];
     }
     let mut next = ptr.clone();
     let mut dependants = vec![0u32; ptr[n]];
-    for (i, s) in strong.iter().enumerate() {
-        for &j in s {
+    for i in 0..n {
+        for &j in strong.row(i) {
             dependants[next[j as usize]] = i as u32;
             next[j as usize] += 1;
         }
@@ -188,7 +219,7 @@ pub fn split(strong: &[Vec<u32>]) -> Vec<bool> {
                 continue;
             }
             state[j] = F;
-            for &k in &strong[j] {
+            for &k in strong.row(j) {
                 let k = k as usize;
                 if state[k] == U {
                     lambda[k] += 1;
@@ -196,7 +227,7 @@ pub fn split(strong: &[Vec<u32>]) -> Vec<bool> {
                 }
             }
         }
-        for &j in &strong[i] {
+        for &j in strong.row(i) {
             let j = j as usize;
             if state[j] == U && lambda[j] > 0 {
                 lambda[j] -= 1;
@@ -219,68 +250,68 @@ pub fn split(strong: &[Vec<u32>]) -> Vec<bool> {
 fn interpolation(
     a: &Csr,
     diag: &[f64],
-    strong: &[Vec<u32>],
+    strong: &Graph,
     coarse: &[bool],
     cidx: &[u32],
     nc: usize,
 ) -> Csr {
-    let rows = (0..a.n_rows)
-        .into_par_iter()
-        .with_min_len(4096)
-        .map(|i| {
-            if coarse[i] {
-                return vec![(cidx[i], 1.0)];
+    // the selected entries of a row come in column order (cidx is
+    // monotone), each once
+    Csr::build_rows(a.n_rows, nc, Vec::<(u32, f64)>::new, |sel, i, col, val| {
+        if coarse[i] {
+            col.push(cidx[i]);
+            val.push(1.0);
+            return;
+        }
+        let (mut neg_all, mut pos_all, mut neg_c, mut pos_c) = (0.0, 0.0, 0.0, 0.0);
+        let mut s = strong.row(i).iter().map(|&j| j as usize).peekable();
+        sel.clear();
+        for (j, v) in a.row(i) {
+            if j == i {
+                continue;
             }
-            let (mut neg_all, mut pos_all, mut neg_c, mut pos_c) = (0.0, 0.0, 0.0, 0.0);
-            let mut s = strong[i].iter().map(|&j| j as usize).peekable();
-            let mut sel: Vec<(u32, f64)> = Vec::new();
-            for (j, v) in a.row(i) {
-                if j == i {
-                    continue;
-                }
+            if v < 0.0 {
+                neg_all += v;
+            } else {
+                pos_all += v;
+            }
+            while s.peek().is_some_and(|&sj| sj < j) {
+                s.next();
+            }
+            if s.peek() == Some(&j) && coarse[j] {
                 if v < 0.0 {
-                    neg_all += v;
+                    neg_c += v;
                 } else {
-                    pos_all += v;
+                    pos_c += v;
                 }
-                while s.peek().is_some_and(|&sj| sj < j) {
-                    s.next();
-                }
-                if s.peek() == Some(&j) && coarse[j] {
-                    if v < 0.0 {
-                        neg_c += v;
-                    } else {
-                        pos_c += v;
-                    }
-                    sel.push((cidx[j], v));
-                }
+                sel.push((cidx[j], v));
             }
-            if sel.is_empty() {
-                return Vec::new();
+        }
+        if sel.is_empty() {
+            return;
+        }
+        let mut d = diag[i];
+        let alpha = if neg_c != 0.0 {
+            neg_all / neg_c
+        } else {
+            if d < 0.0 {
+                d += neg_all;
             }
-            let mut d = diag[i];
-            let alpha = if neg_c != 0.0 {
-                neg_all / neg_c
-            } else {
-                if d < 0.0 {
-                    d += neg_all;
-                }
-                0.0
-            };
-            let beta = if pos_c != 0.0 {
-                pos_all / pos_c
-            } else {
-                if d > 0.0 {
-                    d += pos_all;
-                }
-                0.0
-            };
-            sel.into_iter()
-                .map(|(c, v)| (c, -(if v < 0.0 { alpha } else { beta }) * v / d))
-                .collect()
-        })
-        .collect();
-    Csr::from_rows(nc, rows)
+            0.0
+        };
+        let beta = if pos_c != 0.0 {
+            pos_all / pos_c
+        } else {
+            if d > 0.0 {
+                d += pos_all;
+            }
+            0.0
+        };
+        for &(c, v) in sel.iter() {
+            col.push(c);
+            val.push(-(if v < 0.0 { alpha } else { beta }) * v / d);
+        }
+    })
 }
 
 /// The restriction R = [Z I] (rows: C points in their order, columns: all
@@ -288,28 +319,31 @@ fn interpolation(
 /// C–F entries with |a_cf| ≥ θ max_{k≠c} |a_ck|.
 fn restriction(a: &Csr, diag: &[f64], coarse: &[bool], theta: f64) -> Csr {
     let c_points: Vec<usize> = (0..a.n_rows).filter(|&i| coarse[i]).collect();
-    let rows = c_points
-        .par_iter()
-        .with_min_len(1024)
-        .map(|&c| {
+    // entries of a column summed in the order they arrive, as
+    // `Csr::from_rows` sums them
+    Csr::build_rows(
+        c_points.len(),
+        a.n_rows,
+        || RowAccumulator::new(a.n_rows),
+        |acc, r, col, val| {
+            let c = c_points[r];
             let m = largest_neighbour(a, c);
-            let mut r = vec![(c as u32, 1.0)];
+            acc.add(c as u32, 1.0);
             for (f, s) in a.row(c) {
                 if f == c || coarse[f] || s == 0.0 || s.abs() < theta * m {
                     continue;
                 }
                 let df = diag[f];
-                r.push((f as u32, -2.0 * s / df));
+                acc.add(f as u32, -2.0 * s / df);
                 for (g, v) in a.row(f) {
                     if !coarse[g] {
-                        r.push((g as u32, s * v / (df * diag[g])));
+                        acc.add(g as u32, s * v / (df * diag[g]));
                     }
                 }
             }
-            r
-        })
-        .collect();
-    Csr::from_rows(a.n_rows, rows)
+            acc.drain_sorted(col, val);
+        },
+    )
 }
 
 /// Removes the entries with |a_ij| ≤ `tol` |a_ii| (the diagonal stays).
