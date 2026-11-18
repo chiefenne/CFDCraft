@@ -1228,6 +1228,27 @@ instead of +0.5 %. The model stays as published. The coupled algorithm
 does not converge this case (residual of ε at 10⁻³, x_r 7.74 to 7.77;
 7.84 on 32 800 cells).
 
+**Results of 6g (PR #89; details on the
+[verification page](../verification/stage6.md#backward-facing-step-against-the-experiment-part-6g-95)).**
+The layout of the TMR: walls from x = −110 H, outlet at 50 H, a no-slip
+top wall at 9 H (the slip top of 6d2 put the C_p of ζ-f₀ 0.033 RMS from
+the experiment, the wall 0.018; x_r within 1 %); 11 040, 44 160 and
+176 640 cells from the built-in mesher (the TMR's grids could not
+be downloaded); x_r/H as the wall crossing `xr` with `skip = 2.0`, the corner
+vortices of the finer meshes left out. On the finest mesh: SST 6.747
+(+7.8 %; the TMR's SST variant about 6.50), GCI below 0.01 % but an
+oscillatory sweep (6.793, 6.747, 6.747), so p is not defined; k-ε 5.372,
++0.5 % from the published 5.345, GCI 1.94 %, p 0.69; realizable k-ε
+6.407 (+2.4 %), its steps grow (no GCI); ζ-f₀ 6.296 (+0.6 %), monotonic, GCI below 0.01 %, p 4.8 (the fine pair 0.02 % apart). ζ-f and EB with
+SIMPLEC on the two coarser meshes: 7.686, 7.741 (+23.7 %) and 7.446,
+7.556 (+20.7 %), outside the band, as in 6d2 and 6e; their finest mesh
+is a long run for the next 6g PR. C_p RMS on the finest mesh: SST 0.023,
+k-ε 0.018, realizable 0.026, ζ-f₀ 0.017; ζ-f 0.037 and EB 0.034 on the
+middle mesh: the band 0.02 is missed by SST, ζ-f and EB (findings). The
+k-ε models run at first-cell y⁺ 1.5 to 0.3 with wall functions claimed
+for y⁺ ≥ 30; a sweep that keeps the first cell may show whether that
+causes their slow or growing steps.
+
 ### 9.6 Axisymmetric impinging jet, H/D = 2
 
 Fully developed pipe jet (profile from a periodic pipe run, D111, fed in as a

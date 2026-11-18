@@ -9,5 +9,10 @@
   New output `[[output.wall_crossings]]`: the first point along a
   direction where the wall shear changes sign (reattachment or
   separation), in the report and with its observed order and GCI in a
-  level sweep. The run banner names the turbulence model and wall
-  treatment instead of "laminar". Gallery and recipe 89.
+  level sweep; `skip` passes the corner vortices behind a step.
+  Results on the finest mesh: SST x_r/H 6.747 (+7.8 %), k-ε 5.372
+  (+0.5 % from the published k-ε, GCI 1.94 %), realizable k-ε 6.407,
+  k-ε-ζ-f₀ 6.296 (+0.6 %); ζ-f and EB 7.74 and 7.56 on the middle mesh,
+  outside the band (their finest mesh follows). The run banner names
+  the turbulence model and wall treatment instead of "laminar". Gallery
+  and recipe 89.

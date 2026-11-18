@@ -24,7 +24,11 @@ multigrid of the turbulence equations and the larger steps with it
 pressure solve of the coupled preconditioner
 ([below](#the-pressure-solve-of-the-coupled-preconditioner-part-6h)), and
 the elliptic-blending k-ε of Billard & Laurence (2012)
-([below](#elliptic-blending-k-ε-d133)). The commands are in
+([below](#elliptic-blending-k-ε-d133)); the first validation case of
+part 6g, the backward-facing step against the experiment with six
+models on three meshes
+([below](#backward-facing-step-against-the-experiment-part-6g-95)). The
+commands are in
 [recipe 63](../recipes/scalars.md#passive-scalars),
 [recipe 67](../recipes/boundary-conditions.md#periodic),
 [recipe 68](../recipes/turbulence.md#sst),
@@ -34,8 +38,9 @@ the elliptic-blending k-ε of Billard & Laurence (2012)
 [recipe 78](../recipes/flow.md#coupled),
 [recipe 80](../recipes/flow.md#momentum-multigrid),
 [recipe 81](../recipes/flow.md#turbulence-multigrid),
-[recipe 83](../recipes/flow.md#pressure-hierarchy) and
-[recipe 88](../recipes/turbulence.md#elliptic-blending), the pictures in
+[recipe 83](../recipes/flow.md#pressure-hierarchy),
+[recipe 88](../recipes/turbulence.md#elliptic-blending) and
+[recipe 89](../recipes/turbulence.md#step-validation), the pictures in
 [gallery 63](../gallery/scalars.md#passive-scalars),
 [gallery 67](../gallery/boundary-conditions.md#periodic),
 [gallery 68](../gallery/turbulence.md#sst),
@@ -45,8 +50,9 @@ the elliptic-blending k-ε of Billard & Laurence (2012)
 [gallery 78](../gallery/flow.md#coupled),
 [gallery 80](../gallery/flow.md#momentum-multigrid),
 [gallery 81](../gallery/flow.md#turbulence-multigrid),
-[gallery 83](../gallery/flow.md#pressure-hierarchy) and
-[gallery 88](../gallery/turbulence.md#elliptic-blending), the generated
+[gallery 83](../gallery/flow.md#pressure-hierarchy),
+[gallery 88](../gallery/turbulence.md#elliptic-blending) and
+[gallery 89](../gallery/turbulence.md#step-validation), the generated
 tables of every case in the [verification manual](manual.md).
 
 ## Passive scalars and the wall distance (part 6a)
@@ -998,3 +1004,114 @@ outside the Laplacian). (6) Not in this part: the export of the wall
 normal ∇α/|∇α| (specification 2.3; with GGDH in stage 7), the near-wall
 profiles against the DNS, the step against the experiment's C_p and C_f
 and a GCI (stage 6 validation).
+
+## Backward-facing step against the experiment (part 6g, 9.5)
+
+Specification: [requirements stage 6](../requirements/stage6-turbulence.md)
+section 9.5; `examples/cases/flow/backstep_validation.toml`,
+`examples/studies/backstep_validation.py`, `tests/wall_crossing.rs`.
+
+**The case.** The step of Driver & Seegmiller (1985), Re_H = 36 000, in
+the layout of NASA's Turbulence Modeling Resource (TMR): the walls start
+at x = −110 H (the TMR has a further 20 H of symmetry plane ahead of
+them; here the uniform inflow, I = 1 %, ν_t/ν = 10, is at the leading
+edge), the outlet is at x = 50 H, and the top wall at y = 9 H is a
+no-slip wall like the lower one (expansion ratio 1.125). The earlier
+step cases (parts 6d2 and D133) have a slip top at 9 H and walls from
+−85 H. The built-in mesher cuts the step out of the box: 136 × 96 cells
+less the 56 × 36 under the step, 11 040 cells, graded towards the walls,
+the step corner and the reattachment region (first-cell y⁺ about 1.5);
+`verification.levels = [0, 1, 2]` halves every interval once and twice
+(44 160 and 176 640 cells). The TMR's own grids could not be
+downloaded here, so the family is not theirs.
+The inflow boundary layer at x = −4 H: C_f = 2.95·10⁻³ with ζ-f₀ on the
+coarse mesh (the experiment 2.88·10⁻³, the TMR's SST result 2.93·10⁻³).
+
+**The quantities.** The reattachment length is a wall crossing
+(`[[output.wall_crossings]]`, new in this part): the first point after
+`from` + `skip` along `direction` where the wall shear along `direction`
+turns from negative to positive (`reattachment`) or the other way
+(`separation`), linear between the two face centroids, reported as the
+distance from `from`. It is in the report of every solve and, in a level
+sweep, a monitored quantity of D67 (`wall_crossings.xr.position`) with
+its observed order and GCI. The study evaluates the finest mesh against
+the data of the TMR (CC0, `examples/studies/backstep/data`): the
+reference speed is u at x/H = −4, y/H = 5 (1.05 m/s); C_p is shifted to
+zero at x/H = 37.5, the last station of the shifted data; C_f =
+τ_x/(½ρU_ref²). The RMS differences are taken at the experiment's
+stations: 33 of C_p on the lower wall (x/H from −8.5 to 37.5), 20 of C_f
+(−3.96 to 36) and 28 of u/U_ref per profile. The models' shear stress
+−u'v' = ν_t ∂u/∂y on the lines uses the mean ν_t and the least-squares
+slope of u over ±0.05 H (the lines sample cell values).
+
+**The models and their algorithms.** k-ω SST (`automatic`, the ambient
+values of the inflow), k-ε and realizable k-ε (`scalable`) and
+k-ε-ζ-f₀ (`compound-2023`) run with the coupled algorithm, at most 800
+iterations on each mesh. k-ε-ζ-f and the elliptic-blending k-ε
+(`compound`) do not converge with it (finding (2) of D133); they run
+with SIMPLEC, relaxation 0.5 and 0.8 from iteration 100, and the
+pressure CG limit at 200 iterations: with the default 100 both diverged
+on the middle mesh within six iterations (RUN014, DIV006).
+
+### Results
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| Step (`backstep_validation.toml`), k-ω SST, coupled, 11 040 / 44 160 / 176 640 cells | x_r/H on the finest mesh against 6.26 | ±10 % | 6.747 (+7.8 %; the TMR's SST variant about 6.50) |
+| | x_r/H on the three meshes, GCI_fine, p | GCI ≤ 2 %, p in [1, 3] | 6.793, 6.747, 6.747: oscillatory, the fine pair 0.008 % apart, GCI below 0.01 %, p not defined (**finding**) |
+| | iterations | – | 800 (residual 1.8·10⁻⁴), 621 (converged), 800 (6·10⁻⁶) |
+| The step, standard k-ε, `scalable`, coupled | x_r/H against 5.345 (Mizukami, Georgiadis & Cannon 1993) | ±5 % | 5.372 (+0.5 %; −14.2 % from the experiment) |
+| | x_r/H on the three meshes, GCI_fine | ≤ 2 % | 5.237, 5.321, 5.372: p 0.69, GCI 1.94 %, converged on each mesh |
+| The step, realizable k-ε, `scalable`, coupled | x_r/H | reported | 6.274, 6.337, 6.407 (+2.4 %): the steps grow (0.063, 0.070), no order and no GCI (**finding**) |
+| The step, k-ε-ζ-f₀, `compound-2023`, coupled | x_r/H against 6.26; GCI_fine, p | ±10 % (the band of ζ-f); GCI ≤ 2 %, p in [1, 3] | 6.329, 6.297, 6.296 (+0.6 % on the finest mesh): monotonic, GCI < 0.01 %, p 4.8, outside [1, 3] because the fine pair is only 0.02 % apart; iterations 800 (residual 5·10⁻⁵), 238 (converged), 800 (1.9·10⁻⁵) |
+| The step, k-ε-ζ-f, `compound`, SIMPLEC, 11 040 / 44 160 cells | x_r/H against 6.26 | ±10 % | 7.686, 7.741 (+23.7 %; **finding**); k at its floor in 44 cells, its residual stays at 1.4·10⁻⁶ |
+| The step, elliptic-blending k-ε, `compound`, SIMPLEC, 11 040 / 44 160 cells | x_r/H against 6.26 | ±10 % | 7.446, 7.556 (+20.7 %; **finding**), converged in 2 754 and 8 684 iterations |
+| C_p on the lower wall, 33 stations, finest mesh (ζ-f and EB: middle mesh) | RMS difference from the experiment | ≤ 0.02 for SST, ζ-f, EB | SST 0.023, k-ε 0.018, realizable 0.026, ζ-f₀ 0.017, ζ-f 0.037, EB 0.034 (**finding** for SST, ζ-f, EB) |
+| C_p on the upper wall, 19 stations | RMS difference | reported | SST 0.017, k-ε 0.012, realizable 0.016, ζ-f₀ 0.012, ζ-f 0.015, EB 0.016 |
+| C_f on the lower wall, 20 stations | RMS difference ×10³ | reported | SST 0.375, k-ε 0.373, realizable 0.153, ζ-f₀ 0.463, ζ-f 0.593, EB 0.410 |
+| C_f at x/H = −3.96 (the inflow boundary layer) | against the experiment's 2.88·10⁻³ | reported | SST 2.71, k-ε 2.93, realizable 2.67, ζ-f₀ 3.02, ζ-f 3.13, EB 3.04 (·10⁻³) |
+| The layout: slip top at 9 H and walls from −85 H (6d2) against the TMR layout, ζ-f₀, coarse meshes | C_p RMS; x_r/H | – | 0.033 against 0.018; 6.38 against 6.33 |
+| Wall crossing on a laminar step (`tests/wall_crossing.rs`), Re 133 | position against the sign change of the wall file, linear between the face centroids; searched upstream from the outlet; within `width`; after `skip` | 10⁻¹² | asserted |
+| | a kind the shear does not show; `skip` past the reattachment | no position | asserted |
+| | three levels | GCI < 5 % | asserted |
+| Bad input | a zero direction, `width = 0`, `skip < 0`, an unknown kind | refused | CASE004 (three), the parse error naming the two kinds |
+
+**Findings.** (1) The top wall. With the slip plane of the earlier
+step cases the C_p of ζ-f₀ is 0.033 RMS from the experiment, with the
+no-slip wall of the experiment's channel 0.018; the reattachment moves
+by less than 1 %. (2) The corner vortices. On the finer meshes the
+vortices in the corner behind the step change the sign of the wall
+shear before x = 1.5 H (SST on the finest mesh: negative to 0.14 H,
+positive to 1.44 H), and the first crossing after the step was theirs
+(SST 0.10 and 0.14). `skip = 2.0` starts the search behind them; the
+position is still measured from the step. (3) SST: the coarse mesh does
+not converge with the coupled algorithm (its residual stalls at
+1.8·10⁻⁴; x_r changed by 0.17 % from 400 to 1 200 iterations), the
+middle mesh does, and the finest mesh reaches 6·10⁻⁶. The TMR reports
+that SST does not converge to a steady state on its refined grid
+either. The x_r of the two finer meshes agree to 0.008 %, so the
+coarse mesh is outside the asymptotic range and the sweep is
+oscillatory: no observed order. ζ-f₀ behaves the same way (residuals
+5·10⁻⁵, converged, 1.9·10⁻⁵ on the three meshes); its sweep is
+monotonic, but the fine pair is only 0.02 % apart, so p = 4.8 says no
+more than that the two finer meshes are mesh-independent within the
+iteration error. (4) The k-ε models run with scalable
+wall functions on a mesh made for resolved walls: the first-cell y⁺ of
+the lower wall is 1.5, 0.7 and 0.3 on the three meshes, and the solver
+says that the wall functions are claimed for y⁺ ≥ 30. Halving the cells
+moves the first cell deeper into the sublayer, which changes what the
+wall function does as well as the discretisation. That may be why the
+order of k-ε is 0.69 and the steps of realizable k-ε grow; a sweep that
+keeps the first cell would show it (not done). (5) ζ-f and EB reattach
+21 to 24 % late, as on the mesh of 6d2 (ζ-f 7.82, EB 7.59 there), and
+their C_p is 0.034 to 0.037 RMS from the experiment; the causes are those of
+6d2 (the realizability bound of T) and D133 (the variable C*_ε2).
+Neither converges with the coupled algorithm, and with SIMPLEC the
+pressure CG needs 200 iterations on the finer meshes. Their finest mesh
+needs an estimated 30 000 SIMPLEC iterations, hours on four cores, and
+follows in the next 6g PR. (6) SST misses the C_p band by 0.003 on the finest
+mesh (0.019 on the coarse one); its recovery after reattachment is
+slower than the experiment's (C_f 1.6·10⁻³ at x/H = 30 against
+2.1·10⁻³). (7) Run time, one thread per run with four to six runs
+sharing four cores: k-ε 23 min, realizable 34 min, SST 36 min for the
+three meshes; ζ-f and EB on the two coarser meshes 72 and 39 min.

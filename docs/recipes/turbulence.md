@@ -476,7 +476,9 @@ cat output/backstep_validation/summary.md
 `--models sst,keps,rke,zf0` runs a subset; `--levels 0,1` fewer meshes;
 `--report-only` evaluates the runs that are there. A run whose case has
 not changed is not repeated, so the study can be stopped and started
-again. ζ-f and EB on the finest mesh take hours with SIMPLEC; the four
-coupled models about 40 minutes with four cores.
+again. On four cores the four coupled models take about an hour
+together (k-ε 23 minutes for its three meshes, SST 36); ζ-f and EB need
+hours with SIMPLEC on the finest mesh, and `--models zf,eb --levels 0,1`
+runs their two coarser meshes in about an hour.
 
 [↑ back to top](#turbulence-models)
