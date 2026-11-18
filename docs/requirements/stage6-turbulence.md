@@ -724,7 +724,9 @@ Wall-face interface as in 4.1, with Pr and Pr_t added. Outputs: T⁺ (or φ⁺),
 the face conductance and the heat-transfer coefficient
 h_w = ρ c_p u*/T⁺ (for a passive scalar: the exchange coefficient
 ρ u*/φ⁺), with u* = C_μ^{1/4} k_P^{1/2} for the k-ε family and ζ-f/EB,
-and the blended u_τ of 4.3 for SST.
+and the blended u_τ of 4.3 for SST. *6f (pull request 87):* with the
+scalable momentum treatment T⁺ is taken at ỹ⁺ = max(y⁺, 11.06), the
+virtual wall distance of its log law.
 
 - **`"kader"`** (default, all y⁺, any Pr; Kader 1981, wall form with the
   outer-layer factor dropped, y/δ → 0):
