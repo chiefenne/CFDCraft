@@ -369,6 +369,54 @@ fn momentum_sweeps_give_the_same_result() {
     }
 }
 
+/// The pressure hierarchy of the coupled preconditioner is built anew when
+/// its matrix Ŝ has changed by more than `pressure_reuse` since its setup
+/// (requirements step 22, section 7.9): more setups than every
+/// `amg_rebuild` iterations alone, the same converged result. The laminar
+/// cavity changes Ŝ by less than the default 5 % per setup, so the rule
+/// is tested at 0 (a new hierarchy whenever Ŝ has changed).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn pressure_hierarchy_follows_its_matrix() {
+    let run = |name: &str, extra: &str| {
+        let case = cavity(
+            24,
+            0.01,
+            &format!(
+                "[solver]\nalgorithm = \"coupled\"\ntolerance = 1e-11\nmax_iterations = 3000\n{extra}"
+            ),
+        );
+        let rep = run_case(&case, name);
+        assert!(rep.solves[0].converged, "{name} did not converge");
+        eprintln!(
+            "{name}: {} iterations, {} pressure setups",
+            rep.solves[0].iterations, rep.solves[0].amg_setups
+        );
+        (
+            lid_force(&rep),
+            rep.solves[0].amg_setups,
+            rep.solves[0].iterations,
+        )
+    };
+    let (reference, setups, _) = run(
+        "pressure_reuse_always",
+        "[solver.coupled]\npressure_reuse = 0.0\n",
+    );
+    let (f, periodic, iterations) = run(
+        "pressure_reuse_off",
+        "[solver.coupled]\npressure_reuse = 1.0\n",
+    );
+    // every amg_rebuild = 10 iterations, from the first one
+    assert_eq!(periodic, iterations.div_ceil(10), "{periodic} setups");
+    assert!(setups > periodic, "{setups} against {periodic} setups");
+    for i in 0..2 {
+        assert!(
+            (f[i] - reference[i]).abs() <= 1e-8 * reference[0].abs(),
+            "lid force {f:?}, reference {reference:?}"
+        );
+    }
+}
+
 /// D179 with symmetry planes in a 3D case: the diagonals of the momentum
 /// matrix differ per velocity component, each takes its own hierarchy,
 /// and the result is that of the BiCGStab sweep.
@@ -637,6 +685,10 @@ fn coupled_settings_are_checked() {
         (
             "[solver]\nalgorithm = \"coupled\"\n[solver.coupled]\nmomentum_reuse = 0.5\n",
             "momentum_reuse",
+        ),
+        (
+            "[solver]\nalgorithm = \"coupled\"\n[solver.coupled]\npressure_reuse = 1.5\n",
+            "pressure_reuse",
         ),
         (
             "[solver]\nalgorithm = \"coupled\"\n[solver.coupled.multigrid]\nstrength = 0.0\n",
