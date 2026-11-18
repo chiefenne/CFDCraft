@@ -9,4 +9,8 @@
   ỹ⁺ = max(y⁺, 11.06), as the momentum law does (channel Nu on a y⁺ ≈ 8
   mesh +10 % instead of +28 %). CG stops when the preconditioned residual
   vanishes below the float32 range of the multigrid (an exactly
-  one-dimensional flow), as BiCGStab did. Gallery and recipe 87.
+  one-dimensional flow), as BiCGStab did. The PTX module now has the
+  entry points of the two passive-scalar kernels of pull request 85
+  (`scalar_turb_faces`, `scalar_wall_faces`): without them a GPU run did
+  not load the module; a test checks that the module has every entry the
+  CUDA backend loads. Gallery and recipe 87.
