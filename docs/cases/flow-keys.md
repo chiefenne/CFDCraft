@@ -40,7 +40,7 @@ line (recipe 26).
 | `solver.momentum.limiter` | `"none"` | gradient limiter: `none`, `venkatakrishnan`, `venkatakrishnan-wang` |
 | `solver.momentum.limiter_k` | 5 | constant K of the limiter |
 | `solver.nonorth_correction` | true | deferred non-orthogonal and skewness correction of the viscous term |
-| `solver.momentum.relaxation` | 0.7; 0.98 with `coupled` | under-relaxation α_u of the momentum equations (implicit, Patankar 1980); with `coupled` it only caps the local Courant number of the pseudo-time step at α/(1 − α) |
+| `solver.momentum.relaxation` | 0.7; 0.98 with `coupled`, 0.995 for the k-ε family with `solver.turbulence.preconditioner = "reduction"` (D180) | under-relaxation α_u of the momentum equations (implicit, Patankar 1980); with `coupled` it only caps the local Courant number of the pseudo-time step at α/(1 − α) |
 | `solver.pressure.relaxation` | 1 (SIMPLEC), 0.3 (SIMPLE) | relaxation α_p of the pressure correction |
 | `solver.pressure_gradient` | `"least-squares"` | gradient of the pressure in the momentum source, the Rhie–Chow flux and the wall pressure: `least-squares` (second order on every mesh) or `gauss` (the face sum of the face pressures; robust on skewed faces) |
 | `solver.remediation` | `"auto"` | cell-quality remediation (D50): `auto` switches to the `gauss` pressure gradient and the Venkatakrishnan limiter when a face of the mesh is skewed beyond `skewness_limit`, and reports it (`MESH001`, `MESH002`, the report); `off` keeps the schemes as set. A mesh without such faces runs unchanged ([recipe 36](../recipes/meshes.md#skewed-tets)) |
@@ -432,10 +432,11 @@ to 30. Specification:
 | `boundary.<wall>.roughness_constant` | 0.5 | C_s of Cebeci & Bradshaw (k-ε family); 0.4 brings the fully rough friction factor of pipes to Colebrook's within 3 % |
 | `solver.turbulence.scheme` | `"linear-upwind"` | convection of k and ω: `upwind`, `linear-upwind`, `central` (transient runs only, TURB006) |
 | `solver.turbulence.limiter`, `limiter_k` | `venkatakrishnan`, 0 | limiter of the gradients of k and ω; the threshold is relative, ε = K (φ_max − φ_min) |
-| `solver.turbulence.relaxation` | 0.8 steady, 1 transient; 0.98 with a pseudo-time step (`solver.pseudo_time.turbulence`) | under-relaxation of k and ω |
+| `solver.turbulence.relaxation` | 0.8 steady, 1 transient; 0.98 with a pseudo-time step (`solver.pseudo_time.turbulence`), 0.995 with the `"reduction"` preconditioner | under-relaxation of k and ω, ε, ζ |
 | `solver.turbulence.viscosity_relaxation` | 1 | relaxation of ν_t |
 | `solver.turbulence.tolerance`, `max_iter` | 1e-2 steady, 1e-8 transient; 50 | relative tolerance and iterations of each BiCGStab solve |
-| `solver.turbulence.preconditioner` | `"jacobi"` | preconditioner of the BiCGStab solves of k, ω or ε and ζ: `"jacobi"` or `"amg"` (the aggregation multigrid of `[solver.pressure.amg]`, one hierarchy per equation, built from the symmetric part ½(A + Aᵀ) and rebuilt every `solver.amg_rebuild` iterations) |
+| `solver.turbulence.preconditioner` | `"reduction"` for the k-ε family with `coupled`, else `"jacobi"` | preconditioner of the BiCGStab solves of k, ω or ε and ζ: `"jacobi"`; `"reduction"`, the reduction multigrid of D179 on each equation's matrix with the settings of `[solver.coupled.multigrid]`, kept while the matrix changes by at most `reuse` (D180); or `"amg"` (the aggregation multigrid of `[solver.pressure.amg]`, one hierarchy per equation, built from the symmetric part ½(A + Aᵀ) and rebuilt every `solver.amg_rebuild` iterations; not with a pseudo-time step) |
+| `solver.turbulence.reuse` | 0.02 | `"reduction"`: a hierarchy is kept while Σ\|Δa\| / Σ\|a\| of its equation's matrix stays at most this value, and rebuilt when BiCGStab needs more than 8 iterations with it; 0 builds one for every solve |
 | `solver.elliptic.preconditioner` | `"amg"` | the CG solve of the elliptic f equation of ζ-f: `"amg"` (own hierarchy) or `"jacobi"` |
 | `solver.elliptic.tolerance`, `max_iter` | 1e-2 steady, 1e-8 transient; 100 | relative tolerance and iterations of the f solve |
 | `solver.turbulence.destruction` | ω `"newton"`, ε `"picard"` | linearisation of the ω or ε destruction: `newton` (2βω in the diagonal) or `picard` |

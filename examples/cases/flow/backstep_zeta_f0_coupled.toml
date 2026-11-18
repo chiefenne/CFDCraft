@@ -1,6 +1,6 @@
 # Backward-facing step of Driver & Seegmiller (1985), k-ε-ζ-f₀, with the
-# coupled pressure–velocity algorithm and pseudo-time steps (stage 6 part
-# 6e, D176 to D178).
+# coupled pressure–velocity algorithm and pseudo-time steps (stage 6 parts
+# 6e to 6g, D176 to D180).
 #
 #   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/backstep_zeta_f0_coupled.toml
 #
@@ -9,18 +9,21 @@
 # momentum equations take one pseudo-time step for all cells (automatic:
 # volume over boundary area, 7.3 H, over the inflow speed), the
 # turbulence equations the step min(Δτ, 0.5 T) with the time scale T of
-# the model; the relaxation 0.98 of both only caps the local Courant
+# the model; the relaxation 0.995 of both only caps the local Courant
 # number. The momentum sweep of the preconditioner is one cycle of a
 # reduction multigrid per velocity component (D179, the default;
-# `--set solver.coupled.momentum_sweep=bicgstab` for the older sweep).
+# `--set solver.coupled.momentum_sweep=bicgstab` for the older sweep),
+# and the same multigrid preconditions the turbulence equations (D180;
+# `--set solver.turbulence.preconditioner=jacobi` for the older solver
+# and the relaxation 0.98).
 #
 # Result: the reattachment length is within 1 % of its final value after
-# 65 to 70 outer iterations, against about 525 with SIMPLEC and its
-# relaxation ramp, and ends at the same x_r/H = 6.385 (+2 % from the
-# experiment's 6.26). The case runs 150 iterations. With
-# `model = "k-epsilon"` (and `wall_treatment = "scalable"`) it takes 75
-# to 80 iterations, with `"k-omega-sst"` 80 to 85. The residual stalls
-# near 10⁻⁴ as with SIMPLEC, so the run has a fixed budget (recipe 78
+# about 40 outer iterations (65 before D180), against about 525 with
+# SIMPLEC and its relaxation ramp, and ends at the same x_r/H = 6.385
+# (+2 % from the experiment's 6.26). The run reaches the tolerance after
+# about 120 iterations (budget 150). With `model = "k-epsilon"` (and
+# `wall_treatment = "scalable"`) x_r settles after about 45 iterations,
+# with `"k-omega-sst"` (Jacobi and 0.98, D180) after 80 to 85 (recipe 78
 # shows how to see that x_r has settled).
 
 case_format = "0.6"

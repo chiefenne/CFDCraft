@@ -18,23 +18,27 @@ coupled pressure–velocity algorithm and the pseudo-time steps that cut the
 iterations of the steady turbulent cases
 ([below](#coupled-algorithm-and-pseudo-time-steps-part-6e)), part 6f the
 multigrid of its momentum sweep
-([below](#multigrid-for-the-momentum-sweep-part-6f)). The commands are in
+([below](#multigrid-for-the-momentum-sweep-part-6f)), part 6g the
+multigrid of the turbulence equations and the larger steps with it
+([below](#multigrid-for-the-turbulence-equations-part-6g)). The commands are in
 [recipe 63](../recipes/scalars.md#passive-scalars),
 [recipe 67](../recipes/boundary-conditions.md#periodic),
 [recipe 68](../recipes/turbulence.md#sst),
 [recipe 71](../recipes/turbulence.md#k-epsilon),
 [recipe 73](../recipes/turbulence.md#zeta-f),
 [recipe 74](../recipes/turbulence.md#zeta-f0),
-[recipe 78](../recipes/flow.md#coupled) and
-[recipe 80](../recipes/flow.md#momentum-multigrid), the pictures in
+[recipe 78](../recipes/flow.md#coupled),
+[recipe 80](../recipes/flow.md#momentum-multigrid) and
+[recipe 81](../recipes/flow.md#turbulence-multigrid), the pictures in
 [gallery 63](../gallery/scalars.md#passive-scalars),
 [gallery 67](../gallery/boundary-conditions.md#periodic),
 [gallery 68](../gallery/turbulence.md#sst),
 [gallery 71](../gallery/turbulence.md#k-epsilon),
 [gallery 73](../gallery/turbulence.md#zeta-f),
 [gallery 74](../gallery/turbulence.md#zeta-f0),
-[gallery 78](../gallery/flow.md#coupled) and
-[gallery 80](../gallery/flow.md#momentum-multigrid), the generated
+[gallery 78](../gallery/flow.md#coupled),
+[gallery 80](../gallery/flow.md#momentum-multigrid) and
+[gallery 81](../gallery/flow.md#turbulence-multigrid), the generated
 tables of every case in the [verification manual](manual.md).
 
 ## Passive scalars and the wall distance (part 6a)
@@ -684,3 +688,82 @@ sweep (finding 7 of part 6e), are now as cheap as it: cavity at
 Re = 1000 on 64², SIMPLEC 584 iterations in 3.0 s, coupled with
 `factor` 1, 4, 20: 624, 275, 170 iterations in 3.7 s, 2.8 s, 2.6 s.
 
+## Multigrid for the turbulence equations (part 6g)
+
+Specification: [requirements step 22](../requirements/step22-coupled-solver.md)
+sections 4.2 and 7.8 (D180).
+
+**The method** (`foehncraft-flow::turbulence`). With the coupled
+algorithm and pseudo-time steps (steady runs), the transport equations
+of the k-ε family (k, ε and ζ of k-ε, realizable k-ε, k-ε-ζ-f and
+k-ε-ζ-f₀; multigrid slots 2 to 4) take one V-cycle of the reduction
+multigrid of part 6f as the preconditioner of BiCGStab instead of the
+diagonal (`[solver.turbulence] preconditioner = "reduction"`, the
+default there). A hierarchy is kept while the matrix of its equation
+has changed by at most 2 % since its setup (`reuse`, the measure of
+`momentum_reuse`), and dropped when a solve with it needs more than 8
+BiCGStab iterations. A failed setup leaves the solves of that equation
+to Jacobi until a setup succeeds, with one warning in the log. The
+restart file holds the matrices of the kept hierarchies
+(`turb_amg_matrix_<slot>`). The elliptic f equation keeps CG with the
+aggregation multigrid.
+
+**The steps.** With the multigrid the relaxations default to 0.995
+(`solver.turbulence.relaxation`, `solver.momentum.relaxation`) instead
+of 0.98. A relaxation α acts as a local pseudo step α/(1−α) ρV/a_P,
+about 25 h²/ν_eff in a flat cell at the wall at 0.98: it shrinks with
+the cells, the rule min(Δτ, 0.5 T) of D178 does not. k-ω SST keeps
+Jacobi and 0.98, laminar cases 0.98, transient runs and SIMPLEC are
+unchanged; a key set in the case wins.
+
+### Results
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| Channel at Re_τ = 395, k-ε-ζ-f₀, coupled, to 10⁻¹⁰ | driving force with the multigrid at 0.995 against Jacobi at 0.98; setups counted and fewer than three per iteration; fewer iterations; SST keeps the old defaults | 10⁻⁶ | asserted (`turbulence_multigrid_gives_the_same_result`) |
+| The same channel, restart at 30 of 60 iterations (hdf5) | velocity, pressure, turbulence fields, kept hierarchies in the restart file | bit-identical | asserted (`turbulence_multigrid_restart_continues_bit_identically`) |
+| Input | `reuse` outside [0, 0.2] | refused with CASE005 | asserted |
+
+Runs on one thread, quiet machine, to the iteration from which x_r stays
+within 1 % of its final value (step) or to the tolerance (channel);
+part 6f in brackets:
+
+| Case | Iterations | Run time |
+|---|---|---|
+| Step, k-ε-ζ-f₀, 8 200 cells (`backstep_zeta_f0_coupled.toml`) | 40 (65) | 7.5 s (7.0 s) |
+| Step, k-ε-ζ-f₀, 32 800 cells | 65 (150) | 56 s (74 s) |
+| Step, k-ε (`scalable`), 8 200 cells | 45 (75) | 5.7 s (4.5 s) |
+| Channel at Re_τ = 395, k-ε-ζ-f₀ | 231 (323) | – |
+| Step, k-ω SST; cavity at Re = 1000 | unchanged: 80; 449 | unchanged |
+
+Final values: x_r/H = 6.385 and 6.353 (k-ε-ζ-f₀, coarse and fine), 5.287
+(k-ε), as before. The step case file converges to its tolerance in 117
+iterations with every check passed.
+
+**Findings.** (1) The turbulence relaxation 0.98 made the outer count
+grow with the mesh (65 to 150 iterations per four times the cells): on
+the fine step, momentum caps of 0.99 and 0.995 gave 150 and 145
+iterations, `pseudo_time.factor = 2` 140, `pseudo_time.turbulence = 1`
+125, the turbulence relaxation 0.99 95. (2) With Jacobi a relaxation of
+0.99 or more runs the BiCGStab solves of k, ε and ζ into their limit of
+50 in every outer iteration and x_r jitters or runs away; with the
+multigrid they need 1 to 2 iterations. (3) Both relaxations at 0.995
+together give 65 iterations on the fine step, the count of the coarse
+step before: the count grows by 1.6 per four times the cells instead of
+2.3. (4) An iteration costs more: the momentum cap 0.995 doubles the
+Krylov iterations (9 instead of 5 per outer iteration) and with them
+the pressure solves, and while the flow forms the hierarchies of the
+turbulence equations are rebuilt in most solves (114 setups in 120
+solves on the coarse step, 172 in 195 on the fine one; a setup costs
+about as much as twenty cycles). The coarse steps take about the same
+time as before; the fine step is 1.3 times faster, and the gain grows
+with the mesh. Against SIMPLEC the fine step is now 4.3 times faster
+(243 s). (5) SST on the step: with accurate solves of k and ω (the
+multigrid, or Jacobi to 10⁻⁴) the residuals grow again after about 160
+iterations and x_r wanders from 6.81 to 6.85 H at any relaxation from
+0.95 to 0.995; the loose Jacobi solves of today damp this. A relaxation
+of ν_t of 0.2 cures it at the caps 0.98 (206 iterations to the
+tolerance, x_r = 6.809 H) but not at the larger ones, so SST keeps the
+old defaults. (6) The aggregation multigrid of the scalar equations
+(`preconditioner = "amg"`, part 6d) fails with pseudo steps: its
+coarsest level is not positive definite.
