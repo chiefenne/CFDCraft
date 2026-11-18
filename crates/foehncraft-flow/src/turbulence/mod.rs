@@ -1267,6 +1267,9 @@ struct WallDev {
     prod_w: Buf,
     u_tau: Buf,
     y_plus: Buf,
+    /// The y⁺ of the thermal law (y* = C_μ^¼ k_P^½ y_P/ν of the k-ε
+    /// family, y⁺ of SST).
+    y_star: Buf,
     omega: Buf,
     blending: Buf,
     pk: Buf,
@@ -1798,6 +1801,7 @@ impl Turbulence {
                 weight: up(dev, &walls.weight)?,
                 u_tau: dev.alloc(nw)?,
                 y_plus: dev.alloc(nw)?,
+                y_star: dev.alloc(nw)?,
                 omega: dev.alloc(nw)?,
                 blending: dev.alloc(nw)?,
                 pk: dev.alloc(nw)?,
@@ -2362,6 +2366,7 @@ impl Turbulence {
             cs: wd.cs,
             u_tau: wd.u_tau,
             y_plus: wd.y_plus,
+            y_star: wd.y_star,
             omega: wd.omega,
             blending: wd.blending,
             pk: wd.pk,
@@ -2432,13 +2437,16 @@ impl Turbulence {
     }
 
     /// The buffers a passive scalar couples to (D135): the laminar and the
-    /// effective face viscosity, the wall faces and their y⁺.
+    /// effective face viscosity, the wall faces and the y⁺ of the thermal
+    /// law (y* = u* y_P/ν, u* = C_μ^¼ k_P^½, for the k-ε family and
+    /// ζ-f/EB; the blended u_τ for SST; section 5.2 of the stage-6
+    /// specification).
     pub(crate) fn scalar_coupling(&self, dev: &dyn FlowDevice) -> crate::scalar::TurbCoupling {
         crate::scalar::TurbCoupling {
             mu: self.mu_lam,
             mu_eff: dev.face_viscosity(),
             wall: self.mask_b,
-            y_plus: self.wd.map(|w| w.y_plus),
+            y_plus: self.wd.map(|w| w.y_star),
             y_floor: if self.treatment == kwall::SCALABLE {
                 kwall::Y_PLUS_LOG
             } else {

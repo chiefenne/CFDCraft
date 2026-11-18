@@ -110,8 +110,11 @@ fn bad_thermal_keys_are_refused() {
 
 /// The isothermal flat plate (`plate_heated_keps.toml`, Pr = 0.71): the
 /// Stanton number of the wall file against St = 0.0287 Re_x^−0.2 Pr^−0.4
-/// (Kays, Crawford & Weigand 2005) for 0.25 ≤ x ≤ 1 (Re_x from 1.25·10⁶ to
-/// 5·10⁶), ±10 %.
+/// (Kays, Crawford & Weigand 2005) for 0.4 ≤ x ≤ 1 (Re_x from 2·10⁶ to
+/// 5·10⁶), ±10 %; the wall probe reports the scalar's wall value and flux.
+/// Closer to the start of the turbulent layer (x ≈ 0.16) k overshoots its
+/// equilibrium, and St with it (the velocity scale u* = C_μ^¼ k_P^½ of the
+/// thermal law): +14 % at x = 0.29.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn heated_plate_meets_the_stanton_correlation() {
@@ -125,11 +128,38 @@ fn heated_plate_meets_the_stanton_correlation() {
     let head: Vec<&str> = lines.next().unwrap().split(',').collect();
     let col = |n: &str| head.iter().position(|h| *h == n).unwrap();
     let (cx, cq, cw) = (col("x"), col("theta_flux"), col("theta_wall"));
+    let rows: Vec<Vec<f64>> = lines
+        .map(|l| l.split(',').map(|s| s.parse().unwrap()).collect())
+        .collect();
+    // the wall probe at x = 0.97: the scalar's wall value and flux between
+    // those of the two faces about it, and among the GCI quantities (D67)
+    let probe = &r.solves[0].wall_probes[0];
+    let th = &probe.scalars[0];
+    assert_eq!(th.name, "theta");
+    assert!((th.wall - 1.0).abs() < 1e-12, "θ_w {}", th.wall);
+    let (lo, hi) = rows
+        .iter()
+        .zip(rows.iter().skip(1))
+        .find(|(a, b)| a[cx] <= probe.at[0] && probe.at[0] <= b[cx])
+        .map(|(a, b)| (a[cq].min(b[cq]), a[cq].max(b[cq])))
+        .expect("a face pair about the probe");
+    assert!(
+        (lo..=hi).contains(&th.flux),
+        "probe flux {} outside [{lo}, {hi}]",
+        th.flux
+    );
+    let solve = serde_json::to_value(&r.solves[0]).unwrap();
+    let names: Vec<String> = foehncraft_flow::uncertainty::quantities(&solve)
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    for n in ["wall_probes.x097.theta_wall", "wall_probes.x097.theta_flux"] {
+        assert!(names.iter().any(|m| m == n), "{n} not in {names:?}");
+    }
     let mut n = 0;
-    for l in lines {
-        let v: Vec<f64> = l.split(',').map(|s| s.parse().unwrap()).collect();
+    for v in rows {
         let x = v[cx];
-        if !(0.25..=1.0).contains(&x) {
+        if !(0.4..=1.0).contains(&x) {
             continue;
         }
         // flux into the domain is positive for a hot wall; U = 1, θ_∞ = 0

@@ -47,11 +47,11 @@ FLOW = {
         "taylor_green_expression", "channel_ramp", "scalar_front_bdf2",
         "poiseuille_periodic", "channel_heated_periodic", "pipe_heated_periodic",
         "pipe_rough_keps", "backstep_zeta_f0_coupled", "backstep_validation",
-        "pipe_heated_keps", "plate_heated_keps",
+        "pipe_heated_keps", "plate_heated_keps", "jet_pipe_profile",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_convective", "cylinder_re20_gci",
-        "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb",
+        "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb", "impinging_jet",
     ],
     "quick": [
         "cavity_re100_budget", "couette_hex", "couette_mixed", "couette_poly", "couette_tet",

@@ -1395,7 +1395,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         ins.extend(a.u.all());
         ins.extend(a.ub.all());
         let mut outs = vec![
-            a.y_plus, a.omega, a.blending, a.mu_eff, a.k_b, a.w_b, a.u_tau, a.pk, a.prod_w,
+            a.y_plus, a.y_star, a.omega, a.blending, a.mu_eff, a.k_b, a.w_b, a.u_tau, a.pk,
+            a.prod_w,
         ];
         if let Some((z, fb)) = a.zeta_f {
             ins.push(z);
@@ -1426,6 +1427,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             u_tau_old: self.r(a.u_tau),
             u_tau: self.r(a.u_tau),
             y_plus: self.r(a.y_plus),
+            y_star: self.r(a.y_star),
             omega: self.r(a.omega),
             blending: self.r(a.blending),
             pk: self.r(a.pk),

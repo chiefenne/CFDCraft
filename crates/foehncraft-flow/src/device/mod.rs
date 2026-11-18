@@ -546,6 +546,9 @@ pub struct WallFaceOps {
     pub u_tau: Buf,
     /// Output y⁺ per wall face.
     pub y_plus: Buf,
+    /// Output per wall face: the y⁺ of the thermal law (y* = C_μ^¼ k_P^½
+    /// y_P/ν of the k-ε family and ζ-f/EB, y⁺ of SST).
+    pub y_star: Buf,
     /// Output ω per wall face.
     pub omega: Buf,
     /// Output viscous weight per wall face.

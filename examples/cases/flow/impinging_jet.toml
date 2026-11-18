@@ -21,9 +21,13 @@
 # the distance from the plate at r/D = 0.5, 1, 2, 2.5 and 3, the stations
 # of Cooper et al.
 #
-# Mesh: 100 × 104 cells, the first cell at the plate 5·10⁻⁴ D (first-cell
-# y⁺ below 1), clustered at the pipe lip r = D/2; `verification.levels`
-# refines it for the study.
+# Mesh: 50 × 52 intervals refined once (`refine = 1`: 100 × 104 cells),
+# the first cell at the plate 5·10⁻⁴ D (first-cell y⁺ below 1), clustered
+# at the pipe lip r = D/2; `verification.levels` = [0, 1, 2] gives the
+# 2 600, 10 400 and 41 600 cells of the study
+# (examples/studies/impinging_jet.py). The wall probe `stag` at the axis
+# reports θ_w of the stagnation point (the face next to the axis), so that
+# a level sweep gives the GCI of Nu₀.
 
 case_format = "0.6"
 
@@ -32,8 +36,9 @@ type = "hex"
 dimension = 2
 lower = [0.0, 0.0, 0.0]
 upper = [2.0, 6.0, 0.1]
-cells = [100, 104, 1]
-segments = { x = [ { to = 0.5, cells = 60, ratio = 70.5252 }, { to = 2.0, cells = 40, ratio = 1.12946 } ], y = [ { to = 0.5, cells = 30, ratio = 0.0930221 }, { to = 1.0, cells = 24, ratio = 14.6648 }, { to = 6.0, cells = 50, ratio = 2.67413 } ] }
+cells = [50, 52, 1]
+refine = 1             # 100 × 104 cells
+segments = { x = [ { to = 0.5, cells = 30, ratio = 70.5252 }, { to = 2.0, cells = 20, ratio = 1.12946 } ], y = [ { to = 0.5, cells = 15, ratio = 0.0930221 }, { to = 1.0, cells = 12, ratio = 14.6648 }, { to = 6.0, cells = 25, ratio = 2.67413 } ] }
 split = [ { boundary = "xmax", axis = "y", at = 0.5, name = "entrain" } ]
 wedge = 0.5            # degrees about the x axis; y is the radius
 
@@ -86,6 +91,7 @@ log_every = 100
 [output]
 vtkhdf = false
 wall_csv = true
+wall_probes = [ { name = "stag", boundary = "xmin", point = [0.0, 0.0, 0.0] } ]
 reference = { velocity = 1.0 }
 lines = [
   { name = "axis", from = [0.0, 0.0, 0.0], to = [2.0, 0.0, 0.0], points = 401 },
