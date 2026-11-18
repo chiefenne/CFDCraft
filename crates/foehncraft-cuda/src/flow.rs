@@ -22,7 +22,7 @@ use cudarc::driver::{
 use cudarc::nvrtc::Ptx;
 use foehncraft_flow::device::kernel::{Exec, KernelFlow};
 use foehncraft_flow::device::{Buf, FlowDevice, Setup};
-use foehncraft_fv::amg::AmgSettings;
+use foehncraft_fv::amg::{AmgSettings, ReductionSettings};
 use foehncraft_fv::backend::{Backend, V};
 use foehncraft_fv::solver::{self as linear, Preconditioner};
 use foehncraft_kernels::entry::{self as e, Entry, Mesh, Raw};
@@ -295,6 +295,27 @@ impl Exec for CudaExec {
 
     fn amg_slot(&mut self, slot: usize) -> Result<()> {
         self.be.amg_slot(slot)
+    }
+
+    fn reduction_setup(&mut self, val: Buf, s: &ReductionSettings) -> Result<()> {
+        let host = self.download(val)?;
+        self.be.set_matrix(&host)?;
+        linear::setup_reduction(&mut self.be, s).map(|_| ())
+    }
+
+    fn cycles(&mut self, val: Buf, rhs: Buf, x: Buf, cycles: usize) -> Result<()> {
+        if cycles > 1 {
+            // the residual between two cycles takes the matrix of the backend
+            self.set_matrix(val)?;
+        }
+        self.copy_to_solver(rhs, V::Rhs)?;
+        let be: &mut dyn Backend = &mut self.be;
+        linear::cycles(be, cycles)?;
+        let s = self.stream.clone();
+        let n = self.raws[x.index()].len as usize;
+        let src = self.be.vector(V::Phi);
+        s.memcpy_dtod(src, &mut self.bufs[x.index()].slice_mut(..n))?;
+        Ok(())
     }
 
     fn sync(&mut self) -> Result<()> {

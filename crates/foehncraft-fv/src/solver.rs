@@ -7,7 +7,7 @@
 //! The solver drives a [`Backend`] and only moves scalars (dot products,
 //! norms) to the host, so the same code runs on the CPU and on the GPU.
 
-use crate::amg::{self, AmgSettings, HierarchyInfo};
+use crate::amg::{self, AmgSettings, HierarchyInfo, ReductionSettings};
 use crate::backend::{Backend, FaceSettings, Limiter, V};
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -351,6 +351,38 @@ pub fn setup_amg_with(
     be.sync()?;
     h.info.setup_seconds = t.elapsed().as_secs_f64();
     Ok(h.info)
+}
+
+/// Builds the reduction multigrid (D179, [`amg::reduction`]) of the matrix
+/// assembled in the backend, which need not be symmetric, and loads it into
+/// the active slot.
+pub fn setup_reduction(
+    be: &mut dyn Backend,
+    s: &ReductionSettings,
+) -> anyhow::Result<HierarchyInfo> {
+    let t = Instant::now();
+    let val = be.matrix_values()?;
+    let a = be_matrix(be, &val)?;
+    let mut h = amg::reduction::build(a, s)?;
+    be.amg_load(&h)?;
+    be.sync()?;
+    h.info.setup_seconds = t.elapsed().as_secs_f64();
+    Ok(h.info)
+}
+
+/// Phi = the result of `cycles` multigrid cycles of the active hierarchy on
+/// A Phi = Rhs from Phi = 0: a stationary iteration, a fixed linear
+/// operator on Rhs (the first cycle needs no matrix product outside the
+/// hierarchy; the later ones take the residual with the matrix of the
+/// backend).
+pub fn cycles(be: &mut dyn Backend, cycles: usize) -> anyhow::Result<()> {
+    amg::cycle::vcycle(be, V::Rhs, V::Phi)?;
+    for _ in 1..cycles {
+        be.residual(V::Phi, V::Rhs, V::R)?;
+        amg::cycle::vcycle(be, V::R, V::Z)?;
+        be.axpy(1.0, V::Z, V::Phi)?;
+    }
+    Ok(())
 }
 
 fn be_matrix(be: &dyn Backend, val: &[f64]) -> anyhow::Result<amg::Csr> {

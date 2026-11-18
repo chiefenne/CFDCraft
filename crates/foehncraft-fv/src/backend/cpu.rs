@@ -16,10 +16,43 @@ use rayon::prelude::*;
 /// Indices per task of the parallel loops.
 const GRAIN: usize = 1 << 14;
 
+/// The threads of the backend. Handing a loop to the pool costs two thread
+/// switches, more than the loop itself on a small mesh or on a coarse level
+/// of a multigrid cycle. So a pool of one thread and a loop of one task run
+/// on the calling thread. The values do not depend on where a loop runs
+/// (D31).
+struct Workers {
+    pool: rayon::ThreadPool,
+    serial: bool,
+}
+
+impl Workers {
+    fn new(threads: Option<usize>) -> anyhow::Result<Self> {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads.unwrap_or(0))
+            .build()?;
+        let serial = pool.current_num_threads() == 1;
+        Ok(Self { pool, serial })
+    }
+
+    fn threads(&self) -> usize {
+        self.pool.current_num_threads()
+    }
+
+    /// A loop over `n` indices runs on the calling thread.
+    fn inline(&self, n: usize) -> bool {
+        self.serial || n <= GRAIN
+    }
+
+    fn install<R: Send>(&self, f: impl FnOnce() -> R + Send) -> R {
+        self.pool.install(f)
+    }
+}
+
 /// CPU backend.
 pub struct CpuBackend {
     d: Discretisation,
-    pool: rayon::ThreadPool,
+    pool: Workers,
     vecs: Vec<Vec<f64>>,
     scratch: Vec<f64>,
     val: Vec<f64>,
@@ -57,7 +90,13 @@ enum Amg {
 }
 
 /// Fills `out[i] = f(i)` in parallel, one value per index.
-fn par_fill<T: Real>(pool: &rayon::ThreadPool, out: &mut [T], f: impl Fn(usize, T) -> T + Sync) {
+fn par_fill<T: Real>(pool: &Workers, out: &mut [T], f: impl Fn(usize, T) -> T + Sync) {
+    if pool.inline(out.len()) {
+        for (i, o) in out.iter_mut().enumerate() {
+            *o = f(i, *o);
+        }
+        return;
+    }
     pool.install(|| {
         out.par_chunks_mut(GRAIN).enumerate().for_each(|(c, ch)| {
             for (j, o) in ch.iter_mut().enumerate() {
@@ -95,18 +134,18 @@ impl<T: Real> AmgData<T> {
         }
     }
 
-    fn load_rhs(&mut self, pool: &rayon::ThreadPool, r: &[f64]) {
+    fn load_rhs(&mut self, pool: &Workers, r: &[f64]) {
         // SAFETY: b_0 and r have one entry per cell.
         par_fill(pool, &mut self.b[0], |i, _| unsafe { amg::convert(i, r) });
     }
 
-    fn store(&self, pool: &rayon::ThreadPool, z: &mut [f64]) {
+    fn store(&self, pool: &Workers, z: &mut [f64]) {
         let x = &self.x[0];
         // SAFETY: as above.
         par_fill(pool, z, |i, _| unsafe { amg::convert(i, x) });
     }
 
-    fn smooth_first(&mut self, pool: &rayon::ThreadPool, l: usize, c2: f64) {
+    fn smooth_first(&mut self, pool: &Workers, l: usize, c2: f64) {
         let c2 = T::from_f64(c2);
         let (dinv, b) = (&self.levels[l].dinv, &self.b[l]);
         // SAFETY: level vectors have one entry per row of A_l.
@@ -116,7 +155,7 @@ impl<T: Real> AmgData<T> {
         self.x[l].copy_from_slice(&self.d[l]);
     }
 
-    fn smooth_step(&mut self, pool: &rayon::ThreadPool, l: usize, c1: f64, c2: f64) {
+    fn smooth_step(&mut self, pool: &Workers, l: usize, c1: f64, c2: f64) {
         let (c1, c2) = (T::from_f64(c1), T::from_f64(c2));
         let lv = &self.levels[l];
         let (a, dinv, b, x) = (lv.a.view(), &lv.dinv, &self.b[l], &self.x[l]);
@@ -128,7 +167,7 @@ impl<T: Real> AmgData<T> {
         par_fill(pool, &mut self.x[l], |i, xi| amg::add(xi, d[i]));
     }
 
-    fn restrict(&mut self, pool: &rayon::ThreadPool, l: usize) {
+    fn restrict(&mut self, pool: &Workers, l: usize) {
         let lv = &self.levels[l];
         let (a, b, x) = (lv.a.view(), &self.b[l], &self.x[l]);
         // SAFETY: as above.
@@ -140,7 +179,7 @@ impl<T: Real> AmgData<T> {
         par_fill(pool, &mut self.b[l + 1], |i, _| unsafe { r.row(i, w) });
     }
 
-    fn coarse(&mut self, pool: &rayon::ThreadPool) {
+    fn coarse(&mut self, pool: &Workers) {
         let nl = self.levels.len();
         let (n, m, b) = (self.coarse_n, &self.coarse_inv, &self.b[nl]);
         // SAFETY: the dense inverse is n × n.
@@ -149,7 +188,7 @@ impl<T: Real> AmgData<T> {
         });
     }
 
-    fn prolong(&mut self, pool: &rayon::ThreadPool, l: usize) {
+    fn prolong(&mut self, pool: &Workers, l: usize) {
         let (lo, hi) = self.x.split_at_mut(l + 1);
         let (p, xc) = (self.levels[l].p.view(), &hi[0]);
         // SAFETY: P_l has the rows of level l and the columns of level l + 1.
@@ -181,9 +220,7 @@ unsafe impl Sync for Shared {}
 impl CpuBackend {
     /// New backend on `threads` threads (`None`: all cores).
     pub fn new(d: Discretisation, threads: Option<usize>) -> anyhow::Result<Self> {
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads.unwrap_or(0))
-            .build()?;
+        let pool = Workers::new(threads)?;
         let mut vecs = vec![Vec::new(); V::COUNT];
         for v in V::CELL {
             vecs[v.index()] = vec![0.0; d.n_cells];
@@ -217,13 +254,19 @@ impl CpuBackend {
         let mut s = std::mem::take(&mut self.scratch);
         s.resize(n, 0.0);
         let this = &*self;
-        this.pool.install(|| {
-            s.par_chunks_mut(GRAIN).enumerate().for_each(|(c, ch)| {
-                for (j, o) in ch.iter_mut().enumerate() {
-                    *o = body(this, c * GRAIN + j);
-                }
-            })
-        });
+        if this.pool.inline(n) {
+            for (i, o) in s.iter_mut().enumerate() {
+                *o = body(this, i);
+            }
+        } else {
+            this.pool.install(|| {
+                s.par_chunks_mut(GRAIN).enumerate().for_each(|(c, ch)| {
+                    for (j, o) in ch.iter_mut().enumerate() {
+                        *o = body(this, c * GRAIN + j);
+                    }
+                })
+            });
+        }
         std::mem::swap(&mut s, &mut self.vecs[out.index()]);
         self.scratch = s;
     }
@@ -246,7 +289,7 @@ impl CpuBackend {
 
 impl Backend for CpuBackend {
     fn name(&self) -> String {
-        if self.pool.current_num_threads() == 1 {
+        if self.pool.threads() == 1 {
             "cpu-serial".into()
         } else {
             "cpu".into()
@@ -254,7 +297,7 @@ impl Backend for CpuBackend {
     }
 
     fn device(&self) -> String {
-        format!("CPU, {} threads", self.pool.current_num_threads())
+        format!("CPU, {} threads", self.pool.threads())
     }
 
     fn n_cells(&self) -> usize {
@@ -282,22 +325,27 @@ impl Backend for CpuBackend {
         let mut gz = std::mem::take(&mut self.vecs[V::Gz.index()]);
         let (d, phi) = (&self.d, &self.vecs[V::Phi.index()]);
         let (topo, bc, w) = (d.topology(), d.boundary(), d.lsq.view());
-        self.pool.install(|| {
-            gx.par_chunks_mut(GRAIN)
-                .zip(gy.par_chunks_mut(GRAIN))
-                .zip(gz.par_chunks_mut(GRAIN))
-                .enumerate()
-                .for_each(|(ci, ((x, y), z))| {
-                    for j in 0..x.len() {
-                        // SAFETY: the discretisation was built from a
-                        // validated mesh; c is a local cell.
-                        let g = unsafe { fv::lsq_gradient(ci * GRAIN + j, &topo, &w, phi, &bc) };
-                        x[j] = g[0];
-                        y[j] = g[1];
-                        z[j] = g[2];
-                    }
-                })
-        });
+        let fill = |first: usize, x: &mut [f64], y: &mut [f64], z: &mut [f64]| {
+            for j in 0..x.len() {
+                // SAFETY: the discretisation was built from a validated
+                // mesh; first + j is a local cell.
+                let g = unsafe { fv::lsq_gradient(first + j, &topo, &w, phi, &bc) };
+                x[j] = g[0];
+                y[j] = g[1];
+                z[j] = g[2];
+            }
+        };
+        if self.pool.inline(gx.len()) {
+            fill(0, &mut gx, &mut gy, &mut gz);
+        } else {
+            self.pool.install(|| {
+                gx.par_chunks_mut(GRAIN)
+                    .zip(gy.par_chunks_mut(GRAIN))
+                    .zip(gz.par_chunks_mut(GRAIN))
+                    .enumerate()
+                    .for_each(|(ci, ((x, y), z))| fill(ci * GRAIN, x, y, z))
+            });
+        }
         self.vecs[V::Gx.index()] = gx;
         self.vecs[V::Gy.index()] = gy;
         self.vecs[V::Gz.index()] = gz;
@@ -368,21 +416,26 @@ impl Backend for CpuBackend {
             nonorth: if st.nonorth { 1.0 } else { 0.0 },
             nonorth_limit: st.nonorth_limit,
         };
-        self.pool.install(|| {
-            cp.par_chunks_mut(GRAIN)
-                .zip(cn.par_chunks_mut(GRAIN))
-                .zip(bf.par_chunks_mut(GRAIN))
-                .enumerate()
-                .for_each(|(ci, ((a, b), c))| {
-                    for j in 0..a.len() {
-                        // SAFETY: f is a face of the discretisation.
-                        let (x, y, z) = unsafe { fv::face_coefficients(ci * GRAIN + j, &inp) };
-                        a[j] = x;
-                        b[j] = y;
-                        c[j] = z;
-                    }
-                })
-        });
+        let fill = |first: usize, a: &mut [f64], b: &mut [f64], c: &mut [f64]| {
+            for j in 0..a.len() {
+                // SAFETY: first + j is a face of the discretisation.
+                let (x, y, z) = unsafe { fv::face_coefficients(first + j, &inp) };
+                a[j] = x;
+                b[j] = y;
+                c[j] = z;
+            }
+        };
+        if self.pool.inline(cp.len()) {
+            fill(0, &mut cp, &mut cn, &mut bf);
+        } else {
+            self.pool.install(|| {
+                cp.par_chunks_mut(GRAIN)
+                    .zip(cn.par_chunks_mut(GRAIN))
+                    .zip(bf.par_chunks_mut(GRAIN))
+                    .enumerate()
+                    .for_each(|(ci, ((a, b), c))| fill(ci * GRAIN, a, b, c))
+            });
+        }
         self.vecs[V::Cp.index()] = cp;
         self.vecs[V::Cn.index()] = cn;
         self.vecs[V::Bf.index()] = bf;
@@ -405,21 +458,25 @@ impl Backend for CpuBackend {
         };
         let (cp, cn, bf, phi) = (self.v(V::Cp), self.v(V::Cn), self.v(V::Bf), self.v(V::Phi));
         let n = d.n_cells;
-        self.pool.install(|| {
-            (0..n.div_ceil(GRAIN)).into_par_iter().for_each(|ci| {
-                let (pv, pr, pd) = (pv, pr, pd);
-                for c in ci * GRAIN..((ci + 1) * GRAIN).min(n) {
-                    // SAFETY: row c and rhs[c], dinv[c] are written by this
-                    // iteration only; the SELL storage has a slot for every
-                    // interior face of c.
-                    unsafe {
-                        fv::assemble_row(
-                            c, &topo, cp, cn, bf, &d.source, phi, alpha, &layout, pv.0, pr.0, pd.0,
-                        )
-                    }
+        let rows = |ci: usize| {
+            let (pv, pr, pd) = (pv, pr, pd);
+            for c in ci * GRAIN..((ci + 1) * GRAIN).min(n) {
+                // SAFETY: row c and rhs[c], dinv[c] are written by this
+                // iteration only; the SELL storage has a slot for every
+                // interior face of c.
+                unsafe {
+                    fv::assemble_row(
+                        c, &topo, cp, cn, bf, &d.source, phi, alpha, &layout, pv.0, pr.0, pd.0,
+                    )
                 }
-            })
-        });
+            }
+        };
+        if self.pool.inline(n) {
+            (0..n.div_ceil(GRAIN)).for_each(rows);
+        } else {
+            self.pool
+                .install(|| (0..n.div_ceil(GRAIN)).into_par_iter().for_each(rows));
+        }
         self.vecs[V::Rhs.index()] = rhs;
         self.vecs[V::Dinv.index()] = dinv;
         Ok(())
@@ -438,26 +495,28 @@ impl Backend for CpuBackend {
     fn dot(&mut self, a: V, b: V) -> anyhow::Result<f64> {
         let (x, y) = (self.v(a), self.v(b));
         let nb = x.len().div_ceil(BLOCK);
-        let sums: Vec<f64> = self.pool.install(|| {
-            (0..nb)
-                .into_par_iter()
-                // SAFETY: blk * BLOCK < len.
-                .map(|blk| unsafe { blas::block_dot(blk, x, y) })
-                .collect()
-        });
+        // SAFETY: blk * BLOCK < len.
+        let block = |blk: usize| unsafe { blas::block_dot(blk, x, y) };
+        let sums: Vec<f64> = if self.pool.inline(x.len()) {
+            (0..nb).map(block).collect()
+        } else {
+            self.pool
+                .install(|| (0..nb).into_par_iter().map(block).collect())
+        };
         Ok(combine_block_sums(&sums))
     }
 
     fn min_max(&mut self, a: V) -> anyhow::Result<(f64, f64)> {
         let x = self.v(a);
         let nb = x.len().div_ceil(BLOCK);
-        let mm: Vec<(f64, f64)> = self.pool.install(|| {
-            (0..nb)
-                .into_par_iter()
-                // SAFETY: blk * BLOCK < len.
-                .map(|blk| unsafe { blas::block_min_max(blk, x) })
-                .collect()
-        });
+        // SAFETY: blk * BLOCK < len.
+        let block = |blk: usize| unsafe { blas::block_min_max(blk, x) };
+        let mm: Vec<(f64, f64)> = if self.pool.inline(x.len()) {
+            (0..nb).map(block).collect()
+        } else {
+            self.pool
+                .install(|| (0..nb).into_par_iter().map(block).collect())
+        };
         Ok(mm
             .iter()
             .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &(c, d)| {

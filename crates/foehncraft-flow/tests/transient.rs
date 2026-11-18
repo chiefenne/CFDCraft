@@ -4,11 +4,16 @@
 
 use foehncraft_flow::case::{FlowCase, FlowReport, run};
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn run_case(case: &FlowCase, name: &str) -> FlowReport {
+    // the tests of this file run in parallel and share run names (the
+    // schemes): every run gets a directory of its own
+    static RUN: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "foehncraft_transient_{name}_{}",
-        std::process::id()
+        "foehncraft_transient_{name}_{}_{}",
+        std::process::id(),
+        RUN.fetch_add(1, Ordering::Relaxed)
     ));
     let r = run(case, name, &dir, |_| {}).unwrap();
     let _ = std::fs::remove_dir_all(&dir);

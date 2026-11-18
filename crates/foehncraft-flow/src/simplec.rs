@@ -864,6 +864,17 @@ pub struct Flow {
     unit_flux: Option<Buf>,
     /// Buffers of the coupled algorithm (allocated at its first iteration).
     pub(crate) coupled: Option<crate::coupled::CoupledWork>,
+    /// Outer iterations of the coupled algorithm in which the multigrid
+    /// setup of the momentum sweep failed and BiCGStab did the sweeps.
+    pub sweep_fallbacks: usize,
+    /// The message of the first such failure, until the run loop reports
+    /// it.
+    pub sweep_note: Option<String>,
+    /// Multigrid setups of the momentum sweeps of the coupled algorithm.
+    pub sweep_setups: usize,
+    /// The hierarchies of the momentum sweeps kept between outer
+    /// iterations (the content of a restart file).
+    pub sweep: crate::coupled::SweepState,
     /// The length of the automatic pseudo-time step (computed at its first
     /// use).
     pub(crate) pseudo_length: Option<f64>,
@@ -1295,6 +1306,10 @@ impl Flow {
             periodic,
             unit_flux,
             coupled: None,
+            sweep_fallbacks: 0,
+            sweep_note: None,
+            sweep_setups: 0,
+            sweep: Default::default(),
             pseudo_length: None,
             pseudo_speed: None,
         })
@@ -1448,6 +1463,9 @@ impl Flow {
             t.rewind(self.dev.as_mut())?;
         }
         self.iteration = it;
+        // the kept hierarchies of the momentum sweeps belong to later
+        // matrices
+        self.sweep = Default::default();
         self.update_boundaries()?;
         self.gradients()?;
         Ok(true)
@@ -1606,6 +1624,7 @@ impl Flow {
         self.dev.upload(f.u.z, &u.z)?;
         self.amg_setups = 0;
         self.amg_matrix = None;
+        self.sweep = Default::default();
         self.update_boundaries()?;
         self.gradients()?;
         self.dev.sync()?;
@@ -2123,6 +2142,10 @@ impl Flow {
     /// Re-validated settings that may change during a run (D40).
     pub fn set_settings(&mut self, s: Settings) -> Result<()> {
         s.validate(self.transient)?;
+        if s.coupled.multigrid != self.settings.coupled.multigrid {
+            // hierarchies of other settings are not kept
+            self.sweep = Default::default();
+        }
         // the remediation of the start stays in force (D50)
         self.settings = s.remedied(self.remediation.max_skewness).0;
         Ok(())

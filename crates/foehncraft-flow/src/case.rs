@@ -1429,6 +1429,9 @@ pub struct Solve {
     pub timings: Timings,
     /// Multigrid setups.
     pub amg_setups: usize,
+    /// Multigrid setups of the momentum sweeps of the coupled algorithm
+    /// (D179).
+    pub sweep_setups: usize,
     /// Nanoseconds per cell and outer iteration (R6).
     pub ns_per_cell_iteration: f64,
     /// Error norms.
@@ -1935,6 +1938,7 @@ fn steady_restart(fl: &mut Flow, mesh: &Mesh, name: &str) -> Result<Restart> {
         iteration: fl.iteration(),
         amg_setups: fl.amg_setups,
         amg_matrix: fl.amg_matrix.clone(),
+        sweep: fl.sweep.clone(),
         transient: None,
         geometry: None,
     })
@@ -2213,6 +2217,11 @@ pub fn run_steered(
             if let Some(m) = &r.amg_matrix {
                 fl.restore_amg(m, r.amg_setups)?;
             }
+            if case.solver.algorithm(false) == simplec::Algorithm::Coupled
+                && case.solver.coupled.momentum_sweep == crate::coupled::MomentumSweep::Multigrid
+            {
+                fl.restore_sweep(&r.sweep)?;
+            }
             if !same {
                 let m = "note: the restart file has another cell or face order; the fields were \
                          mapped by identity and the multigrid rebuilt (the continuation is not \
@@ -2363,6 +2372,9 @@ pub fn run_steered(
                 }
                 Err(e) => return Err(e),
             };
+            if let Some(m) = fl.sweep_note.take() {
+                lg.warn(&m);
+            }
             let it = fl.iteration();
             let done = res.max() < case.solver.tolerance;
             if it % case.output.history_every == 0 || done {
@@ -2742,6 +2754,7 @@ pub fn run_steered(
                 / (nc as f64 * (iters - first).max(1) as f64),
             timings: fl.timings.clone(),
             amg_setups: fl.amg_setups,
+            sweep_setups: fl.sweep_setups,
             errors,
             reference,
             boundaries,
@@ -3900,9 +3913,14 @@ impl FlowReport {
                 );
             }
             let t = &v.timings;
+            let sweeps = if v.sweep_setups > 0 {
+                format!(", {} of the momentum sweeps", v.sweep_setups)
+            } else {
+                String::new()
+            };
             let _ = writeln!(
                 s,
-                "\nSeconds per phase (R6): gradients {:.2}, momentum assembly {:.2}, momentum solve {:.2}, pressure assembly {:.2}, pressure solve {:.2}, multigrid setup {:.2} ({} setups)",
+                "\nSeconds per phase (R6): gradients {:.2}, momentum assembly {:.2}, momentum solve {:.2}, pressure assembly {:.2}, pressure solve {:.2}, multigrid setup {:.2} ({} setups{sweeps})",
                 t.gradients,
                 t.momentum_assembly,
                 t.momentum_solve,

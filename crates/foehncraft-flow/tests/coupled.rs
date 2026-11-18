@@ -1,5 +1,6 @@
 //! The coupled pressure–velocity algorithm and the pseudo-time steps of a
-//! steady run (D176 to D178, docs/verification/stage6.md, part 6e).
+//! steady run (D176 to D178, docs/verification/stage6.md, part 6e), and
+//! the multigrid of its momentum sweeps (D179, part 6f).
 //!
 //! The backward-facing step with the three turbulence models and the
 //! cavity at Re = 1000 run from the case files in CI; the tests here use
@@ -244,40 +245,205 @@ fn coupled_results_are_bitwise_equal_on_1_and_4_threads() {
 }
 
 /// D42: a coupled run continued from a restart file ends bit-identically
-/// to the run without the interruption (the algorithm keeps no state
-/// between outer iterations but the fields and the multigrid).
+/// to the run without the interruption. The algorithm keeps no state
+/// between outer iterations but the fields and the multigrid hierarchies:
+/// that of the pressure and those of the momentum sweeps (D179), which a
+/// later restart (the second case) finds in reuse: the file holds the
+/// matrices they were built from.
 #[cfg(feature = "hdf5")]
 #[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn coupled_restart_continues_bit_identically() {
     use foehncraft_flow::restart;
-    let solver = "[solver]\nalgorithm = \"coupled\"\nmax_iterations = 24\namg_rebuild = 5\n[verification]\nrequire_convergence = false\n";
-    let full = cavity(16, 0.01, &format!("[run]\nrestart_at = [10]\n{solver}"));
-    let da = out("restart_full");
-    let ra = run(&full, "full", &da, |_| {}).unwrap();
-    assert!(ra.failures.is_empty(), "{:?}", ra.failures);
-    let from = da.join("restart_000010.h5");
-    let cont = cavity(
-        16,
-        0.01,
-        &format!("[run]\nrestart = '{}'\n{solver}", from.display()),
-    );
-    let db = out("restart_cont");
-    let rb = run(&cont, "cont", &db, |_| {}).unwrap();
-    assert!(rb.failures.is_empty(), "{:?}", rb.failures);
-    let a = restart::read(&da.join("restart.h5")).unwrap();
-    let b = restart::read(&db.join("restart.h5")).unwrap();
-    assert_eq!(a.iteration, 24);
-    assert_eq!(b.iteration, 24);
-    let (s, t) = (&a.state, &b.state);
+    for (cells, at, end, reused) in [(16, 10, 24, false), (24, 70, 90, true)] {
+        let solver = format!(
+            "[solver]\nalgorithm = \"coupled\"\nmax_iterations = {end}\namg_rebuild = 5\n[verification]\nrequire_convergence = false\n"
+        );
+        let full = cavity(
+            cells,
+            0.01,
+            &format!("[run]\nrestart_at = [{at}]\n{solver}"),
+        );
+        let da = out(&format!("restart_full_{cells}"));
+        let ra = run(&full, "full", &da, |_| {}).unwrap();
+        assert!(ra.failures.is_empty(), "{:?}", ra.failures);
+        let from = da.join(format!("restart_{at:06}.h5"));
+        let kept = restart::read(&from).unwrap().sweep;
+        assert!(kept.slot[0].is_some() && kept.slot[0] == kept.slot[1]);
+        assert!(kept.slot[2].is_none(), "the third component takes no sweep");
+        assert!(kept.matrix[kept.slot[0].unwrap()].is_some());
+        let setups = ra.solves[0].sweep_setups;
+        eprintln!("cavity {cells} x {cells}: {setups} setups in {end} iterations");
+        assert!(setups >= 1 && setups <= end);
+        if reused {
+            assert!(setups < at, "{setups} setups in {end} iterations");
+        }
+        let cont = cavity(
+            cells,
+            0.01,
+            &format!("[run]\nrestart = '{}'\n{solver}", from.display()),
+        );
+        let db = out(&format!("restart_cont_{cells}"));
+        let rb = run(&cont, "cont", &db, |_| {}).unwrap();
+        assert!(rb.failures.is_empty(), "{:?}", rb.failures);
+        let a = restart::read(&da.join("restart.h5")).unwrap();
+        let b = restart::read(&db.join("restart.h5")).unwrap();
+        assert_eq!(a.iteration, end);
+        assert_eq!(b.iteration, end);
+        let (s, t) = (&a.state, &b.state);
+        assert!(
+            s.u.x == t.u.x && s.u.y == t.u.y && s.u.z == t.u.z,
+            "the continued velocity differs"
+        );
+        assert!(s.p == t.p, "the continued pressure differs");
+        assert!(s.mass_flux == t.mass_flux, "the continued fluxes differ");
+        assert!(a.amg_matrix == b.amg_matrix, "the multigrid matrix differs");
+        assert!(a.sweep == b.sweep, "the momentum hierarchies differ");
+        let _ = std::fs::remove_dir_all(&da);
+        let _ = std::fs::remove_dir_all(&db);
+    }
+}
+
+/// D179: the momentum sweep of the preconditioner changes the path of the
+/// Krylov iteration, not the converged result: multigrid cycles (one or
+/// two, the hierarchy in float32 or float64, kept between iterations or
+/// rebuilt in each) and BiCGStab give the same lid force.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn momentum_sweeps_give_the_same_result() {
+    let force = |name: &str, coupled: &str| {
+        let case = cavity(
+            24,
+            0.01,
+            &format!(
+                "[solver]\nalgorithm = \"coupled\"\ntolerance = 1e-11\nmax_iterations = 3000\n{coupled}"
+            ),
+        );
+        let rep = run_case(&case, name);
+        assert!(rep.solves[0].converged, "{name} did not converge");
+        eprintln!(
+            "{name}: {} iterations, {} setups",
+            rep.solves[0].iterations, rep.solves[0].sweep_setups
+        );
+        (
+            lid_force(&rep),
+            rep.solves[0].sweep_setups,
+            rep.solves[0].iterations,
+        )
+    };
+    let (reference, setups, iterations) = force("sweep_multigrid", "");
     assert!(
-        s.u.x == t.u.x && s.u.y == t.u.y && s.u.z == t.u.z,
-        "the continued velocity differs"
+        setups >= 1 && setups < iterations,
+        "{setups} setups in {iterations} iterations"
     );
-    assert!(s.p == t.p, "the continued pressure differs");
-    assert!(s.mass_flux == t.mass_flux, "the continued fluxes differ");
-    assert!(a.amg_matrix == b.amg_matrix, "the multigrid matrix differs");
-    let _ = std::fs::remove_dir_all(&da);
-    let _ = std::fs::remove_dir_all(&db);
+    for (name, coupled) in [
+        (
+            "sweep_bicgstab",
+            "[solver.coupled]\nmomentum_sweep = \"bicgstab\"\n",
+        ),
+        (
+            "sweep_two_cycles",
+            "[solver.coupled]\nmomentum_cycles = 2\n",
+        ),
+        ("sweep_no_reuse", "[solver.coupled]\nmomentum_reuse = 0.0\n"),
+        (
+            "sweep_double",
+            "[solver.coupled.multigrid]\nprecision = \"double\"\n",
+        ),
+    ] {
+        let (f, setups, iterations) = force(name, coupled);
+        for i in 0..2 {
+            assert!(
+                (f[i] - reference[i]).abs() <= 1e-8 * reference[0].abs(),
+                "{name}: lid force {f:?}, reference {reference:?}"
+            );
+        }
+        match name {
+            "sweep_bicgstab" => assert_eq!(setups, 0),
+            // (near convergence the third component, noise so far, is no
+            // longer negligible against the others and takes sweeps too)
+            "sweep_no_reuse" => assert!(setups >= iterations && setups <= 2 * iterations),
+            _ => assert!(setups >= 1),
+        }
+    }
+}
+
+/// D179 with symmetry planes in a 3D case: the diagonals of the momentum
+/// matrix differ per velocity component, each takes its own hierarchy,
+/// and the result is that of the BiCGStab sweep.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn multigrid_sweep_with_symmetry_planes_in_3d() {
+    let force = |name: &str, coupled: &str| {
+        let text = cavity_text(
+            12,
+            0.01,
+            &format!(
+                "[solver]\nalgorithm = \"coupled\"\ntolerance = 1e-10\nmax_iterations = 3000\n{coupled}"
+            ),
+        )
+        .replace("dimension = 2", "dimension = 3")
+        .replace("upper = [1.0, 1.0, 0.05]", "upper = [1.0, 1.0, 0.5]")
+        .replace("cells = [12, 12, 1]", "cells = [12, 12, 6]")
+        .replace(
+            "[boundary.zmin]\ntype = \"symmetry\"",
+            "[boundary.zmin]\ntype = \"wall\"",
+        );
+        let rep = run_case(&FlowCase::from_toml(&text, Path::new(".")).unwrap(), name);
+        assert!(rep.solves[0].converged, "{name} did not converge");
+        eprintln!(
+            "{name}: {} iterations, {} setups",
+            rep.solves[0].iterations, rep.solves[0].sweep_setups
+        );
+        (
+            lid_force(&rep),
+            rep.solves[0].sweep_setups,
+            rep.solves[0].iterations,
+        )
+    };
+    let (reference, ..) = force(
+        "sym3d_bicgstab",
+        "[solver.coupled]\nmomentum_sweep = \"bicgstab\"\n",
+    );
+    let (f, setups, iterations) = force(
+        "sym3d_multigrid",
+        "[solver.coupled]\nmomentum_reuse = 0.0\n",
+    );
+    for i in 0..3 {
+        assert!(
+            (f[i] - reference[i]).abs() <= 1e-7 * reference[0].abs(),
+            "lid force {f:?}, with BiCGStab sweeps {reference:?}"
+        );
+    }
+    // x and y share a hierarchy, z (zero on the symmetry plane) has its
+    // own once it has a residual
+    assert!(
+        setups > iterations && setups <= 2 * iterations,
+        "{setups} setups in {iterations} iterations"
+    );
+}
+
+/// A multigrid setup that fails leaves the sweeps of that outer iteration
+/// to BiCGStab, with a warning (here: no coarsening allowed on a mesh
+/// above the limit of the dense coarsest level).
+#[test]
+fn failed_multigrid_setup_falls_back_to_bicgstab() {
+    let case = cavity(
+        70,
+        0.01,
+        "[solver]\nalgorithm = \"coupled\"\nmax_iterations = 3\n[solver.coupled.multigrid]\nmax_levels = 1\n[verification]\nrequire_convergence = false\n",
+    );
+    let dir = out("fallback");
+    let rep = run(&case, "fallback", &dir, |_| {}).unwrap();
+    let log = std::fs::read_to_string(dir.join("flow.log")).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(rep.solves[0].sweep_setups, 0);
+    assert!(rep.solves[0].residuals.coupled_iterations > 0);
+    assert!(
+        log.contains("the multigrid setup of the momentum sweep")
+            && log.contains("BiCGStab does the sweeps"),
+        "no warning in the log"
+    );
 }
 
 /// The turbulence equations take the step min(Δτ, c_T T) with the coupled
@@ -340,6 +506,18 @@ fn coupled_settings_are_checked() {
         (
             "[solver]\nalgorithm = \"coupled\"\n[solver.coupled]\nmomentum_tolerance = 1.0\n",
             "momentum_tolerance",
+        ),
+        (
+            "[solver]\nalgorithm = \"coupled\"\n[solver.coupled]\nmomentum_cycles = 0\n",
+            "momentum_cycles",
+        ),
+        (
+            "[solver]\nalgorithm = \"coupled\"\n[solver.coupled]\nmomentum_reuse = 0.5\n",
+            "momentum_reuse",
+        ),
+        (
+            "[solver]\nalgorithm = \"coupled\"\n[solver.coupled.multigrid]\nstrength = 0.0\n",
+            "strength",
         ),
     ] {
         let (code, msg) = refused(&cavity_text(8, 0.01, extra));

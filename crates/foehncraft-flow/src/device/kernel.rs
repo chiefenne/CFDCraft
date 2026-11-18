@@ -17,7 +17,7 @@ use super::{
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
-use foehncraft_fv::amg::AmgSettings;
+use foehncraft_fv::amg::{AmgSettings, ReductionSettings};
 use foehncraft_fv::solver::Preconditioner;
 use foehncraft_kernels::entry::{self as e, Entry, Mesh, Raw, Raw3, RawGrad};
 use foehncraft_kernels::flow as k;
@@ -62,6 +62,12 @@ pub trait Exec {
     fn amg_setup(&mut self, val: Buf, s: &AmgSettings, symmetric_part: bool) -> Result<()>;
     /// Makes multigrid slot `slot` the active one.
     fn amg_slot(&mut self, slot: usize) -> Result<()>;
+    /// Setup of the reduction multigrid (D179) on the matrix `val`, which
+    /// need not be symmetric, into the active slot.
+    fn reduction_setup(&mut self, val: Buf, s: &ReductionSettings) -> Result<()>;
+    /// x = `cycles` multigrid cycles of the active slot on `val` x = `rhs`
+    /// from x = 0 (see [`FlowDevice::multigrid_cycles`]).
+    fn cycles(&mut self, val: Buf, rhs: Buf, x: Buf, cycles: usize) -> Result<()>;
     /// Waits for queued work.
     fn sync(&mut self) -> Result<()>;
 }
@@ -1093,6 +1099,15 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
 
     fn amg_select(&mut self, slot: usize) -> Result<()> {
         self.x.amg_slot(slot)
+    }
+
+    fn reduction_setup_slot(&mut self, slot: usize, val: Buf, s: &ReductionSettings) -> Result<()> {
+        self.x.amg_slot(slot)?;
+        self.x.reduction_setup(val, s)
+    }
+
+    fn multigrid_cycles(&mut self, val: Buf, rhs: Buf, x: Buf, cycles: usize) -> Result<()> {
+        self.x.cycles(val, rhs, x, cycles)
     }
 
     fn face_viscosity(&self) -> Buf {
