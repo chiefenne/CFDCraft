@@ -92,12 +92,12 @@
 <text x="762" y="68" fill="#888888">±2 % band</text>
 <polyline points="750.0,286.4 1000.0,286.4" fill="none" stroke="#888888" stroke-width="1.5" stroke-dasharray="5,4"/>
 <text x="762" y="84" fill="#888888"></text>
-<polyline points="776.1,235.4 825.4,78.0 860.3,87.5 912.4,265.1 973.3,271.5" fill="none" stroke="#1f6fb4" stroke-width="2"/>
+<polyline points="775.5,265.1 821.4,285.6 856.8,268.4 912.7,250.2 973.1,280.3" fill="none" stroke="#1f6fb4" stroke-width="2"/>
 <text x="762" y="100" fill="#1f6fb4">SST automatic</text>
-<circle cx="776.1" cy="235.4" r="3.2" fill="none" stroke="#1f6fb4" stroke-width="1.5"/>
-<circle cx="825.4" cy="78.0" r="3.2" fill="none" stroke="#1f6fb4" stroke-width="1.5"/>
-<circle cx="860.3" cy="87.5" r="3.2" fill="none" stroke="#1f6fb4" stroke-width="1.5"/>
-<circle cx="912.4" cy="265.1" r="3.2" fill="none" stroke="#1f6fb4" stroke-width="1.5"/>
-<circle cx="973.3" cy="271.5" r="3.2" fill="none" stroke="#1f6fb4" stroke-width="1.5"/>
+<circle cx="775.5" cy="265.1" r="3.2" fill="none" stroke="#1f6fb4" stroke-width="1.5"/>
+<circle cx="821.4" cy="285.6" r="3.2" fill="none" stroke="#1f6fb4" stroke-width="1.5"/>
+<circle cx="856.8" cy="268.4" r="3.2" fill="none" stroke="#1f6fb4" stroke-width="1.5"/>
+<circle cx="912.7" cy="250.2" r="3.2" fill="none" stroke="#1f6fb4" stroke-width="1.5"/>
+<circle cx="973.1" cy="280.3" r="3.2" fill="none" stroke="#1f6fb4" stroke-width="1.5"/>
 <text x="762" y="116" fill="#1f6fb4"></text>
 </svg>

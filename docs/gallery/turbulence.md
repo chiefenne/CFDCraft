@@ -74,7 +74,7 @@ changed so that the first cell sits at y⁺ ≈ 2 to 100:
 
 | First-cell y⁺ at x = 0.97 | 1.7 | 4.2 | 8.7 | 27 | 92 |
 |---|---|---|---|---|---|
-| C_f against the TMR value | −0.3 % | −2.0 % | −0.6 % | +1.0 % | −1.6 % |
+| C_f against the TMR value | −0.2 % | −1.9 % | −0.5 % | +1.1 % | −1.5 % |
 | before 6g (PR #112) | +2.3 % | +15.6 % | +14.8 % | −0.2 % | −0.7 % |
 
 The treatment now holds C_f within about 2 % from the sublayer to the
