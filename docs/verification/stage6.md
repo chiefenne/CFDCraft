@@ -1946,6 +1946,7 @@ change in turn:
 | The plate on 128 × 96 cells, y⁺ 0.77, 3.7, 24 | the same | ±2 % | −0.7, **−2.6**, +0.3 % |
 | Gallery 68 sweep (y⁺ 1.7 to 92) | the same | ±2 % | −0.3, −2.0, −0.6, +1.0, −1.6 % |
 | Step, SST, 11 040 / 44 160 cells (`backstep_validation.py --models sst`) | x_r/H; C_p RMS | ±10 %; ≤ 0.02 | 6.761 / 6.743 (+7.7 %; before 6.793, 6.747); 0.0191 (before 0.023: now inside the band) |
+| Jet, SST `kato-launder`, `automatic`, 2 600 cells (`impinging_jet.py --models sst --levels 0`) | Nu₀ | unchanged | 151.6 (before 151.9: −0.2 %; the first cells lie in the sublayer) |
 | Kernel tests (`automatic_treatment_tends_to_its_limits`, `automatic_buffer_layer_weights`) | the limits of ω_P, the weight and the production; the production maximum u_τ⁴/(4ν) near y⁺ 11 | 10⁻³ to 2 % | asserted |
 
 Two points of the sweep are 0.4 and 0.6 % outside the ±2 % band; TURB001
