@@ -275,7 +275,8 @@ the band stays as it is. (2) The automatic treatment overpredicts C_f by
 up to 16 % with the first cell in the buffer layer: the blended u_τ of the
 original formulation and the log-layer production meet badly there. The
 check TURB001 warns for y⁺ between 3 and 20; an improved blending is an
-item for the wall-function work of 6c. (3) White's correlation is a fit
+item for the wall-function work of 6c. *(Fixed in 6g, PR #112: see
+[the automatic treatment in the buffer layer](#the-sst-automatic-treatment-in-the-buffer-layer-6g-pr-112).)* (3) White's correlation is a fit
 to experiments that lies 5 to 9 % above the SST result along the whole
 plate, as does the TMR's SST result: the band of the specification for
 this row was set for the model, and SST does not meet it.
@@ -1920,3 +1921,36 @@ Not in this part: the blending weight of the compound and automatic
 treatments as a wall field (the wall kernels do not store it); the
 heat-transfer coefficient and T⁺ of the scalars stay in the wall CSV.
 
+## The SST automatic treatment in the buffer layer (6g, PR #112)
+
+The first version of `automatic` (6b) overpredicted C_f of the TMR plate
+by up to 17 % with the first cell at y⁺ 3 to 20: the first cell took ω_P
+with the weight 1 − u_τ,vis⁴/u_τ⁴, which is still small there, and the
+log-layer production u_τ³/(κ y_P) with the same weight, so the cell's own
+production from U_t/y_P, far too large above the sublayer, set k. The
+sweep `examples/studies/sst_wall_sweep.py` (the plate on 64 × 48 cells,
+the wall grading set for each first-cell y⁺ at x = 0.97) measured each
+change in turn:
+
+| Variant | y⁺ 1.4 | 4 | 8 | 24 | 85 |
+|---|---|---|---|---|---|
+| 6b: ω_P blend n = 2, weight 1 − b, log-layer production | +1.0 % | +13.8 % | +17.0 % | +0.2 % | −1.0 % |
+| equilibrium production (u_τ⁴/ν)(1 − g) g, g = du⁺/dy⁺ of Reichardt | +1.0 % | +11.2 % | +4.6 % | −0.5 % | −2.5 % |
+| `low-re` on the same meshes, for comparison | +1.0 % | +11.8 % | +46.8 % (not converged) | | |
+| ω_P imposed fully, n = 1.2, equilibrium production | −7.2 % | −7.1 % | −1.0 % | +1.3 % | −1.7 % |
+| **6g: as above with the weight tanh((y⁺/5)²) for ω_P and the production** | −0.6 % | −2.0 % | −1.0 % | +1.3 % | −1.7 % |
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| The plate on 64 × 48 cells, first-cell y⁺ 0.24, 0.82, 1.4, 2.5, 3.9, 5.6, 8.1, 13.4, 24, 45, 84 | C_f(0.97) against the TMR value | ±2 % (9.3) | −0.7, −0.9, −0.5, −1.6, −2.1, −1.8, −1.0, **+2.4**, +1.3, −1.0, −1.7 %: within 2.4 % |
+| The plate on 128 × 96 cells, y⁺ 0.77, 3.7, 24 | the same | ±2 % | −0.7, **−2.6**, +0.3 % |
+| Gallery 68 sweep (y⁺ 1.7 to 92) | the same | ±2 % | −0.3, −2.0, −0.6, +1.0, −1.6 % |
+| Step, SST, 11 040 / 44 160 cells (`backstep_validation.py --models sst`) | x_r/H; C_p RMS | ±10 %; ≤ 0.02 | 6.761 / 6.743 (+7.7 %; before 6.793, 6.747); 0.0191 (before 0.023: now inside the band) |
+| Kernel tests (`automatic_treatment_tends_to_its_limits`, `automatic_buffer_layer_weights`) | the limits of ω_P, the weight and the production; the production maximum u_τ⁴/(4ν) near y⁺ 11 | 10⁻³ to 2 % | asserted |
+
+Two points of the sweep are 0.4 and 0.6 % outside the ±2 % band; TURB001
+now warns only above y⁺ 300, where the log layer ends. The choices n =
+1.2 and y₀ = 5 are fitted to this plate (n = 1.1 gives −2.8 to +1.2 %);
+the near-wall cell of a separating or impinging flow still takes the
+equilibrium production of a constant-stress layer above y⁺ ≈ 5, as every
+wall function does.

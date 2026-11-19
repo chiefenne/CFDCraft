@@ -72,16 +72,20 @@ follows Spalding's law (κ = 0.41, B = 5.0) within 2.3 % for
 **The automatic treatment** on the second mesh with the wall grading
 changed so that the first cell sits at y⁺ ≈ 2 to 100:
 
-| First-cell y⁺ at x = 0.97 | 1.7 | 4.6 | 9.3 | 27 | 92 |
+| First-cell y⁺ at x = 0.97 | 1.7 | 4.2 | 8.7 | 27 | 92 |
 |---|---|---|---|---|---|
-| C_f against the TMR value | +2.3 % | +15.6 % | +14.8 % | −0.2 % | −0.7 % |
+| C_f against the TMR value | −0.3 % | −2.0 % | −0.6 % | +1.0 % | −1.6 % |
+| before 6g (PR #112) | +2.3 % | +15.6 % | +14.8 % | −0.2 % | −0.7 % |
 
-In the sublayer and in the log layer the result holds; in the buffer
-layer (3 ≲ y⁺ ≲ 20) the blended wall values give a wall shear stress up
-to 16 % high, outside the ±2 % band of the specification. This is the
-known weakness of the blending of the original formulation; until it is
-improved, TURB001 warns when more than a tenth of a wall lies in that
-range, and meshes should put the first cell at y⁺ ≲ 1 or y⁺ ≳ 25.
+The treatment now holds C_f within about 2 % from the sublayer to the
+log layer. Its first version, with the quartic weight of Menter et al.
+(2003) for ω and the log-layer production, gave a wall shear stress up to
+16 % high in the buffer layer (3 ≲ y⁺ ≲ 20). Since PR #112 the near-wall
+cell takes ω_P = (ω_vis^1.2 + ω_log^1.2)^{1/1.2} and the equilibrium
+production of the constant-stress layer, with the weight tanh((y⁺/5)²).
+The sweep with `examples/studies/sst_wall_sweep.py` over first-cell y⁺
+0.24 to 85 stays within −2.6 to +2.4 % of the TMR value on this mesh and
+the next finer one. TURB001 warns only above y⁺ 300.
 
 **The channel** (`channel_sst.toml`). Fully developed flow between two
 walls at Re_τ = 395 on one periodic module (stage 6p) driven by the bulk
