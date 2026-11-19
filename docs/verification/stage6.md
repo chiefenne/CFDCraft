@@ -1392,9 +1392,7 @@ Findings:
 2. The explicit Coriolis source needed no under-relaxation at Re = 50 and
    ω up to 25 rad/s on these meshes (convergence with SIMPLEC at every
    frame tried).
-3. Not tested yet: a turbulent rotating zone, a zone whose boundary is not
-   axisymmetric (a fan blade: the wall has the absolute flux ρ **S**·**V**
-   by construction but no case checks it), the channel in spanwise rotation of
+3. Not tested yet: a turbulent rotating zone, the channel in spanwise rotation of
    9.7 (a periodic case, with 6p), and the combination with the energy
    equation (stage 7).
 
@@ -1557,5 +1555,42 @@ Findings:
    their point at the start; they are located again in every step.
 5. Not tested yet: a restart of a sliding run (refused, `SLD005`), turbulence
    models (refused, `SLD004`), more than one rotor, the time-dependent speed of
-   D182, a rotor with blades (the interface is the surface of revolution of an
-   extruded mesh), and the combination with the energy equation (stage 7).
+   D182, and the combination with the energy equation (stage 7). A rotor with
+   blades: below.
+
+## A rotor with blades: the stirred vessel (part 6g, PR #98)
+
+The cases above turn cylinders, whose walls move along themselves. The 2D
+baffled stirred vessel of gallery 98 (`examples/studies/mixer/`, Gmsh, 16 326
+cells; four blades to r = 0.045 m inside the interface r = 0.06 m, four baffles
+on the wall r = 0.10 m, Ω = 10 rad/s) runs with `[[mrf]]` (steady, Re = 100,
+972 iterations) and with the sliding mesh by imprinting (64 against 96
+interface faces, from rest through three revolutions, Re = 400, 1 508 steps).
+The mass imbalance of the frame run is 5·10⁻¹⁸ kg/s.
+
+Findings:
+
+1. **A wall of a turning zone did not push the fluid.** The wall velocity of
+   D53 keeps only its tangential part (a velocity normal to a wall that stands
+   would make it an inlet, `BC010`), and that rule was applied to the walls of
+   a turning zone, too: a blade, which moves normal to itself, slid along the
+   fluid. In the frame run the fluid between the blades stood nearly still
+   (highest speed 0.18 m/s, at the blade tips). A wall whose cell is in a zone
+   of `[[mrf]]` or `[[sliding]]` now takes its normal velocity from the zone,
+   n·(Ω × (x_f − x₀)), and its tangential velocity from `velocity`; its
+   absolute flux is ρ **S**·**V** and its relative flux zero, as D55 states.
+   With the fix the core between the blades turns with them (u_θ = 1.05 Ωr
+   near the hub, 0.96 Ωr near the tips) and the highest speed is 0.43 m/s.
+   The cylinders of the cases above are not affected (their rotation is
+   tangential to them).
+2. A square box turning with its frame, all four walls moving normal to
+   themselves (`a_turning_box_carries_its_fluid`, 16 × 16 cells): L2 error of
+   the rigid rotation 1.8·10⁻² before the fix, 1.3·10⁻³ after. The rest is the
+   wall pressure, extrapolated with zero normal gradient where the true one is
+   ρΩ²r·n; the test bound is 3·10⁻³.
+3. Seen in the fields, not measured against data: in the frame of the blades
+   the fluid of a blade passage turns in a closed eddy against the rotation
+   (the relative eddy of impeller theory), and the blades shed starting
+   vortices that wrap around the rotor and merge into a shear layer at the
+   interface radius. No reference solution exists for this geometry; the case
+   is a demonstration and a regression of the wall fix, not a validation.

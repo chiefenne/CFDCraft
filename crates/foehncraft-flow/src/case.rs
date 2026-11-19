@@ -1463,7 +1463,6 @@ impl FlowCase {
         mrf.chain(sliding).collect()
     }
 
-
     /// The exact solution at time `t` (transient solutions decay in time).
     pub fn analytic_at(&self, t: f64) -> Option<Analytic> {
         self.analytic().map(|a| a.at_time(t))

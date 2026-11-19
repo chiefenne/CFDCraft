@@ -18,6 +18,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 94 | [Rotating machinery, steady: the moving reference frame on Taylor–Couette flow](#mrf) | 6 | `[[mrf]]`, `[mesh.annulus]`, `analytic.type = "taylor-couette"`, `taylor_couette_mrf.toml` |
 | 95 | [Rotating machinery, transient: the sliding mesh on Taylor–Couette flow](#sliding-mesh) | 6 | `[[sliding]]`, `time_step`, `taylor_couette_sliding.toml` |
 | 96 | [The sliding mesh with a pitch ratio that is not one: the interface imprinted in every step](#sliding-mesh-imprint) | 6 | `[[sliding]] rotor_interface`, `[mesh.annulus] n_theta_stator`, `taylor_couette_imprint.toml` |
+| 98 | [A stirred vessel: blades and baffles with the moving reference frame and the sliding mesh](#stirred-vessel) | 6 | `[[mrf]]` and `[[sliding]]` on a Gmsh mesh, walls that turn with a zone, `studies/mixer.py`, `tools/plot/rotor_fields.py` |
 
 ---
 
@@ -700,6 +701,12 @@ reproduced to 1 % in its own frame and in the inertial one (the error of the
 pressure gradient on the polygonal ring; there the relative flux is zero and
 only the Coriolis source and the pressure remain).
 
+![Taylor–Couette flow with the inner half of the gap in a rotating frame, 128 × 32 cells: the speed |u| with streamlines, from 0.5 m/s at the inner cylinder to zero at the outer one, and the pressure, which rises steeply near the inner cylinder; the dashed circle is the interface of the zone rotor](../figures/gallery/taylor_couette_mrf.png)
+
+The 128 × 32 mesh: |u| with streamlines and p − p_min; the dashed circle is
+the interface of the zone `rotor`, which the solution does not see. Drawn with
+`tools/plot/rotor_fields.py` from `fields.vtkhdf` (`output.vtkhdf = true`).
+
 Checks: observed order 1.8–2.6; the cases of `crates/foehncraft-flow/tests/mrf.rs`
 (frame independence, solid body, scalar, closure of the frame flux, zones,
 refusal of a transient case). [Recipe 94](../recipes/flow.md#mrf).
@@ -743,6 +750,12 @@ its error at 1.7 % (0.6 s) and 1.6 % (3 s), without growth (a method that moves 
 gradients and fluxes with the data is unstable here: this is why only the time
 term sees the motion). A passive scalar (θ = 1 inside, 0 outside, exact
 ln(r₂/r)/ln(r₂/r₁)) ends in its exact solution to 0.7 %.
+
+![Spin-up of Taylor–Couette flow with the sliding mesh: the speed |u| with streamlines at t = 0.22 s, when only a thin layer at the inner cylinder moves, at 1.0 s, and at 10 s, the steady state](../figures/gallery/taylor_couette_sliding_spinup.png)
+
+The spin-up on the case file's mesh (32 × 16): |u| at t = 0.22 s, 1.0 s and
+10 s. The momentum diffuses out from the inner cylinder through the
+interface (dashed) while the rotor turns by one sector per step.
 
 Limits: one rotor per case, a fixed time step, one process (CPU), laminar
 flow and passive scalars (a turbulence model is refused, `SLD004`), rotor
@@ -809,6 +822,12 @@ stator cells without growth; a passive scalar ends in its exact solution to
 that is at its point now, the fields are written with the interface cells as
 polyhedra.
 
+![The imprinted interface in the stirred vessel of entry 98 after three revolutions, at the tip of a blade: the vorticity with the cell edges; the rotor mesh has 64 faces on the interface circle, the stator mesh 96, and the cells on both sides of the circle are polyhedra with the nodes of both](../figures/gallery/mixer_sliding_interface.png)
+
+The interface of a rotor with blades ([entry 98](#stirred-vessel)) after three
+revolutions, 64 rotor against 96 stator faces: the vorticity of the blade tip
+crosses it without a seam.
+
 Limits: laminar flow and passive scalars (turbulence is refused, `SLD004`), one
 rotor, a fixed time step (`SLD003` for the adaptive one), no restart (`SLD005`;
 no restart file is written either), CPU, and the interface must be a surface
@@ -823,3 +842,78 @@ the verification page has the numbers). [Recipe 96](../recipes/flow.md#sliding-m
 Checks: observed order 1.9–2.8; the cases of `crates/foehncraft-flow/tests/sliding.rs`
 (refusals of the case file and of the mesh, convergence, equal pitch against
 conformal stepping, solid body, scalar, probes and fields).
+
+<a id="stirred-vessel"></a>
+## 98. A stirred vessel: blades and baffles with the moving reference frame and the sliding mesh
+
+Entries 94 to 96 verify the two methods on cylinders, where the walls move
+along themselves. A rotor has blades, and a blade moves **normal to itself**.
+The baffled stirred vessel of `examples/studies/mixer/` (2D, one cell layer)
+has a rotor of four blades on a hub (blade tip radius 0.045 m, thickness
+5 mm) inside the interface circle r = 0.06 m, and a vessel of radius 0.10 m
+with four baffles on its wall, 45° from the blades. `examples/meshes/mixer.py`
+(Gmsh) meshes it with quadrilaterals, finer near the walls, 16 326 cells, once
+conformal (rotor and stator share the nodes of the interface circle) and once
+split (64 rotor and 96 stator intervals on the circle). Water density, Ω =
+10 rad/s, tip speed 0.45 m/s, and a viscosity that keeps the flow laminar.
+
+![The stirred vessel with the moving reference frame at Re = 100: the speed with streamlines, highest at the blade tips; the relative speed |u − Ω×r| in the rotor, where the fluid between two blades turns in a closed eddy against the rotation; and the vorticity, 2Ω in the core that turns with the blades and negative in the shear layer around it](../figures/gallery/mixer_mrf.png)
+
+**Moving reference frame** (`mrf.toml`, Re = ΩR²_tip/ν = 100, steady, 972
+SIMPLEC iterations, 22 s on four cores). Left the absolute speed with
+streamlines, in the middle the speed relative to the blades, |u − Ω × r|, in
+the rotor (the stator grey), right the vorticity. In the frame of the blades
+the fluid between two blades turns in a closed eddy **against** the rotation
+(near the hub it overtakes the blades, u_θ = 1.05 Ωr, near the tips it lags,
+0.96 Ωr): the relative eddy that makes the slip of a pump impeller, and the
+reason why the relative velocity is the field to judge a rotor by. Outside
+the blade tips the fluid lags far behind (u_θ = 0.5 Ωr at the interface), and
+|u − Ω × r| reaches the tip speed. The core turns almost as a
+solid body (ω_z ≈ 2Ω = 20 1/s); the shear layer around it and the tip vortices
+are negative.
+
+![The stirred vessel with the sliding mesh at Re = 400 after three revolutions: the speed with four recirculation cells between the baffles, the relative speed in the rotor with its eddies, and the vorticity with the shear layer broken up by the baffles](../figures/gallery/mixer_sliding.png)
+
+**Sliding mesh by imprinting** (`sliding.toml`, Re = 400, from rest, Δt = 1.25 ms,
+the rotor turning 0.72° per step, an eighth of a rotor face on the interface;
+1 508 steps = three revolutions, four outer iterations, 7 min on four cores).
+At the lower viscosity the swirl does not reach the wall: the baffles hold
+four recirculation cells between them; the rotor eddies stay, and the fluid at
+the interface lags more (u_θ = 0.33 Ωr).
+
+![Start-up of the stirred vessel from rest, vorticity at t = 0.15, 0.3 and 0.6 s and after three revolutions: each blade sheds a starting vortex, the vortices roll up around the rotor and merge into a shear layer at the interface radius](../figures/gallery/mixer_sliding_startup.png)
+
+The start-up: each blade sheds a starting vortex (t = 0.15 s), the four
+vortices are wrapped around the rotor (0.3 s, 0.6 s) and merge into the
+shear layer at the interface radius, which the baffles break up. The
+interface itself is in [entry 96](#sliding-mesh-imprint).
+
+**Found with this case:** the walls of a turning zone kept only the
+tangential part of their `velocity` (the rule for walls that stand, D53,
+`BC010`), so a blade slid along the fluid instead of pushing it: in the
+MRF case the fluid between the blades stood nearly still, and the highest
+speed was 0.18 m/s at the blade tips (0.43 m/s with the fix). A wall whose cell is in a zone of `[[mrf]]` or
+`[[sliding]]` now moves normal to itself with the zone, Ω × r, and along itself
+with the given velocity; its absolute flux is ρ **S**·**V** and its relative
+flux zero, as D55 states. The Taylor–Couette cases of entries 94 to 96 are not
+affected (the velocity of a cylinder that turns about its axis is tangential).
+A box that turns with its frame, all four walls moving normal to themselves,
+carries its fluid: L2 error 1.8·10⁻² before, 1.3·10⁻³ after (the rest is the
+wall pressure, extrapolated with zero normal gradient where the true one is
+ρΩ²r·n).
+
+```
+pip install gmsh matplotlib h5py numpy pillow
+cargo build --release -p foehncraft-cli
+python3 examples/studies/mixer.py output/mixer
+```
+
+builds the meshes, runs both cases and draws the four figures of this entry
+and entry 96 with `tools/plot/rotor_fields.py`, which draws any 2D run with a
+rotor: `speed` (with streamlines), `relative`, `vorticity` and `pressure`, a
+time series of `fields_<step>.vtkhdf`, a zoom with the cell edges.
+
+Limits: laminar (a turbulence model works with `[[mrf]]` but no case checks it
+yet; the sliding mesh refuses it, `SLD004`), 2D, and no torque or power of the
+blades in the output yet. Checks: `a_turning_box_carries_its_fluid` in
+`crates/foehncraft-flow/tests/mrf.rs`. [Recipe 98](../recipes/flow.md#stirred-vessel).
