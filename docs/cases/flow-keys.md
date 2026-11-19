@@ -135,6 +135,7 @@ Transient cases (stage 5):
 | `verification.evaluation_start` | half the run | start of the evaluation window of 2D-2 (s) |
 | `analytic.type = "taylor-green"` | | the decaying Taylor–Green vortex with `velocity` U (1), `length` L (1, the period) and `pressure` p₀ (0) |
 | `analytic.type = "uniform"` | | uniform flow with `velocity` ([1, 0, 0]), `pressure` (0) and `length` (1, for the Reynolds number): exact between slip walls |
+| `analytic.type = "taylor-couette"` | | laminar Taylor–Couette flow between coaxial cylinders about the z axis with `inner_radius` r₁ (0.05), `outer_radius` r₂ (0.10), `inner_omega` ω₁ (1) and `outer_omega` ω₂ (0): u_θ = A r + B/r; the pressure is known up to a constant, so the error compares the volume means |
 | `analytic.type = "pipe-poiseuille"` | | Hagen–Poiseuille flow along the x axis with `radius` R (1), `mean_velocity` (1), `x_outlet` (1) and `pressure_outlet` (0) |
 
 Built-in cylinder mesh `[mesh.cylinder]` (D34; boundaries `inlet`, `outlet`,
@@ -149,6 +150,32 @@ fills the square 0 ≤ x, y ≤ height and a graded wake block to the outlet.
 | `radial`, `radial_ratio` | 32, 6 | intervals from the cylinder to the square, ratio of the last to the first |
 | `wake`, `wake_ratio` | 64, 8 | intervals in x of the wake block, ratio of the last to the first |
 | `refine` | 0 | halve every interval this many times (refine 0: 6 144 cells, each level four times more) |
+
+Built-in annulus mesh `[mesh.annulus]` (boundaries `inner`, `outer`, `zmin`,
+`zmax`): the gap between two coaxial cylinders about the z axis, a ring of
+hexahedra; one layer in z is a 2D case.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `r_inner`, `r_outer`, `depth` | 0.05, 0.10, 0.01 | the radii and the extent in z (m) |
+| `n_theta`, `n_r`, `n_z` | 64, 16, 1 | intervals around the axis, from cylinder to cylinder and layers in z (`refine` halves `n_z` only above 1) |
+| `radial_ratio`, `symmetric` | 1, false | grading of the radial intervals: ratio of the last to the first (of the middle to the ends when symmetric) |
+| `rotor_layers` | 0 | the innermost radial intervals that form the cell zone `rotor` (the rest is `stator`); 0: one zone `fluid` |
+| `refine` | 0 | halve every interval this many times (the grading is nested) |
+
+Rotating zones, the steady moving reference frame (D55, [recipe 94](../recipes/flow.md#mrf)):
+one `[[mrf]]` table per zone.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `zone` | all cells | the cell zone of the mesh that turns; without it all cells turn, which needs a single table |
+| `omega` or `rpm` | none | the angular velocity in rad/s or in revolutions per minute (exactly one), positive about the axis by the right-hand rule |
+| `axis`, `origin` | [0, 0, 1], [0, 0, 0] | direction of the axis (any length) and a point on it (m) |
+
+The case is steady (`MRF001` otherwise); the solved velocity is the
+absolute one, its convecting flux, and that of the turbulence variables and
+passive scalars, is relative to the frame. A wall that turns with the frame
+takes its absolute velocity in `velocity` (an expression, D53).
 
 # Derived fields (D72)
 

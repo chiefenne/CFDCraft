@@ -270,7 +270,7 @@ pub fn frame_fluxes(
     let mut flux = vec![0.0; nf];
     let mut sum = vec![0.0; disc.n_cells];
     let mut abs = vec![0.0; disc.n_cells];
-    for f in 0..nf {
+    for (f, out) in flux.iter_mut().enumerate() {
         let x = [
             disc.face_centroid.x[f],
             disc.face_centroid.y[f],
@@ -294,7 +294,7 @@ pub fn frame_fluxes(
         // the scale of the closure error: ρ |V| |S|, not |ρ V·S| (which
         // is rounding noise on a face that the frame velocity slides along)
         let scale = rho * norm(v) * norm(s);
-        flux[f] = m;
+        *out = m;
         sum[p] += m;
         abs[p] += scale;
         if f < disc.n_interior {
@@ -438,13 +438,13 @@ impl Flow {
             self.dev.scale_vector(weight, u, work)?;
             let (t, r) = (work.all(), rhs.all());
             // (Ω × t)_i = Ω_j t_k − Ω_k t_j for (i, j, k) cyclic
-            for i in 0..3 {
+            for (i, &ri) in r.iter().enumerate() {
                 let (j, k) = ((i + 1) % 3, (i + 2) % 3);
                 if om[j] != 0.0 {
-                    self.dev.lincomb(r[i], 1.0, r[i], -om[j], t[k])?;
+                    self.dev.lincomb(ri, 1.0, ri, -om[j], t[k])?;
                 }
                 if om[k] != 0.0 {
-                    self.dev.lincomb(r[i], 1.0, r[i], om[k], t[j])?;
+                    self.dev.lincomb(ri, 1.0, ri, om[k], t[j])?;
                 }
             }
         }

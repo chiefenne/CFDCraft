@@ -1338,3 +1338,62 @@ The experiment's Nu is scaled from Re 23 000 to 23 750 with Re^0.7
 (more than +50 %) is missed by 1 point on 10 400 cells (+49.0 %,
 standard k-ε with `none`); the finest mesh was not run for the limiter
 cases.
+
+## Moving reference frame (part 6g, 9.7)
+
+`[[mrf]]` (D55): a cell zone that turns steadily about an axis, the
+absolute velocity as the solved variable, the flux relative to the frame as
+the convecting flux of momentum, turbulence variables and scalars, the
+Coriolis source in the rotating cells ([specification 9.7](../requirements/stage6-turbulence.md)).
+The case is laminar Taylor–Couette flow: a cylinder of radius
+r₁ = 0.05 m turning at ω₁ = 10 rad/s inside a fixed cylinder of
+r₂ = 0.10 m, ρ = 1 kg/m³, μ = 5·10⁻⁴ Pa s (Re = ω₁ r₁ (r₂ − r₁)/ν = 50),
+2D on the built-in `[mesh.annulus]` (`taylor_couette_mrf.toml`), exact
+solution u_θ = A r + B/r with A = −ω₁ r₁²/(r₂² − r₁²), B = ω₁ r₁² r₂²/(r₂² − r₁²)
+and the pressure from dp/dr = ρ u_θ²/r. The inner half of the radial layers
+(the zone `rotor`) turns with the inner cylinder; its interface at the
+middle of the gap is a circle about the axis. Errors are relative to the
+speed of the inner wall (0.5 m/s).
+
+| Cells | L2 error | L∞ error | pressure L∞ (of the range) | Iterations (SIMPLEC) |
+|---|---|---|---|---|
+| 256 | 3.46·10⁻² | 1.01·10⁻¹ | 4.4·10⁻² | 125 |
+| 1 024 | 6.94·10⁻³ | 2.95·10⁻² | 3.5·10⁻² | 366 |
+| 4 096 | 1.31·10⁻³ | 7.63·10⁻³ | 2.3·10⁻² | 1 169 |
+
+Observed order 2.32 and 2.41 (the band is 1.8 to 2.6). The coupled algorithm
+gives the same errors (L2 6.94·10⁻³ on 1 024 cells, 582 outer iterations).
+
+**Frame independence** (1 024 cells, `tests/mrf.rs`). The flow is steady in
+every frame about the axis, so the angular velocity of the zone must not
+matter beyond the discretisation error: no `[[mrf]]` 6.26·10⁻³, Ω = ω₁
+6.94·10⁻³, Ω = −ω₁ 5.72·10⁻³, Ω = 2.5 ω₁ 5.77·10⁻³; a table with Ω = 0 gives
+exactly the result without it (bitwise). The test requires all four
+below 1.2 % and within a factor of two. A passive scalar (θ = 1 inside, 0
+outside, exact ln(r₂/r)/ln(r₂/r₁)) has the L2 error 2.12·10⁻³ in the frames
+tried, equal to 11 digits.
+
+**Solid-body rotation** (both cylinders and the whole mesh at 10 rad/s, the
+frame turning with the fluid): L2 error 1.05·10⁻² in the frame and 0.83·10⁻² in
+the inertial frame. In the frame the relative flux is zero and only the
+Coriolis source and the pressure gradient remain, but their balance on a
+polygonal ring is only second order (the cell gradient of p ∝ r² against the
+Coriolis force at the cell centre), so the frame does not resolve the case
+better than the inertial one does.
+
+Findings:
+
+1. The closure of the relative flux is exact for surfaces of revolution (the
+   test finds a worst cell below 10⁻¹² of ρ|V||S|) and fails at the 10⁻³
+   level when the axis is moved off the centre of the zone, so MRF003 has a
+   meaning; the scale of the check is ρ|V||S| summed over the faces of the
+   cell, not the frame flux itself, which is rounding noise on a face that
+   the frame velocity slides along.
+2. The explicit Coriolis source needed no under-relaxation at Re = 50 and
+   ω up to 25 rad/s on these meshes (convergence with SIMPLEC at every
+   frame tried).
+3. Not tested yet: a turbulent rotating zone, a zone whose boundary is not
+   axisymmetric (a fan blade: the wall has the absolute flux ρ **S**·**V**
+   by construction but no case checks it), the channel in spanwise rotation of
+   9.7 (a periodic case, with 6p), and the combination with the energy
+   equation (stage 7).

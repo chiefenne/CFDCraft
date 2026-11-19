@@ -785,3 +785,41 @@ thermal law at y⁺ ≥ 11.06, but the model itself has no damping, and Nu
 rises to +5 % at y⁺ 16 and +10 % at y⁺ 8. For wall-resolved meshes
 (y⁺ ≲ 1) use ζ-f or EB with the compound treatment.
 
+<a id="mrf"></a>
+## 94. Run a rotating zone in a fixed frame (pump, fan, mixer, rotor)
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/taylor_couette_mrf.toml
+```
+
+A zone of the mesh that turns steadily is a `[[mrf]]` table (D55):
+
+```toml
+[[mrf]]
+zone = "rotor"            # a cell zone of the mesh (Gmsh volume group, [mesh.annulus] rotor_layers)
+axis = [0.0, 0.0, 1.0]    # direction of the axis, any length
+origin = [0.0, 0.0, 0.0]  # a point on the axis (m)
+rpm = 1500                # or omega = ... in rad/s
+```
+
+- The case is **steady**; `[time]` with `[[mrf]]` is refused (`MRF001`).
+  The transient form is the sliding mesh (D182).
+- The solved velocity is the **absolute** one. Walls that turn with the zone
+  take their absolute velocity from `velocity`: `["-spin * y", "spin * x", 0.0]`
+  for a rotation about the z axis through the origin (D53). Walls that stand
+  keep the default.
+- The interface of a zone, and every boundary of it that is not a wall, should
+  be a surface of revolution about the axis (a cylinder, a disc, a cone). The
+  method conserves mass in the relative flux only there; `MRF003` names the
+  number of cells where it does not.
+- The result does not depend on the frame for an axisymmetric flow, which is
+  the check of `taylor_couette_mrf.toml`: change `omega` of the table (also to 0)
+  and the error against `[analytic]` stays at the discretisation error.
+- With the Kato–Launder production of SST the vorticity is the absolute one in
+  the zone (note `TURB004`).
+- `[mesh.annulus]` makes the gap between two cylinders for such tests:
+  `r_inner`, `r_outer`, `n_theta`, `n_r`, `rotor_layers`, `refine`.
+
+[Gallery 94](../gallery/flow.md#mrf); the keys are in
+[cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
