@@ -11,9 +11,11 @@
 //! type = "poly"
 //! cells = [16, 16, 16]
 //! # or [mesh.cylinder]: a channel with a cylinder (crate::cylinder::CylinderSpec)
+//! # or [mesh.annulus]: the gap between two cylinders (crate::annulus::AnnulusSpec)
 //! ```
 
 use crate::Geometry;
+use crate::annulus::AnnulusSpec;
 use crate::cylinder::CylinderSpec;
 use crate::decompose::{HaloPlan, decompose};
 use crate::generate::BoxSpec;
@@ -57,6 +59,8 @@ pub struct MeshSection {
     pub generate: Option<BoxSpec>,
     /// Built-in channel with a cylinder.
     pub cylinder: Option<CylinderSpec>,
+    /// Built-in annulus (the gap between two coaxial cylinders).
+    pub annulus: Option<AnnulusSpec>,
     /// Convert a tetrahedral mesh into polyhedra (the dual mesh, one cell
     /// per node).
     pub polyhedral: bool,
@@ -75,6 +79,7 @@ impl Default for MeshSection {
             scale: 1.0,
             generate: None,
             cylinder: None,
+            annulus: None,
             polyhedral: false,
             renumber: Ordering::None,
             seed: 2026,
@@ -217,11 +222,21 @@ pub fn build_mesh(case: &MeshSection) -> Result<(Mesh, String, Vec<String>)> {
         case.file.is_some(),
         case.generate.is_some(),
         case.cylinder.is_some(),
+        case.annulus.is_some(),
     ];
     if given.iter().filter(|&&g| g).count() > 1 {
-        bail!("[mesh]: give one of `file`, `[mesh.generate]` and `[mesh.cylinder]`");
+        bail!(
+            "[mesh]: give one of `file`, `[mesh.generate]`, `[mesh.cylinder]` and `[mesh.annulus]`"
+        );
     }
     if let Some(spec) = &case.cylinder {
+        let mut mesh = spec.generate().map_err(anyhow::Error::msg)?;
+        for (old, new) in &case.boundaries {
+            mesh.rename_boundary(old, new).map_err(anyhow::Error::msg)?;
+        }
+        return Ok((mesh, spec.describe(), Vec::new()));
+    }
+    if let Some(spec) = &case.annulus {
         let mut mesh = spec.generate().map_err(anyhow::Error::msg)?;
         for (old, new) in &case.boundaries {
             mesh.rename_boundary(old, new).map_err(anyhow::Error::msg)?;
@@ -231,7 +246,9 @@ pub fn build_mesh(case: &MeshSection) -> Result<(Mesh, String, Vec<String>)> {
     let (mut mesh, source, warnings) = match (&case.file, &case.generate) {
         (Some(_), Some(_)) => bail!("[mesh]: give either `file` or `[mesh.generate]`, not both"),
         (None, None) => {
-            bail!("[mesh]: give `file`, a `[mesh.generate]` or a `[mesh.cylinder]` table")
+            bail!(
+                "[mesh]: give `file`, a `[mesh.generate]`, a `[mesh.cylinder]` or a `[mesh.annulus]` table"
+            )
         }
         (Some(f), None) => {
             let g = crate::gmsh::read(f).map_err(anyhow::Error::msg)?;

@@ -758,6 +758,10 @@ pub struct FlowCase {
     /// table of dotted keys.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub schedule: Vec<crate::schedule::ScheduleEntry>,
+    /// Zones of the mesh that rotate steadily (the moving reference frame,
+    /// D55): `[[mrf]]` tables.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub mrf: Vec<crate::frame::MrfSection>,
     /// The case file (for re-reading it during a run).
     #[serde(skip)]
     pub source: Option<PathBuf>,
@@ -1184,6 +1188,7 @@ impl FlowCase {
     /// Ranges and consistency of the settings (the expressions and the
     /// file tables are checked by [`load_tables`](Self::load_tables)).
     pub fn validate(&self) -> Result<()> {
+        crate::frame::validate(self)?;
         if let Some(d) = &self.fluid.density
             && let Some(v) = d.number()
         {
@@ -1341,9 +1346,11 @@ impl FlowCase {
         let v = &self.verification;
         if v.levels.len() >= 2 {
             crate::need!(
-                self.mesh.generate.is_some() || self.mesh.cylinder.is_some(),
+                self.mesh.generate.is_some()
+                    || self.mesh.cylinder.is_some()
+                    || self.mesh.annulus.is_some(),
                 CASE_INCONSISTENT,
-                "[verification] levels need a [mesh.generate] or [mesh.cylinder] table"
+                "[verification] levels need a [mesh.generate], [mesh.cylinder] or [mesh.annulus] table"
             );
         }
         if v.expected_order.is_some() {
@@ -2007,6 +2014,9 @@ pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geo
     if let (Some(l), Some(g)) = (level, sec.cylinder.as_mut()) {
         g.refine = l;
     }
+    if let (Some(l), Some(g)) = (level, sec.annulus.as_mut()) {
+        g.refine = l;
+    }
     let (mut mesh, source, _) = build_mesh(&sec)?;
     renumber(&mut mesh, sec.renumber, sec.seed).map_err(anyhow::Error::msg)?;
     // periodic pairs (D29): the last step, after the renumbering
@@ -2037,6 +2047,9 @@ pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geo
 pub(crate) fn dimension(case: &FlowCase) -> u8 {
     if case.mesh.cylinder.is_some() {
         return 2;
+    }
+    if let Some(a) = &case.mesh.annulus {
+        return a.dimension();
     }
     case.mesh.generate.as_ref().map_or(3, |g| g.dimension)
 }
@@ -2450,6 +2463,12 @@ pub fn run_steered(
         }
         crate::scalar::attach(&mut fl, &case, &mesh, &geo)?;
         crate::turbulence::attach(&mut fl, &case, &mesh, &geo)?;
+        if let Some(notes) = crate::frame::attach(&mut fl, &case, &mesh, &geo)? {
+            for l in &notes.lines {
+                lg.line(l);
+            }
+            rep.warnings.extend(notes.diagnostics);
+        }
         if let Some(path) = case.run.restart.clone() {
             let r = restart::read(&path)?;
             let (r, same) =
@@ -3365,7 +3384,7 @@ pub(crate) fn error_norms(
     // transient solutions and periodic pairs: the pressure level is free
     // (reference cell), so the volume means are compared
     let (mut pm, mut pem) = (0.0, 0.0);
-    if a.is_transient() || mesh.periodic.is_some() {
+    if a.is_transient() || a.free_pressure_level() || mesh.periodic.is_some() {
         let mut v = 0.0;
         for c in 0..mesh.n_cells {
             let w = geo.cell_volume[c];

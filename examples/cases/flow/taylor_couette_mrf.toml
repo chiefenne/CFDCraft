@@ -1,0 +1,81 @@
+# Laminar Taylor-Couette flow with a rotating zone, the moving reference
+# frame of D55 (stage 6, part 5 of 6g).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/taylor_couette_mrf.toml
+#
+# The gap between a cylinder of radius 0.05 m turning at 10 rad/s and a
+# fixed outer cylinder of radius 0.10 m, in 2D (one layer of cells in z).
+# Re = w r1 (r2 - r1) / nu = 50. The exact solution is u_theta = A r + B/r.
+#
+# The inner half of the radial layers is the cell zone `rotor` and turns as
+# a frame with the inner cylinder (`[[mrf]]`): the solved velocity is the
+# absolute one, the momentum is convected with the velocity relative to the
+# frame, and the Coriolis source acts in the rotor. The interface at the
+# middle of the gap is a surface of revolution about the axis, where the
+# method is exact. The flow does not depend on the angular velocity of the
+# frame: any `omega` (also 0, or the sign reversed) gives the same
+# solution up to the discretisation error, which the tests of
+# crates/foehncraft-flow/tests/mrf.rs check. The run fails if the relative
+# L2 error of the velocity exceeds the band, and the sweep over three
+# refinement levels checks the order.
+
+case_format = "0.6"
+
+[mesh.annulus]
+r_inner = 0.05
+r_outer = 0.10
+depth = 0.01
+n_theta = 32
+n_r = 8
+rotor_layers = 4
+refine = 1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-4
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+
+[boundary.inner]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.outer]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.8
+
+[analytic]
+type = "taylor-couette"
+inner_radius = 0.05
+outer_radius = 0.10
+inner_omega = 10.0
+
+[verification]
+levels = [0, 1, 2]
+expected_order = [1.8, 2.6]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

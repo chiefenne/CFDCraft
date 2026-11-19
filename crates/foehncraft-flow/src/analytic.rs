@@ -139,6 +139,30 @@ pub enum Analytic {
         #[serde(default)]
         pressure_outlet: f64,
     },
+    /// Laminar Taylor–Couette flow between coaxial cylinders about the z
+    /// axis through the origin (a 2D case, or 3D with free ends): the
+    /// azimuthal velocity u_θ = A r + B/r with
+    /// A = (ω₂ r₂² − ω₁ r₁²)/(r₂² − r₁²), B = (ω₁ − ω₂) r₁² r₂²/(r₂² − r₁²),
+    /// and the pressure from dp/dr = ρ u_θ²/r, p = ρ (A² r²/2 + 2 A B ln r
+    /// − B²/(2 r²)) up to a constant (the level is free in a closed
+    /// domain, so the error compares the volume means).
+    TaylorCouette {
+        /// Radius of the inner cylinder r₁ (m).
+        #[serde(default = "inner_radius")]
+        inner_radius: f64,
+        /// Radius of the outer cylinder r₂ (m).
+        #[serde(default = "outer_radius")]
+        outer_radius: f64,
+        /// Angular velocity of the inner cylinder ω₁ (rad/s).
+        #[serde(default = "one")]
+        inner_omega: f64,
+        /// Angular velocity of the outer cylinder ω₂ (rad/s).
+        #[serde(default)]
+        outer_omega: f64,
+        /// Density (kg/m³), set by the case from `[fluid]`.
+        #[serde(skip, default)]
+        rho: f64,
+    },
     /// Decaying Taylor–Green vortex in the x–y plane, period L in x and y,
     /// k = 2π/L, F(t) = exp(−2 ν k² t):
     /// u = −U cos(kx) sin(ky) F, v = U sin(kx) cos(ky) F,
@@ -167,6 +191,23 @@ pub enum Analytic {
 
 fn one() -> f64 {
     1.0
+}
+
+fn inner_radius() -> f64 {
+    0.05
+}
+
+fn outer_radius() -> f64 {
+    0.10
+}
+
+/// The constants A and B of u_θ = A r + B/r of Taylor–Couette flow.
+fn taylor_couette_ab(r1: f64, r2: f64, w1: f64, w2: f64) -> (f64, f64) {
+    let d = r2 * r2 - r1 * r1;
+    (
+        (w2 * r2 * r2 - w1 * r1 * r1) / d,
+        (w1 - w2) * r1 * r1 * r2 * r2 / d,
+    )
 }
 
 fn unit_x() -> [f64; 3] {
@@ -226,6 +267,19 @@ impl Analytic {
                 let r2 = (x[1] * x[1] + x[2] * x[2]) / (radius * radius);
                 [2.0 * mean_velocity * (1.0 - r2), 0.0, 0.0]
             }
+            Self::TaylorCouette {
+                inner_radius: r1,
+                outer_radius: r2,
+                inner_omega: w1,
+                outer_omega: w2,
+                ..
+            } => {
+                let (a, b) = taylor_couette_ab(r1, r2, w1, w2);
+                let r2x = x[0] * x[0] + x[1] * x[1];
+                // u_θ/r = A + B/r²
+                let g = a + b / r2x;
+                [-g * x[1], g * x[0], 0.0]
+            }
             Self::TaylorGreen {
                 velocity,
                 length,
@@ -273,6 +327,17 @@ impl Analytic {
                 pressure_outlet
                     + 8.0 * viscosity * mean_velocity / (radius * radius) * (x_outlet - x[0])
             }
+            Self::TaylorCouette {
+                inner_radius: r1,
+                outer_radius: r2,
+                inner_omega: w1,
+                outer_omega: w2,
+                rho,
+            } => {
+                let (a, b) = taylor_couette_ab(r1, r2, w1, w2);
+                let r = (x[0] * x[0] + x[1] * x[1]).sqrt();
+                rho * (0.5 * a * a * r * r + 2.0 * a * b * r.ln() - 0.5 * b * b / (r * r))
+            }
             Self::TaylorGreen {
                 velocity,
                 length,
@@ -300,6 +365,13 @@ impl Analytic {
         matches!(self, Self::TaylorGreen { .. })
     }
 
+    /// True when the pressure of the exact solution is known only up to a
+    /// constant that the run does not fix (closed domain): the error then
+    /// compares the volume means.
+    pub fn free_pressure_level(&self) -> bool {
+        matches!(self, Self::TaylorCouette { .. })
+    }
+
     /// The solution at time `t` (steady solutions ignore it).
     pub fn at_time(mut self, t: f64) -> Self {
         if let Self::TaylorGreen { time, .. } = &mut self {
@@ -318,6 +390,7 @@ impl Analytic {
                 *nu = viscosity / density;
                 *rho = density;
             }
+            Self::TaylorCouette { rho, .. } => *rho = density,
             Self::CouetteTranspiration { nu, .. } => *nu = viscosity / density,
             Self::Uniform { .. } | Self::Couette { .. } | Self::CouetteViscosity { .. } => {}
         }
@@ -334,6 +407,11 @@ impl Analytic {
             Self::PipePoiseuille { radius, .. } => 2.0 * radius,
             Self::Uniform { length, .. } => length,
             Self::TaylorGreen { length, .. } => length,
+            Self::TaylorCouette {
+                inner_radius,
+                outer_radius,
+                ..
+            } => outer_radius - inner_radius,
         }
     }
 
@@ -347,6 +425,15 @@ impl Analytic {
             Self::Poiseuille { mean_velocity, .. } => 1.5 * mean_velocity.abs(),
             Self::PipePoiseuille { mean_velocity, .. } => 2.0 * mean_velocity.abs(),
             Self::TaylorGreen { velocity, .. } => velocity.abs(),
+            Self::TaylorCouette {
+                inner_radius,
+                outer_radius,
+                inner_omega,
+                outer_omega,
+                ..
+            } => (inner_omega * inner_radius)
+                .abs()
+                .max((outer_omega * outer_radius).abs()),
         }
     }
 

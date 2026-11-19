@@ -15,6 +15,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 83 | [The pressure hierarchy follows its matrix: the fine step 6 times faster than SIMPLEC](#pressure-hierarchy) | 6 | `solver.coupled.pressure_reuse`, `solver.coupled.pressure_tolerance` |
 | 85 | [Heat transfer in turbulent flow: the heated pipe and the heated flat plate](#thermal-wall-function) | 6 | `scalars.<name>.wall_function`, `turbulent_prandtl`, `turbulent_prandtl_model`, wall file columns of a scalar |
 | 86 | [The heated channel against DNS: Nu at Re_τ = 395](#heated-channel-dns) | 6 | `channel_heated_keps.toml`, `examples/studies/channel_heat_dns.py` |
+| 94 | [Rotating machinery, steady: the moving reference frame on Taylor–Couette flow](#mrf) | 6 | `[[mrf]]`, `[mesh.annulus]`, `analytic.type = "taylor-couette"`, `taylor_couette_mrf.toml` |
 
 ---
 
@@ -664,3 +665,39 @@ Pr_t over-predicts the turbulent heat flux; Kays & Crawford cuts the
 error to between a half and a third. The whole table runs in about 2 s
 (`python examples/studies/channel_heat_dns.py --run`, [recipe 87](../recipes/flow.md#channel-dns-reynolds)).
 
+<a id="mrf"></a>
+## 94. Rotating machinery, steady: the moving reference frame on Taylor–Couette flow
+
+The flow between a cylinder of radius 0.05 m turning at 10 rad/s and a
+fixed outer cylinder of radius 0.10 m (Re = ω r₁ (r₂ − r₁)/ν = 50, 2D,
+`taylor_couette_mrf.toml`) has the exact solution u_θ = A r + B/r. The inner
+half of the radial layers is the cell zone `rotor`, and a `[[mrf]]` table
+turns it as a frame about the axis. The solver keeps the absolute velocity
+and convects momentum, turbulence variables and scalars with the flux
+relative to the frame; the rotor cells get the Coriolis source −ρV Ω × u.
+Continuity and the pressure correction work on the absolute flux, as before.
+The interface at the middle of the gap is a circle about the axis, where the
+method is exact (a frozen rotor has no other limit than that: a zone whose
+interface is not a surface of revolution is reported, `MRF003`).
+
+| Mesh | Cells | L2 error of the velocity | L∞ error | Iterations |
+|---|---|---|---|---|
+| 32 × 8 | 256 | 3.46 % | 10.1 % | 125 |
+| 64 × 16 | 1 024 | 0.69 % | 2.95 % | 366 |
+| 128 × 32 | 4 096 | 0.13 % | 0.76 % | 1 169 |
+
+Observed order 2.3 and 2.4 (errors relative to the speed of the inner wall). The
+solution does not depend on the frame: on the 1 024-cell mesh the L2
+error is 0.63 % in the inertial frame (no `[[mrf]]`), 0.69 % in the
+frame of the inner cylinder, 0.57 % in the opposite frame (−10 rad/s)
+and 0.58 % in a faster frame (25 rad/s); a frame at rest is bitwise the
+inertial run. A passive scalar between the cylinders gives the same error
+in every frame to round-off, and the coupled algorithm reproduces the
+SIMPLEC result. Solid-body rotation of the whole mesh with the fluid is
+reproduced to 1 % in its own frame and in the inertial one (the error of the
+pressure gradient on the polygonal ring; there the relative flux is zero and
+only the Coriolis source and the pressure remain).
+
+Checks: observed order 1.8–2.6; the cases of `crates/foehncraft-flow/tests/mrf.rs`
+(frame independence, solid body, scalar, closure of the frame flux, zones,
+refusal of a transient case). [Recipe 94](../recipes/flow.md#mrf).

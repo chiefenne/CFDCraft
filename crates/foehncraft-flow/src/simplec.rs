@@ -902,6 +902,8 @@ pub struct Flow {
     /// The largest prescribed boundary speed for that step (computed at
     /// its first use, again after new boundary velocities).
     pub(crate) pseudo_speed: Option<f64>,
+    /// The rotating zones of the moving reference frame (D55), if any.
+    pub(crate) frames: Option<crate::frame::Frames>,
 }
 
 /// The driving of one periodic pair: a uniform body force β t̂ along the
@@ -1333,6 +1335,7 @@ impl Flow {
             sweep: Default::default(),
             pseudo_length: None,
             pseudo_speed: None,
+            frames: None,
         })
     }
 
@@ -1981,6 +1984,7 @@ impl Flow {
                 self.dev.lincomb(r, 1.0, r, 1.0, q)?;
             }
         }
+        self.add_coriolis()?;
         if matches!(
             self.settings.algorithm(self.transient),
             Algorithm::Simple | Algorithm::Piso
@@ -2194,7 +2198,8 @@ impl Flow {
         let t = Instant::now();
         self.relaxation_term(alpha)?;
         // step 4: momentum
-        let scale = self.momentum_assembly(self.f.mass_flux, alpha, 1.0, None)?;
+        let conv = self.convecting_flux()?;
+        let scale = self.momentum_assembly(conv, alpha, 1.0, None)?;
         self.dev.sync()?;
         self.timings.momentum_assembly += t.elapsed().as_secs_f64();
         let t = Instant::now();
@@ -2271,20 +2276,16 @@ impl Flow {
         step: Option<crate::scalar::StepTime>,
         res: &mut Residuals,
     ) -> Result<()> {
+        if self.turbulence.is_none() {
+            return Ok(());
+        }
+        let conv = self.convecting_flux()?;
         let Some(t) = self.turbulence.as_mut() else {
             return Ok(());
         };
         let tm = Instant::now();
         let f = self.f;
-        res.turbulence = t.solve(
-            self.dev.as_mut(),
-            f.u,
-            f.ub,
-            f.mass_flux,
-            f.grad_p,
-            &self.bc,
-            step,
-        )?;
+        res.turbulence = t.solve(self.dev.as_mut(), f.u, f.ub, conv, f.grad_p, &self.bc, step)?;
         self.dev.sync()?;
         self.timings.turbulence += tm.elapsed().as_secs_f64();
         if !res.finite() {
@@ -2332,6 +2333,7 @@ impl Flow {
             Vec::new()
         };
         let flows = self.periodic_mass_flow()?;
+        let conv = self.convecting_flux()?;
         let Some(sc) = self.scalars.as_mut() else {
             return Ok(());
         };
@@ -2339,14 +2341,7 @@ impl Flow {
             .turbulence
             .as_ref()
             .map(|t| t.scalar_coupling(self.dev.as_ref()));
-        res.scalars = sc.solve(
-            self.dev.as_mut(),
-            self.f.mass_flux,
-            &flows,
-            step,
-            &xs,
-            coupling,
-        )?;
+        res.scalars = sc.solve(self.dev.as_mut(), conv, &flows, step, &xs, coupling)?;
         self.dev.sync()?;
         self.timings.scalars += t.elapsed().as_secs_f64();
         if !res.finite() {
