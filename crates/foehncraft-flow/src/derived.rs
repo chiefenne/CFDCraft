@@ -23,6 +23,9 @@
 //! | `rothalpy` | `rothalpy` | I = p/ρ + ½ w·w − ½ u·u | m²/s² |
 //! | `wall-distance` | `wall_distance` | the exact distance of the cell centroid to the nearest no-slip wall face (D48, a BVH closest-point search, D108) | m |
 //! | `turbulence-features` | `feature_lambda1` … `feature_lambda5`, `feature_wall_reynolds`, `feature_time_ratio`, `feature_viscosity_ratio`, `feature_shielding`, `feature_q`, `feature_pressure_gradient`, `feature_curvature` | the invariant features of D166 (below); needs a turbulence model | - |
+//! | `turbulence-scales` | `dissipation_rate`, `specific_dissipation_rate`, `time_scale`, `length_scale`, `viscosity_ratio` | ε (β* k ω for SST), ω (ε/(C_μ k) for the ε models), the time scale T of the model (1/(β* ω) for SST, k/ε for the k-ε family, the bounded T of ζ-f and EB), k^{3/2}/ε, ν_t/ν; needs a turbulence model | m²/s³, 1/s, s, m, - |
+//! | `reynolds-stress` | `reynolds_stress_xx`, `_yy`, `_zz`, `_xy`, `_yz`, `_xz` | the Boussinesq estimate ⅔ k δᵢⱼ − 2 ν_t Sᵢⱼ of u'ᵢu'ⱼ (spec 2.3); needs a turbulence model | m²/s² |
+//! | `wall-normal` | `wall_normal_x`, `_y`, `_z` | n = ∇α/\|∇α\| of the elliptic-blending k-ε (0 where ∇α vanishes), for the GGDH of stage 7; α = 0 on walls, zero gradient elsewhere | - |
 //!
 //! Boundary face fields, on the boundary blocks of the file (zero on boundaries
 //! that are not walls), from the same wall values as `wall_<boundary>.csv`:
@@ -31,6 +34,7 @@
 //! |---|---|---|---|
 //! | `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude` | the tangential viscous stress of the fluid on the wall | Pa |
 //! | `y-plus` | `y_plus` | y⁺ = d u_τ / ν with u_τ = √(τ_w / ρ) and d the wall distance of the cell centroid | - |
+//! | `turbulence-wall` | `friction_velocity`, `y_star` | u_τ of the wall treatment, y* = d C_μ^¼ k_P^½ / ν of the wall-adjacent cell (β* for SST); needs a turbulence model | m/s, - |
 //!
 //! The fields of rotating machinery (D183) need an `[[mrf]]` or a
 //! `[[sliding]]` table and use the notation of turbomachinery: **c** is
@@ -72,7 +76,10 @@
 //! rest). ‖·‖ is the Frobenius norm. The eigenvalues of λ₂ come from Jacobi
 //! rotations, exact to round-off also where two of them are equal (as in
 //! every 2D vortex). Turbulence quantities follow with the turbulence
-//! models.
+//! models (`turbulence-scales`, `reynolds-stress`, `wall-normal`,
+//! `turbulence-wall`, stage 6 D72); the wall values of the passive scalars
+//! (h_w and T⁺) are the columns `<name>_h` and `<name>_t_plus` of
+//! `wall_<boundary>.csv`.
 
 use crate::bc::BoundaryCondition;
 use crate::case::FlowCase;
@@ -133,11 +140,21 @@ pub enum Derived {
     YPlus,
     /// The invariant features of D166 (-).
     TurbulenceFeatures,
+    /// ε, ω, the time and length scales and ν_t/ν of the turbulence
+    /// model (stage 6, D72).
+    TurbulenceScales,
+    /// The Boussinesq Reynolds stress ⅔ k δᵢⱼ − 2 ν_t Sᵢⱼ, six components
+    /// (m²/s², D72).
+    ReynoldsStress,
+    /// n = ∇α/|∇α| of the elliptic-blending k-ε (-, D72).
+    WallNormal,
+    /// u_τ and y* of the wall treatment, on the walls (D72).
+    TurbulenceWall,
 }
 
 impl Derived {
     /// Every derived field, in the order they are written.
-    pub const ALL: [Derived; 16] = [
+    pub const ALL: [Derived; 20] = [
         Derived::Vorticity,
         Derived::QCriterion,
         Derived::Lambda2,
@@ -154,6 +171,10 @@ impl Derived {
         Derived::WallShearStress,
         Derived::YPlus,
         Derived::TurbulenceFeatures,
+        Derived::TurbulenceScales,
+        Derived::ReynoldsStress,
+        Derived::WallNormal,
+        Derived::TurbulenceWall,
     ];
 
     /// The name in the case file.
@@ -175,6 +196,10 @@ impl Derived {
             Derived::WallShearStress => "wall-shear-stress",
             Derived::YPlus => "y-plus",
             Derived::TurbulenceFeatures => "turbulence-features",
+            Derived::TurbulenceScales => "turbulence-scales",
+            Derived::ReynoldsStress => "reynolds-stress",
+            Derived::WallNormal => "wall-normal",
+            Derived::TurbulenceWall => "turbulence-wall",
         }
     }
 
@@ -243,12 +268,48 @@ impl Derived {
                 ("feature_pressure_gradient", "-"),
                 ("feature_curvature", "-"),
             ],
+            Derived::TurbulenceScales => &[
+                ("dissipation_rate", "m²/s³"),
+                ("specific_dissipation_rate", "1/s"),
+                ("time_scale", "s"),
+                ("length_scale", "m"),
+                ("viscosity_ratio", "-"),
+            ],
+            Derived::ReynoldsStress => &[
+                ("reynolds_stress_xx", "m²/s²"),
+                ("reynolds_stress_yy", "m²/s²"),
+                ("reynolds_stress_zz", "m²/s²"),
+                ("reynolds_stress_xy", "m²/s²"),
+                ("reynolds_stress_yz", "m²/s²"),
+                ("reynolds_stress_xz", "m²/s²"),
+            ],
+            Derived::WallNormal => &[
+                ("wall_normal_x", "-"),
+                ("wall_normal_y", "-"),
+                ("wall_normal_z", "-"),
+            ],
+            Derived::TurbulenceWall => &[("friction_velocity", "m/s"), ("y_star", "-")],
         }
     }
 
     /// True for the fields on the boundary faces (the boundary blocks).
     pub fn on_faces(self) -> bool {
-        matches!(self, Derived::WallShearStress | Derived::YPlus)
+        matches!(
+            self,
+            Derived::WallShearStress | Derived::YPlus | Derived::TurbulenceWall
+        )
+    }
+
+    /// True for the fields that need a turbulence model.
+    pub fn of_turbulence(self) -> bool {
+        matches!(
+            self,
+            Derived::TurbulenceFeatures
+                | Derived::TurbulenceScales
+                | Derived::ReynoldsStress
+                | Derived::WallNormal
+                | Derived::TurbulenceWall
+        )
     }
 
     /// True for the fields of rotating machinery (D183), which need a
@@ -445,11 +506,20 @@ pub fn validate_list(case: &FlowCase, list: &[Derived]) -> Result<()> {
             "derived field `wall-distance` needs at least one wall boundary"
         );
     }
-    if list.contains(&Derived::TurbulenceFeatures) {
+    if let Some(d) = list.iter().find(|d| d.of_turbulence()) {
         crate::need!(
             !case.turbulence.is_laminar(),
             CASE_INCONSISTENT,
-            "derived field `turbulence-features` needs a turbulence model ([turbulence] model)"
+            "derived field `{}` needs a turbulence model ([turbulence] model)",
+            d.name()
+        );
+    }
+    if list.contains(&Derived::WallNormal) {
+        crate::need!(
+            case.turbulence.model.is_eb(),
+            CASE_INCONSISTENT,
+            "derived field `wall-normal` is the n = ∇α/|∇α| of the elliptic-blending k-ε: \
+             set [turbulence] model = \"elliptic-blending-k-epsilon\""
         );
     }
     if let Some(d) = list.iter().find(|d| d.of_rotors()) {
@@ -877,10 +947,172 @@ pub fn compute(
                     out.cells.push((n, rows.iter().map(|r| r[i]).collect()));
                 }
             }
+            Derived::TurbulenceScales => {
+                let t = turbulence_state(fl, d)?;
+                let c_mu = case.turbulence.c_mu()?;
+                let nu = fl.phys.mu / fl.phys.rho;
+                let rows: Vec<[f64; 5]> = (0..nc)
+                    .map(|c| {
+                        let zt = t.zeta.as_ref().map(|z| z.t[c]);
+                        scales(t.k[c], t.omega[c], t.epsilon, t.nu_t[c], zt, c_mu, nu)
+                    })
+                    .collect();
+                for (i, (n, _)) in d.datasets().iter().enumerate() {
+                    out.cells.push((n, rows.iter().map(|r| r[i]).collect()));
+                }
+            }
+            Derived::ReynoldsStress => {
+                let t = turbulence_state(fl, d)?;
+                let rows: Vec<[f64; 6]> = (0..nc)
+                    .map(|c| reynolds_stress(gradient(fl, c), t.k[c], t.nu_t[c]))
+                    .collect();
+                for (i, (n, _)) in d.datasets().iter().enumerate() {
+                    out.cells.push((n, rows.iter().map(|r| r[i]).collect()));
+                }
+            }
+            Derived::WallNormal => {
+                let t = turbulence_state(fl, d)?;
+                let z = t.zeta.as_ref().ok_or_else(|| {
+                    crate::diag::err(crate::diag::Diagnostic::new(
+                        crate::diag::CASE_INCONSISTENT,
+                        "derived field `wall-normal` needs the α field of the elliptic-blending k-ε",
+                    ))
+                })?;
+                let n = wall_normal(case, mesh, fl, &z.f);
+                for (i, (name, _)) in d.datasets().iter().enumerate() {
+                    out.cells.push((name, n.iter().map(|v| v[i]).collect()));
+                }
+            }
+            Derived::TurbulenceWall => {
+                let t = turbulence_state(fl, d)?;
+                let c_mu = case.turbulence.c_mu()?;
+                let u_star = c_mu.sqrt().sqrt();
+                let ni = mesh.n_interior_faces();
+                let mut ut = vec![0.0; nb];
+                let mut ys = vec![0.0; nb];
+                for p in &mesh.boundaries {
+                    if !matches!(
+                        case.boundary.get(&p.name),
+                        Some(BoundaryCondition::Wall { .. })
+                    ) {
+                        continue;
+                    }
+                    for f in p.range() {
+                        let s = geo.face_area[f];
+                        let c = fl.disc.owner[f] as usize;
+                        let y =
+                            dot(sub(geo.face_centroid[f], geo.cell_centroid[c]), s).abs() / norm(s);
+                        let nu = fl.phys.mu_at(f) / fl.phys.rho;
+                        ut[f - ni] = t.u_tau[f - ni];
+                        ys[f - ni] = y * u_star * t.k[c].max(0.0).sqrt() / nu;
+                    }
+                }
+                out.faces.push(("friction_velocity", ut));
+                out.faces.push(("y_star", ys));
+            }
         }
     }
     debug_assert!(out.faces.iter().all(|(_, v)| v.len() == nb));
     Ok(out)
+}
+
+/// The turbulence fields of `fl`, for the derived field `d`.
+fn turbulence_state<'a>(fl: &'a Solution, d: Derived) -> Result<&'a crate::turbulence::TurbState> {
+    fl.turbulence.as_ref().ok_or_else(|| {
+        crate::diag::err(crate::diag::Diagnostic::new(
+            crate::diag::CASE_INCONSISTENT,
+            format!("derived field `{}` needs the turbulence fields", d.name()),
+        ))
+    })
+}
+
+/// The scales of `turbulence-scales` of one cell (the order of its
+/// datasets): ε, ω, T, L = k^{3/2}/ε and ν_t/ν, from k, the second
+/// variable `w` (ε when `epsilon`, else ω), ν_t, the bounded time scale
+/// `zeta_t` of ζ-f and EB, C_μ (β* for SST) and ν.
+pub fn scales(
+    k: f64,
+    w: f64,
+    epsilon: bool,
+    nu_t: f64,
+    zeta_t: Option<f64>,
+    c_mu: f64,
+    nu: f64,
+) -> [f64; 5] {
+    let tiny = 1e-300;
+    let k = k.max(0.0);
+    let (eps, omega) = if epsilon {
+        (w, w / (c_mu * k).max(tiny))
+    } else {
+        (c_mu * k * w, w)
+    };
+    let t = zeta_t.unwrap_or(if epsilon {
+        k / eps.max(tiny)
+    } else {
+        1.0 / (c_mu * omega).max(tiny)
+    });
+    [eps, omega, t, k * k.sqrt() / eps.max(tiny), nu_t / nu]
+}
+
+/// The Boussinesq Reynolds stress ⅔ k δᵢⱼ − 2 ν_t Sᵢⱼ of the velocity
+/// gradient `g`, components xx, yy, zz, xy, yz, xz.
+pub fn reynolds_stress(g: [[f64; 3]; 3], k: f64, nu_t: f64) -> [f64; 6] {
+    let s = |i: usize, j: usize| 0.5 * (g[i][j] + g[j][i]);
+    let iso = 2.0 / 3.0 * k.max(0.0);
+    [
+        iso - 2.0 * nu_t * s(0, 0),
+        iso - 2.0 * nu_t * s(1, 1),
+        iso - 2.0 * nu_t * s(2, 2),
+        -2.0 * nu_t * s(0, 1),
+        -2.0 * nu_t * s(1, 2),
+        -2.0 * nu_t * s(0, 2),
+    ]
+}
+
+/// n = ∇α/|∇α| per cell (0 where the gradient vanishes): the least-squares
+/// gradient of the velocity stencil (D24) with α = 0 on the walls and a
+/// zero gradient on every other boundary.
+fn wall_normal(case: &FlowCase, mesh: &Mesh, fl: &Solution, alpha: &[f64]) -> Vec<[f64; 3]> {
+    let d = fl.disc;
+    let ni = d.n_interior;
+    let mut wall = vec![false; mesh.n_boundary_faces()];
+    for p in &mesh.boundaries {
+        if matches!(
+            case.boundary.get(&p.name),
+            Some(BoundaryCondition::Wall { .. })
+        ) {
+            for f in p.range() {
+                wall[f - ni] = true;
+            }
+        }
+    }
+    (0..d.n_cells)
+        .map(|c| {
+            let pc = alpha[c];
+            let mut g = [0.0; 3];
+            for k in d.cell_ptr[c] as usize..d.cell_ptr[c + 1] as usize {
+                let (f, is_nb) = foehncraft_kernels::unpack_face(d.cell_faces[k]);
+                let diff = if f < ni {
+                    let o = if is_nb { d.owner[f] } else { d.neighbour[f] };
+                    alpha[o as usize] - pc
+                } else if wall[f - ni] {
+                    -pc
+                } else {
+                    0.0
+                };
+                let w = d.lsq.get(k);
+                for i in 0..3 {
+                    g[i] += w[i] * diff;
+                }
+            }
+            let m = norm(g);
+            if m > 1e-300 {
+                g.map(|v| v / m)
+            } else {
+                [0.0; 3]
+            }
+        })
+        .collect()
 }
 
 /// The exact wall distance of every cell centroid (D48): the closest point

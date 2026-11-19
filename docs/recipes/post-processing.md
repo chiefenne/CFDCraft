@@ -5,6 +5,7 @@ Part of the [Recipes](../recipes.md): derived fields with the output or afterwar
 | # | Recipe |
 |---|---|
 | 30 | [Write vorticity, Q, λ₂, wall shear stress and other derived fields](#derived-fields) |
+| 108 | [Write the Reynolds stress, the scales and the wall values of a turbulence model](#turbulence-derived-fields) |
 
 ---
 
@@ -66,3 +67,38 @@ also positive in boundary layers on convex walls. The wall values are those
 of `wall_<boundary>.csv`: τ_w the tangential viscous stress of the fluid on
 the wall, y⁺ = d √(τ_w/ρ)/ν with d the wall distance of the cell centroid.
 Pictures: [gallery 22](../gallery/post-processing.md#derived-fields).
+
+---
+
+<a id="turbulence-derived-fields"></a>
+## 108. Write the Reynolds stress, the scales and the wall values of a turbulence model
+
+With a turbulence model (`[turbulence] model`), four more names go into
+`[output] derived` or `foehn post derive --fields` (D72, specification
+2.3):
+
+```toml
+[output]
+derived = ["turbulence-scales", "reynolds-stress", "turbulence-wall"]
+# the elliptic-blending k-ε also: "wall-normal"
+```
+
+- `turbulence-scales`: ε, ω, the time scale T, the length scale k^{3/2}/ε
+  and ν_t/ν for every model. SST solves ω, so ε is β* k ω; the k-ε family
+  solves ε, so ω is ε/(C_μ k). T is the one the model uses: 1/(β* ω) for
+  SST, k/ε for the k-ε family, the bounded T of ζ-f and EB (also written
+  as `turbulent_time_scale` with the fields).
+- `reynolds-stress`: the six components of ⅔ k δᵢⱼ − 2 ν_t Sᵢⱼ, the
+  stress the momentum equation sees (the eddy-viscosity models carry no
+  other); compare `reynolds_stress_xy` with a measured −u'v'.
+- `wall-normal`: n = ∇α/|∇α| of the elliptic-blending k-ε, the wall
+  direction of its blending (0 where ∇α vanishes); refused with the other
+  models.
+- `turbulence-wall`: u_τ of the wall treatment and y* = d C_μ^¼ k_P^½/ν on
+  the boundary blocks (zero off walls). y* is the wall coordinate of the
+  k-ε wall functions and of the compound treatments; y⁺ is `y-plus`. The
+  heat-transfer coefficient and T⁺ of each scalar are the columns
+  `<name>_h` and `<name>_t_plus` of `wall_<boundary>.csv`.
+
+A laminar case refuses all four with CASE005. Pictures:
+[gallery 108](../gallery/post-processing.md#turbulence-derived-fields).

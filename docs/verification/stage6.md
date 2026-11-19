@@ -1881,3 +1881,24 @@ unchanged.
    `mrf.rs`, `stage5.rs`): pass. Plain PISO is bitwise unchanged; the
    cases with outer iterations (sliding meshes, the transient frozen rotor)
    change within their tolerances.
+
+## Derived fields of the turbulence models (D72, PR #108)
+
+`[output] derived` and `foehn post derive` gain `turbulence-scales`,
+`reynolds-stress`, `wall-normal` (EB) and `turbulence-wall` (spec 2.3),
+computed from the turbulence state of the solution, so the run and the
+restart file give the same numbers.
+
+| Check | Quantity | Band | Result |
+|---|---|---|---|
+| Channels of SST, k-ε and EB, 24 cells, 1 500 iterations (`turbulence_fields_of_every_model`) | ε = C_μ k ω, L = k^{3/2}/ε, ν_t/ν; T = k/ε (SST, k-ε) or the T of the model (EB) | 1e-10 relative; T bitwise | asserted |
+| | trace of the Reynolds stress against 2k; sign of u'v' away from the centre line; u'v' with z zero | 1e-6 k | asserted |
+| | u_τ of `turbulence-wall` against the wall treatment; y* = d C_μ^¼ k_P^½/ν; zero off walls | bitwise; 1e-10 | asserted |
+| | EB: \|n\| = 1, n_y = ±1 pointing away from the nearer wall | 1e-12; 0.999 | asserted |
+| Laminar case, SST with `wall-normal` (`turbulence_fields_are_refused_without_their_model`) | refused | CASE005 | asserted |
+| The step, k-ε-ζ-f₀, 8 200 cells (gallery 108) | largest −u'v'/U_ref² in the shear layer | reported | 0.011 at x/H 4 to 7 |
+
+Not in this part: the blending weight of the compound and automatic
+treatments as a wall field (the wall kernels do not store it); the
+heat-transfer coefficient and T⁺ of the scalars stay in the wall CSV.
+
