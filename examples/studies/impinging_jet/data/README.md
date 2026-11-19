@@ -3,7 +3,9 @@
 `examples/studies/impinging_jet.py` compares its runs with the files of
 this folder when they are here; without them (or with `--no-experiment`)
 it reports the models only. The CSV files are **not in the repository**:
-the licence of their source is open, so `.gitignore` keeps them out.
+the wiki of their source is licensed CC BY-NC-SA 4.0 (non-commercial,
+share-alike), which does not fit the MIT licence of this repository, so
+`.gitignore` keeps them out.
 
 **Where they come from.** The ERCOFTAC classic database, case 025
 (impinging jet; http://cfd.mace.manchester.ac.uk/ercoftac/doku.php?id=cases:case025;

@@ -657,8 +657,8 @@ experiment (ERCOFTAC case 025, Nu/Re^0.7 of Baughn et al. scaled to Re
 of Nu for 0 ≤ r/D ≤ 4 is 13.7 % for SST and 21 to 32 % for the others;
 at r/D = 1, where the experiment has its dip, every model is 18 to 45 %
 above (finding 8 of the verification page). The data are not in the
-repository (the licence of the source is open), so the charts here show
-the models only; the study draws the experiment when its files are in
+repository (the wiki of the database is licensed CC BY-NC-SA 4.0, which
+does not fit the MIT licence here), so the charts show the models only; the study draws the experiment when its files are in
 `examples/studies/impinging_jet/data`.
 
 The radial velocity of the wall jet at the stations of Cooper et al.:

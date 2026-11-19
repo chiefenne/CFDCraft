@@ -1201,10 +1201,13 @@ the file) and the single-wire mean velocity U/U_bulk of Cooper et al. at
 r/D = 0.5, 1, 2, 2.5 and 3. The study takes Nu = (Nu/Re^0.7)·23 750^0.7
 (factor 1 156.0, the source's own normalisation), so the experiment has
 Nu₀ = 141.4, a minimum of 89.6 at r/D = 1.26 and a secondary maximum of
-108.8 at r/D = 1.94. The licence of the source is open, so the files are
-not in the repository (`.gitignore` keeps them out; the README of the
+108.8 at r/D = 1.94 (the wiki of the database, cfd.mace.manchester.ac.uk/ercoftac,
+is licensed CC BY-NC-SA 4.0 except where otherwise noted). That licence
+is non-commercial and share-alike, which does not fit this MIT repository, so
+the files are not in it (`.gitignore` keeps them out; the README of the
 data folder says how to get them and `ercoftac_to_csv.py` makes the CSV
-files the study reads); the charts of the gallery show the models only.
+files the study reads), the charts of the gallery show the models only,
+and this page quotes a few scalar values with their source.
 
 ### Results
 

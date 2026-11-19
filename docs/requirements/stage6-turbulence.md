@@ -1315,8 +1315,9 @@ Nu(r/D) for 0 ≤ r/D ≤ 4 is 13.7 % for SST (met) and 21 to 32 % for
 the experiment's for ζ-f, EB and ζ-f₀; the standard k-ε with `none` is
 +49 % (the band asks for more than +50 %: missed by 1 point on 10 400
 cells). The wall-jet maxima, the findings and the scaling are on the
-verification page (finding 8). The data are not in the repository, their
-licence is open (part 4).
+verification page (finding 8). The data are not in the repository (the
+wiki of the database is licensed CC BY-NC-SA 4.0: non-commercial,
+share-alike; part 4).
 
 ### 9.7 Cases kept from the earlier stage-6 scope
 

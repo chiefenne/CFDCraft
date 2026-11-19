@@ -7,7 +7,8 @@ DIR holds the files `ij2lr-*.dat` of the ERCOFTAC classic database, case 025
 velocity_r<s>.csv in the folder `data` next to it, in the format examples/studies/impinging_jet.py
 reads (see the README of this folder). Nu/Re^0.7 of the source is multiplied by
 RE^0.7 of the study (default 23 750), the normalisation of the source itself.
-The files are not part of the repository: the licence of the source is open.
+The files are not part of the repository: the wiki of the source is licensed
+CC BY-NC-SA 4.0 (non-commercial, share-alike).
 """
 
 import sys
