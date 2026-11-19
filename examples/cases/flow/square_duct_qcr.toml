@@ -1,0 +1,66 @@
+# Fully developed flow in a square duct, k-ω SST with the quadratic
+# constitutive relation QCR2000 of Spalart (2000) (stage 6 part 6h, D170,
+# specification 9.8).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/square_duct_qcr.toml
+#   (linear SST: --set turbulence.qcr=\"none\"; QCR2013: --set turbulence.qcr=\"qcr2013\")
+#
+# A quarter of the duct of width 2h = 2 m (walls at y = 0 and z = 0,
+# symmetry planes on the bisecting planes y = h and z = h), periodic along
+# x. Re_b = 2h U_b/ν = 3 500 (U_b = 1 m/s, ν = 2/3 500 m²/s, mass flow
+# 1 kg/s through the quarter cross-section of 1 m²); the DNS of Pinelli,
+# Uhlmann, Sekimoto & Kawahara (2010) covers this Reynolds number
+# (Re_b = 1 765 on the half width). A linear eddy-viscosity model has
+# equal normal stresses in the cross-section and gives no secondary flow;
+# the QCR makes them differ and drives the pair of corner vortices that
+# carries fluid into the corner along the bisector. Band of the
+# specification: the largest secondary velocity within ±30 % of the DNS
+# and the vortex pair present.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 3
+upper = [0.2, 1.0, 1.0]
+cells = [2, 72, 72]
+grading = { y = { ratio = 12.0 }, z = { ratio = 12.0 } }
+
+[fluid]
+density = 1.0
+viscosity = 5.714285714285714e-4   # 2/3500
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+qcr = "qcr2000"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 20.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 1.0
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.zmin]
+type = "wall"
+[boundary.ymax]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 3000
+
+[output]
+vtkhdf = true
+wall_csv = true
+lines = [ { name = "bisector", from = [0.1, 0.0, 0.0], to = [0.1, 1.0, 1.0], points = 200 },
+          { name = "wall_normal", from = [0.1, 0.0, 0.5], to = [0.1, 1.0, 0.5], points = 200 } ]

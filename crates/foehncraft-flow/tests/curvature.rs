@@ -120,3 +120,64 @@ fn bad_curvature_input_is_refused() {
     ));
     assert!(msg.contains("frame_rotation"), "{code}: {msg}");
 }
+
+/// The square duct of the gallery, small: 12 × 12 cells on the quarter.
+fn small_duct(iterations: usize, qcr: &str) -> String {
+    text("square_duct_qcr.toml")
+        .replace("cells = [2, 72, 72]", "cells = [2, 12, 12]")
+        .replace(
+            "ratio = 12.0 }, z = { ratio = 12.0",
+            "ratio = 3.0 }, z = { ratio = 3.0",
+        )
+        .replace(
+            "max_iterations = 3000",
+            &format!("max_iterations = {iterations}"),
+        )
+        .replace("qcr = \"qcr2000\"", &format!("qcr = \"{qcr}\""))
+        .replace("vtkhdf = true", "vtkhdf = false")
+        + "\n[verification]\nrequire_convergence = false\n"
+}
+
+/// The largest secondary velocity (√(v² + w²)) on the bisector line.
+fn secondary(case: &str, name: &str) -> f64 {
+    let dir = out(name);
+    run(&parse(case), name, &dir, |_| {}).unwrap();
+    let t = std::fs::read_to_string(dir.join("line_bisector.csv")).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut rows = t.lines().filter(|l| !l.starts_with('#'));
+    let head: Vec<&str> = rows.next().unwrap().split(',').collect();
+    let col = |n: &str| head.iter().position(|h| *h == n).unwrap();
+    let (iv, iw) = (col("v"), col("w"));
+    rows.map(|l| {
+        let v: Vec<f64> = l.split(',').map(|x| x.parse().unwrap()).collect();
+        v[iv].hypot(v[iw])
+    })
+    .fold(0.0, f64::max)
+}
+
+/// Linear SST gives no secondary flow in a square duct; the QCR (2000 and
+/// 2013) drives the corner vortices (specification 9.8).
+#[test]
+fn qcr_drives_the_secondary_flow_of_a_duct() {
+    let off = secondary(&small_duct(150, "none"), "duct_off");
+    assert!(off < 1e-10, "{off}");
+    for (mode, name) in [("qcr2000", "duct_2000"), ("qcr2013", "duct_2013")] {
+        let on = secondary(&small_duct(150, mode), name);
+        assert!(on > 1e-4, "{mode}: {on}");
+    }
+}
+
+/// The QCR belongs to SST.
+#[test]
+fn qcr_is_refused_without_sst() {
+    let (code, msg) = refused(
+        &small_duct(10, "qcr2000")
+            .replace("model = \"k-omega-sst\"", "model = \"k-epsilon\"")
+            .replace(
+                "wall_treatment = \"low-re\"",
+                "wall_treatment = \"scalable\"",
+            ),
+    );
+    assert_eq!(code, "CASE005", "{msg}");
+    assert!(msg.contains("turbulence.qcr"), "{msg}");
+}
