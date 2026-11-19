@@ -1,10 +1,12 @@
-"""The baffled stirred vessel of gallery 98 and 99: the moving reference frame
+"""The baffled stirred vessel of gallery 98 to 100: the moving reference frame
 (steady) and the sliding mesh by imprinting (three revolutions from rest),
-with the field figures of the gallery.
+laminar and with water and the k-ω SST model, with the field figures of the
+gallery.
 
     pip install gmsh matplotlib h5py numpy pillow
     cargo build --release -p foehncraft-cli
     python3 examples/studies/mixer.py [OUT] [--figures DIR] [--size 2.5e-3] [--force]
+                                      [--turbulent]
 
 Builds the two meshes with examples/meshes/mixer.py (when they are missing
 or `--size` is given), runs examples/studies/mixer/mrf.toml into OUT/mrf
@@ -23,6 +25,15 @@ about seven minutes on four cores; a finished run is not run again unless
   gallery 99): |w| with the streamlines of w (relative in the rotor, absolute
   in the stator), the relative flow angle β and the rothalpy in the rotor.
 
+With `--turbulent` it runs mrf_turbulent.toml into OUT/mrf_turbulent (water,
+Re = 20 000, k-ω SST, the coupled solver, about 30 s) and
+sliding_turbulent.toml into OUT/sliding_turbulent (1 508 steps, about ten
+minutes on four cores) instead, and draws (gallery 100):
+
+- mixer_turbulent_mrf.png: |u| with streamlines, k and ν_t/ν of the frame run;
+- mixer_turbulent_sliding.png: the same after three revolutions of the
+  sliding mesh.
+
 OUT defaults to output/mixer. Run from anywhere; paths are relative to the
 repository.
 """
@@ -35,7 +46,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CASES = ROOT / "examples" / "studies" / "mixer"
 MESHES = ROOT / "examples" / "meshes"
-OMEGA, R_IFACE, R_VESSEL = 10.0, 0.06, 0.10
+OMEGA, R_IFACE, R_VESSEL, NU_WATER = 10.0, 0.06, 0.10, 1e-6
 
 
 def run(cmd):
@@ -54,6 +65,8 @@ def main():
     ap.add_argument("--figures", default=None, help="folder of the figures (default OUT)")
     ap.add_argument("--size", type=float, default=None, help="largest cell size (m), remeshes")
     ap.add_argument("--force", action="store_true", help="run the cases again")
+    ap.add_argument("--turbulent", action="store_true",
+                    help="the turbulent cases (water, k-ω SST) of gallery 100")
     a = ap.parse_args()
     out = Path(a.out).resolve()
     fig = Path(a.figures).resolve() if a.figures else out
@@ -65,6 +78,9 @@ def main():
     meshes = [MESHES / "mixer_conformal.msh", MESHES / "mixer_split.msh"]
     if a.size is not None or not all(m.is_file() for m in meshes):
         run([sys.executable, MESHES / "mixer.py"] + (["--size", a.size] if a.size else []))
+    if a.turbulent:
+        turbulent(a, out, fig, foehn)
+        return
     for name in ("mrf", "sliding"):
         if a.force or not (out / name / "result.json").is_file():
             run([foehn, "flow", CASES / f"{name}.toml", "--out", out / name])
@@ -88,6 +104,21 @@ def main():
     plot(fig / "mixer_sliding_interface.png", three, "--quantities", "vorticity",
          "--limits=-30:30", "--mesh", "--window", "0.04,0.07,-0.015,0.015", "--dpi", 150,
          "--labels", "Imprinted interface: 64 rotor / 96 stator intervals")
+
+
+def turbulent(a, out, fig, foehn):
+    """The turbulent runs and figures of gallery 100."""
+    for name in ("mrf_turbulent", "sliding_turbulent"):
+        if a.force or not (out / name / "result.json").is_file():
+            run([foehn, "flow", CASES / f"{name}.toml", "--out", out / name])
+    common = ["--omega", OMEGA, "--outer-radius", R_VESSEL, "--nu", NU_WATER,
+              "--dpi", 110, "--quantities", "speed,k,viscosity_ratio",
+              "--limits", "0:0.45,0:0.005,0:150"]
+    plot(fig / "mixer_turbulent_mrf.png", [out / "mrf_turbulent" / "fields.vtkhdf"], *common,
+         "--title", "Stirred vessel, water (Re 20 000), k-ω SST: moving reference frame (steady)")
+    plot(fig / "mixer_turbulent_sliding.png", [out / "sliding_turbulent" / "fields.vtkhdf"],
+         *common, "--title",
+         "Stirred vessel, water (Re 20 000), k-ω SST: sliding mesh, after 3 revolutions")
 
 
 if __name__ == "__main__":

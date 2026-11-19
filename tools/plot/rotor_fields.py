@@ -24,18 +24,20 @@ first quantity:
                 relative velocity, w in the turning zones and c elsewhere),
                 relative_flow_angle, flow_angle, rothalpy,
                 relative_total_pressure, velocity_circumferential, ...;
-                NAME@rotor draws it in the rotor only (r < --rotor-radius)
+                NAME@rotor draws it in the rotor only (r < --rotor-radius);
+                k and nu_t of a turbulent run
+    viscosity_ratio  nu_t / nu of a turbulent run (needs --nu)
 
 Options: --quantities speed,vorticity (default), --omega (rad/s, for
-`relative`), --rotor-radius (m, draws the interface circle and bounds
+`relative`), --nu (m²/s, for `viscosity_ratio`), --rotor-radius (m, draws the interface circle and bounds
 `relative`), --outer-radius (m, masks the streamlines outside the vessel),
 --mesh (draw the cell edges), --window x0,x1,y0,y1 (zoom), --title,
 --labels (panel titles, comma separated), --limits lo:hi,... (colour limits
 per panel), --no-streamlines, --dpi, --palette (a 256-colour PNG with
 dithering, about a third of the size; needs pillow; for the docs).
 
-Gallery 94 to 96 and 98 were drawn with it; examples/studies/mixer.py has
-the commands of 98.
+Gallery 94 to 96 and 98 to 100 were drawn with it; examples/studies/mixer.py
+has the commands of 98 to 100.
 """
 import argparse
 import math
@@ -63,6 +65,9 @@ LABELS = {
     "velocity_circumferential": ("c_u (m/s)", "RdBu_r"),
     "relative_velocity_circumferential": ("w_u (m/s)", "RdBu_r"),
     "velocity_radial": ("c_r (m/s)", "RdBu_r"),
+    "k": ("k (m²/s²)", "inferno"),
+    "nu_t": ("ν_t (m²/s)", "viridis"),
+    "viscosity_ratio": ("ν_t / ν", "viridis"),
 }
 SIGNED = ("vorticity", "velocity_circumferential", "relative_velocity_circumferential",
           "velocity_radial")
@@ -92,14 +97,18 @@ def read(path):
     return polys, cen, data
 
 
-def quantity(name, cen, data, omega, r_rotor):
+def quantity(name, cen, data, omega, r_rotor, nu=None):
     name, _, region = name.partition("@")
     if region:
         if region != "rotor":
             raise SystemExit(f"unknown region {region} (only @rotor)")
         inside = np.hypot(cen[:, 0], cen[:, 1]) < r_rotor
-        val = np.ma.masked_where(~inside, quantity(name, cen, data, omega, r_rotor))
+        val = np.ma.masked_where(~inside, quantity(name, cen, data, omega, r_rotor, nu))
         return val - val.min() if name in FROM_MIN else val
+    if name == "viscosity_ratio":
+        if not nu or "nu_t" not in data:
+            raise SystemExit("viscosity_ratio needs --nu and a turbulent run (nu_t)")
+        return data["nu_t"] / nu
     u, v = data["velocity_x"], data["velocity_y"]
     if name == "speed":
         return np.hypot(u, v)
@@ -157,6 +166,8 @@ def main():
     ap.add_argument("fields", nargs="+")
     ap.add_argument("--quantities", default="speed,vorticity")
     ap.add_argument("--omega", type=float, default=0.0)
+    ap.add_argument("--nu", type=float, default=None,
+                    help="kinematic viscosity (m²/s), for viscosity_ratio")
     ap.add_argument("--rotor-radius", type=float, default=0.0)
     ap.add_argument("--outer-radius", type=float, default=None,
                     help="radius of the vessel (masks the streamlines outside)")
@@ -191,7 +202,7 @@ def main():
                              squeeze=False, constrained_layout=True)
     for k, (ax, name) in enumerate(zip(axes[0], names)):
         polys, cen, data = frames[k]
-        val = quantity(name, cen, data, a.omega, a.rotor_radius)
+        val = quantity(name, cen, data, a.omega, a.rotor_radius, a.nu)
         base = name.partition("@")[0]
         label, cmap = LABELS.get(base, (base, "viridis"))
         if limits[k]:

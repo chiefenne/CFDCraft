@@ -10,7 +10,7 @@
 #   cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/mrf_turbulent.toml
 #
 # 16 300 cells, the coupled solver (SIMPLEC diverges from rest at this
-# Reynolds number), about RUNTIME.
+# Reynolds number), about 30 s.
 
 case_format = "0.6"
 

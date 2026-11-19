@@ -8,7 +8,7 @@
 #   python3 examples/meshes/mixer.py
 #   cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/sliding_turbulent.toml
 #
-# Three revolutions in 1 508 steps take about RUNTIME on four cores.
+# Three revolutions in 1 508 steps take about ten minutes on four cores.
 
 case_format = "0.6"
 

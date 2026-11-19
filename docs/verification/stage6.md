@@ -1456,7 +1456,8 @@ Findings:
    is the usual behaviour of a sliding or ALE scheme and is accepted.
 3. Not tested yet: restart of a sliding run, a rotor with blades, a
    sliding mesh with the energy equation (stage 7), turbulence models
-   (refused, `SLD004`), and the time-dependent speed Ω(t) of D182.
+   (refused, `SLD004`, until PR #100: see the section on turbulence below),
+   and the time-dependent speed Ω(t) of D182.
 
 ## Sliding mesh by imprinting (part 6g, 9.7)
 
@@ -1554,9 +1555,9 @@ Findings:
    now a polyhedron. Probes in the rotor sampled the cell that had been at
    their point at the start; they are located again in every step.
 5. Not tested yet: a restart of a sliding run (refused, `SLD005`), turbulence
-   models (refused, `SLD004`), more than one rotor, the time-dependent speed of
-   D182, and the combination with the energy equation (stage 7). A rotor with
-   blades: below.
+   models (refused, `SLD004`, until PR #100: below), more than one rotor, the
+   time-dependent speed of D182, and the combination with the energy equation
+   (stage 7). A rotor with blades: below.
 
 ## A rotor with blades: the stirred vessel (part 6g, PR #98)
 
@@ -1625,3 +1626,82 @@ with the flow angles, the relative total pressure and the rothalpy.
    once, at the start (open).
 4. On a sliding run of the stirred vessel (100 steps) the frame velocity in
    the written fields matches Ω r at the turned positions of the rotor cells.
+
+## Turbulence on the frame and the sliding meshes (part 6g, PR #100)
+
+Turbulent Taylor–Couette flow (k-ω SST, automatic wall treatment, ρ = 1000
+kg/m³, ν = 2·10⁻⁶ m²/s, Re = Ω r₁ (r₂ − r₁)/ν = 12 500) and a turbulence patch
+carried by the rotor; the sample line across the gap compares u_θ, k and ν_t.
+The tests are in `tests/mrf.rs` and `tests/sliding.rs`, the wall distance in
+`crates/foehncraft-mesh/src/query/turning.rs`.
+
+1. **Wall distance of a turning rotor**
+   (`turned_parts_give_the_brute_force_distance`,
+   `the_imprinted_ring_agrees_with_the_wall_distance_of_its_mesh`): one
+   bounding volume hierarchy per rigid part, the rotor walls at angle 0 and
+   the stator walls; a cell searches the other part only when it is nearer to
+   the edge of its part (the interface and the other open faces, without the
+   planes that bound the whole domain at every angle) than to the walls of
+   its part, with the query capped at that distance. On random points between
+   turning blades and baffles it equals the brute-force distance at every
+   angle tried, and on the split annulus (12 rotor against 18 stator sectors)
+   the full distance of the imprinted mesh to 10⁻¹²; at most half the cells
+   search the other part.
+2. **The frame** (`turbulent_taylor_couette_does_not_depend_on_the_frame`,
+   steady, 2 048 cells, first cells at y⁺ 0.8): the inner half of the gap in
+   the frame of the cylinder against the inertial run, largest deviation on
+   the line 0.24 % for u_θ, 0.43 % for k, 0.34 % for ν_t (of the largest
+   value), less with twice the sectors. **Found:** with the first cell in the
+   buffer layer (y⁺ 5.6, `TURB001`) its k differed between the frames by
+   13 %, 44 % and 67 % with 64, 128 and 256 sectors; but in the inertial run
+   alone this k fell by a factor of 2.8 from 32 to 256 sectors, the interior agreed to 0.4 %, and a
+   restart of either run from the other's solution went back to its own. It is
+   the first cell that the automatic treatment does not resolve, not the
+   frame; the test uses the wall-resolved mesh.
+3. **Two independent frames** (`two_independent_frames`, laminar): the inner
+   half of the gap turning at 10 rad/s with the inner cylinder, the outer
+   half at −4 rad/s with the outer one; L2 error against A r + B/r 0.78 %,
+   the inertial run 0.72 %.
+4. **Spin-up on both sliding meshes** (`turbulent_spin_up_agrees_with_a_fixed_mesh`,
+   2 s from rest, 102 steps, 768 cells, the imprinted mesh with 32 rotor
+   against 48 stator sectors): the profiles against the fixed mesh with the
+   turning wall, largest deviation 1.6 % for u_θ, 1.5 % for k and 4.0 % for
+   ν_t, the same for both variants; with half the width and half the step
+   about 0.5 %, 1 % and 1.5 %.
+5. **A patch carried by the rotor** (`turbulence_is_carried_by_the_rotor`,
+   k-ε-ζ-f, fluid in solid-body rotation with the walls, ν = 5·10⁻⁴ m²/s, half
+   a turn in 16 steps): the patch arrives at the opposite side with the peak
+   k of the same patch decayed at rest within 12 % (conformal) and 7 %
+   (imprinted), 7 mm short of the place of the resting peak (the velocity
+   error of the coarse mesh), and leaves 10 % and 7 % of its peak behind.
+   **Found:** with conformal stepping ζ-f blew up within ten steps (`GEN001`,
+   Courant 598): the time terms used the moved old levels, but each step
+   started from the fields at the places of the fixed lattice, so the first
+   iteration's coefficients belonged to turbulence that had moved on. The
+   start of a step now comes from the moved content (extrapolated in time
+   like the old levels), f included.
+6. **The stirred vessel, turbulent** (gallery 100): water, Re = Ω R_tip²/ν =
+   20 000, k-ω SST, 16 326 cells. **Found:** the frame run failed in the first
+   iteration (`GEN001`, also on main): on the second level of the pressure
+   multigrid seven rows had a lumped diagonal of the filtered matrix at or
+   below zero, the power iteration returned a non-positive λ, and the
+   smoothed prolongator and the third level became NaN. Such a row keeps its
+   own diagonal now and λ falls back to the Gershgorin bound
+   (`filtered_diagonal_stays_positive`). SIMPLEC then diverges from rest at
+   this Reynolds number (iteration 6, also without the frame); the coupled
+   solver converges (337 iterations to 10⁻⁵; the ω residual stays at
+   2·10⁻⁶ while the others fall to 10⁻¹⁰). The sliding mesh by imprinting
+   runs three revolutions from rest (1 508 steps, 10 min on four cores
+   against 7 min laminar); 2 118 of 16 326 cells search the other part for
+   their wall distance in each step. In the fields k and ν_t step at the
+   interface, where the rotor cells are 1.5 times the size of the stator
+   cells (64 against 96 intervals); a passive scalar diffusing from the
+   blades to the vessel wall (no convection, D = 10⁻³ m²/s, 8 s) on the
+   imprinted mesh agrees with the steady solution on the conformal mesh to 1
+   to 2 % in every 2 mm ring from r = 50 to 72 mm, with the same steps in the
+   ring averages on both meshes, so the transport across the interface is
+   not at fault.
+7. Not tested yet: turbulence with a sliding restart (refused, `SLD005`), the
+   EB k-ε model on the sliding mesh, and a comparison with measured data of a
+   stirred vessel (3D).
+
