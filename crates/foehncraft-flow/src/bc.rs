@@ -1416,7 +1416,7 @@ fn boundary_plane(
 }
 
 /// What the check of the conditions needs to know about the case.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct CheckContext {
     /// Laminar flow (turbulence values unused).
     pub laminar: bool,
@@ -1429,6 +1429,10 @@ pub struct CheckContext {
     /// The turbulence model solves ζ = v²/k (k-ε-ζ-f): `zeta` at inlets
     /// is used.
     pub zeta: bool,
+    /// Boundaries that are no boundaries of the solved mesh: the two sides
+    /// of a sliding interface that is imprinted in every step (D182, variant
+    /// B). They need no condition.
+    pub interface: Vec<String>,
 }
 
 /// How the flow through a periodic pair is driven (D29).
@@ -1625,9 +1629,26 @@ pub fn check(
         })
     };
     let names: Vec<&str> = mesh.boundaries.iter().map(|p| p.name.as_str()).collect();
+    // the interface boundaries that `[[sliding]]` names are on the mesh
+    for n in &ctx.interface {
+        if !names.contains(&n.as_str()) {
+            let hint = did_you_mean(n, names.iter().copied())
+                .map(|c| format!(" (did you mean `{c}`?)"))
+                .unwrap_or_default();
+            push(
+                Level::Error,
+                diag::SLIDING_INTERFACE,
+                Some(n),
+                format!(
+                    "[[sliding]]: the mesh has no boundary `{n}` for the interface of the \
+                     sliding mesh{hint}; its boundaries are {names:?}"
+                ),
+            );
+        }
+    }
     // every boundary has a condition and every condition a boundary
     for p in &mesh.boundaries {
-        if !bcs.contains_key(&p.name) {
+        if !bcs.contains_key(&p.name) && !ctx.interface.contains(&p.name) {
             push(
                 Level::Error,
                 diag::BC_NO_CONDITION,

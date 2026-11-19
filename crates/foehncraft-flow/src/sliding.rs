@@ -42,6 +42,27 @@
 //! rotor (relative flux 0) is carried exactly by the shift, without
 //! numerical diffusion.
 //!
+//! # Variant B: the interface by imprinting
+//!
+//! With `rotor_interface` and `stator_interface` the mesh holds the two parts
+//! with different angular pitch (or the same one, offset by any angle) as
+//! separate meshes whose faces on the interface are two boundaries. The time
+//! step is free. In every step the mesh of the new rotor angle is made
+//! ([`foehncraft_mesh::imprint`]): the rotor nodes are turned, every
+//! intersection of a rotor face with a stator face becomes an ordinary
+//! internal face between a rotor cell and a stator cell (mass and momentum
+//! flux conserved to round-off, no interpolation), and the cells, their
+//! volumes (a rigid turn) and their numbering are those of the base mesh.
+//! The flow solver is built again on that mesh ([`rebuild_flow`] in
+//! `unsteady.rs`) and takes over the cell fields, the old time levels and
+//! the face fluxes of the faces that stay; the intersections are new faces
+//! with the interpolated flux. The scheme is fully implicit in the step (the
+//! extrapolation of the explicit terms off, several outer iterations), since
+//! an explicit term made of the vectors of the previous angle would be
+//! stale on the turned mesh (the lesson of variant A). This costs a rebuild
+//! of the discretisation and the multigrid hierarchy per step; the
+//! variant is for the geometry and the accuracy, not yet for the speed.
+//!
 //! # Limits
 //!
 //! - The rotor mesh must be a ring of identical sectors: it maps onto itself
@@ -59,11 +80,13 @@
 use crate::case::FlowCase;
 use crate::diag::{self, Diagnostic};
 use crate::frame::{MrfSection, assign_cells_in};
-use crate::simplec::Flow;
-use crate::transient::Transient;
+use crate::simplec::{Flow, State};
+use crate::transient::{OldLevels, Transient};
 use anyhow::Result;
 use foehncraft_fv::Discretisation;
-use foehncraft_mesh::Mesh;
+use foehncraft_fv::disc::Soa3;
+use foehncraft_mesh::imprint::{FaceOrigin, Interface, InterfaceSpec};
+use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::f64::consts::TAU;
@@ -91,6 +114,17 @@ pub struct SlidingSection {
     /// Sectors of the rotor that it turns in one time step (default 1); the
     /// time step is `shift` × 2π / (sectors × |Ω|).
     pub shift: usize,
+    /// Variant B of D182, a pitch ratio that is not one: the boundary of the
+    /// mesh that holds the faces of the rotor on the interface (with
+    /// `stator_interface`; `[mesh.annulus]` makes them with
+    /// `n_theta_stator`). The interface is imprinted at the rotor angle of
+    /// every time step, which is free then.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotor_interface: Option<String>,
+    /// The boundary of the faces of the stator on the interface (with
+    /// `rotor_interface`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stator_interface: Option<String>,
 }
 
 impl Default for SlidingSection {
@@ -102,6 +136,8 @@ impl Default for SlidingSection {
             omega: None,
             rpm: None,
             shift: 1,
+            rotor_interface: None,
+            stator_interface: None,
         }
     }
 }
@@ -117,6 +153,11 @@ impl SlidingSection {
             omega: self.omega,
             rpm: self.rpm,
         }
+    }
+
+    /// The interface is imprinted in every step (variant B).
+    pub fn imprinted(&self) -> bool {
+        self.rotor_interface.is_some() || self.stator_interface.is_some()
     }
 
     /// The angular velocity vector (rad/s).
@@ -200,6 +241,38 @@ pub fn validate(case: &FlowCase) -> Result<()> {
         SLIDING_ENTRY,
         "[[sliding]]: `shift` (sectors per time step) must be at least 1"
     );
+    crate::need!(
+        s.rotor_interface.is_some() == s.stator_interface.is_some(),
+        SLIDING_ENTRY,
+        "[[sliding]]: `rotor_interface` and `stator_interface` go together (the two boundaries \
+         of the interface of variant B)"
+    );
+    if s.imprinted() {
+        crate::need!(
+            s.zone.is_some(),
+            SLIDING_ENTRY,
+            "[[sliding]]: `zone` (the cell zone of the rotor) is needed with `rotor_interface`"
+        );
+        crate::need!(
+            s.shift == 1,
+            SLIDING_ENTRY,
+            "[[sliding]]: `shift` belongs to conformal stepping; with `rotor_interface` the time \
+             step is free"
+        );
+        crate::need!(
+            !case.solver.extrapolation && case.solver.outer_iterations >= 2,
+            SLIDING_STEPPING,
+            "[[sliding]]: the sliding mesh by imprinting is fully implicit in the step: set \
+             [solver] extrapolation = false and outer_iterations of at least 2 (3 to 6 is usual), \
+             since an explicit term made of the vectors of the previous rotor angle would be \
+             stale on the turned mesh"
+        );
+        crate::need!(
+            case.run.restart.is_none(),
+            SLIDING_INTERFACE,
+            "[[sliding]]: a restart of the sliding mesh by imprinting is not available yet"
+        );
+    }
     crate::need!(
         !t.adaptive && t.error_tolerance.is_none(),
         SLIDING_STEPPING,
@@ -434,6 +507,9 @@ pub fn attach(
     let Some(entry) = case.sliding.first() else {
         return Ok(None);
     };
+    if entry.imprinted() {
+        return Ok(None);
+    }
     if !case.turbulence.is_laminar() {
         return Err(err(
             diag::SLIDING_ZONE,
@@ -535,6 +611,286 @@ pub fn attach(
         )],
     };
     Ok(Some((Sliding { plan, dt }, notes)))
+}
+
+/// The sliding mesh by imprinting (variant B of D182) of a run.
+#[derive(Debug, Clone)]
+pub struct Imprinting {
+    iface: Interface,
+    /// Angular velocity about the unit axis of the interface (rad/s).
+    omega: f64,
+}
+
+/// The mesh of one rotor angle.
+#[derive(Debug, Clone)]
+pub struct Working {
+    /// The conformal mesh (the cells of the base mesh).
+    pub mesh: Mesh,
+    /// Its geometry (the cells as rigid bodies).
+    pub geo: Geometry,
+    /// The origin of every face.
+    pub origin: Vec<FaceOrigin>,
+    /// The rotor angle (rad).
+    pub angle: f64,
+    /// Intersection polygons (faces between rotor and stator).
+    pub pieces: usize,
+}
+
+/// The sliding mesh by imprinting of `case` on the base mesh, or `None` for
+/// conformal stepping or without `[[sliding]]`.
+pub fn attach_imprint(case: &FlowCase, mesh: &Mesh) -> Result<Option<(Imprinting, SlidingNotes)>> {
+    validate(case)?;
+    let Some(entry) = case.sliding.first().filter(|e| e.imprinted()) else {
+        return Ok(None);
+    };
+    let fail = |key: &str, msg: String| err(diag::SLIDING_INTERFACE, key, msg);
+    if !case.turbulence.is_laminar() {
+        return Err(err(
+            diag::SLIDING_ZONE,
+            "turbulence.model",
+            "[[sliding]]: the sliding mesh runs laminar flow and passive scalars so far, not a \
+             turbulence model"
+                .into(),
+        ));
+    }
+    let (rp, sp) = (
+        entry.rotor_interface.clone().unwrap_or_default(),
+        entry.stator_interface.clone().unwrap_or_default(),
+    );
+    let zone = entry.zone.clone().unwrap_or_default();
+    if !mesh.zones.contains(&zone) {
+        let hint = crate::bc::did_you_mean(&zone, mesh.zones.iter().map(String::as_str))
+            .map(|c| format!(" (did you mean `{c}`?)"))
+            .unwrap_or_default();
+        return Err(err(
+            diag::SLIDING_ENTRY,
+            "sliding[0].zone",
+            format!(
+                "[[sliding]]: the mesh has no cell zone `{zone}`{hint}; its zones are {:?}",
+                mesh.zones
+            ),
+        ));
+    }
+    for name in [&rp, &sp] {
+        if case.boundary.contains_key(name) {
+            return Err(fail(
+                &format!("boundary.{name}"),
+                format!(
+                    "[[sliding]]: `{name}` is an interface boundary of the sliding mesh; it gets \
+                     no [boundary.{name}] table (its faces are replaced by the imprint)"
+                ),
+            ));
+        }
+    }
+    let omega_vec = entry.omega_vector()?;
+    let iface = Interface::new(
+        mesh,
+        &InterfaceSpec {
+            zone: zone.clone(),
+            rotor_patch: rp.clone(),
+            stator_patch: sp.clone(),
+            origin: entry.origin,
+            axis: entry.axis,
+        },
+    )
+    .map_err(|e| fail("sliding[0].rotor_interface", format!("[[sliding]]: {e}")))?;
+    let omega = dot(omega_vec, iface.axis());
+    // the other boundaries of the rotor: walls that turn with it, or symmetry
+    let rotor = iface.rotor_cells();
+    let patches = iface.patches();
+    for (bi, b) in mesh.boundaries.iter().enumerate() {
+        if patches.contains(&bi) || !b.range().any(|f| rotor[mesh.owner[f] as usize]) {
+            continue;
+        }
+        let Some(bc) = case.boundary.get(&b.name) else {
+            continue;
+        };
+        use crate::bc::BoundaryCondition as Bc;
+        if !matches!(
+            bc,
+            Bc::Wall { .. } | Bc::SlipWall | Bc::Symmetry | Bc::Wedge
+        ) {
+            return Err(err(
+                diag::SLIDING_ZONE,
+                &format!("boundary.{}", b.name),
+                format!(
+                    "[[sliding]]: the boundary `{}` of the rotor is a `{}`; the boundary faces of \
+                     the rotor must be walls that turn with it, slip walls or symmetry planes",
+                    b.name,
+                    bc.type_name()
+                ),
+            ));
+        }
+    }
+    let (nr, ns) = iface.faces();
+    let notes = SlidingNotes {
+        lines: vec![format!(
+            "sliding mesh (D182, variant B): zone `{zone}` turns about the axis {:?} through {:?} \
+             at {:.6e} rad/s; the interface at r = {:.6e} m has {nr} rotor and {ns} stator faces \
+             and is imprinted in every step (the solver is built again on the mesh of the angle, \
+             fully implicit)",
+            entry.axis,
+            entry.origin,
+            omega,
+            iface.radius()
+        )],
+    };
+    Ok(Some((Imprinting { iface, omega }, notes)))
+}
+
+impl Imprinting {
+    /// The rotor angle at time `t` (rad): the base mesh is the rotor at
+    /// t = 0.
+    pub fn angle(&self, t: f64) -> f64 {
+        self.omega * t
+    }
+
+    /// The mesh and the geometry of the rotor at time `t`.
+    pub fn working(&self, mesh: &Mesh, base: &Geometry, t: f64) -> Result<Working> {
+        let angle = self.angle(t);
+        let a = self.iface.assemble(mesh, angle).map_err(|e| {
+            err(
+                diag::SLIDING_INTERFACE,
+                "sliding",
+                format!("[[sliding]]: {e}"),
+            )
+        })?;
+        let geo = self.iface.geometry(&a, base);
+        Ok(Working {
+            geo,
+            origin: a.origin,
+            pieces: a.pieces.len(),
+            mesh: a.mesh,
+            angle,
+        })
+    }
+
+    /// The largest closure defect |Σ S|/Σ |S| of a cell of `w` (round-off
+    /// for an extruded ring mesh).
+    pub fn closure(&self, w: &Working) -> f64 {
+        let mut worst = 0.0f64;
+        for c in 0..w.mesh.n_cells {
+            let s = w.geo.closure(&w.mesh, c);
+            let tot: f64 = w
+                .mesh
+                .cell_face_iter(c)
+                .map(|(f, _)| norm(w.geo.face_area[f]))
+                .sum();
+            worst = worst.max(norm(s) / tot);
+        }
+        worst
+    }
+}
+
+/// Where the faces of one working mesh come from in the previous one.
+#[derive(Debug, Clone)]
+pub struct FaceMap {
+    /// For every face of the new mesh the face of the previous mesh (a face
+    /// of the base mesh), or `None` for an intersection polygon.
+    pub face: Vec<Option<usize>>,
+    /// The same for the boundary faces, counted among the boundary faces.
+    pub boundary: Vec<Option<usize>>,
+    /// The new faces without a predecessor.
+    pub pieces: Vec<usize>,
+}
+
+/// The map from the faces of `prev` to those of `next`.
+pub fn face_map(prev: &Working, next: &Working) -> FaceMap {
+    let n_base = prev
+        .origin
+        .iter()
+        .chain(&next.origin)
+        .filter_map(|o| match o {
+            FaceOrigin::Base(b) => Some(*b as usize + 1),
+            FaceOrigin::Piece(_) => None,
+        })
+        .max()
+        .unwrap_or(0);
+    let mut pos = vec![None; n_base];
+    for (f, o) in prev.origin.iter().enumerate() {
+        if let FaceOrigin::Base(b) = o {
+            pos[*b as usize] = Some(f);
+        }
+    }
+    let (ni_prev, ni_next) = (prev.mesh.n_interior_faces(), next.mesh.n_interior_faces());
+    let face: Vec<Option<usize>> = next
+        .origin
+        .iter()
+        .map(|o| match o {
+            FaceOrigin::Base(b) => pos[*b as usize],
+            FaceOrigin::Piece(_) => None,
+        })
+        .collect();
+    let boundary = face[ni_next..]
+        .iter()
+        .map(|p| p.map(|f| f - ni_prev))
+        .collect();
+    let pieces = face
+        .iter()
+        .enumerate()
+        .filter(|(_, p)| p.is_none())
+        .map(|(f, _)| f)
+        .collect();
+    FaceMap {
+        face,
+        boundary,
+        pieces,
+    }
+}
+
+fn remap(v: &[f64], m: &[Option<usize>]) -> Vec<f64> {
+    m.iter().map(|o| o.map_or(0.0, |i| v[i])).collect()
+}
+
+fn remap3(v: &Soa3, m: &[Option<usize>]) -> Soa3 {
+    Soa3 {
+        x: remap(&v.x, m),
+        y: remap(&v.y, m),
+        z: remap(&v.z, m),
+    }
+}
+
+/// The state and the old levels of the previous mesh on the next one: the
+/// cell arrays are the same, the face arrays follow the faces of the base
+/// mesh, and the intersection polygons start from the flux of the linearly
+/// interpolated velocity (its Rhie–Chow differences 0).
+pub fn carry(
+    state: &State,
+    old: &OldLevels,
+    map: &FaceMap,
+    disc: &Discretisation,
+    rho: f64,
+) -> (State, OldLevels) {
+    let mut st = state.clone();
+    st.mass_flux = remap(&state.mass_flux, &map.face);
+    st.ub = remap3(&state.ub, &map.boundary);
+    st.pb = remap(&state.pb, &map.boundary);
+    let mut lv = old.clone();
+    lv.m_old = remap(&old.m_old, &map.face);
+    lv.x_cur = remap(&old.x_cur, &map.face);
+    lv.x_old = remap(&old.x_old, &map.face);
+    lv.ub_old = old.ub_old.as_ref().map(|u| {
+        [
+            remap(&u[0], &map.boundary),
+            remap(&u[1], &map.boundary),
+            remap(&u[2], &map.boundary),
+        ]
+    });
+    for &f in &map.pieces {
+        let (o, n) = (disc.owner[f] as usize, disc.neighbour[f] as usize);
+        let w = disc.weight[f];
+        let sv = disc.face_area.get(f);
+        let flux = |u: [&[f64]; 3]| -> f64 {
+            (0..3)
+                .map(|i| rho * (w * u[i][o] + (1.0 - w) * u[i][n]) * sv[i])
+                .sum()
+        };
+        st.mass_flux[f] = flux([&state.u.x, &state.u.y, &state.u.z]);
+        lv.m_old[f] = flux([&old.u_old[0], &old.u_old[1], &old.u_old[2]]);
+        lv.x_cur[f] = 0.0;
+        lv.x_old[f] = 0.0;
+    }
+    (st, lv)
 }
 
 impl Sliding {

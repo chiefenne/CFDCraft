@@ -1432,6 +1432,13 @@ impl FlowCase {
             potential_flow: self.initial.potential_flow,
             body_force: self.uniform_body_force() != Some([0.0; 3]),
             zeta: self.turbulence.model.has_zeta(),
+            interface: self
+                .sliding
+                .iter()
+                .filter(|e| e.imprinted())
+                .flat_map(|e| [e.rotor_interface.clone(), e.stator_interface.clone()])
+                .flatten()
+                .collect(),
         }
     }
 

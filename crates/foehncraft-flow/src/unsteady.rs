@@ -784,6 +784,82 @@ fn restart_of(
     })
 }
 
+/// The mesh and the geometry of the run at this moment: those of the
+/// rotor angle with a sliding mesh by imprinting, the base mesh otherwise.
+fn current<'a>(
+    work: &'a Option<crate::sliding::Working>,
+    mesh: &'a foehncraft_mesh::Mesh,
+    geo: &'a foehncraft_mesh::Geometry,
+) -> (&'a foehncraft_mesh::Mesh, &'a foehncraft_mesh::Geometry) {
+    match work {
+        Some(w) => (&w.mesh, &w.geo),
+        None => (mesh, geo),
+    }
+}
+
+/// The flow solver on the mesh of the next rotor angle (sliding mesh by
+/// imprinting, D182 variant B): built again on `next` as at the start of
+/// the run, with the cell fields, the old time levels and the fluxes of the
+/// faces that stay taken over from `fl` and `tr` (the faces that the
+/// imprint made new start from the interpolated flux). `t` is the time of
+/// the end of the step.
+#[allow(clippy::too_many_arguments)]
+fn rebuild_flow(
+    case: &FlowCase,
+    tv: &TimeValues,
+    target: &Target,
+    reference_cell: Option<usize>,
+    next: &crate::sliding::Working,
+    map: &crate::sliding::FaceMap,
+    t: f64,
+    fl: &mut Flow,
+    tr: &Transient,
+) -> Result<(Flow, Transient)> {
+    let (mesh, geo) = (&next.mesh, &next.geo);
+    let phys = crate::case::physics(case)?;
+    let phys = crate::case::physics_on(case, &phys, mesh, geo)?;
+    let rho = phys.rho;
+    let analytic = case.analytic_at(t);
+    let arrays = bc::arrays(
+        mesh,
+        geo,
+        &case.boundary,
+        phys.rho,
+        bc::At {
+            analytic: analytic.as_ref(),
+            values: &tv.values,
+            t,
+        },
+    )?;
+    let disc = simplec::discretisation(mesh, geo, &arrays)?;
+    let mut nfl = Flow::on(
+        disc,
+        arrays,
+        phys,
+        fl.settings.clone(),
+        true,
+        reference_cell,
+        target,
+    )?;
+    if let Some(src) = crate::case::momentum_source(case, geo, mesh.n_cells, t)? {
+        nfl.set_momentum_source(src)?;
+    }
+    crate::scalar::attach(&mut nfl, case, mesh, geo)?;
+    crate::frame::attach(&mut nfl, case, mesh, geo)?;
+    let scheme = case.time.context("[time]")?.scheme;
+    let mut ntr = Transient::new(&mut nfl, scheme, tr.clock.time)?;
+    let state = fl.state()?;
+    let old = tr.old_levels(fl)?;
+    let (state, old) = crate::sliding::carry(&state, &old, map, &nfl.disc, rho);
+    nfl.load(&state)?;
+    ntr.restore(&mut nfl, &old, tr.clock)?;
+    nfl.iteration = fl.iteration;
+    // (the multigrid setups restart with the new matrix: run_one adds up the
+    // setups of the solvers it replaces)
+    nfl.timings = fl.timings.clone();
+    Ok((nfl, ntr))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_one<F: FnMut(&str)>(
     case0: &FlowCase,
@@ -802,9 +878,40 @@ fn run_one<F: FnMut(&str)>(
 ) -> Result<RunOut> {
     let mut case = case0.clone();
     let t_setup = Instant::now();
+    let (mesh0, geo0) = (mesh, geo);
+    let time0 = case.time.context("[time]")?;
+    // the sliding mesh by imprinting (D182 variant B): the mesh of the rotor
+    // angle of this step replaces the base mesh in every step
+    let imprint = crate::sliding::attach_imprint(&case, mesh0)?;
+    // multigrid setups of the solvers that the imprint replaced (amg, sweep)
+    let mut setups_past = (0usize, 0usize);
+    let mut work: Option<crate::sliding::Working> = match &imprint {
+        Some((imp, notes)) => {
+            let w = imp.working(mesh0, geo0, time0.start_time)?;
+            for l in &notes.lines {
+                lg.line(l);
+            }
+            let defect = imp.closure(&w);
+            if defect > 1e-8 {
+                let m = format!(
+                    "the cells of the imprinted interface close to {defect:.1e} only (|sum of S| / \
+                     sum of |S|): the faces of the interface are not those of a mesh extruded \
+                     along the axis, the mesh flux of the rigid turn leaves a mass source of \
+                     this size"
+                );
+                lg.warn(&format!("{}: {m}", crate::diag::SLIDING_CLOSURE));
+                warnings.push(crate::diag::Diagnostic::new(
+                    crate::diag::SLIDING_CLOSURE,
+                    m,
+                ));
+            }
+            Some(w)
+        }
+        None => None,
+    };
+    let (mesh, geo) = current(&work, mesh0, geo0);
     let phys = crate::case::physics(&case)?;
     let phys = crate::case::physics_on(&case, &phys, mesh, geo)?;
-    let time0 = case.time.context("[time]")?;
     let analytic0 = case.analytic_at(time0.start_time);
     let tv = TimeValues::new(&case)?;
     let arrays = bc::arrays(
@@ -820,7 +927,9 @@ fn run_one<F: FnMut(&str)>(
     )?;
     let ub0 = arrays.ub.clone();
     let disc = simplec::discretisation(mesh, geo, &arrays)?;
-    let loc = Locator::new(mesh, geo);
+    // (on the base mesh: a probe or the reference cell is found there, a
+    // point inside a sliding rotor is a limit of variant B)
+    let loc = Locator::new(mesh0, geo0);
     let reference_cell = if arrays.has_pressure() {
         None
     } else {
@@ -828,7 +937,7 @@ fn run_one<F: FnMut(&str)>(
             let (lo, hi) = mesh.bounding_box();
             std::array::from_fn(|i| lo[i] + 1e-6 * (hi[i] - lo[i]))
         });
-        Some(locate(&loc, geo, x))
+        Some(locate(&loc, geo0, x))
     };
     let target = Target {
         device: case.run.backend.clone(),
@@ -967,7 +1076,7 @@ fn run_one<F: FnMut(&str)>(
     // monitors
     let bench = case.verification.benchmark;
     let extra = benchmark_points(&case, mesh);
-    let probes = Probes::new(&case, &extra, &loc, geo);
+    let probes = Probes::new(&case, &extra, &loc, geo0);
     let cont = restart_from.as_ref().map(|_| first_step);
     let hist_dir = out;
     let mut hunits = String::from(
@@ -1175,6 +1284,30 @@ fn run_one<F: FnMut(&str)>(
                 }
             }
         }
+        // D182 variant B: the mesh of the end of the step, the solver built
+        // on it
+        if let Some((imp, _)) = &imprint {
+            let next = imp.working(mesh0, geo0, t0 + h)?;
+            let prev = work.as_ref().context("the mesh of the rotor angle")?;
+            let map = crate::sliding::face_map(prev, &next);
+            let (nfl, ntr) = rebuild_flow(
+                &case,
+                &tv,
+                &target,
+                reference_cell,
+                &next,
+                &map,
+                t0 + h,
+                &mut fl,
+                &tr,
+            )?;
+            setups_past.0 += fl.amg_setups;
+            setups_past.1 += fl.sweep_setups;
+            fl = nfl;
+            tr = ntr;
+            work = Some(next);
+        }
+        let (mesh, geo) = current(&work, mesh0, geo0);
         // D65: the error estimate, with the tolerances of now (re-read)
         tr.error_control = t
             .error_tolerance
@@ -1627,6 +1760,8 @@ fn run_one<F: FnMut(&str)>(
             break;
         }
     }
+    // the mesh of the last rotor angle (D182 variant B)
+    let (mesh, geo) = current(&work, mesh0, geo0);
     history.flush()?;
     balance_csv.flush()?;
     if let Some(f) = forces.as_mut() {
@@ -1884,8 +2019,8 @@ fn run_one<F: FnMut(&str)>(
         residuals: last_rep.residuals,
         ns_per_cell_iteration: 1e9 * secs / (nc as f64 * nsteps.max(1) as f64),
         timings: fl.timings.clone(),
-        amg_setups: fl.amg_setups,
-        sweep_setups: fl.sweep_setups,
+        amg_setups: fl.amg_setups + setups_past.0,
+        sweep_setups: fl.sweep_setups + setups_past.1,
         turbulence_setups: fl.turbulence.as_ref().map_or(0, |t| t.reduction_setups()),
         errors,
         reference,
