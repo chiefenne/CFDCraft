@@ -54,4 +54,5 @@ relaxation = 0.8
 [output]
 vtkhdf = true
 wall_csv = false
-derived = ["vorticity"]
+derived = ["vorticity", "relative-velocity", "frame-velocity", "turbomachinery",
+           "relative-total-pressure", "rothalpy"]

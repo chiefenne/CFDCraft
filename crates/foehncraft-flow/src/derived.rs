@@ -16,6 +16,11 @@
 //! | `strain-rate` | `strain_rate` | √(2 S:S), the shear rate | 1/s |
 //! | `pressure-coefficient` | `pressure_coefficient` | (p − p_ref) / (½ ρ_ref U_ref²) | - |
 //! | `total-pressure` | `total_pressure` | p + ½ ρ u·u | Pa |
+//! | `relative-velocity` | `relative_velocity_x`, `_y`, `_z`, `relative_velocity_magnitude` | **w** = **c** − **u**, the velocity relative to the turning zone of the cell (D183; **c** elsewhere) | m/s |
+//! | `frame-velocity` | `frame_velocity_x`, `_y`, `_z`, `frame_velocity_magnitude` | **u** = **Ω** × (**x** − **x**₀) of the turning zone of the cell (0 elsewhere) | m/s |
+//! | `turbomachinery` | `velocity_radial`, `velocity_circumferential`, `velocity_axial`, `velocity_meridional`, `relative_velocity_circumferential`, `flow_angle`, `relative_flow_angle` | c_r, c_u, c_a, c_m = (c_r² + c_a²)^½, w_u about the axis of the zone (along **Ω**), α = atan2(c_m, c_u), β = atan2(c_m, −w_u) | m/s, ° |
+//! | `relative-total-pressure` | `relative_total_pressure` | p + ½ ρ w·w | Pa |
+//! | `rothalpy` | `rothalpy` | I = p/ρ + ½ w·w − ½ u·u | m²/s² |
 //! | `wall-distance` | `wall_distance` | the exact distance of the cell centroid to the nearest no-slip wall face (D48, a BVH closest-point search, D108) | m |
 //! | `turbulence-features` | `feature_lambda1` … `feature_lambda5`, `feature_wall_reynolds`, `feature_time_ratio`, `feature_viscosity_ratio`, `feature_shielding`, `feature_q`, `feature_pressure_gradient`, `feature_curvature` | the invariant features of D166 (below); needs a turbulence model | - |
 //!
@@ -26,6 +31,25 @@
 //! |---|---|---|---|
 //! | `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude` | the tangential viscous stress of the fluid on the wall | Pa |
 //! | `y-plus` | `y_plus` | y⁺ = d u_τ / ν with u_τ = √(τ_w / ρ) and d the wall distance of the cell centroid | - |
+//!
+//! The fields of rotating machinery (D183) need an `[[mrf]]` or a
+//! `[[sliding]]` table and use the notation of turbomachinery: **c** is
+//! the absolute (solved) velocity, **u** = **Ω** × (**x** − **x**₀) the
+//! velocity of the frame (the blade speed), **w** = **c** − **u** the
+//! relative velocity. A cell in a turning zone is seen in the frame of its
+//! zone, any other cell in the fixed frame (**w** = **c**, **u** = 0), so a
+//! pump shows the relative flow in the impeller and the absolute flow in
+//! the volute; `[output] frame = "<zone>"` takes the frame of that zone in
+//! every cell. On a sliding mesh **x** is the current position of the cell.
+//! The cylindrical components are taken about the axis of the cell's
+//! frame (outside the zones about that of `frame`, else of the first
+//! table), which points along **Ω**: the blade speed and a swirl in the
+//! direction of rotation are positive. The flow angles are in degrees and
+//! measured from the circumferential direction: α between **c** and **u**,
+//! β between **w** and −**u** (90° for a flow without swirl relative to
+//! the blades; the convention of pump design). Rothalpy is constant along
+//! a relative streamline of a steady flow without losses, so its drop in a
+//! rotor shows where energy is lost.
 //!
 //! The features of `turbulence-features` (D166; the definitions of the
 //! export of D106), with the turbulence time scale τ = 1/(β* ω) = k/ε,
@@ -88,6 +112,19 @@ pub enum Derived {
     PressureCoefficient,
     /// p + ½ ρ u·u (Pa).
     TotalPressure,
+    /// **w** = **c** − **Ω** × (**x** − **x**₀), the velocity relative to
+    /// the turning zone of the cell, components and magnitude (m/s, D183).
+    RelativeVelocity,
+    /// **u** = **Ω** × (**x** − **x**₀) of the turning zone of the cell,
+    /// components and magnitude (m/s, D183).
+    FrameVelocity,
+    /// Cylindrical components about the axis of the zone and the flow
+    /// angles α and β (m/s and degrees, D183).
+    Turbomachinery,
+    /// p + ½ ρ w·w (Pa, D183).
+    RelativeTotalPressure,
+    /// p/ρ + ½ w·w − ½ u·u (m²/s², D183).
+    Rothalpy,
     /// Exact distance of the cell centroid to the nearest wall (m).
     WallDistance,
     /// Wall shear stress on the walls, components and magnitude (Pa).
@@ -100,7 +137,7 @@ pub enum Derived {
 
 impl Derived {
     /// Every derived field, in the order they are written.
-    pub const ALL: [Derived; 11] = [
+    pub const ALL: [Derived; 16] = [
         Derived::Vorticity,
         Derived::QCriterion,
         Derived::Lambda2,
@@ -108,6 +145,11 @@ impl Derived {
         Derived::StrainRate,
         Derived::PressureCoefficient,
         Derived::TotalPressure,
+        Derived::RelativeVelocity,
+        Derived::FrameVelocity,
+        Derived::Turbomachinery,
+        Derived::RelativeTotalPressure,
+        Derived::Rothalpy,
         Derived::WallDistance,
         Derived::WallShearStress,
         Derived::YPlus,
@@ -124,6 +166,11 @@ impl Derived {
             Derived::StrainRate => "strain-rate",
             Derived::PressureCoefficient => "pressure-coefficient",
             Derived::TotalPressure => "total-pressure",
+            Derived::RelativeVelocity => "relative-velocity",
+            Derived::FrameVelocity => "frame-velocity",
+            Derived::Turbomachinery => "turbomachinery",
+            Derived::RelativeTotalPressure => "relative-total-pressure",
+            Derived::Rothalpy => "rothalpy",
             Derived::WallDistance => "wall-distance",
             Derived::WallShearStress => "wall-shear-stress",
             Derived::YPlus => "y-plus",
@@ -151,6 +198,29 @@ impl Derived {
             Derived::StrainRate => &[("strain_rate", "1/s")],
             Derived::PressureCoefficient => &[("pressure_coefficient", "-")],
             Derived::TotalPressure => &[("total_pressure", "Pa")],
+            Derived::RelativeVelocity => &[
+                ("relative_velocity_x", "m/s"),
+                ("relative_velocity_y", "m/s"),
+                ("relative_velocity_z", "m/s"),
+                ("relative_velocity_magnitude", "m/s"),
+            ],
+            Derived::FrameVelocity => &[
+                ("frame_velocity_x", "m/s"),
+                ("frame_velocity_y", "m/s"),
+                ("frame_velocity_z", "m/s"),
+                ("frame_velocity_magnitude", "m/s"),
+            ],
+            Derived::Turbomachinery => &[
+                ("velocity_radial", "m/s"),
+                ("velocity_circumferential", "m/s"),
+                ("velocity_axial", "m/s"),
+                ("velocity_meridional", "m/s"),
+                ("relative_velocity_circumferential", "m/s"),
+                ("flow_angle", "°"),
+                ("relative_flow_angle", "°"),
+            ],
+            Derived::RelativeTotalPressure => &[("relative_total_pressure", "Pa")],
+            Derived::Rothalpy => &[("rothalpy", "m²/s²")],
             Derived::WallDistance => &[("wall_distance", "m")],
             Derived::WallShearStress => &[
                 ("wall_shear_stress_x", "Pa"),
@@ -179,6 +249,123 @@ impl Derived {
     /// True for the fields on the boundary faces (the boundary blocks).
     pub fn on_faces(self) -> bool {
         matches!(self, Derived::WallShearStress | Derived::YPlus)
+    }
+
+    /// True for the fields of rotating machinery (D183), which need a
+    /// turning zone.
+    pub fn of_rotors(self) -> bool {
+        matches!(
+            self,
+            Derived::RelativeVelocity
+                | Derived::FrameVelocity
+                | Derived::Turbomachinery
+                | Derived::RelativeTotalPressure
+                | Derived::Rothalpy
+        )
+    }
+}
+
+/// The velocities of rotating machinery at a point (D183): absolute **c**
+/// (the solved velocity), frame **u**, relative **w** = **c** − **u**, the
+/// cylindrical components and the flow angles.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Turbo {
+    /// **w** = **c** − **u** (m/s).
+    pub w: [f64; 3],
+    /// **u** = **Ω** × (**x** − **x**₀) of the frame, 0 in the fixed one (m/s).
+    pub u: [f64; 3],
+    /// c_r, radial, away from the axis (m/s).
+    pub c_r: f64,
+    /// c_u, circumferential, positive in the direction of rotation (m/s).
+    pub c_u: f64,
+    /// c_a, axial, along **Ω** (m/s).
+    pub c_a: f64,
+    /// c_m = (c_r² + c_a²)^½, meridional (m/s); w_m = c_m.
+    pub c_m: f64,
+    /// w_u = c_u − u_u, circumferential relative (m/s).
+    pub w_u: f64,
+    /// α = atan2(c_m, c_u), between **c** and the circumferential direction (°).
+    pub alpha: f64,
+    /// β = atan2(c_m, −w_u), between **w** and the negative circumferential
+    /// direction (°).
+    pub beta: f64,
+}
+
+/// The velocities of rotating machinery of the velocity `c` at `x`, seen
+/// in `frame` (the fixed frame for `None`), with the cylindrical
+/// components about the axis of `axis`. On the axis itself the radial and
+/// circumferential directions are taken as zero.
+pub fn turbo(
+    c: [f64; 3],
+    x: [f64; 3],
+    frame: Option<&crate::bc::Turning>,
+    axis: &crate::bc::Turning,
+) -> Turbo {
+    let u = frame.map_or([0.0; 3], |t| t.at(x));
+    let w = sub(c, u);
+    let a = axis.axis;
+    let d = sub(x, axis.origin);
+    let da = dot(d, a);
+    let rv = [d[0] - da * a[0], d[1] - da * a[1], d[2] - da * a[2]];
+    let r = norm(rv);
+    let er = if r > 0.0 { rv.map(|v| v / r) } else { [0.0; 3] };
+    let et = [
+        a[1] * er[2] - a[2] * er[1],
+        a[2] * er[0] - a[0] * er[2],
+        a[0] * er[1] - a[1] * er[0],
+    ];
+    let (c_r, c_u, c_a) = (dot(c, er), dot(c, et), dot(c, a));
+    let c_m = c_r.hypot(c_a);
+    let w_u = dot(w, et);
+    Turbo {
+        w,
+        u,
+        c_r,
+        c_u,
+        c_a,
+        c_m,
+        w_u,
+        alpha: c_m.atan2(c_u).to_degrees(),
+        beta: c_m.atan2(-w_u).to_degrees(),
+    }
+}
+
+/// The frames of the fields of rotating machinery (D183): the turning
+/// zones of `[[mrf]]` and `[[sliding]]`, and the zone of `[output] frame`.
+#[derive(Debug, Clone)]
+pub struct Frames {
+    zones: Vec<crate::bc::Turning>,
+    fixed: Option<usize>,
+}
+
+impl Frames {
+    /// The frames of `case`; `None` without a turning zone.
+    pub fn new(case: &FlowCase) -> Option<Frames> {
+        let zones = case.turning();
+        if zones.is_empty() {
+            return None;
+        }
+        let fixed = case.output.frame.as_ref().and_then(|f| {
+            zones
+                .iter()
+                .position(|t| t.zone.as_deref() == Some(f.as_str()))
+        });
+        Some(Frames { zones, fixed })
+    }
+
+    /// The frame that local cell `c` is seen in: that of `[output] frame`,
+    /// else that of its turning zone, else the fixed one (`None`).
+    pub fn frame(&self, mesh: &Mesh, c: usize) -> Option<&crate::bc::Turning> {
+        match self.fixed {
+            Some(i) => Some(&self.zones[i]),
+            None => crate::bc::Turning::of(&self.zones, mesh, c),
+        }
+    }
+
+    /// The values of the velocity `v` at `x` in local cell `c`.
+    pub fn at(&self, mesh: &Mesh, c: usize, x: [f64; 3], v: [f64; 3]) -> Turbo {
+        let frame = self.frame(mesh, c);
+        turbo(v, x, frame, frame.unwrap_or(&self.zones[0]))
     }
 }
 
@@ -227,6 +414,22 @@ pub fn validate(case: &FlowCase) -> Result<()> {
         CASE_RANGE,
         "[output.reference] pressure must be finite (Pa)"
     );
+    if let Some(f) = &case.output.frame {
+        let zones: Vec<&str> = case
+            .mrf
+            .iter()
+            .filter_map(|m| m.zone.as_deref())
+            .chain(case.sliding.iter().filter_map(|m| m.zone.as_deref()))
+            .collect();
+        let hint = crate::bc::did_you_mean(f, zones.iter().copied())
+            .map(|z| format!(" (did you mean \"{z}\"?)"))
+            .unwrap_or_default();
+        crate::need!(
+            zones.contains(&f.as_str()),
+            CASE_INCONSISTENT,
+            "[output] frame = \"{f}\" is not the `zone` of an [[mrf]] or [[sliding]] table{hint}"
+        );
+    }
     validate_list(case, &case.output.derived)
 }
 
@@ -247,6 +450,14 @@ pub fn validate_list(case: &FlowCase, list: &[Derived]) -> Result<()> {
             !case.turbulence.is_laminar(),
             CASE_INCONSISTENT,
             "derived field `turbulence-features` needs a turbulence model ([turbulence] model)"
+        );
+    }
+    if let Some(d) = list.iter().find(|d| d.of_rotors()) {
+        crate::need!(
+            !case.mrf.is_empty() || !case.sliding.is_empty(),
+            CASE_INCONSISTENT,
+            "derived field `{}` needs a turning zone ([[mrf]] or [[sliding]], D183)",
+            d.name()
         );
     }
     if list.contains(&Derived::PressureCoefficient) {
@@ -491,6 +702,27 @@ pub fn compute(
         Vec::new()
     };
     let rho = fl.phys.rho;
+    let turbo: Vec<Turbo> = match list.iter().any(|d| d.of_rotors()) {
+        true => {
+            let frames = Frames::new(case).ok_or_else(|| {
+                crate::diag::err(crate::diag::Diagnostic::new(
+                    crate::diag::CASE_INCONSISTENT,
+                    "the fields of rotating machinery need a turning zone ([[mrf]] or [[sliding]])",
+                ))
+            })?;
+            (0..nc)
+                .map(|c| frames.at(mesh, c, geo.cell_centroid[c], fl.u.get(c)))
+                .collect()
+        }
+        false => Vec::new(),
+    };
+    let vector = |out: &mut Fields, names: [&'static str; 4], v: &dyn Fn(&Turbo) -> [f64; 3]| {
+        for (i, n) in names.into_iter().take(3).enumerate() {
+            out.cells.push((n, turbo.iter().map(|t| v(t)[i]).collect()));
+        }
+        out.cells
+            .push((names[3], turbo.iter().map(|t| norm(v(t))).collect()));
+    };
     let nb = mesh.n_boundary_faces();
     let walls = (list.contains(&Derived::WallShearStress) || list.contains(&Derived::YPlus))
         .then(|| wall_values(case, mesh, geo, fl));
@@ -535,6 +767,56 @@ pub fn compute(
                         let u = fl.u.get(c);
                         fl.p[c] + 0.5 * rho * dot(u, u)
                     })
+                    .collect(),
+            )),
+            Derived::RelativeVelocity => vector(
+                &mut out,
+                [
+                    "relative_velocity_x",
+                    "relative_velocity_y",
+                    "relative_velocity_z",
+                    "relative_velocity_magnitude",
+                ],
+                &|t| t.w,
+            ),
+            Derived::FrameVelocity => vector(
+                &mut out,
+                [
+                    "frame_velocity_x",
+                    "frame_velocity_y",
+                    "frame_velocity_z",
+                    "frame_velocity_magnitude",
+                ],
+                &|t| t.u,
+            ),
+            Derived::Turbomachinery => {
+                let get: [fn(&Turbo) -> f64; 7] = [
+                    |t| t.c_r,
+                    |t| t.c_u,
+                    |t| t.c_a,
+                    |t| t.c_m,
+                    |t| t.w_u,
+                    |t| t.alpha,
+                    |t| t.beta,
+                ];
+                for ((n, _), g) in d.datasets().iter().zip(get) {
+                    out.cells.push((n, turbo.iter().map(g).collect()));
+                }
+            }
+            Derived::RelativeTotalPressure => out.cells.push((
+                "relative_total_pressure",
+                turbo
+                    .iter()
+                    .zip(&fl.p)
+                    .map(|(t, p)| p + 0.5 * rho * dot(t.w, t.w))
+                    .collect(),
+            )),
+            Derived::Rothalpy => out.cells.push((
+                "rothalpy",
+                turbo
+                    .iter()
+                    .zip(&fl.p)
+                    .map(|(t, p)| p / rho + 0.5 * dot(t.w, t.w) - 0.5 * dot(t.u, t.u))
                     .collect(),
             )),
             Derived::WallDistance => out
@@ -1032,5 +1314,77 @@ derived = ["wall-distance"]
             let t: toml::Value = toml::Value::try_from(d).unwrap();
             assert_eq!(t.as_str(), Some(d.name()));
         }
+    }
+
+    /// The identities of the turbomachinery values (D183) on random
+    /// velocities, points and frames: c = w + u, c_r² + c_u² + c_a² = |c|²,
+    /// c_u − w_u = |Ω| r (the blade speed, positive for either sense of
+    /// rotation), the angles from their definitions, and the fixed frame.
+    #[test]
+    fn turbomachinery_identities() {
+        let mut seed = 0x2545_f491_4f6c_dd1du64;
+        let mut rnd = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64 * 2.0 - 1.0
+        };
+        let tol = |a: f64, b: f64, s: f64| (a - b).abs() <= 1e-12 * (1.0 + s);
+        for _ in 0..200 {
+            let axis = [rnd(), rnd(), rnd()];
+            let n = norm(axis);
+            let w0 = 50.0 * rnd();
+            let omega = axis.map(|a| w0 * a / n);
+            let t = crate::bc::Turning {
+                zone: None,
+                omega,
+                origin: [rnd(), rnd(), rnd()],
+                axis: omega.map(|o| o / w0.abs()),
+            };
+            let c = [3.0 * rnd(), 3.0 * rnd(), 3.0 * rnd()];
+            let x = [rnd(), rnd(), rnd()];
+            let v = turbo(c, x, Some(&t), &t);
+            let s = norm(c) + norm(v.u);
+            for i in 0..3 {
+                assert!(tol(v.w[i] + v.u[i], c[i], s), "c = w + u");
+            }
+            assert!(tol(v.c_r.hypot(v.c_u).hypot(v.c_a), norm(c), s), "|c|");
+            assert!(tol(v.c_m, v.c_r.hypot(v.c_a), s));
+            // the blade speed |Ω| r, r the distance from the axis
+            let d = sub(x, t.origin);
+            let r = norm(foehncraft_mesh::geometry::cross(t.axis, d));
+            assert!(tol(v.c_u - v.w_u, w0.abs() * r, s), "u_u");
+            assert!(tol(norm(v.u), w0.abs() * r, s), "|u|");
+            assert!(tol(v.alpha, v.c_m.atan2(v.c_u).to_degrees(), 180.0));
+            assert!(tol(v.beta, v.c_m.atan2(-v.w_u).to_degrees(), 180.0));
+            assert!((0.0..=180.0).contains(&v.alpha) && (0.0..=180.0).contains(&v.beta));
+            // the fixed frame: w = c, u = 0, the same components
+            let f = turbo(c, x, None, &t);
+            assert_eq!(f.w, c);
+            assert_eq!(f.u, [0.0; 3]);
+            assert_eq!((f.c_r, f.c_u, f.c_a), (v.c_r, v.c_u, v.c_a));
+            assert!(tol(f.w_u, f.c_u, s));
+        }
+        // a fluid turning with its frame (the negative sense): w = 0, a
+        // positive swirl c_u = |Ω| r, α = 0
+        let t = crate::bc::Turning {
+            zone: None,
+            omega: [0.0, 0.0, -4.0],
+            origin: [0.0; 3],
+            axis: [0.0, 0.0, -1.0],
+        };
+        let x = [0.3, -0.2, 0.1];
+        let v = turbo(t.at(x), x, Some(&t), &t);
+        assert!(norm(v.w) < 1e-15);
+        assert!(tol(v.c_u, 4.0 * 0.3f64.hypot(0.2), 1.0), "{}", v.c_u);
+        assert!(tol(v.alpha, 0.0, 1.0), "{}", v.alpha);
+        // without relative swirl β = 90°
+        let c = foehncraft_mesh::geometry::add(t.at(x), [0.0, 0.0, 2.0]);
+        let v = turbo(c, x, Some(&t), &t);
+        assert!(tol(v.beta, 90.0, 90.0), "{}", v.beta);
+        // on the axis: no radial or circumferential direction
+        let v = turbo([1.0, 2.0, 3.0], [0.0, 0.0, 5.0], Some(&t), &t);
+        assert_eq!((v.c_r, v.c_u), (0.0, 0.0));
+        assert!(tol(v.c_a, -3.0, 1.0));
     }
 }

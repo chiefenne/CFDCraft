@@ -555,7 +555,9 @@ fn a_passive_scalar_ends_in_the_exact_solution_with_imprinting() {
 fn probes_and_fields_follow_the_rotor() {
     let t = imprint_text()
         + "\n[[output.probes]]\nname = \"rot\"\npoint = [0.06, 0.0, 0.005]\n\
-           \n[[output.probes]]\nname = \"sta\"\npoint = [0.0, 0.09, 0.005]\n";
+           \n[[output.probes]]\nname = \"sta\"\npoint = [0.0, 0.09, 0.005]\n\
+           \n[[output.lines]]\nname = \"radial\"\nfrom = [0.052, 0.0, 0.005]\n\
+           to = [0.098, 0.0, 0.005]\npoints = 24\n";
     let t = t.replace("vtkhdf = false", "vtkhdf = true");
     let mut c = parse(&t);
     c.verification.max_error = None;
@@ -571,11 +573,37 @@ fn probes_and_fields_follow_the_rotor() {
         .map(|x| x.parse().unwrap())
         .collect();
     let fields = dir.join("fields.vtkhdf").exists();
+    let line = std::fs::read_to_string(dir.join("line_radial.csv")).unwrap();
     let _ = std::fs::remove_dir_all(&dir);
     // u_θ = A r + B / r of Taylor–Couette flow (r₁ = 0.05, r₂ = 0.10, Ω = 10)
     let exact = |r: f64| -10.0 * 0.0025 / 0.0075 * r + 10.0 * 0.0025 * 0.01 / 0.0075 / r;
-    // columns: step, time, rot u v w p, sta u v w p
-    let (rot_v, sta_u) = (last[3], last[6]);
+    // columns: step, time, rot u v w p u_rel v_rel w_rel, sta u v w p
+    // u_rel v_rel w_rel (D183: the velocity relative to the turning zone)
+    let (rot_v, sta_u) = (last[3], last[9]);
+    assert_eq!(last.len(), 16, "{csv}");
+    assert!(
+        (last[7] - (rot_v - 10.0 * 0.06)).abs() < 1e-12,
+        "rotor v_rel"
+    );
+    assert_eq!((last[6], last[13], last[14]), (last[2], sta_u, last[10]));
+    // the line: c_u − w_u is the blade speed Ω r in the rotor, 0 outside
+    let mut head = None;
+    for l in line.lines().filter(|l| !l.starts_with('#')) {
+        if head.is_none() {
+            head = Some(l.to_string());
+            assert_eq!(l, "s,x,y,z,u,v,w,p,u_rel,v_rel,w_rel,c_r,c_u,c_a,w_u");
+            continue;
+        }
+        let v: Vec<f64> = l.split(',').map(|x| x.parse().unwrap()).collect();
+        let r = v[1].hypot(v[2]);
+        let blade = if r < 0.075 { 10.0 * r } else { 0.0 };
+        assert!((v[12] - v[14] - blade).abs() < 1e-12, "r = {r}: {l}");
+        assert!(
+            (v[12] - v[5]).abs() < 1e-12 && (v[11] - v[4]).abs() < 1e-12,
+            "{l}"
+        );
+        assert!((v[12] / exact(r) - 1.0).abs() < 0.05, "c_u at r = {r}: {l}");
+    }
     eprintln!(
         "probes: rotor v {rot_v} (exact {}), stator u {sta_u} (exact {})",
         exact(0.06),

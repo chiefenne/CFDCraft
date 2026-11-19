@@ -315,3 +315,93 @@ outer_omega = 10.0
     eprintln!("turning box: L2 {e:e}");
     assert!(e < 3e-3, "{e}");
 }
+
+/// The fields of rotating machinery (D183) on Taylor–Couette flow with the
+/// inner half of the gap in the frame (1 024 cells): the frame velocity is
+/// Ω × x in the rotor and zero in the stator, so c_u − w_u = Ω r and 0;
+/// c_u follows the exact u_θ = A r + B/r to the discretisation error, c_r
+/// and the flow angle α vanish with it; ρ I = p + ½ρ|w|² − ½ρ|u|² ties the
+/// relative total pressure to the rothalpy. With `output.frame = "rotor"`
+/// the stator is seen in the frame of the rotor, too.
+#[cfg(feature = "hdf5")]
+#[test]
+fn relative_and_frame_velocities_of_taylor_couette() {
+    use foehncraft_flow::derived;
+    let t = text().replace(
+        "[output]\nvtkhdf = false\n",
+        "[output]\nvtkhdf = false\nderived = [\"relative-velocity\", \"frame-velocity\", \
+         \"turbomachinery\", \"relative-total-pressure\", \"rothalpy\"]\n",
+    ) + "\n[run]\nrestart_final = true\n";
+    assert!(t.contains("rothalpy"), "the case file changed");
+    let (omega, rho, r_iface) = (10.0, 1.0, 0.075);
+    let exact = |r: f64| -10.0 * 0.0025 / 0.0075 * r + 10.0 * 0.0025 * 0.01 / 0.0075 / r;
+    for fixed in [false, true] {
+        let mut case = parse(&t);
+        if fixed {
+            case.output.frame = Some("rotor".into());
+        }
+        let name = if fixed { "fields_fixed" } else { "fields" };
+        let dir = out(name);
+        let rep = run(&case, name, &dir, |_| {}).unwrap();
+        assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+        let (mesh, geo, f) =
+            derived::evaluate(&case, &dir.join("restart.h5"), &case.output.derived).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        let g = |n: &str| f.get(n).unwrap_or_else(|| panic!("{n}"));
+        let (cu, wu, cr) = (
+            g("velocity_circumferential"),
+            g("relative_velocity_circumferential"),
+            g("velocity_radial"),
+        );
+        let (fx, fy, fm) = (
+            g("frame_velocity_x"),
+            g("frame_velocity_y"),
+            g("frame_velocity_magnitude"),
+        );
+        let (wm, ptr, rot, alpha) = (
+            g("relative_velocity_magnitude"),
+            g("relative_total_pressure"),
+            g("rothalpy"),
+            g("flow_angle"),
+        );
+        let mut worst = [0.0f64; 3];
+        for c in 0..mesh.n_cells {
+            let x = geo.cell_centroid[c];
+            let r = x[0].hypot(x[1]);
+            let turning = fixed || r < r_iface;
+            let ub = if turning { omega * r } else { 0.0 };
+            assert!((cu[c] - wu[c] - ub).abs() < 1e-12, "c_u − w_u at r = {r}");
+            let (ex, ey) = if turning {
+                (-omega * x[1], omega * x[0])
+            } else {
+                (0.0, 0.0)
+            };
+            assert!((fx[c] - ex).abs() < 1e-12 && (fy[c] - ey).abs() < 1e-12);
+            assert!((fm[c] - ub).abs() < 1e-12);
+            // |w| ≥ |w_u|, the rest is the small radial velocity
+            assert!(wm[c] + 1e-12 >= wu[c].abs());
+            // ρ I = p + ½ρ|w|² − ½ρ|u|²
+            assert!((ptr[c] - rho * rot[c] - 0.5 * rho * ub * ub).abs() < 1e-9);
+            worst[0] = worst[0].max((cu[c] - exact(r)).abs());
+            worst[1] = worst[1].max(cr[c].abs());
+            worst[2] = worst[2].max(alpha[c].abs());
+        }
+        eprintln!(
+            "frame {fixed}: |c_u − u_θ| {:.2e}, |c_r| {:.2e}, |α| {:.2e}°",
+            worst[0], worst[1], worst[2]
+        );
+        // to the discretisation error (L∞ 2.95 % of the wall speed 0.5 m/s)
+        assert!(worst[0] < 0.035 * 0.5, "{worst:?}");
+        assert!(worst[1] < 0.035 * 0.5, "{worst:?}");
+        assert!(worst[2] < 5.0, "{worst:?}");
+    }
+    // a derived field of rotors without a turning zone, and an unknown frame
+    let mut c = parse(&t);
+    c.mrf.clear();
+    let e = format!("{:#}", c.validate().unwrap_err());
+    assert!(e.contains("needs a turning zone"), "{e}");
+    let mut c = parse(&t);
+    c.output.frame = Some("rotr".into());
+    let e = format!("{:#}", c.validate().unwrap_err());
+    assert!(e.contains("did you mean \"rotor\""), "{e}");
+}

@@ -1144,20 +1144,26 @@ fn run_one<F: FnMut(&str)>(
     } else {
         None
     };
+    // rotating machinery (D183): the velocity relative to the turning zone
+    let frames = crate::derived::Frames::new(&case);
     let mut ph = String::from("step,time");
     for n in &probes.names {
         let _ = write!(ph, ",{n}_u,{n}_v,{n}_w,{n}_p");
+        if frames.is_some() {
+            let _ = write!(ph, ",{n}_u_rel,{n}_v_rel,{n}_w_rel");
+        }
     }
+    let probe_units = if frames.is_some() {
+        "step -, time s, <probe>_u <probe>_v <probe>_w m/s, <probe>_p Pa, \
+         <probe>_u_rel <probe>_v_rel <probe>_w_rel m/s (relative to the turning zone)"
+    } else {
+        "step -, time s, <probe>_u <probe>_v <probe>_w m/s, <probe>_p Pa"
+    };
     let mut probe_csv = if monitors && !probes.names.is_empty() {
         Some(History::new(
             out,
             "probes.csv",
-            &crate::case::csv_preamble(
-                "probes",
-                name,
-                None,
-                "step -, time s, <probe>_u <probe>_v <probe>_w m/s, <probe>_p Pa",
-            ),
+            &crate::case::csv_preamble("probes", name, None, probe_units),
             &ph,
             cont,
         )?)
@@ -1667,15 +1673,17 @@ fn run_one<F: FnMut(&str)>(
                 if let Some(fh) = forces.as_mut() {
                     fh.row(&row);
                 }
-                let vals = if imprint.is_some() {
-                    probes.relocated(mesh, geo).values(&sol, geo)
-                } else {
-                    probes.values(&sol, geo)
-                };
+                let here = imprint.is_some().then(|| probes.relocated(mesh, geo));
+                let pr = here.as_ref().unwrap_or(&probes);
+                let vals = pr.values(&sol, geo);
                 if let Some(pc) = probe_csv.as_mut() {
+                    let rel = frames.as_ref().map(|f| pr.relative(f, mesh, &vals));
                     let mut row = format!("{n},{:e}", rp.time);
-                    for (u, p) in &vals {
+                    for (k, (u, p)) in vals.iter().enumerate() {
                         let _ = write!(row, ",{:e},{:e},{:e},{p:e}", u[0], u[1], u[2]);
+                        if let Some(r) = &rel {
+                            let _ = write!(row, ",{:e},{:e},{:e}", r[k][0], r[k][1], r[k][2]);
+                        }
                     }
                     pc.row(&row);
                 }
@@ -1846,10 +1854,14 @@ fn run_one<F: FnMut(&str)>(
             ),
         );
     }
+    // the imprinted sliding mesh (D182): the cells of the rotor have moved,
+    // points are found on the mesh of the end of the run
+    let loc_end = imprint.is_some().then(|| Locator::new(mesh, geo));
+    let loc_end = loc_end.as_ref().unwrap_or(&loc);
     let reference = case
         .verification
         .reference
-        .map(|r| crate::case::compare_reference(&sol, mesh, geo, &loc, r, &case));
+        .map(|r| crate::case::compare_reference(&sol, mesh, geo, loc_end, r, &case));
     if let Some(r) = &reference {
         verification.push_kv(
             &format!("Reference {}", r.reference),
@@ -1966,7 +1978,7 @@ fn run_one<F: FnMut(&str)>(
             &sol,
             analytic_end.as_ref(),
             &boundaries,
-            &loc,
+            loc_end,
             Some((tr.clock.step, Some(tr.clock.time))),
         )?;
         if !bt.is_empty() {

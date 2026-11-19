@@ -21,7 +21,9 @@ derived = ["vorticity", "q-criterion", "lambda2", "wall-shear-stress", "y-plus"]
 
 The names: `vorticity`, `q-criterion`, `lambda2`, `enstrophy`,
 `strain-rate`, `pressure-coefficient`, `total-pressure`,
-`wall-shear-stress`, `y-plus`. The order of the list does not matter.
+`wall-shear-stress`, `y-plus`, and with a turning zone `relative-velocity`,
+`frame-velocity`, `turbomachinery`, `relative-total-pressure`, `rothalpy`
+([recipe 99](flow.md#rotor-fields)). The order of the list does not matter.
 Cell fields go to the `internal` block; the wall shear stress and y⁺ go to
 the boundary blocks (`boundary/<boundary>` in ParaView's block selector), zero on
 boundaries that are not walls. The `units` attribute of the file lists every

@@ -20,6 +20,7 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 95 | [Turn a rotor through the mesh in time (sliding mesh, conformal stepping)](#sliding-mesh) |
 | 96 | [Turn a rotor against a stator with a different pitch (sliding mesh by imprinting)](#sliding-mesh-imprint) |
 | 98 | [Mesh and run a rotor with blades from Gmsh, and draw its relative flow](#stirred-vessel) |
+| 99 | [Write the relative flow of a rotor: relative and frame velocity, flow angles, rothalpy](#rotor-fields) |
 
 ---
 
@@ -1000,3 +1001,54 @@ what a blade sees: judge the rotor by it, the stator by the absolute one.
 
 [Gallery 98](../gallery/flow.md#stirred-vessel); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
+
+<a id="rotor-fields"></a>
+## 99. Write the relative flow of a rotor: relative and frame velocity, flow angles, rothalpy
+
+```toml
+[output]
+vtkhdf = true
+derived = ["relative-velocity", "frame-velocity", "turbomachinery",
+           "relative-total-pressure", "rothalpy"]
+# frame = "rotor"   # optional: every cell in the frame of this zone
+```
+
+A rotor is judged by the flow its blades see. With an `[[mrf]]` or a
+`[[sliding]]` table these derived fields (D183) are written with the fields,
+in the notation of turbomachinery: **c** the absolute (solved) velocity,
+**u** = **Ω** × (**x** − **x**₀) the blade speed, **w** = **c** − **u** the
+relative velocity.
+
+- `relative-velocity`: **w** and |w|. A cell in a turning zone is seen in the
+  frame of its zone, any other in the fixed frame (**w** = **c**): a pump
+  shows the relative flow in the impeller and the absolute flow in the volute
+  in one field. In ParaView, `relative_velocity_x`, `_y`, `_z` make the vector
+  for streamlines (Calculator: `relative_velocity_x*iHat + relative_velocity_y*jHat + relative_velocity_z*kHat`).
+- `frame-velocity`: **u** and |u| (zero outside the zones).
+- `turbomachinery`: c_r, c_u, c_a, c_m and w_u about the axis of the zone; the
+  axis points along **Ω**, so the blade speed and a swirl with the rotation
+  are positive. The flow angles in degrees from the circumferential
+  direction: α (`flow_angle`) between **c** and **u**, β (`relative_flow_angle`)
+  between **w** and −**u**, the convention of pump design (β = 90° when the
+  relative flow has no swirl; compare β with the blade angle at the leading
+  and trailing edges for incidence and deviation).
+- `relative-total-pressure` p + ½ρ|w|², and `rothalpy` I = p/ρ + ½|w|² − ½|u|².
+  Rothalpy is constant along a relative streamline of a steady flow without
+  losses: where it falls through a rotor, energy is lost there. In the fixed
+  parts it is the total pressure over ρ.
+- `output.frame = "<zone>"` takes the frame of that zone in every cell (the
+  stator seen from the rotor); it must name the `zone` of an `[[mrf]]` or
+  `[[sliding]]` table.
+- Sample lines get the columns `u_rel`, `v_rel`, `w_rel`, `c_r`, `c_u`, `c_a`,
+  `w_u`, and point probes of a transient run `<name>_u_rel`, `_v_rel`, `_w_rel`.
+  On the sliding mesh the position is that of the cell at the time of the
+  sample (the rotor has turned).
+- `foehn post derive` writes the same fields from a restart file of a frame
+  run, and the list may change during a run (re-read, D40).
+
+`tools/plot/rotor_fields.py` draws these datasets of a 2D run by name
+(`--quantities relative_velocity_magnitude,relative_flow_angle,rothalpy`;
+`relative_velocity_magnitude` with the streamlines of **w**).
+
+[Gallery 99](../gallery/flow.md#rotor-fields); the keys are in
+[cases/flow-keys.md](../cases/flow-keys.md#derived-fields-d72) and [keys.md](../keys.md).

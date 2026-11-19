@@ -1019,23 +1019,36 @@ pub struct Turning {
     pub omega: [f64; 3],
     /// A point on the axis (m).
     pub origin: [f64; 3],
+    /// The unit vector of the axis, along **Ω** (the given `axis` when
+    /// Ω = 0): the circumferential direction of the turbomachinery fields
+    /// (D183) is the direction of the rotation.
+    pub axis: [f64; 3],
 }
 
 impl Turning {
+    /// True if local cell `c` of `mesh` is in the zone.
+    pub fn contains(&self, mesh: &Mesh, c: usize) -> bool {
+        self.zone.as_ref().is_none_or(|z| {
+            mesh.zones
+                .get(mesh.cell_zone[c] as usize)
+                .is_some_and(|n| n == z)
+        })
+    }
+
+    /// The first zone of `turning` that holds local cell `c`.
+    pub fn of<'t>(turning: &'t [Turning], mesh: &Mesh, c: usize) -> Option<&'t Turning> {
+        turning.iter().find(|t| t.contains(mesh, c))
+    }
+
+    /// The velocity of the zone at `x`, **Ω** × (**x** − **x**₀).
+    pub fn at(&self, x: [f64; 3]) -> [f64; 3] {
+        cross(self.omega, sub(x, self.origin))
+    }
+
     /// The velocity of the zone of local cell `c` at `x` among `turning`
     /// (zero outside all of them).
     pub fn velocity(turning: &[Turning], mesh: &Mesh, c: usize, x: [f64; 3]) -> [f64; 3] {
-        for t in turning {
-            let inside = t.zone.as_ref().is_none_or(|z| {
-                mesh.zones
-                    .get(mesh.cell_zone[c] as usize)
-                    .is_some_and(|n| n == z)
-            });
-            if inside {
-                return cross(t.omega, sub(x, t.origin));
-            }
-        }
-        [0.0; 3]
+        Turning::of(turning, mesh, c).map_or([0.0; 3], |t| t.at(x))
     }
 }
 

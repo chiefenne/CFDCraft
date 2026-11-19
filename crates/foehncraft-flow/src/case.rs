@@ -657,12 +657,18 @@ pub struct OutputSection {
     pub coefficients: Option<Coefficients>,
     /// Derived fields written with the fields (D72), from the cell
     /// gradients: vorticity, q-criterion, lambda2, enstrophy, strain-rate,
-    /// pressure-coefficient, total-pressure, wall-distance,
-    /// wall-shear-stress, y-plus, turbulence-features (with a turbulence
-    /// model: the invariant features of D166).
+    /// pressure-coefficient, total-pressure, relative-velocity,
+    /// frame-velocity, turbomachinery, relative-total-pressure, rothalpy
+    /// (with `[[mrf]]` or `[[sliding]]`: the fields of rotating machinery,
+    /// D183), wall-distance, wall-shear-stress, y-plus, turbulence-features
+    /// (with a turbulence model: the invariant features of D166).
     pub derived: Vec<crate::derived::Derived>,
     /// Reference values of the pressure coefficient.
     pub reference: crate::derived::ReferenceValues,
+    /// The turning zone (`zone` of an `[[mrf]]` or `[[sliding]]` table) whose
+    /// frame the relative velocity of every cell is taken in (D183); default:
+    /// each turning zone in its own frame, the rest in the fixed one.
+    pub frame: Option<String>,
 }
 
 impl Default for OutputSection {
@@ -685,6 +691,7 @@ impl Default for OutputSection {
             coefficients: None,
             derived: Vec::new(),
             reference: Default::default(),
+            frame: None,
         }
     }
 }
@@ -1446,19 +1453,26 @@ impl FlowCase {
     /// walls move normal to themselves with them, [`bc::Turning`]); an entry
     /// whose speed is not valid is left out (its own check reports it).
     pub fn turning(&self) -> Vec<bc::Turning> {
-        let mrf = self.mrf.iter().filter_map(|m| {
-            m.omega_vector().ok().map(|omega| bc::Turning {
-                zone: m.zone.clone(),
+        let make = |zone: &Option<String>, omega: [f64; 3], origin: [f64; 3], axis: [f64; 3]| {
+            let w = norm(omega);
+            let a = if w > 0.0 { omega } else { axis };
+            let n = norm(a);
+            bc::Turning {
+                zone: zone.clone(),
                 omega,
-                origin: m.origin,
-            })
+                origin,
+                axis: a.map(|v| v / n),
+            }
+        };
+        let mrf = self.mrf.iter().filter_map(|m| {
+            m.omega_vector()
+                .ok()
+                .map(|omega| make(&m.zone, omega, m.origin, m.axis))
         });
         let sliding = self.sliding.iter().filter_map(|m| {
-            m.omega_vector().ok().map(|omega| bc::Turning {
-                zone: m.zone.clone(),
-                omega,
-                origin: m.origin,
-            })
+            m.omega_vector()
+                .ok()
+                .map(|omega| make(&m.zone, omega, m.origin, m.axis))
         });
         mrf.chain(sliding).collect()
     }
@@ -3750,6 +3764,16 @@ pub(crate) fn write_outputs(
             let _ = write!(units, ", {} (cell value)", st.name);
             let _ = write!(head, ",{}", st.name);
         }
+        // rotating machinery (D183): the relative velocity and the
+        // cylindrical components about the axis of the zone
+        let frames = crate::derived::Frames::new(case);
+        if frames.is_some() {
+            units.push_str(
+                ", u_rel v_rel w_rel m/s (relative to the turning zone), c_r c_u c_a m/s \
+                 (radial, circumferential, axial), w_u m/s (relative circumferential)",
+            );
+            head.push_str(",u_rel,v_rel,w_rel,c_r,c_u,c_a,w_u");
+        }
         let mut csv = csv_preamble("line", &name, at, &units);
         csv.push_str(&head);
         csv.push('\n');
@@ -3784,6 +3808,14 @@ pub(crate) fn write_outputs(
             }
             for st in &fl.state.scalars {
                 let _ = write!(csv, ",{:e}", st.phi[c]);
+            }
+            if let Some(fr) = &frames {
+                let t = fr.at(mesh, c, x, u);
+                let _ = write!(
+                    csv,
+                    ",{:e},{:e},{:e},{:e},{:e},{:e},{:e}",
+                    t.w[0], t.w[1], t.w[2], t.c_r, t.c_u, t.c_a, t.w_u
+                );
             }
             csv.push('\n');
         }

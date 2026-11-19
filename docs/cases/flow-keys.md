@@ -86,11 +86,12 @@ line (recipe 26).
 | `output.fields_interval`, `output.fields_times` | none | transient: also write the fields at the multiples of this simulated time (s) and at these times; the steps land on them exactly (D66) |
 | `output.monitor_every` | 1 | a row of `forces.csv` and `probes.csv` every N steps |
 | `output.monitor_interval` | none | transient: a row of `forces.csv` and `probes.csv` at the multiples of this simulated time (s) instead of every `monitor_every` steps, landed on exactly (equally spaced samples for spectra, D66) |
-| `output.probes` | none | point probes `[[output.probes]]` with `name` and `point`: velocity and pressure in `probes.csv` |
+| `output.probes` | none | point probes `[[output.probes]]` with `name` and `point`: velocity and pressure in `probes.csv`; with a turning zone also the velocity relative to it, `<name>_u_rel`, `_v_rel`, `_w_rel` (D183) |
 | `output.wall_probes` | none | wall probes `[[output.wall_probes]]` with `name`, `boundary`, `point`: wall shear stress, C_f (with `output.reference.velocity`), y⁺ and the wall value and flux of each passive scalar (the Nusselt number of a heated wall, 6g) at a point of a wall, in the report and the uncertainty table of a level sweep |
 | `output.wall_crossings` | none | wall crossings `[[output.wall_crossings]]` with `name`, `boundary`, `from`, `direction` (x), `kind` (`reattachment`: the wall shear along `direction` turns from negative to positive; `separation`: from positive to negative), `width` (only the faces within this distance of the line; default all), `skip` (leave out the faces closer than this to `from`, e.g. the corner vortices behind a step; default 0): the first such point after `from`, linear between the two face centroids, as the distance from `from` (the reattachment length of a step), in the report and with its GCI in a level sweep (6g) |
 | `output.coefficients` | none | force coefficients C = 2F/(ρU²A) of the sum over `boundaries`, with `velocity` U, `area` A, `drag_direction` (x), `lift_direction` (y) |
-| `output.derived` | none | derived fields in every `fields*.vtkhdf` (D72): `vorticity`, `q-criterion`, `lambda2`, `enstrophy`, `strain-rate`, `pressure-coefficient`, `total-pressure`, `wall-shear-stress`, `y-plus`, `wall-distance`, `turbulence-features`; see [Derived fields](#derived-fields-d72) |
+| `output.derived` | none | derived fields in every `fields*.vtkhdf` (D72): `vorticity`, `q-criterion`, `lambda2`, `enstrophy`, `strain-rate`, `pressure-coefficient`, `total-pressure`, `relative-velocity`, `frame-velocity`, `turbomachinery`, `relative-total-pressure`, `rothalpy` (with a turning zone, D183), `wall-shear-stress`, `y-plus`, `wall-distance`, `turbulence-features`; see [Derived fields](#derived-fields-d72) |
+| `output.frame` | none | the `zone` of an `[[mrf]]` or `[[sliding]]` table whose frame the fields of rotating machinery take in every cell (D183); default: each turning zone in its own frame, the rest in the fixed one |
 | `output.reference.velocity`, `.pressure`, `.density` | `[output.coefficients] velocity`, 0, `[fluid] density` | reference state U_ref (m/s), p_ref (Pa), ρ_ref (kg/m³) of `pressure-coefficient` |
 
 Transient cases (stage 5):
@@ -227,6 +228,11 @@ least-squares gradient of the solver), S = ½ (G + Gᵀ), Ω = ½ (G − Gᵀ),
 | `strain-rate` | `strain_rate` | √(2 S:S) | 1/s |
 | `pressure-coefficient` | `pressure_coefficient` | (p − p_ref)/(½ ρ_ref U_ref²); needs a reference velocity | - |
 | `total-pressure` | `total_pressure` | p + ½ ρ u·u | Pa |
+| `relative-velocity` | `relative_velocity_x`, `_y`, `_z`, `relative_velocity_magnitude` | **w** = **c** − **u**, the velocity relative to the turning zone of the cell; **c** (the solved velocity) in the other cells (D183) | m/s |
+| `frame-velocity` | `frame_velocity_x`, `_y`, `_z`, `frame_velocity_magnitude` | **u** = **Ω** × (**x** − **x**₀) of the turning zone of the cell (the blade speed), 0 in the other cells | m/s |
+| `turbomachinery` | `velocity_radial`, `velocity_circumferential`, `velocity_axial`, `velocity_meridional`, `relative_velocity_circumferential`, `flow_angle`, `relative_flow_angle` | c_r, c_u, c_a, c_m = (c_r² + c_a²)^½ and w_u about the axis of the zone, which points along **Ω** (so the blade speed and a swirl with the rotation are positive); α = atan2(c_m, c_u) between **c** and the circumferential direction, β = atan2(c_m, −w_u) between **w** and the negative circumferential direction (90° without relative swirl) | m/s, ° |
+| `relative-total-pressure` | `relative_total_pressure` | p + ½ ρ w·w | Pa |
+| `rothalpy` | `rothalpy` | I = p/ρ + ½ w·w − ½ u·u, constant along a relative streamline of a steady flow without losses | m²/s² |
 | `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude`, on the boundary blocks | tangential viscous stress of the fluid on the wall (as `wall_<boundary>.csv`), zero off walls | Pa |
 | `wall-distance` | `wall_distance` | exact distance of the cell centroid to the nearest face of the `wall` boundaries (BVH closest-point search, D48, D108); needs a wall | m |
 | `y-plus` | `y_plus`, on the boundary blocks | d √(τ_w/ρ)/ν, d the wall distance of the cell centroid, zero off walls | - |
@@ -234,6 +240,12 @@ least-squares gradient of the solver), S = ½ (G + Gᵀ), Ω = ½ (G − Gᵀ),
 
 The datasets are written in the order of this table, whatever the order of
 the list. `output.derived` and `output.reference` may change during a run.
+The fields of rotating machinery need an `[[mrf]]` or `[[sliding]]` table; a
+cell outside every turning zone takes its cylindrical components about the
+axis of `output.frame`, else of the first table. On the sliding mesh **x** is
+the current position of the cell. A sample line (`[[output.lines]]`) of a case
+with a turning zone has the columns `u_rel`, `v_rel`, `w_rel`, `c_r`, `c_u`,
+`c_a`, `w_u` at the end.
 
 # Boundary conditions (D29)
 

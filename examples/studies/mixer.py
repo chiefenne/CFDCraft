@@ -1,4 +1,4 @@
-"""The baffled stirred vessel of gallery 98: the moving reference frame
+"""The baffled stirred vessel of gallery 98 and 99: the moving reference frame
 (steady) and the sliding mesh by imprinting (three revolutions from rest),
 with the field figures of the gallery.
 
@@ -18,7 +18,10 @@ about seven minutes on four cores; a finished run is not run again unless
 - mixer_sliding_startup.png: ω_z at t = 0.15, 0.3, 0.6 s and after three
   revolutions;
 - mixer_sliding_interface.png: the imprinted interface at the tip of a blade,
-  with the cell edges.
+  with the cell edges;
+- mixer_relative.png: the fields of rotating machinery of the MRF run (D183,
+  gallery 99): |w| with the streamlines of w (relative in the rotor, absolute
+  in the stator), the relative flow angle β and the rothalpy in the rotor.
 
 OUT defaults to output/mixer. Run from anywhere; paths are relative to the
 repository.
@@ -78,6 +81,10 @@ def main():
     plot(fig / "mixer_sliding_startup.png", series, "--quantities", "vorticity",
          "--limits=-40:40", "--dpi", 100, "--title", "Start-up from rest: vorticity",
          "--labels", "t = 0.15 s,t = 0.3 s,t = 0.6 s,t = 1.89 s (3 rev)")
+    plot(fig / "mixer_relative.png", [mrf / "fields.vtkhdf"], "--outer-radius", R_VESSEL,
+         "--dpi", 110, "--quantities",
+         "relative_velocity_magnitude,relative_flow_angle@rotor,rothalpy@rotor",
+         "--title", "Stirred vessel (MRF): the relative flow")
     plot(fig / "mixer_sliding_interface.png", three, "--quantities", "vorticity",
          "--limits=-30:30", "--mesh", "--window", "0.04,0.07,-0.015,0.015", "--dpi", 150,
          "--labels", "Imprinted interface: 64 rotor / 96 stator intervals")
