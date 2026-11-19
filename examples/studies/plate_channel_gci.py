@@ -30,6 +30,14 @@ Models (key, case files, treatment):
     zf0   tmr_plate_zeta_f0 / channel_zeta_f0      compound-2023
     eb    tmr_plate_eb / channel_eb                compound
 
+The finest k-ε plate (level 2 and above) runs with the relaxations 0.5
+for momentum and turbulence: the defaults diverge there (RUN014). Results
+of levels 0 to 2 (2026-11-19) are on the stage-6 verification page; the
+next step, levels 1 to 3 on a machine with time to spare:
+
+    cargo build --release -p foehncraft-cli
+    python3 examples/studies/plate_channel_gci.py output/gci123 --levels 1,2,3 --jobs 4
+
 Bands (specification 9.3, 9.4): plate GCI_fine of C_f ≤ 2 %, C_f within
 ±5 % of White, SST C_f within 1 % of the TMR value; channel GCI_fine of
 U_b+ ≤ 0.5 %, U_b+ within ±3 % of the DNS (17.55). Writes OUT/report.md
