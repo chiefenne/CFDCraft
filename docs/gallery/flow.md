@@ -796,7 +796,8 @@ turned mesh.
 | 64 + 96 | 2 560 | 0.01 | 0.25 % | 2.3 |
 
 (Relative to the speed of the inner wall at t = 10 s; Δt ∝ h.) The 640-cell
-case runs in about 6 seconds. Further checks: with the same number of sectors
+case runs in 5.6 s, the 2 560-cell one in 45 s (8.4 and 51 s before PR #97 on
+the same machine). Further checks: with the same number of sectors
 on both sides and the time step of entry 95 the error is 1.350 % against
 1.354 % of conformal stepping on the same 512-cell mesh (the imprint of an
 interface that is at a multiple of the sector angle is the conformal one);
@@ -813,8 +814,11 @@ rotor, a fixed time step (`SLD003` for the adaptive one), no restart (`SLD005`;
 no restart file is written either), CPU, and the interface must be a surface
 of revolution made of the faces of an extruded mesh (a warning, `SLD006`,
 names cells that do not close). The solver, its multigrid hierarchy
-included, is built again in every step, which costs about half of the run time
-here; a rebinding in place would be solver-speed work. [Recipe 96](../recipes/flow.md#sliding-mesh-imprint).
+included, is built again in every step: since PR #97 the multigrid setups are
+about a quarter of the solver time of the case file and 13 % on 2 560 cells,
+the rebuild of mesh and solver about a tenth of the run time; the hierarchy of
+the step before cannot be kept (the rotor turns by about one cell per step,
+the verification page has the numbers). [Recipe 96](../recipes/flow.md#sliding-mesh-imprint).
 
 Checks: observed order 1.9–2.8; the cases of `crates/foehncraft-flow/tests/sliding.rs`
 (refusals of the case file and of the mesh, convergence, equal pitch against

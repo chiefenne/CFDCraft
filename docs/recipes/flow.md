@@ -938,9 +938,11 @@ outer_iterations = 4      # 3 to 6 is usual
 - Probes find the cell that is at their point at the time of the sample, and
   the fields file (`vtkhdf`) is written on the mesh of the end of the run with
   the cells at the interface as polyhedra.
-- The run builds the solver in every step, so it takes several times the time
-  of a run on a fixed mesh of the same size. Use variant A (recipe 95) when the
-  two pitches are equal and the step may be one sector.
+- The run builds the solver and the pressure multigrid in every step: on the
+  case file the setups are about a quarter of the solver time, on larger meshes
+  less (13 % on 2 560 cells, 5 % on 41 000), where the pressure and momentum
+  solves take the rest. Use variant A (recipe 95) when the two pitches are equal
+  and the step may be one sector.
 
 [Gallery 96](../gallery/flow.md#sliding-mesh-imprint); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
