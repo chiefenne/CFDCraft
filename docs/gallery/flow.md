@@ -1202,7 +1202,7 @@ n_theta = 48
 n_theta_stator = 72
 ```
 
-![A disc impeller in a closed vessel after eight revolutions: the swirl u_θ and the meridional flow with its streamlines, averaged around the axis; the dashed line is the sliding interface, a pot of disc, cylinder and disc around the impeller whose two discs pass through the axis](../figures/gallery/disc_pot_fields.png)
+<img src="../figures/gallery/disc_pot_fields.png" alt="A disc impeller in a closed vessel after eight revolutions: the swirl u_θ and the meridional flow with its streamlines, averaged around the axis; the dashed line is the sliding interface, a pot of disc, cylinder and disc around the impeller whose two discs pass through the axis" width="800" height="204">
 
 `examples/studies/revolved/disc_pot.toml` (54 528 cells, 8 minutes): a disc
 of radius 0.03 m turning at 20 rad/s in the middle of a closed vessel of
@@ -1217,7 +1217,7 @@ axis, without a mark at the interface. The fluid holds the disc back with
 a torque of 4.5·10⁻⁴ N m; the shaft power of 9.0 mW goes into the energy
 balance of the run (D184).
 
-![A turning section of an annular duct between two fixed ones: the swirl u_θ and the axial velocity u_z; the dashed lines are the two cones of the interface](../figures/gallery/swirl_stage_fields.png)
+<img src="../figures/gallery/swirl_stage_fields.png" alt="A turning section of an annular duct between two fixed ones: the swirl u_θ and the axial velocity u_z; the dashed lines are the two cones of the interface" width="800" height="465">
 
 `examples/studies/revolved/swirl_stage.toml` (34 560 cells, 2.5 minutes):
 an annular duct (hub 0.05 m, casing 0.10 m) whose middle section, hub and
