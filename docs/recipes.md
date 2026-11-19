@@ -21,7 +21,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
 | [Verification](recipes/verification.md) | the discretisation uncertainty of a sweep (GCI), the generated verification manual | 34, 35 |
-| [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30, 108 |
+| [Post-processing](recipes/post-processing.md) | derived fields with the output and from restart files (`foehn post derive`) | 30, 108, 110 |
 | [Run control and health](recipes/runs.md) | restart, stop and steer runs, drive runs from a script or an agent, balances and divergence reports, the log, scheduled changes and case upgrades | 22, 26, 27, 37, 38, 39 |
 
 ## All recipes by number
@@ -93,6 +93,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="several-rotors"></a>102 | [Run several rotors at their own speeds, and a transient frozen rotor](recipes/flow.md#several-rotors) | [Incompressible flow](recipes/flow.md) |
 | <a id="revolved-interfaces"></a>103 | [Give a rotor an interface of any rotationally symmetric shape: discs, cones, pots](recipes/flow.md#revolved-interfaces) | [Incompressible flow](recipes/flow.md) |
 | <a id="turbulence-derived-fields"></a>108 | [Write the Reynolds stress, the scales and the wall values of a turbulence model](recipes/post-processing.md#turbulence-derived-fields) | [Post-processing](recipes/post-processing.md) |
+| <a id="transient-statistics"></a>110 | [Average a transient run: mean, RMS, covariance, confidence interval](recipes/post-processing.md#transient-statistics) | [Post-processing](recipes/post-processing.md) |
 
 ## Adding a feature
 

@@ -331,6 +331,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `BAL001` | warning | A relative mass imbalance of a step or iteration above `[balance] tolerance_step` (D89). |
 | `BAL002` | warning | A relative mass imbalance over the run above `[balance] tolerance_run` (D89). |
 | `BAL003` | warning | A numerical dissipation of kinetic energy below `[balance] tolerance_energy`: the discretisation adds energy (D90). |
+| `STAT001` | warning | The averaging window of a statistic of `[output.statistics]` is too short: the batch means are correlated (lag-1 autocorrelation above 0.3), so the confidence interval of the mean is too narrow; run longer or use fewer batches (D71). |
 | `GEN001` | error | An error without a more specific code. |
 
 ## Engine API (D86)

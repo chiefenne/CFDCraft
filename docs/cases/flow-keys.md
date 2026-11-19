@@ -91,6 +91,7 @@ line (recipe 26).
 | `output.wall_crossings` | none | wall crossings `[[output.wall_crossings]]` with `name`, `boundary`, `from`, `direction` (x), `kind` (`reattachment`: the wall shear along `direction` turns from negative to positive; `separation`: from positive to negative), `width` (only the faces within this distance of the line; default all), `skip` (leave out the faces closer than this to `from`, e.g. the corner vortices behind a step; default 0): the first such point after `from`, linear between the two face centroids, as the distance from `from` (the reattachment length of a step), in the report and with its GCI in a level sweep (6g) |
 | `output.coefficients` | none | force coefficients C = 2F/(ρU²A) of the sum over `boundaries`, with `velocity` U, `area` A, `drag_direction` (x), `lift_direction` (y) |
 | `output.derived` | none | derived fields in every `fields*.vtkhdf` (D72): `vorticity`, `q-criterion`, `lambda2`, `enstrophy`, `strain-rate`, `pressure-coefficient`, `total-pressure`, `relative-velocity`, `frame-velocity`, `turbomachinery`, `relative-total-pressure`, `rothalpy` (with a turning zone, D183), `wall-shear-stress`, `y-plus`, `wall-distance`, `turbulence-features`, `turbulence-scales`, `reynolds-stress`, `wall-normal` (EB), `turbulence-wall` (with a turbulence model); see [Derived fields](#derived-fields-d72) |
+| `output.statistics` | none | transient: time means, RMS and covariances of the fields, probes and force coefficients from `start` (s), the batch-means confidence interval with `batches` (20) and the phase averages over `phase_period` (s) in `phase_bins` (24) bins, `tolerance` (10⁻³) of the verdict; `fields` (true) writes `statistics.vtkhdf` (D71); see [Statistics](#statistics-of-transient-runs-d71) |
 | `output.machines` | none | `[[output.machines]]` tables `name`, `rotor` (a turning zone; default: the only one), `inlet`, `outlet` (lists of boundaries) and `gravity` (9.80665 m/s²): volume flow, total pressure rise, head, hydraulic and total-to-static efficiency and Euler work between inlet and outlet (D184, [recipe 101](../recipes/flow.md#torque-power)) |
 | `mrf.walls`, `sliding.walls` | the walls inside the zone | the walls of the rotor, whose torque gives the shaft power −Ω·T (D184) |
 | `output.frame` | none | the `zone` of an `[[mrf]]` or `[[sliding]]` table whose frame the fields of rotating machinery take in every cell (D183); default: each turning zone in its own frame, the rest in the fixed one |
@@ -268,6 +269,27 @@ axis of `output.frame`, else of the first table. On the sliding mesh **x** is
 the current position of the cell. A sample line (`[[output.lines]]`) of a case
 with a turning zone has the columns `u_rel`, `v_rel`, `w_rel`, `c_r`, `c_u`,
 `c_a`, `w_u` at the end.
+
+# Statistics of transient runs (D71)
+
+`[output.statistics]` averages a transient run in simulated time, each step
+weighted with its time step ([recipe 110](../recipes/post-processing.md#transient-statistics)).
+
+| Output | Contents |
+|---|---|
+| `statistics.vtkhdf` | `mean_<f>` and `rms_<f>` of `velocity_x`, `velocity_y`, `velocity_z`, `pressure`, `k` (with a turbulence model) and every scalar; `covariance_velocity_xy`, `_yz`, `_xz`; `covariance_velocity_<c>_<scalar>` for c = x, y, z. Needs `[output] vtkhdf` and `fields = true` |
+| `statistics.csv` | per series (`probes.<name>.u`, `.v`, `.w`, `.p`, `coefficients.cd`, `.cl`): `mean`, `rms`, `min`, `max`, `half_width_95` (Student t of the batch means), `batch_correlation` r1, `verdict` |
+| `statistics_phase.csv` | with `phase_period`: `phase` (bin centre), `weight` (time in the bin, s) and the mean of every series in the bin |
+| `result.json` | `solves[].statistics`: window, samples, batches, the series and the field datasets |
+
+The verdict is `sufficient` when r1 passes the one-sided 95 % von Neumann
+test, r1 ≤ 1.645 √((B − 2)/(B² − 1)) for B batches, else `too short` with
+the warning STAT001: the batch means are correlated, so the half width
+understates the uncertainty (a trend, or too short a window). With
+`phase_period` the batches hold whole periods. A series also passes when its half width, widened by
+√((1 + r1)/(1 − r1)), is below `tolerance` (10⁻³) of √var + |mean|. The
+section is refused for a steady run (CASE005), and `batches` < 2 or a
+`phase_period` ≤ 0 give CASE004.
 
 # Boundary conditions (D29)
 

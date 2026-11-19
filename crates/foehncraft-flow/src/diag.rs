@@ -177,6 +177,8 @@ codes! {
     BAL_MASS_STEP = "BAL001", Warning, "A relative mass imbalance of a step or iteration above `[balance] tolerance_step` (D89).";
     BAL_MASS_RUN = "BAL002", Warning, "A relative mass imbalance over the run above `[balance] tolerance_run` (D89).";
     BAL_NEGATIVE_DISSIPATION = "BAL003", Warning, "A numerical dissipation of kinetic energy below `[balance] tolerance_energy`: the discretisation adds energy (D90).";
+    // statistics of transient runs (D71)
+    STAT_WINDOW = "STAT001", Warning, "The averaging window of a statistic of `[output.statistics]` is too short: the batch means are correlated (lag-1 autocorrelation above 0.3), so the confidence interval of the mean is too narrow; run longer or use fewer batches (D71).";
     // anything else
     GENERAL = "GEN001", Error, "An error without a more specific code.";
 }
@@ -385,7 +387,7 @@ mod tests {
             assert!(
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
-                    "REG", "MESH", "TURB", "MRF", "SLD", "ROT"
+                    "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT"
                 ]
                 .contains(&p),
                 "{}",

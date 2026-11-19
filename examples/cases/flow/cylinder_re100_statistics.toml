@@ -1,0 +1,80 @@
+# Statistics of the vortex street behind a cylinder at Re = 100 (D71,
+# gallery and recipe 110).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cylinder_re100_statistics.toml
+#
+# The case cylinder_re100.toml run to t = 12 s with `[output.statistics]`
+# from t = 5 s, when the street is periodic: the time mean, RMS and
+# covariance of the fields (statistics.vtkhdf), of a probe 3 D behind the
+# cylinder centre and of the drag and lift coefficients (statistics.csv),
+# and their phase averages over the shedding period D/(St Ū) = 0.3384 s of
+# this mesh (St 0.2955; statistics_phase.csv). With the period the batches
+# of the confidence interval hold whole periods (ten batches of two
+# periods), so their means agree and every verdict is `sufficient`; the
+# benchmark check of cylinder_re100.toml still runs.
+
+case_format = "0.6"
+
+[mesh.cylinder]
+refine = 0
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[flow]
+convection = true
+
+[boundary.inlet]
+type = "velocity-inlet"
+profile = "parabolic"
+max_velocity = 1.5
+profile_axes = ["y"]
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.walls]
+type = "wall"
+[boundary.cylinder]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+log_every = 500
+
+[time]
+scheme = "bdf2"
+time_step = 0.0005
+end_time = 12.0
+adaptive = true
+max_cfl = 0.8
+
+[verification]
+benchmark = "schafer-turek-2d2"
+benchmark_tolerance = 0.025
+evaluation_start = 5.0
+
+[output]
+vtkhdf = true
+fields_every = 0
+wall_csv = false
+
+[output.coefficients]
+boundaries = ["cylinder"]
+velocity = 1.0          # the mean inlet velocity Ū (m/s)
+area = 0.001            # D times the depth of the layer (m²)
+
+[[output.probes]]
+name = "wake"
+point = [0.5, 0.2, 0.005]   # 3 D behind the cylinder centre, on the axis
+
+[output.statistics]
+start = 5.0
+batches = 10
+phase_period = 0.3384
