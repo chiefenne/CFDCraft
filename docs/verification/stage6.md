@@ -1484,8 +1484,8 @@ on the coarsest mesh and halved with the mesh:
 
 The test (`tests/sliding.rs`) requires orders between 1.9 and 2.8 and errors
 below 2·10⁻² and 4·10⁻³ on the 640 and 2 560 cells. The 640-cell case, 500 steps,
-runs in 6 s (half of it in the multigrid setups that every step repeats), the
-2 560-cell case in 37 s.
+runs in 5.6 s, the 2 560-cell case, 1 000 steps, in 45 s (8.4 and 51 s before
+PR #97, measured on the same machine; finding 3).
 
 **Equal pitch against conformal stepping** (32 + 32 sectors, 512 cells, the time
 step of variant A, 2π/(32 · 10) s): L2 error 1.350·10⁻² against 1.354·10⁻² of
@@ -1516,11 +1516,40 @@ Findings:
    which is stale on the turned mesh and unstable; with `extrapolation = false`
    and two outer iterations the old time levels of the BDF2 scheme, the cell
    content of the moved cells, are all the scheme needs of the step before.
-3. **Rebuilding costs.** The solver, its matrices and multigrid hierarchy are
-   built again in every step because the face list changes; 49 % of the run
-   time of the case file is the multigrid setup. A rebinding in place
-   (fixed-capacity face storage in the kernels) would remove most of it and is
-   solver-speed work that waits for the maintainer's go.
+3. **Rebuilding costs (PR #97).** The solver, its matrices and multigrid
+   hierarchy are built again in every step because the face list changes. On
+   the case file (main before #97, 8.4 s) 48 % of the solver time was the
+   pressure multigrid setup and 1.15 s of the run the rebuild of mesh and
+   solver around it. Measured and dropped first: **keeping the hierarchy of
+   the step before.** The rotor turns by about one cell per step (0.2 rad
+   against a sector of 0.196 rad), so its coarse levels no longer fit the
+   interface: kept whole, the conjugate gradients needed 784 iterations per
+   step instead of 72 (run 14.7 s); with only its finest level refreshed (new
+   matrix, diagonal and λ_max, old coarse levels) 353 (8.7 s). A hierarchy
+   built for every step is the cheapest. What #97 changed instead, each with
+   the same result (histories bit-identical, or to 1e-13 where the coarse
+   inverse is rounded differently; L2 errors unchanged): the dense inverse of
+   the coarsest level, 80 % of a setup on this mesh, now goes through
+   L⁻¹ by rows and A⁻¹ = L⁻ᵀL⁻¹ on the lower triangle (5 ms to 0.9 ms for
+   175 unknowns); setups below 20 000 rows run on one helper thread instead
+   of handing each of their short parallel loops (20 power iterations per
+   level among them) to the pool; the mesh geometry of a step is computed
+   once (it was twice, with cell volumes that the rigid-body cells replace);
+   the discretisation once (the second one served only the least-squares
+   weights of the pressure, now computed alone); the state is moved, not
+   copied. Run time on the same machine, before and after:
+
+   | Mesh | Steps | Before | After | Multigrid setup before / after |
+   |---|---|---|---|---|
+   | 640 cells (case file) | 500 | 8.4 s | 5.6 s | 3.36 / 1.28 s |
+   | 2 560 cells | 1 000 | 51.2 s | 44.5 s | 6.17 / 4.92 s |
+   | 40 960 cells | 20 | 30.8 s | 28.4–30.8 s | 1.71 / 1.37–1.57 s |
+
+   On 40 960 cells the pressure and momentum solves are 90 % of the run and the
+   difference is within the noise of the machine. What is left of the rebuild:
+   the new solver (buffers and kernel data, 0.35 ms per step on 640 cells,
+   26 ms on 40 960, 2 % of that run) and the discretisation; a rebinding in
+   place would save these and is solver-speed work for later.
 4. **Found on the way:** the VTKHDF writer classified a cell with 6 quadrilateral
    faces as a hexahedron even when its interface face had corners of its own
    (it panicked); a cell whose faces do not close on the nodes of its shape is

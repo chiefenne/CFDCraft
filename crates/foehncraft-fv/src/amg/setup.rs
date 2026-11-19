@@ -271,21 +271,35 @@ fn smoother_steps(s: &AmgSettings, lambda: f64) -> Vec<(f64, f64)> {
 
 /// Dense inverse of a symmetric positive definite matrix by its Cholesky
 /// factorisation; fails when a pivot is not positive.
+///
+/// A = L Lᵀ, M = L⁻¹ and A⁻¹ = Mᵀ M, each of the three about n³/6
+/// multiply-adds over contiguous rows of the lower triangle; the upper
+/// triangle of the result is the mirror of the lower one (exactly
+/// symmetric). The coarsest level is rebuilt with every setup, so this is
+/// most of a setup on a small mesh, and of every per-step setup of a
+/// sliding mesh by imprinting (D182).
 pub fn dense_spd_inverse(a: &Csr) -> Result<Vec<f64>> {
     let n = a.n_rows;
     let mut l = vec![0.0; n * n];
     for i in 0..n {
         for (j, v) in a.row(i) {
-            l[i * n + j] = v;
+            if j <= i {
+                l[i * n + j] = v;
+            }
         }
     }
     let scale = (0..n).map(|i| l[i * n + i].abs()).fold(0.0f64, f64::max);
-    // lower Cholesky factor in place
-    for j in 0..n {
-        let mut d = l[j * n + j];
-        for k in 0..j {
-            d -= l[j * n + k] * l[j * n + k];
+    // lower Cholesky factor in place, row by row: L[i][j] for j < i from
+    // the dot product of the rows i and j, then the pivot
+    for i in 0..n {
+        let (done, rest) = l.split_at_mut(i * n);
+        let row = &mut rest[..n];
+        for j in 0..i {
+            let rj = &done[j * n..j * n + j];
+            let s = row[j] - dot(&row[..j], rj);
+            row[j] = s / done[j * n + j];
         }
+        let d = row[i] - dot(&row[..i], &row[..i]);
         if d <= 1e-13 * scale || !d.is_finite() {
             bail!(
                 "the coarsest multigrid level ({n} unknowns) is singular or not positive \
@@ -294,51 +308,80 @@ pub fn dense_spd_inverse(a: &Csr) -> Result<Vec<f64>> {
                  positive definite"
             );
         }
-        let d = d.sqrt();
-        l[j * n + j] = d;
-        for i in j + 1..n {
-            let mut s = l[i * n + j];
-            for k in 0..j {
-                s -= l[i * n + k] * l[j * n + k];
+        row[i] = d.sqrt();
+    }
+    // M = L⁻¹, lower triangular, row by row: M[i] = (e_i − Σ_k<i L[i][k] M[k]) / L[i][i]
+    let mut m = vec![0.0; n * n];
+    for i in 0..n {
+        let (done, rest) = m.split_at_mut(i * n);
+        let row = &mut rest[..n];
+        let li = &l[i * n..i * n + i];
+        for (k, &lik) in li.iter().enumerate() {
+            if lik != 0.0 {
+                axpy(-lik, &done[k * n..k * n + k + 1], &mut row[..=k]);
             }
-            l[i * n + j] = s / d;
         }
-        for i in 0..j {
-            l[i * n + j] = 0.0;
+        let d = 1.0 / l[i * n + i];
+        row[i] = 1.0;
+        for v in &mut row[..=i] {
+            *v *= d;
         }
     }
-    // inverse column by column: L y = e_c, Lᵀ x = y
+    // A⁻¹ = Mᵀ M: (A⁻¹)[i][j] = Σ_k M[k][i] M[k][j], lower triangle j ≤ i
     let mut inv = vec![0.0; n * n];
-    let mut y = vec![0.0; n];
-    for c in 0..n {
-        for i in 0..n {
-            let mut s = if i == c { 1.0 } else { 0.0 };
-            for k in 0..i {
-                s -= l[i * n + k] * y[k];
+    for k in 0..n {
+        let mk = &m[k * n..k * n + k + 1];
+        for i in 0..=k {
+            let c = mk[i];
+            if c != 0.0 {
+                axpy(c, &mk[..=i], &mut inv[i * n..i * n + i + 1]);
             }
-            y[i] = s / l[i * n + i];
-        }
-        for i in (0..n).rev() {
-            let mut s = y[i];
-            for k in i + 1..n {
-                s -= l[k * n + i] * inv[k * n + c];
-            }
-            inv[i * n + c] = s / l[i * n + i];
         }
     }
-    // exact symmetry of the stored inverse
     for i in 0..n {
         for j in i + 1..n {
-            let v = 0.5 * (inv[i * n + j] + inv[j * n + i]);
-            inv[i * n + j] = v;
-            inv[j * n + i] = v;
+            inv[i * n + j] = inv[j * n + i];
         }
     }
     Ok(inv)
 }
 
+fn dot(a: &[f64], b: &[f64]) -> f64 {
+    a.iter().zip(b).map(|(x, y)| x * y).sum()
+}
+
+fn axpy(c: f64, x: &[f64], y: &mut [f64]) {
+    for (y, x) in y.iter_mut().zip(x) {
+        *y += c * x;
+    }
+}
+
+/// Below this many rows the setup runs on one thread of its own: its
+/// parallel loops are short, and handing each of them to the pool costs
+/// more than the loop (the hierarchy is the same for any number of
+/// threads, D31).
+const SERIAL_ROWS: usize = 20_000;
+
 /// Builds the hierarchy of the symmetric matrix `a`.
 pub fn build(a: Csr, s: &AmgSettings) -> Result<Hierarchy> {
+    thread_local! {
+        // one helper thread per calling thread (parallel callers do not
+        // queue behind each other)
+        static ONE: Option<rayon::ThreadPool> = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .ok();
+    }
+    if a.n_rows < SERIAL_ROWS && rayon::current_num_threads() > 1 {
+        return ONE.with(|one| match one {
+            Some(pool) => pool.install(|| build_on(a, s)),
+            None => build_on(a, s),
+        });
+    }
+    build_on(a, s)
+}
+
+fn build_on(a: Csr, s: &AmgSettings) -> Result<Hierarchy> {
     s.validate()?;
     let t0 = Instant::now();
     ensure!(
@@ -473,15 +516,18 @@ pub(crate) mod tests {
 
     #[test]
     fn dense_inverse() {
-        let a = lap2d(6);
-        let inv = dense_spd_inverse(&a).unwrap();
-        let n = a.n_rows;
-        for c in 0..n {
-            let col: Vec<f64> = (0..n).map(|i| inv[i * n + c]).collect();
-            let e = a.spmv(&col);
-            for (i, v) in e.iter().enumerate() {
-                let want = if i == c { 1.0 } else { 0.0 };
-                assert!((v - want).abs() < 1e-12);
+        for m in [1, 2, 6, 15] {
+            let a = lap2d(m);
+            let inv = dense_spd_inverse(&a).unwrap();
+            let n = a.n_rows;
+            for c in 0..n {
+                let col: Vec<f64> = (0..n).map(|i| inv[i * n + c]).collect();
+                let e = a.spmv(&col);
+                for (i, v) in e.iter().enumerate() {
+                    let want = if i == c { 1.0 } else { 0.0 };
+                    assert!((v - want).abs() < 1e-12, "m {m}: A A⁻¹[{i}][{c}] = {v}");
+                    assert_eq!(inv[i * n + c], inv[c * n + i]);
+                }
             }
         }
     }

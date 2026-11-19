@@ -975,6 +975,24 @@ pub(crate) fn disc_with(
     geo: &Geometry,
     points: &std::collections::BTreeMap<String, BoundaryKind>,
 ) -> Result<Discretisation> {
+    Discretisation::new(mesh, geo, &stencil_problem(mesh, points))
+}
+
+/// The least-squares weights of [`disc_with`] alone.
+pub(crate) fn lsq_with(
+    mesh: &Mesh,
+    geo: &Geometry,
+    points: &std::collections::BTreeMap<String, BoundaryKind>,
+) -> Result<Soa3> {
+    Discretisation::least_squares(mesh, geo, &stencil_problem(mesh, points))
+}
+
+/// The boundary stencil points as a problem: a fixed value where the point
+/// is the face centroid, a zero gradient where it is projected.
+fn stencil_problem(
+    mesh: &Mesh,
+    points: &std::collections::BTreeMap<String, BoundaryKind>,
+) -> Problem {
     let mut prob = Problem::default();
     for p in &mesh.boundaries {
         let kind = points
@@ -987,7 +1005,7 @@ pub(crate) fn disc_with(
         };
         prob.boundary.insert(p.name.clone(), b);
     }
-    Discretisation::new(mesh, geo, &prob)
+    prob
 }
 
 /// The discretisations of the flow solver: the geometry, the matrix
@@ -1002,7 +1020,7 @@ pub fn discretisation(
     bc: &BoundaryArrays,
 ) -> Result<(Discretisation, Soa3)> {
     let d = disc_with(mesh, geo, &bc.u_points)?;
-    let lsq_p = disc_with(mesh, geo, &bc.p_points)?.lsq;
+    let lsq_p = lsq_with(mesh, geo, &bc.p_points)?;
     Ok((d, lsq_p))
 }
 

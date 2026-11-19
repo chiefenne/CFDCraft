@@ -855,21 +855,19 @@ fn remap3(v: &Soa3, m: &[Option<usize>]) -> Soa3 {
 /// mesh, and the intersection polygons start from the flux of the linearly
 /// interpolated velocity (its Rhie–Chow differences 0).
 pub fn carry(
-    state: &State,
-    old: &OldLevels,
+    mut st: State,
+    mut lv: OldLevels,
     map: &FaceMap,
     disc: &Discretisation,
     rho: f64,
 ) -> (State, OldLevels) {
-    let mut st = state.clone();
-    st.mass_flux = remap(&state.mass_flux, &map.face);
-    st.ub = remap3(&state.ub, &map.boundary);
-    st.pb = remap(&state.pb, &map.boundary);
-    let mut lv = old.clone();
-    lv.m_old = remap(&old.m_old, &map.face);
-    lv.x_cur = remap(&old.x_cur, &map.face);
-    lv.x_old = remap(&old.x_old, &map.face);
-    lv.ub_old = old.ub_old.as_ref().map(|u| {
+    st.mass_flux = remap(&st.mass_flux, &map.face);
+    st.ub = remap3(&st.ub, &map.boundary);
+    st.pb = remap(&st.pb, &map.boundary);
+    lv.m_old = remap(&lv.m_old, &map.face);
+    lv.x_cur = remap(&lv.x_cur, &map.face);
+    lv.x_old = remap(&lv.x_old, &map.face);
+    lv.ub_old = lv.ub_old.as_ref().map(|u| {
         [
             remap(&u[0], &map.boundary),
             remap(&u[1], &map.boundary),
@@ -885,8 +883,8 @@ pub fn carry(
                 .map(|i| rho * (w * u[i][o] + (1.0 - w) * u[i][n]) * sv[i])
                 .sum()
         };
-        st.mass_flux[f] = flux([&state.u.x, &state.u.y, &state.u.z]);
-        lv.m_old[f] = flux([&old.u_old[0], &old.u_old[1], &old.u_old[2]]);
+        st.mass_flux[f] = flux([&st.u.x, &st.u.y, &st.u.z]);
+        lv.m_old[f] = flux([&lv.u_old[0], &lv.u_old[1], &lv.u_old[2]]);
         lv.x_cur[f] = 0.0;
         lv.x_old[f] = 0.0;
     }
