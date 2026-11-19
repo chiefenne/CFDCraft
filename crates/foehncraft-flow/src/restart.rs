@@ -31,7 +31,9 @@
 //!   `turb_time_scale` (transient `turb_zeta_old`) and per boundary face
 //!   `turb_zeta_b`, `turb_f_b`; `turb_amg_matrix_<slot>` the matrices of
 //!   the last multigrid setups of the turbulence equations (slot 1 f,
-//!   2 k, 3 ε or ω, 4 ζ; with their multigrid only);
+//!   2 k, 3 ε or ω, 4 ζ; with their multigrid only); `turb_fr1`, f_r1
+//!   of the curvature correction of SST (output only, recomputed in every
+//!   iteration);
 //! - `amg_matrix`: the pressure matrix of the last multigrid setup (the
 //!   hierarchy is rebuilt from it, so the preconditioner is the same);
 //! - the coupled algorithm with the multigrid momentum sweep (D179):
@@ -254,6 +256,9 @@ mod io {
                 for (slot, m) in &t.amg {
                     ds(&g, &format!("turb_amg_matrix_{slot}"), m)?;
                 }
+                if let Some(f) = &t.fr1 {
+                    ds(&g, "turb_fr1", f)?;
+                }
             }
             if let Some(m) = &r.amg_matrix {
                 ds(&g, "amg_matrix", m)?;
@@ -386,6 +391,11 @@ mod io {
                     g.link_exists(&n).then(|| rd(g, &n).map(|m| (s, m)))
                 })
                 .collect::<Result<_>>()?,
+            fr1: if g.link_exists("turb_fr1") {
+                Some(rd(g, "turb_fr1")?)
+            } else {
+                None
+            },
         }))
     }
 
@@ -697,6 +707,7 @@ impl Restart {
                     }),
                     // the matrices follow the old face order: rebuilt
                     amg: Vec::new(),
+                    fr1: t.fr1.as_ref().map(|o| remap(o, &mc)),
                 }),
             };
             if let Some((o, ..)) = &mut self.transient {

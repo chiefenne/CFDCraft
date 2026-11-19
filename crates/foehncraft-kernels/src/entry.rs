@@ -2886,7 +2886,7 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 48);
+        assert_eq!(NAMES.len(), 51);
         // the elliptic-blending helpers: out += |v|², out3 = s v
         let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
         let s = [0.5, -2.0];

@@ -1102,6 +1102,15 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
             message,
         })
     };
+    if t.curvature_correction && t.production_limiter == Some(ProductionLimiter::KatoLaunder) {
+        push(
+            Level::Note,
+            diag::TURB_CURVATURE_KATO,
+            "turbulence.curvature_correction with production_limiter = \"kato-launder\": both act on \
+             stagnation and swirl regions; Smirnov & Menter (2009) use the standard production"
+                .to_string(),
+        );
+    }
     if !t.constants.is_empty() {
         push(
             Level::Warning,
@@ -1234,6 +1243,9 @@ pub struct TurbState {
     /// a multigrid of the turbulence equations; dropped when a restart
     /// file is mapped to another cell order.
     pub amg: Vec<(usize, Vec<f64>)>,
+    /// f_r1 of the curvature correction per cell (output only; not in the
+    /// restart file, recomputed in every iteration).
+    pub fr1: Option<Vec<f64>>,
 }
 
 /// The ζ-f part of a [`TurbState`].
@@ -1360,6 +1372,17 @@ struct CurvDev {
     spin: [f64; 3],
     /// `s_old` holds a time level.
     has_old: bool,
+}
+
+/// The curvature correction computed S_ij since the start or the last
+/// restart (so that a time level of S_ij can be kept).
+#[derive(Debug, Default)]
+struct CurvFresh(std::cell::Cell<bool>);
+
+impl Clone for CurvFresh {
+    fn clone(&self) -> Self {
+        Self(std::cell::Cell::new(self.0.get()))
+    }
 }
 
 /// The pseudo-time step of the turbulence transport equations in a steady
@@ -1503,6 +1526,7 @@ pub struct Turbulence {
     eb: Option<EbDev>,
     /// The curvature correction of SST.
     curv: Option<CurvDev>,
+    curv_fresh: CurvFresh,
     /// Multigrid settings of the turbulence and elliptic solves (those of
     /// the pressure).
     amg: foehncraft_fv::amg::AmgSettings,
@@ -1971,6 +1995,7 @@ impl Turbulence {
             zf,
             eb,
             curv,
+            curv_fresh: CurvFresh::default(),
             amg: case.solver.pressure.amg.clone(),
             elliptic: case.solver.elliptic.clone(),
             amg_rebuild: true,
@@ -2550,6 +2575,7 @@ impl Turbulence {
         for (i, &b) in c.s.iter().enumerate() {
             dev.strain_component(self.gu, i as u32, b)?;
         }
+        self.curv_fresh.0.set(true);
         for i in 0..6 {
             dev.gradient_with(c.lsq, c.s[i], c.ones, c.zeros, None, c.tmp)?;
             let old = match dt {
@@ -3083,10 +3109,14 @@ impl Turbulence {
         extrapolate: Option<f64>,
     ) -> Result<()> {
         if let Some(c) = self.curv.as_mut() {
-            for i in 0..6 {
-                dev.copy(c.s[i], c.s_old[i])?;
+            // a time level of S_ij only from a computed S_ij (not in the
+            // first step of a run or after a restart: no time part there)
+            c.has_old = self.curv_fresh.0.get();
+            if c.has_old {
+                for i in 0..6 {
+                    dev.copy(c.s[i], c.s_old[i])?;
+                }
             }
-            c.has_old = true;
         }
         for v in &self.vars() {
             let Some((o1, o2, keep)) = v.old else {
@@ -3281,6 +3311,10 @@ impl Turbulence {
                 .collect(),
             k,
             omega,
+            fr1: match self.curv {
+                Some(c) => Some(dev.download(c.fr1)?),
+                None => None,
+            },
         })
     }
 
@@ -3294,6 +3328,7 @@ impl Turbulence {
     /// Loads a host state (a restart). A state of the other family (ω for a
     /// k-ε case, or ε for SST) is converted with ε = C_μ k ω.
     pub(crate) fn load(&mut self, dev: &mut dyn FlowDevice, s: &TurbState) -> Result<()> {
+        self.curv_fresh.0.set(false);
         let converted;
         let s = if s.epsilon == self.eps {
             s

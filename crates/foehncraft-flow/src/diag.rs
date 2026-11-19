@@ -120,6 +120,7 @@ codes! {
     TURB_CONSTANTS = "TURB007", Warning, "Model constants changed in `[turbulence.constants]`.";
     TURB_CAP = "TURB008", Warning, "The ν_t cap `max_viscosity_ratio` acted (cell count).";
     TURB_INLET_DEFAULT = "TURB009", Note, "Inlet turbulence defaulted to I = 0.05, r = 10 (boundary named).";
+    TURB_CURVATURE_KATO = "TURB010", Note, "The curvature correction of SST together with Kato–Launder production: both act on stagnation and swirl regions (the paper uses the standard production).";
     // expressions (D53)
     EXPR_SYNTAX = "EXPR001", Error, "An expression that cannot be parsed.";
     EXPR_NAME = "EXPR002", Error, "An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint).";

@@ -333,7 +333,7 @@ pub fn rotation_function<T: Real>(
             while k < 3 {
                 let e = levi(i, j, k);
                 if e != 0.0 {
-                    wt[i][j] = wt[i][j] - f(e) * spin[k];
+                    wt[i][j] -= f(e) * spin[k];
                 }
                 k += 1;
             }
@@ -365,7 +365,7 @@ pub fn rotation_function<T: Real>(
             let mut a = T::ZERO;
             let mut k = 0;
             while k < 3 {
-                a = a + wt[i][k] * s[j][k];
+                a += wt[i][k] * s[j][k];
                 k += 1;
             }
             let mut t = ds[i][j];
@@ -376,16 +376,16 @@ pub fn rotation_function<T: Real>(
                     let e1 = levi(i, m, n);
                     let e2 = levi(j, m, n);
                     if e1 != 0.0 {
-                        t = t + f(e1) * s[j][n] * omega_rot[m];
+                        t += f(e1) * s[j][n] * omega_rot[m];
                     }
                     if e2 != 0.0 {
-                        t = t + f(e2) * s[i][n] * omega_rot[m];
+                        t += f(e2) * s[i][n] * omega_rot[m];
                     }
                     n += 1;
                 }
                 m += 1;
             }
-            num = num + a * t;
+            num += a * t;
             j += 1;
         }
         i += 1;
@@ -598,7 +598,7 @@ mod tests {
         let lower = rotation_function(&shear(50.0), &[0.0; 6], rot, rot, 100.0, &c, 0.0);
         let upper = rotation_function(&shear(-50.0), &[0.0; 6], rot, rot, 100.0, &c, 0.0);
         assert!(lower > 1.0 && lower <= 1.25, "{lower}");
-        assert!(upper < 1.0 && upper >= 0.0, "{upper}");
+        assert!((0.0..1.0).contains(&upper), "{upper}");
         // r* by hand: S = 50, Ω = |50 − 4| = 46 on the lower side
         let rs: f64 = 50.0 / 46.0;
         // r̃ = −2 (γ/2 − Ω_z) γ² Ω_z/(Ω D³), D = max(S, 0.3 ω) = 50

@@ -11,6 +11,7 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 | 88 | [Run a case with the elliptic-blending k-ε](#elliptic-blending) |
 | 89 | [Validate the turbulence models on the backward-facing step](#step-validation) |
 | 90 | [Feed a jet with a developed pipe profile and compute the Nusselt number](#impinging-jet) |
+| 113 | [Make SST sensitive to curvature and system rotation](#curvature-correction) |
 
 ---
 
@@ -582,5 +583,48 @@ cat output/impinging_jet_study/summary.md
 and `--report-only` evaluates what is there. ζ-f and EB run with SIMPLEC
 and the relaxation ramp of the step (the coupled algorithm does not
 converge them here either).
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="curvature-correction"></a>
+## 113. Make SST sensitive to curvature and system rotation
+
+Linear eddy-viscosity models do not feel streamline curvature or system
+rotation: in a swirling, rotating or strongly curved flow they keep the
+turbulence of a plain shear layer. The correction of Smirnov & Menter
+(2009) multiplies the production of k and ω by f_r1 (0 … 1.25):
+
+```toml
+[turbulence]
+model = "k-omega-sst"
+curvature_correction = true
+# constants = { c_r1 = 1.0, c_r2 = 2.0, c_r3 = 1.0 }   # the paper's values
+```
+
+- It acts in the fixed frame (curvature) and sees the rotation of
+  `[[mrf]]` zones (the velocity relative to the zone convects the strain
+  rate, Ω of the zone enters r̃). It does not work with `[[sliding]]` yet.
+- A flow in system rotation that is periodic in the rotating frame (a
+  rotating channel or duct) is solved in that frame with
+  `flow.frame_rotation = [Ωx, Ωy, Ωz]` (rad/s): the velocity is the
+  relative one and the momentum equations get the Coriolis force; the
+  centrifugal force is a gradient and stays in the pressure.
+- `output.derived = ["curvature-correction"]` (or `foehn post derive
+  --fields curvature-correction`) writes f_r1 per cell: blue (< 1) where
+  the flow damps the turbulence, red (> 1) where it amplifies it.
+
+```
+target/release/foehn flow examples/cases/flow/channel_rotating_sst.toml
+```
+
+The run logs the rotating frame; `flow.md` lists the wall forces of the
+two walls (`ymin` is the unstable side at Ω_z > 0). Without the
+correction both walls carry the same shear stress; with it they differ by
+a factor 1.63 at Ro = 0.15. The cost is six extra gradients per outer
+iteration. Combined with `production_limiter = "kato-launder"` the two
+act on the same regions (stagnation and swirl); the paper uses the
+standard production.
 
 [↑ back to top](#turbulence-models)

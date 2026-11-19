@@ -26,6 +26,7 @@
 //! | `turbulence-scales` | `dissipation_rate`, `specific_dissipation_rate`, `time_scale`, `length_scale`, `viscosity_ratio` | ε (β* k ω for SST), ω (ε/(C_μ k) for the ε models), the time scale T of the model (1/(β* ω) for SST, k/ε for the k-ε family, the bounded T of ζ-f and EB), k^{3/2}/ε, ν_t/ν; needs a turbulence model | m²/s³, 1/s, s, m, - |
 //! | `reynolds-stress` | `reynolds_stress_xx`, `_yy`, `_zz`, `_xy`, `_yz`, `_xz` | the Boussinesq estimate ⅔ k δᵢⱼ − 2 ν_t Sᵢⱼ of u'ᵢu'ⱼ (spec 2.3); needs a turbulence model | m²/s² |
 //! | `wall-normal` | `wall_normal_x`, `_y`, `_z` | n = ∇α/\|∇α\| of the elliptic-blending k-ε (0 where ∇α vanishes), for the GGDH of stage 7; α = 0 on walls, zero gradient elsewhere | - |
+//! | `curvature-correction` | `rotation_function` | f_r1 of the curvature correction of SST (D170; 1 in pure shear, above 1 where curvature or rotation destabilise, below where they stabilise); needs `turbulence.curvature_correction` | - |
 //!
 //! Boundary face fields, on the boundary blocks of the file (zero on boundaries
 //! that are not walls), from the same wall values as `wall_<boundary>.csv`:
@@ -150,11 +151,13 @@ pub enum Derived {
     WallNormal,
     /// u_τ and y* of the wall treatment, on the walls (D72).
     TurbulenceWall,
+    /// f_r1 of the curvature correction of SST (-, D170).
+    CurvatureCorrection,
 }
 
 impl Derived {
     /// Every derived field, in the order they are written.
-    pub const ALL: [Derived; 20] = [
+    pub const ALL: [Derived; 21] = [
         Derived::Vorticity,
         Derived::QCriterion,
         Derived::Lambda2,
@@ -175,6 +178,7 @@ impl Derived {
         Derived::ReynoldsStress,
         Derived::WallNormal,
         Derived::TurbulenceWall,
+        Derived::CurvatureCorrection,
     ];
 
     /// The name in the case file.
@@ -200,6 +204,7 @@ impl Derived {
             Derived::ReynoldsStress => "reynolds-stress",
             Derived::WallNormal => "wall-normal",
             Derived::TurbulenceWall => "turbulence-wall",
+            Derived::CurvatureCorrection => "curvature-correction",
         }
     }
 
@@ -289,6 +294,7 @@ impl Derived {
                 ("wall_normal_z", "-"),
             ],
             Derived::TurbulenceWall => &[("friction_velocity", "m/s"), ("y_star", "-")],
+            Derived::CurvatureCorrection => &[("rotation_function", "-")],
         }
     }
 
@@ -309,6 +315,7 @@ impl Derived {
                 | Derived::ReynoldsStress
                 | Derived::WallNormal
                 | Derived::TurbulenceWall
+                | Derived::CurvatureCorrection
         )
     }
 
@@ -982,6 +989,16 @@ pub fn compute(
                 for (i, (name, _)) in d.datasets().iter().enumerate() {
                     out.cells.push((name, n.iter().map(|v| v[i]).collect()));
                 }
+            }
+            Derived::CurvatureCorrection => {
+                let t = turbulence_state(fl, d)?;
+                let f = t.fr1.as_ref().ok_or_else(|| {
+                    crate::diag::err(crate::diag::Diagnostic::new(
+                        crate::diag::CASE_INCONSISTENT,
+                        "derived field `curvature-correction` needs `turbulence.curvature_correction = true`",
+                    ))
+                })?;
+                out.cells.push(("rotation_function", f.clone()));
             }
             Derived::TurbulenceWall => {
                 let t = turbulence_state(fl, d)?;

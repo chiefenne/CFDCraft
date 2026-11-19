@@ -465,7 +465,7 @@ pub fn attach(
     }
     // the curvature correction of SST (D170): Ω^rot and the frame velocity
     // of the cells of the moving reference frames
-    if fl.turbulence.is_some() && case.turbulence.curvature_correction {
+    if case.turbulence.curvature_correction {
         let omegas: Vec<[f64; 3]> = entries
             .iter()
             .map(MrfSection::omega_vector)
@@ -482,8 +482,9 @@ pub fn attach(
                 vel[i] = cross(omegas[z], [c.x[i] - o[0], c.y[i] - o[1], c.z[i] - o[2]]);
             }
         }
-        let t = fl.turbulence.as_mut().expect("checked");
-        t.set_curvature_frames(&mut *fl.dev, &om, &vel)?;
+        if let Some(t) = fl.turbulence.as_mut() {
+            t.set_curvature_frames(&mut *fl.dev, &om, &vel)?;
+        }
     }
     let work = Buf3 {
         x: fl.dev.alloc(nc)?,
