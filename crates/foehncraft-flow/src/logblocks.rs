@@ -552,28 +552,112 @@ pub fn balance_block(title: &str, b: &crate::balance::Balance, integrated: bool)
     f
 }
 
-/// Mass flow, mean pressure and force per boundary.
+/// Mass flow, mean pressure and force per boundary, with the torque of
+/// the walls about the axis of a turning zone (D184).
 pub fn results(bs: &[crate::case::BoundarySummary]) -> Frame {
     let mut f = Frame::new("Results per boundary").summary();
+    let torque = bs.iter().any(|b| b.torque.is_some());
     f.push_text(format!(
-        "{:<16}{:>11}{:>11}{:>11}{:>11}{:>11}",
-        "Boundary", "Mass flow", "Mean p", "Force x", "Force y", "Force z"
+        "{:<16}{:>11}{:>11}{:>11}{:>11}{:>11}{}",
+        "Boundary",
+        "Mass flow",
+        "Mean p",
+        "Force x",
+        "Force y",
+        "Force z",
+        if torque {
+            format!("{:>11}", "Torque")
+        } else {
+            String::new()
+        }
     ));
     f.push_text(format!(
-        "{:<16}{:>11}{:>11}{:>11}{:>11}{:>11}",
-        "", "[kg/s]", "[Pa]", "[N]", "[N]", "[N]"
+        "{:<16}{:>11}{:>11}{:>11}{:>11}{:>11}{}",
+        "",
+        "[kg/s]",
+        "[Pa]",
+        "[N]",
+        "[N]",
+        "[N]",
+        if torque {
+            format!("{:>11}", "[N m]")
+        } else {
+            String::new()
+        }
     ));
     f.push_rule();
     for b in bs {
         f.push_text(format!(
-            "{:<16}{:>11}{:>11}{:>11}{:>11}{:>11}",
+            "{:<16}{:>11}{:>11}{:>11}{:>11}{:>11}{}",
             b.name,
             sci3(b.mass_flow),
             sci3(b.mean_pressure),
             sci3(b.force[0]),
             sci3(b.force[1]),
-            sci3(b.force[2])
+            sci3(b.force[2]),
+            if torque {
+                format!("{:>11}", b.torque.map_or("-".to_string(), sci3))
+            } else {
+                String::new()
+            }
         ));
+    }
+    f
+}
+
+/// Torque, shaft power and the performance of the machines (D184).
+pub fn rotors(v: &crate::rotor::Values) -> Frame {
+    let mut f = Frame::new("Rotors and machines").summary();
+    for r in &v.rotors {
+        f.push_text(format!("Rotor {}  ({})", r.name, r.walls.join(", ")));
+        f.push_kv("  Speed", format!("{} rad/s", sci3(r.omega)));
+        f.push_kv(
+            "  Torque of the fluid on it",
+            format!("{} N m", sci3(r.torque)),
+        );
+        f.push_kv("  Shaft power  (-Ω·T)", format!("{} W", sci3(r.power)));
+        let a = &r.angular_momentum;
+        f.push_kv(
+            "  Angular momentum",
+            format!(
+                "rotor {}, walls {}, openings {}, out {} N m; imbalance {:.1e} of the largest",
+                sci3(a.rotor),
+                sci3(a.walls),
+                sci3(a.openings),
+                sci3(a.outflow),
+                a.relative
+            ),
+        );
+    }
+    for m in &v.machines {
+        f.push_rule();
+        f.push_text(format!("Machine {}  (rotor {})", m.name, m.rotor));
+        f.push_kv("  Volume flow", format!("{} m³/s", sci3(m.volume_flow)));
+        f.push_kv(
+            "  Total pressure rise",
+            format!(
+                "{} Pa  (total to static {} Pa)",
+                sci3(m.total_pressure_rise),
+                sci3(m.total_to_static_pressure_rise)
+            ),
+        );
+        f.push_kv("  Head", format!("{} m", sci3(m.head)));
+        f.push_kv("  Shaft power", format!("{} W", sci3(m.shaft_power)));
+        f.push_kv(
+            "  Hydraulic power",
+            format!("{} W", sci3(m.hydraulic_power)),
+        );
+        f.push_kv(
+            "  Efficiency",
+            format!(
+                "{:.4}  (total to static {:.4})",
+                m.efficiency, m.total_to_static_efficiency
+            ),
+        );
+        f.push_kv(
+            "  Euler work",
+            format!("{} W  (head {} m)", sci3(m.euler_work), sci3(m.euler_head)),
+        );
     }
     f
 }

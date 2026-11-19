@@ -1152,8 +1152,31 @@ fn run_one<F: FnMut(&str)>(
         .map(|p| p.name.clone())
         .collect();
     let mut fh = String::from("step,time");
+    // rotating machinery (D184): torque per wall and per rotor, shaft power,
+    // the machines
+    let rotor_names: Vec<String> = crate::rotor::rotors(&case, mesh)
+        .into_iter()
+        .map(|r| r.name)
+        .collect();
     for w in &walls {
         let _ = write!(fh, ",{w}_fx,{w}_fy,{w}_fz");
+        if !rotor_names.is_empty() {
+            let _ = write!(fh, ",{w}_torque");
+        }
+    }
+    for r in &rotor_names {
+        let _ = write!(fh, ",{r}_torque,{r}_power");
+        if case
+            .sliding
+            .iter()
+            .any(|m| &crate::rotor::rotor_name(&m.zone) == r)
+        {
+            let _ = write!(fh, ",{r}_angle");
+        }
+    }
+    for m in &case.output.machines {
+        let n = &m.name;
+        let _ = write!(fh, ",{n}_flow,{n}_dpt,{n}_head,{n}_power,{n}_efficiency");
     }
     if case.output.coefficients.is_some() {
         fh.push_str(",cd,cl");
@@ -1167,7 +1190,7 @@ fn run_one<F: FnMut(&str)>(
                 "forces",
                 name,
                 None,
-                "step -, time s, <wall>_fx <wall>_fy <wall>_fz N (force of the fluid on the wall), cd cl -",
+                "step -, time s, <wall>_fx <wall>_fy <wall>_fz N (force of the fluid on the wall), <wall>_torque N m (about the axis of its rotor), <rotor>_torque N m, <rotor>_power W (shaft power), <rotor>_angle deg, <machine>_flow m3/s, _dpt Pa, _head m, _power W, _efficiency -, cd cl -",
             ),
             &fh,
             cont,
@@ -1206,7 +1229,7 @@ fn run_one<F: FnMut(&str)>(
     // the conservation ledger (D88, D89, D90 part 4), booked every step
     // from the state at the start or the restart
     let nonorth = case.solver.nonorth_correction;
-    let (bunits, bhead) = balance::csv_head(true);
+    let (bunits, bhead) = balance::csv_head(true, !case.turning().is_empty());
     let mut balance_csv = History::new(
         out,
         &suffix_name("balance", desc, last),
@@ -1562,6 +1585,8 @@ fn run_one<F: FnMut(&str)>(
             } else {
                 None
             };
+            let rotors = (cols.needs_rotors() && sol.is_some())
+                .then(|| crate::rotor::evaluate(sol.as_ref().unwrap(), mesh, geo, &case));
             let entries = cols.eval(
                 &crate::logcols::RowCtx {
                     index: n,
@@ -1574,6 +1599,7 @@ fn run_one<F: FnMut(&str)>(
                         error: rp.error,
                     }),
                     sol: sol.as_ref(),
+                    rotors: rotors.as_ref(),
                 },
                 geo,
             );
@@ -1699,6 +1725,48 @@ fn run_one<F: FnMut(&str)>(
                 for w in &walls {
                     if let Some(p) = boundaries.iter().find(|p| &p.name == w) {
                         let _ = write!(row, ",{:e},{:e},{:e}", p.force[0], p.force[1], p.force[2]);
+                        if !rotor_names.is_empty() {
+                            let _ = write!(row, ",{:e}", p.torque.unwrap_or(0.0));
+                        }
+                    }
+                }
+                if !rotor_names.is_empty() {
+                    let rv = crate::rotor::evaluate(&sol, mesh, geo, &case);
+                    for r in &rotor_names {
+                        let v = rv.rotor(r);
+                        let _ = write!(
+                            row,
+                            ",{:e},{:e}",
+                            v.map_or(f64::NAN, |v| v.torque),
+                            v.map_or(f64::NAN, |v| v.power)
+                        );
+                        if case
+                            .sliding
+                            .iter()
+                            .any(|m| &crate::rotor::rotor_name(&m.zone) == r)
+                        {
+                            let _ = write!(
+                                row,
+                                ",{:e}",
+                                v.map_or(f64::NAN, |v| (v.omega * rp.time).to_degrees())
+                            );
+                        }
+                    }
+                    for m in &case.output.machines {
+                        match rv.machine(&m.name) {
+                            Some(x) => {
+                                let _ = write!(
+                                    row,
+                                    ",{:e},{:e},{:e},{:e},{:e}",
+                                    x.volume_flow,
+                                    x.total_pressure_rise,
+                                    x.head,
+                                    x.shaft_power,
+                                    x.efficiency
+                                );
+                            }
+                            None => row.push_str(",nan,nan,nan,nan,nan"),
+                        }
                     }
                 }
                 let cc = monitor::coefficients(&case, &boundaries);
@@ -1910,6 +1978,7 @@ fn run_one<F: FnMut(&str)>(
         }
     }
     let boundaries = boundary_summaries(&sol, mesh, geo, &case);
+    let rotor_values = crate::case::rotor_report(&sol, mesh, geo, &case, lg, warnings);
     let wall_probe_values = crate::case::wall_probes(&case, mesh, geo, &sol);
     let wall_crossing_values = crate::case::wall_crossings(&case, mesh, geo, &sol);
     let total: f64 = boundaries.iter().map(|p| p.mass_flow).sum();
@@ -2086,6 +2155,7 @@ fn run_one<F: FnMut(&str)>(
         boundaries,
         mass_imbalance,
         coefficients,
+        rotors: rotor_values,
         transient: Some(TransientSummary {
             scheme: time0.scheme.label().into(),
             steps: nsteps,

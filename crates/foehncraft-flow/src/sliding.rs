@@ -137,6 +137,10 @@ pub struct SlidingSection {
     /// `rotor_interface`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stator_interface: Option<String>,
+    /// The walls of the rotor, whose torque gives the shaft power (D184);
+    /// default: every wall all of whose faces lie in the zone.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub walls: Vec<String>,
 }
 
 impl Default for SlidingSection {
@@ -150,6 +154,7 @@ impl Default for SlidingSection {
             shift: 1,
             rotor_interface: None,
             stator_interface: None,
+            walls: Vec::new(),
         }
     }
 }
@@ -164,6 +169,7 @@ impl SlidingSection {
             axis: self.axis,
             omega: self.omega,
             rpm: self.rpm,
+            walls: self.walls.clone(),
         }
     }
 
