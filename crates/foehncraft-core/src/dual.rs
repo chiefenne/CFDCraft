@@ -248,6 +248,15 @@ impl<const N: usize> Real for Dual<N> {
     fn sin_of(self) -> Self {
         Self::chain(crate::math::sin(self.v), crate::math::cos(self.v), &self)
     }
+
+    #[inline(always)]
+    fn atan_of(self) -> Self {
+        Self::chain(
+            crate::math::atan(self.v),
+            1.0 / (1.0 + self.v * self.v),
+            &self,
+        )
+    }
 }
 
 #[cfg(test)]

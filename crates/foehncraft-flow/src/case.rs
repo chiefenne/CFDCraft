@@ -144,6 +144,13 @@ pub struct FlowSection {
     /// Body force per unit volume (N/m³): three numbers, or expressions of
     /// x, y, z and, in a transient case, t (D53).
     pub body_force: crate::expr::Vector,
+    /// Angular velocity Ω (rad/s) of a frame in which the whole domain is
+    /// solved (stage 6, 9.8): the velocity is relative to that frame and
+    /// the momentum equations take the Coriolis force −2ρ Ω × u; the
+    /// centrifugal force −ρ Ω × (Ω × r) is a gradient and stays in the
+    /// pressure (the solved pressure is p − ½ρ|Ω × r|²). Not with `[[mrf]]`
+    /// or `[[sliding]]`.
+    pub frame_rotation: [f64; 3],
 }
 
 impl Default for FlowSection {
@@ -151,6 +158,7 @@ impl Default for FlowSection {
         Self {
             convection: true,
             body_force: crate::expr::vector([0.0; 3]),
+            frame_rotation: [0.0; 3],
         }
     }
 }

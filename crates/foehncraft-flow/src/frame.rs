@@ -391,6 +391,16 @@ pub fn attach(
     _geo: &Geometry,
 ) -> Result<Option<FrameNotes>> {
     let (entries, coriolis) = entries(case);
+    crate::need!(
+        !(case.turbulence.curvature_correction && !case.sliding.is_empty()),
+        CASE_INCONSISTENT,
+        "turbulence.curvature_correction does not work with [[sliding]] yet (the time part of DS/Dt \
+         would need the strain rate that each rotor cell carries); use [[mrf]] for the rotor"
+    );
+    let spin = case.flow.frame_rotation;
+    if spin != [0.0; 3] {
+        return attach_rotating_domain(fl, case, spin).map(Some);
+    }
     if entries.is_empty() {
         return Ok(None);
     }
@@ -453,6 +463,28 @@ pub fn attach(
             sign * mag * 60.0 / std::f64::consts::TAU
         ));
     }
+    // the curvature correction of SST (D170): Ω^rot and the frame velocity
+    // of the cells of the moving reference frames
+    if fl.turbulence.is_some() && case.turbulence.curvature_correction {
+        let omegas: Vec<[f64; 3]> = entries
+            .iter()
+            .map(MrfSection::omega_vector)
+            .collect::<Result<_>>()?;
+        let c = &fl.disc.cell_centroid;
+        let mut om = vec![[0.0; 3]; nc];
+        let mut vel = vec![[0.0; 3]; nc];
+        for i in 0..nc {
+            if let Some(z) = cell_zone[i]
+                && coriolis[z]
+            {
+                let o = entries[z].origin;
+                om[i] = omegas[z];
+                vel[i] = cross(omegas[z], [c.x[i] - o[0], c.y[i] - o[1], c.z[i] - o[2]]);
+            }
+        }
+        let t = fl.turbulence.as_mut().expect("checked");
+        t.set_curvature_frames(&mut *fl.dev, &om, &vel)?;
+    }
     let work = Buf3 {
         x: fl.dev.alloc(nc)?,
         y: fl.dev.alloc(nc)?,
@@ -492,6 +524,53 @@ pub fn attach(
         notes.diagnostics.push(d);
     }
     Ok(Some(notes))
+}
+
+/// The whole domain in a frame that turns at `spin` (`flow.frame_rotation`):
+/// no frame flux (the solved velocity is the relative one), one zone over
+/// all cells whose Coriolis source −ρ V (2 **Ω**) × **u** the momentum rows
+/// take.
+fn attach_rotating_domain(fl: &mut Flow, case: &FlowCase, spin: [f64; 3]) -> Result<FrameNotes> {
+    crate::need!(
+        case.mrf.is_empty() && case.sliding.is_empty(),
+        CASE_INCONSISTENT,
+        "flow.frame_rotation turns the whole domain; it does not combine with [[mrf]] or [[sliding]]"
+    );
+    crate::need!(
+        spin.iter().all(|w| w.is_finite()),
+        CASE_RANGE,
+        "flow.frame_rotation must be finite"
+    );
+    let (nc, nf) = (fl.disc.n_cells, fl.disc.n_faces);
+    let rho = fl.phys.rho;
+    let flux = fl.dev.alloc(nf)?;
+    fl.dev.fill(flux, 0.0)?;
+    let conv = fl.dev.alloc(nf)?;
+    let w: Vec<f64> = (0..nc).map(|c| rho * fl.disc.cell_volume[c]).collect();
+    let weight = fl.dev.alloc(nc)?;
+    fl.dev.upload(weight, &w)?;
+    let work = Buf3 {
+        x: fl.dev.alloc(nc)?,
+        y: fl.dev.alloc(nc)?,
+        z: fl.dev.alloc(nc)?,
+    };
+    fl.frames = Some(Frames {
+        flux,
+        conv,
+        zones: vec![FrameZone {
+            omega: spin.map(|x| 2.0 * x),
+            weight,
+            coriolis: true,
+        }],
+        work,
+    });
+    let mag = spin.iter().map(|a| a * a).sum::<f64>().sqrt();
+    let mut notes = FrameNotes::default();
+    notes.lines.push(format!(
+        "rotating frame: the whole domain turns at {spin:?} rad/s (|Ω| = {mag:.6e} rad/s); the velocity \
+         is the relative one, the Coriolis force −2ρ Ω × u acts, the pressure is p − ½ρ|Ω × r|²"
+    ));
+    Ok(notes)
 }
 
 impl Flow {

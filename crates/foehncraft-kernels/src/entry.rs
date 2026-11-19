@@ -1701,6 +1701,8 @@ pub struct SstCellArgs {
     pub wall_mask: Raw<f64>,
     /// The weighted wall production per cell, added to (1 − m) P̃_k.
     pub wall_pk: Raw<f64>,
+    /// f_r1 of the curvature correction per cell; empty: 1.
+    pub fr1: Raw<f64>,
     /// Output ν_t.
     pub nu_t: Raw<f64>,
     /// Output F₁.
@@ -1742,6 +1744,11 @@ impl Entry for SstCells {
                 grad_u: gu,
                 d: ld(a.d.get(), c),
                 nu: a.nu,
+                fr1: if a.fr1.len > 0 {
+                    ld(a.fr1.get(), c)
+                } else {
+                    1.0
+                },
             };
             let r = crate::turb::sst::sst_cell(&inp, &a.c, &a.o);
             *a.nu_t.out().add(c) = r.nu_t;
@@ -1773,6 +1780,137 @@ impl Entry for SstCells {
                 *a.su_w.out().add(c) = r.su_w + aw.max(0.0);
                 *a.sp_w.out().add(c) = r.sp_w + aw.min(0.0) / w.max(1e-300);
             }
+        }
+    }
+}
+
+/// Arguments of [`StrainCells`], [`ConvectiveDerivative`] and
+/// [`CurvatureCells`] (the curvature correction of SST, D170).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct CurvatureArgs {
+    /// Velocity gradient.
+    pub grad_u: RawGrad,
+    /// [`StrainCells`]: the component of S_ij (0 … 5: xx, yy, zz, xy, yz,
+    /// zx).
+    pub comp: u32,
+    /// [`ConvectiveDerivative`]: the convecting cell velocity.
+    pub u: Raw3,
+    /// The frame velocity per cell, subtracted from `u` (empty: 0).
+    pub v_frame: Raw3,
+    /// The gradient of the component.
+    pub grad: Raw3,
+    /// The component now and at the last time level (`s_old` empty: no
+    /// time part).
+    pub s: Raw<f64>,
+    /// See `s`.
+    pub s_old: Raw<f64>,
+    /// 1/Δt of the time part.
+    pub inv_dt: f64,
+    /// [`CurvatureCells`]: DS_ij/Dt (order of `comp`).
+    pub dsdt: [Raw<f64>; 6],
+    /// ω.
+    pub w: Raw<f64>,
+    /// Ω^rot per cell (empty: `rot`).
+    pub omega_rot: Raw3,
+    /// Ω^rot of every cell when `omega_rot` is empty.
+    pub rot: [f64; 3],
+    /// The rotation of the frame of a relative velocity (spin).
+    pub spin: [f64; 3],
+    /// Constants (c_r1 … c_r3).
+    pub c: crate::turb::sst::SstConstants,
+    /// Width of the smooth limits (0: hard).
+    pub smooth: f64,
+    /// Output: S_comp, the derivative, or f_r1.
+    pub out: Raw<f64>,
+}
+
+/// out = S_comp of the velocity gradient.
+pub struct StrainCells;
+impl Entry for StrainCells {
+    type Args = CurvatureArgs;
+    const NAME: &'static str = "strain_cells";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &CurvatureArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let g = a.grad_u.v();
+            let gu = [g.x.at(c), g.y.at(c), g.z.at(c)];
+            let (i, j) = match a.comp {
+                0 => (0, 0),
+                1 => (1, 1),
+                2 => (2, 2),
+                3 => (0, 1),
+                4 => (1, 2),
+                _ => (2, 0),
+            };
+            *a.out.out().add(c) = 0.5 * (gu[i][j] + gu[j][i]);
+        }
+    }
+}
+
+/// out = (u − v_frame)·grad + (s − s_old)/Δt: the material derivative of
+/// one component of S_ij (BDF1 time part).
+pub struct ConvectiveDerivative;
+impl Entry for ConvectiveDerivative {
+    type Args = CurvatureArgs;
+    const NAME: &'static str = "convective_derivative";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &CurvatureArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let mut u = [a.u.x.read(c), a.u.y.read(c), a.u.z.read(c)];
+            if a.v_frame.x.len > 0 {
+                u[0] -= a.v_frame.x.read(c);
+                u[1] -= a.v_frame.y.read(c);
+                u[2] -= a.v_frame.z.read(c);
+            }
+            let mut d = u[0] * a.grad.x.read(c) + u[1] * a.grad.y.read(c) + u[2] * a.grad.z.read(c);
+            if a.s_old.len > 0 {
+                d += (a.s.read(c) - a.s_old.read(c)) * a.inv_dt;
+            }
+            *a.out.out().add(c) = d;
+        }
+    }
+}
+
+/// out = f_r1 ([`crate::turb::sst::rotation_function`]).
+pub struct CurvatureCells;
+impl Entry for CurvatureCells {
+    type Args = CurvatureArgs;
+    const NAME: &'static str = "curvature_cells";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &CurvatureArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let g = a.grad_u.v();
+            let gu = [g.x.at(c), g.y.at(c), g.z.at(c)];
+            let ds = [
+                a.dsdt[0].read(c),
+                a.dsdt[1].read(c),
+                a.dsdt[2].read(c),
+                a.dsdt[3].read(c),
+                a.dsdt[4].read(c),
+                a.dsdt[5].read(c),
+            ];
+            let rot = if a.omega_rot.x.len > 0 {
+                [
+                    a.omega_rot.x.read(c),
+                    a.omega_rot.y.read(c),
+                    a.omega_rot.z.read(c),
+                ]
+            } else {
+                a.rot
+            };
+            *a.out.out().add(c) = crate::turb::sst::rotation_function(
+                &gu,
+                &ds,
+                rot,
+                a.spin,
+                a.w.read(c),
+                &a.c,
+                a.smooth,
+            );
         }
     }
 }
@@ -2586,6 +2724,7 @@ send_sync!(
     ScalarRowArgs,
     ScalarScaleArgs,
     SstCellArgs,
+    CurvatureArgs,
     KepsCellArgs,
     ZetaFCellArgs,
     TurbFaceArgs,
@@ -2595,7 +2734,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 48] = [
+pub const NAMES: [&str; 51] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SquaresAdd::NAME,
@@ -2636,6 +2775,9 @@ pub const NAMES: [&str; 48] = [
     ScalarRows::NAME,
     ScalarScale::NAME,
     SstCells::NAME,
+    StrainCells::NAME,
+    ConvectiveDerivative::NAME,
+    CurvatureCells::NAME,
     KepsCells::NAME,
     ZetaFCells::NAME,
     TurbFaces::NAME,
