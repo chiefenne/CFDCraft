@@ -9,7 +9,8 @@
 # neighbours around the axis is about 90 times their time term. With Issa's
 # corrector (D = V/a_P) the pressure grew in every outer iteration there and
 # the run left the exact solution within 30 steps (L2 error 2.0, from
-# round-off); with the SIMPLEC-type corrector it keeps it to 0.1 %.
+# round-off); with the SIMPLEC-type corrector (solver.corrector = "auto"
+# with outer iterations) it keeps it to 0.1 %.
 
 case_format = "0.6"
 

@@ -920,8 +920,8 @@ fn solid_body_rotation_is_kept_by_a_pot_through_the_axis() {
 /// to their neighbours around the axis about 90 times more strongly than
 /// to their old level. With Issa's corrector (D = V/a_P) the pressure grew
 /// in every outer iteration there and the run left the exact solution
-/// within 30 steps (L2 error 2.0); the SIMPLEC-type corrector keeps it
-/// (gallery 103).
+/// within 30 steps (L2 error 2.0, checked below); the SIMPLEC-type
+/// corrector keeps it (gallery 103).
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn solid_body_rotation_is_kept_at_high_viscosity_on_the_axis_wedges() {
@@ -932,4 +932,12 @@ fn solid_body_rotation_is_kept_at_high_viscosity_on_the_axis_wedges() {
     let e = l2(&r);
     eprintln!("pot solid body at nu = 1e-2, L2 {e:e}");
     assert!(e < 0.01, "{e}");
+    // Issa's corrector forced: the axisymmetric pressure mode of the wedges
+    // grows from round-off
+    let mut c = parse(&t);
+    c.solver.corrector = foehncraft_flow::simplec::PisoCorrector::Issa;
+    c.verification.max_error = None;
+    let issa = try_run(&c, "pot_solid_viscous_issa").map(|r| l2(&r));
+    eprintln!("the same with Issa's corrector: {issa:?}");
+    assert!(!matches!(issa, Ok(e) if e < 0.1), "{issa:?}");
 }

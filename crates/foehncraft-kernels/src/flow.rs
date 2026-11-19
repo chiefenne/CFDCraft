@@ -1157,7 +1157,8 @@ pub unsafe fn neighbour_sum<T: Real>(
     }
 }
 
-/// Σ_N val_PN (x_N − x_P) of cell `c`: [`neighbour_sum`] less the
+/// Σ_N val_PN (x_N − own x_P) of cell `c`: with `own` = 0
+/// [`neighbour_sum`], with `own` = 1 the neighbour sum less the
 /// off-diagonal row sum times x_P (the neighbour correction of PISO after a
 /// SIMPLEC-type corrector, whose D^C already counts Σ_N a_PN x_P).
 ///
@@ -1170,12 +1171,13 @@ pub unsafe fn neighbour_difference<T: Real>(
     layout: &SellLayout,
     val: &[T],
     x: &[T],
+    own: T,
 ) -> T {
     // SAFETY: guaranteed by the caller.
     unsafe {
         let lo = ld(topo.cell_ptr, c) as usize;
         let hi = ld(topo.cell_ptr, c + 1) as usize;
-        let xp = ld(x, c);
+        let xp = own * ld(x, c);
         let mut s = T::ZERO;
         let mut j = 1;
         let mut k = lo;

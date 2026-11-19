@@ -1843,13 +1843,22 @@ answers too strongly. (On a uniform cavity at the same diffusion number,
 Σ|a_N|/a_P = 0.97, Issa's form is stable; the wedges add the rotation of
 the Cartesian components between neighbours and the anisotropy.)
 
-**Fix.** The correctors use the SIMPLEC coefficient
-D^C = V/(a_P/α − Σ|a_N|) (Van Doormaal & Raithby 1984), and between two
-correctors the consistent neighbour correction
+**Fix.** With outer iterations the correctors now use the SIMPLEC
+coefficient D^C = V/(a_P/α − Σ|a_N|) (Van Doormaal & Raithby 1984), and
+between two correctors the consistent neighbour correction
 δ = Σ_N |a_N| (u'_N − u'_P)/a_P (D^C already counts Σ|a_N| u'_P;
 `foehncraft_kernels::flow::neighbour_difference`). The Rhie–Chow flux
 keeps D, so a converged step is the same as before. Changing only δ while
 keeping D made it worse (×1 000 per step): the two belong together.
+Plain PISO (one outer iteration) keeps Issa's form: there it damps more.
+The lid-driven cavity stepped to its steady state with Crank–Nicolson at
+Courant number 4 (`steady_state_of_the_time_stepping_is_the_simplec_solution`)
+settles to 10⁻¹² with Issa's corrector, while with the SIMPLEC form its
+residual grew to 0.17 in 1 200 steps; with three outer iterations the
+SIMPLEC form settles too (10⁻¹⁶ in 300 steps). Hence `solver.corrector =
+"auto"` (default): `simplec` with `outer_iterations` > 1, `issa` for plain
+PISO; `"issa"` and `"simplec"` force one. Every plain-PISO run is bitwise
+unchanged.
 
 **Checks.**
 
@@ -1858,7 +1867,17 @@ keeping D made it worse (×1 000 per step): the two belong together.
    `pot_solid_body_viscous.toml`: `pot_solid_body.toml` at ν = 10⁻²
    m²/s, the wedges' coupling about 90 times their time term): L2 error
    0.11 % after 30 steps; with Issa's corrector 2.0 (the mode grows from
-   round-off). `pot_solid_body.toml` at ν = 10⁻³: PENDING_POT.
+   round-off). `pot_solid_body.toml` at ν = 10⁻³: L2 0.82 % with either corrector
+   (the error there is spatial).
 2. **The disc impeller at ν = 10⁻⁴ m²/s** (`disc_pot.toml`, 400 steps,
-   eight revolutions): PENDING_DISC.
-3. **The other transient checks**: PENDING_TESTS.
+   eight revolutions, 8.5 minutes on four cores): runs through, Courant
+   number about 1.04 throughout; torque on the disc −2.28·10⁻³ N m (the
+   two faces of a free disc: 1.40·10⁻³ N m, C_M = 3.87/√Re at Re = 180;
+   the rim and the vessel add to it), shaft power 46 mW, the energy ledger
+   closes with 6.8 % numerical dissipation, no step with negative
+   numerical dissipation. The vessel is still spinning up after 2.5 s (the
+   vessel walls take 1.29·10⁻³ N m of the 2.28).
+3. **The other transient checks** (`tests/transient.rs`, `sliding.rs`,
+   `mrf.rs`, `stage5.rs`): pass. Plain PISO is bitwise unchanged; the
+   cases with outer iterations (sliding meshes, the transient frozen rotor)
+   change within their tolerances.

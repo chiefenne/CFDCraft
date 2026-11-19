@@ -1267,15 +1267,23 @@ stator_interface = "stator_interface"
   walls the imprint keeps a uniform flow to round-off level.
 - Meridional images: `tools/plot/meridional_fields.py` averages the rings of
   a mesh of revolution and draws (r, z), mirrored.
+- Wedge cells at the axis are thin around it: at high viscosity their
+  coupling to the neighbours around the axis is many times their time term.
+  With outer iterations PISO handles this since PR #106 (SIMPLEC-type
+  correctors, `solver.corrector`); with fewer
+  intervals around the axis (`n_theta`) the cells are less thin and the
+  solves cheaper.
 
 ```sh
 cargo run --release -p foehncraft-cli -- flow examples/studies/revolved/disc_pot.toml
 cargo run --release -p foehncraft-cli -- flow examples/studies/revolved/swirl_stage.toml
 cargo run --release -p foehncraft-cli -- flow examples/cases/flow/axial_stage_uniform.toml
 cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pot_solid_body.toml
+cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pot_solid_body_viscous.toml
 pip install matplotlib h5py numpy
 python3 -m tools.plot.meridional_fields disc_pot.png output/disc_pot/fields.vtkhdf \
-    --quantities swirl,meridional \
+    --quantities swirl,meridional --palette \
+    --labels "swirl u_θ|meridional flow (u_r, u_z) with streamlines" \
     --interface "0,0.03,0.045,0.03;0.045,0.03,0.045,0.07;0.045,0.07,0,0.07"
 ```
 

@@ -21,18 +21,21 @@
 //!      `foehncraft_kernels::flow::face_mass_flux` (D27: a steady state of the
 //!      time stepping is exactly the steady solution, for any Δt);
 //!    - `correctors` pressure corrections: Σ c_f (p'_P − p'_N) = −Σ ±ṁ*
-//!      with c_f from D^C = V/(a_P/α − Σ|a_N|) (the SIMPLEC form of the
-//!      first corrector, Van Doormaal & Raithby 1984), the fluxes corrected
-//!      to continuity, u' = δ − D^C∇p', p += p'; between two correctors the
-//!      neighbour correction δ = Σ_N |a_N| (u'_N − u'_P)/a_P (the part the
-//!      corrector neglects: D^C already counts Σ|a_N| u'_P) is added to u
-//!      and its flux to ṁ. Issa's D = V/(a_P/α) with δ = H(u')/a_P is the
-//!      same sequence in the limit of many correctors, but where a_P is
-//!      almost all neighbour coupling (a fine pitch about an axis at high
+//!      with c_f from a coefficient D, the fluxes corrected to continuity,
+//!      u' = δ − D∇p', p += p'; between two correctors the neighbour
+//!      correction δ (the part the corrector neglects) is added to u and its
+//!      flux to ṁ. `solver.corrector`: Issa's D = V/(a_P/α) with
+//!      δ = H(u')/a_P (plain PISO by default), or the SIMPLEC form
+//!      D^C = V/(a_P/α − Σ|a_N|) (Van Doormaal & Raithby 1984) with
+//!      δ = Σ_N |a_N| (u'_N − u'_P)/a_P, since D^C already counts
+//!      Σ|a_N| u'_P (by default with outer iterations). Where a_P is almost
+//!      all neighbour coupling (a fine pitch about an axis at high
 //!      viscosity: the thin wedge cells, whose a_P is 50 times the time
-//!      term in gallery 103) it underestimates the velocity response to the
-//!      pressure by a_P/(a_P − Σ|a_N|); with two correctors the pressure
-//!      there grew by a factor of 2.4 in every outer iteration;
+//!      term in gallery 103) Issa's D underestimates the velocity response
+//!      to the pressure by a_P/(a_P − Σ|a_N|); with two correctors the
+//!      pressure there grew by a factor of 2.4 in every outer iteration. In
+//!      plain PISO Issa's form damps more: Crank–Nicolson at Courant number
+//!      4 settles with it and not with the SIMPLEC form;
 //! 3. boundary values and gradients of the new level, the old-level
 //!    difference Xⁿ⁺¹ = ṁ − ρ ū·S of the Rhie–Chow time-step term and the
 //!    largest Courant number.
@@ -874,11 +877,12 @@ impl Transient {
                         }
                     }
                     fl.dev.correct_velocity(w.dc, w.gpc, l.ucorr)?;
-                    // δ = Σ_N |a_N| (u'_N − u'_P)/a_P, added to u and, as a
-                    // flux, to ṁ
+                    // δ = H(u')/a_P (Issa) or Σ_N |a_N| (u'_N − u'_P)/a_P
+                    // (SIMPLEC type), added to u and, as a flux, to ṁ
+                    let own = if s.simplec_corrector() { 1.0 } else { 0.0 };
                     for i in 0..3 {
                         let (x, dg, dl) = (l.ucorr.all()[i], w.diag.all()[i], l.delta.all()[i]);
-                        fl.dev.neighbour_correction(w.val, x, dg, dl)?;
+                        fl.dev.neighbour_correction(w.val, x, dg, dl, own)?;
                     }
                     for (u, d) in f.u.all().into_iter().zip(l.delta.all()) {
                         fl.dev.lincomb(u, 1.0, u, 1.0, d)?;

@@ -57,7 +57,8 @@ Everything below is on `main`, verified by the cases of the
   Rhie–Chow interpolation; BDF2 and Crank–Nicolson; reproducible
   (gather-based) assembly in double precision.
 - **Pressure–velocity coupling.** SIMPLEC and SIMPLE for steady flow, PISO
-  with outer correctors for transient flow, a time step from the
+  with outer correctors for transient flow (SIMPLEC-type correctors with
+  outer iterations, stable on thin wedge cells at an axis), a time step from the
   integration error, and a coupled pressure–velocity algorithm with
   pseudo-time steps and multigrid sweeps (the backward-facing step 6 times
   faster than SIMPLEC).

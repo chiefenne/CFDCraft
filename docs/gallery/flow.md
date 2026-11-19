@@ -1202,20 +1202,29 @@ n_theta = 48
 n_theta_stator = 72
 ```
 
-<img src="../figures/gallery/disc_pot_fields.png" alt="A disc impeller in a closed vessel after eight revolutions: the swirl u_θ and the meridional flow with its streamlines, averaged around the axis; the dashed line is the sliding interface, a pot of disc, cylinder and disc around the impeller whose two discs pass through the axis" width="800" height="204">
+<img src="../figures/gallery/disc_pot_fields.png" alt="A disc impeller in a closed vessel at ν = 1e-4 m²/s after eight revolutions: the swirl u_θ and the meridional flow with its streamlines, averaged around the axis; the dashed line is the sliding interface, a pot of disc, cylinder and disc around the impeller whose two discs pass through the axis" width="800" height="204">
 
-`examples/studies/revolved/disc_pot.toml` (54 528 cells, 8 minutes): a disc
+`examples/studies/revolved/disc_pot.toml` (54 528 cells, 8.5 minutes): a disc
 of radius 0.03 m turning at 20 rad/s in the middle of a closed vessel of
-radius 0.10 m (Re = Ω R²/ν = 1 800; the cells are coarser than the 0.7 mm boundary layers of the disc, so this is a picture of the flow, not a validation). The rotor is the pot r < 0.045 m,
+radius 0.10 m, ν = 10⁻⁴ m²/s (Re = Ω R²/ν = 180; the 2.2 mm boundary layers of the disc are about one cell thick, so this is a picture of the flow, not a validation). The rotor is the pot r < 0.045 m,
 0.03 < z < 0.07 m around the disc: 48 intervals around the axis, against 72 in
 the stator. The disc drags the fluid round in its boundary layers and throws
 it outwards from its rim (the von Kármán pump). Fluid comes back to the disc
 along the axis from above and below, and two meridional cells fill the vessel.
 They cross the interface through all three of its pieces, the disc below,
 the cylinder and the disc above, both discs where they pass through the
-axis, without a mark at the interface. The fluid holds the disc back with
-a torque of 4.5·10⁻⁴ N m; the shaft power of 9.0 mW goes into the energy
-balance of the run (D184).
+axis, without a mark at the interface. After eight revolutions (2.5 s) the
+fluid holds the disc back with a torque of 2.28·10⁻³ N m, above the
+1.40·10⁻³ N m of the two faces of a free disc (C_M = 3.87/√Re); the rim
+and the closed vessel add to it, and the vessel is still spinning up (the
+walls take 1.29·10⁻³ N m). The shaft power of 46 mW goes into the energy
+balance of the run (D184), which closes with 6.8 % numerical dissipation.
+At first this case ran only at ν = 10⁻⁵ m²/s: at 10⁻⁴ the pressure grew in
+every outer iteration on the thin wedge cells at the axis, whose coupling
+around the axis is about 50 times their time term. The cause was Issa's
+PISO corrector; with outer iterations PISO now corrects in the SIMPLEC form
+(PR #106, `solver.corrector`), and `pot_solid_body_viscous.toml` checks it
+(solid-body rotation at ν = 10⁻² m²/s: 0.11 %, 2.0 with Issa's corrector).
 
 <img src="../figures/gallery/swirl_stage_fields.png" alt="A turning section of an annular duct between two fixed ones: the swirl u_θ and the axial velocity u_z; the dashed lines are the two cones of the interface" width="800" height="465">
 
@@ -1240,7 +1249,8 @@ that of the stator one of 34. The small step between them is an error of
 second order in the pitch, not of the imprint. With aligned pitches the
 error is 4·10⁻¹². Solid-body rotation in a vessel whose rotor pot passes
 through the axis (`pot_solid_body.toml`) is kept to 0.8 % through half a
-revolution. Limits: the meridian must be made of straight pieces with a
+revolution, and to 0.11 % at ten times the viscosity
+(`pot_solid_body_viscous.toml`). Limits: the meridian must be made of straight pieces with a
 ring of nodes at every kink; a rotor ring that touches nothing (a closed
 meridian) and rotor–rotor interfaces are not available yet; general
 non-matching interfaces are D58 (stage 7). Details on the
