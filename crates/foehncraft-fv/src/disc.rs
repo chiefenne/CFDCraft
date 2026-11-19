@@ -322,52 +322,7 @@ impl Discretisation {
         }
 
         // least-squares weights
-        let ne = mesh.cell_faces.len();
-        let mut lsq = Soa3::zeros(ne);
-        let mut stencil: Vec<([f64; 3], f64)> = Vec::new();
-        for c in 0..nc {
-            stencil.clear();
-            let mut g = [[0.0; 3]; 3];
-            let lo = mesh.cell_ptr[c] as usize;
-            let hi = mesh.cell_ptr[c + 1] as usize;
-            for &e in &mesh.cell_faces[lo..hi] {
-                let (f, is_nb) = unpack_face(e);
-                let d = if f < ni {
-                    if is_nb {
-                        sub(xc[mesh.owner[f] as usize], xc[c])
-                    } else {
-                        sub(xn(f), xc[c])
-                    }
-                } else {
-                    let d = sub(geo.face_centroid[f], xc[c]);
-                    match kind[f - ni] {
-                        BoundaryKind::FixedValue => d,
-                        _ => {
-                            let s = geo.face_area[f];
-                            let n = scale(s, 1.0 / norm(s));
-                            scale(n, dot(d, n))
-                        }
-                    }
-                };
-                let w = 1.0 / dot(d, d);
-                for i in 0..3 {
-                    for j in 0..3 {
-                        g[i][j] += w * d[i] * d[j];
-                    }
-                }
-                stencil.push((d, w));
-            }
-            let Some(inv) = inverse3(g) else {
-                bail!("cell {c}: least-squares stencil is degenerate");
-            };
-            for (i, (d, w)) in stencil.iter().enumerate() {
-                let mut v = [0.0; 3];
-                for (r, vr) in v.iter_mut().enumerate() {
-                    *vr = w * (inv[r][0] * d[0] + inv[r][1] * d[1] + inv[r][2] * d[2]);
-                }
-                lsq.set(lo + i, v);
-            }
-        }
+        let lsq = lsq_weights(mesh, geo, &kind)?;
 
         // physics per face and cell
         let mass_flux: Vec<f64> = (0..nf)
@@ -412,6 +367,22 @@ impl Discretisation {
                 .map(|p| p.partner.clone())
                 .unwrap_or_default(),
         })
+    }
+
+    /// The least-squares gradient weights alone: the `lsq` of
+    /// [`Discretisation::new`] with the same arguments, without the rest.
+    pub fn least_squares(mesh: &Mesh, geo: &Geometry, problem: &Problem) -> Result<Soa3> {
+        let ni = mesh.n_interior_faces();
+        let mut kind = vec![BoundaryKind::ZeroGradient; mesh.n_faces() - ni];
+        for p in &mesh.boundaries {
+            let Some(bc) = problem.boundary.get(&p.name) else {
+                bail!("no boundary condition for boundary `{}`", p.name);
+            };
+            for f in p.range() {
+                kind[f - ni] = bc.kind;
+            }
+        }
+        lsq_weights(mesh, geo, &kind)
     }
 
     /// Borrowed topology for the kernel bodies.
@@ -514,6 +485,72 @@ impl Discretisation {
                 + self.cell_faces.len()
                 + self.sell.stored())
     }
+}
+
+/// The least-squares gradient weights of `mesh`, one per entry of
+/// `cell_faces`, with `kind` the boundary kind of every boundary face
+/// (the `lsq` of [`Discretisation::new`]).
+fn lsq_weights(mesh: &Mesh, geo: &Geometry, kind: &[BoundaryKind]) -> Result<Soa3> {
+    let nc = mesh.n_cells;
+    let ni = mesh.n_interior_faces();
+    let xc = &geo.cell_centroid;
+    let periodic = mesh.periodic_start();
+    let pshift: &[[f64; 3]] = mesh.periodic.as_ref().map_or(&[], |p| &p.shift);
+    let xn = |f: usize| {
+        let x = xc[mesh.neighbour[f] as usize];
+        if f >= periodic {
+            foehncraft_mesh::geometry::add(x, pshift[f - periodic])
+        } else {
+            x
+        }
+    };
+    let ne = mesh.cell_faces.len();
+    let mut lsq = Soa3::zeros(ne);
+    let mut stencil: Vec<([f64; 3], f64)> = Vec::new();
+    for c in 0..nc {
+        stencil.clear();
+        let mut g = [[0.0; 3]; 3];
+        let lo = mesh.cell_ptr[c] as usize;
+        let hi = mesh.cell_ptr[c + 1] as usize;
+        for &e in &mesh.cell_faces[lo..hi] {
+            let (f, is_nb) = unpack_face(e);
+            let d = if f < ni {
+                if is_nb {
+                    sub(xc[mesh.owner[f] as usize], xc[c])
+                } else {
+                    sub(xn(f), xc[c])
+                }
+            } else {
+                let d = sub(geo.face_centroid[f], xc[c]);
+                match kind[f - ni] {
+                    BoundaryKind::FixedValue => d,
+                    _ => {
+                        let s = geo.face_area[f];
+                        let n = scale(s, 1.0 / norm(s));
+                        scale(n, dot(d, n))
+                    }
+                }
+            };
+            let w = 1.0 / dot(d, d);
+            for i in 0..3 {
+                for j in 0..3 {
+                    g[i][j] += w * d[i] * d[j];
+                }
+            }
+            stencil.push((d, w));
+        }
+        let Some(inv) = inverse3(g) else {
+            bail!("cell {c}: least-squares stencil is degenerate");
+        };
+        for (i, (d, w)) in stencil.iter().enumerate() {
+            let mut v = [0.0; 3];
+            for (r, vr) in v.iter_mut().enumerate() {
+                *vr = w * (inv[r][0] * d[0] + inv[r][1] * d[1] + inv[r][2] * d[2]);
+            }
+            lsq.set(lo + i, v);
+        }
+    }
+    Ok(lsq)
 }
 
 /// Sliced-ELL structure of the matrix of `mesh` (see the module docs).

@@ -850,7 +850,7 @@ fn rebuild_flow(
     let mut ntr = Transient::new(&mut nfl, scheme, tr.clock.time)?;
     let state = fl.state()?;
     let old = tr.old_levels(fl)?;
-    let (state, old) = crate::sliding::carry(&state, &old, map, &nfl.disc, rho);
+    let (state, old) = crate::sliding::carry(state, old, map, &nfl.disc, rho);
     nfl.load(&state)?;
     ntr.restore(&mut nfl, &old, tr.clock)?;
     nfl.iteration = fl.iteration;

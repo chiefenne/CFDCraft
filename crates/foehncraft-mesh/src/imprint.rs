@@ -32,7 +32,7 @@
 //! computed from their nodes.
 
 use crate::builder::MeshBuilder;
-use crate::geometry::{Geometry, add, cross, dot, norm, scale, sub};
+use crate::geometry::{Geometry, add, cross, dot, norm, polygon_area_centroid, scale, sub};
 use crate::mesh::Mesh;
 use std::f64::consts::{PI, TAU};
 
@@ -590,10 +590,10 @@ impl Interface {
             angle,
         };
         // the true areas
-        let geo = Geometry::compute(&out.mesh);
         for (f, o) in out.origin.iter().enumerate() {
             if let FaceOrigin::Piece(k) = o {
-                out.pieces[*k as usize].area = norm(geo.face_area[f]);
+                let (s, _) = polygon_area_centroid(&out.mesh.points, out.mesh.face(f));
+                out.pieces[*k as usize].area = norm(s);
             }
         }
         Ok(out)
@@ -603,16 +603,24 @@ impl Interface {
     /// the rigid bodies of the base mesh (volumes unchanged, the centroids of
     /// the rotor turned by the angle).
     pub fn geometry(&self, a: &Assembled, base: &Geometry) -> Geometry {
-        let mut geo = Geometry::compute(&a.mesh);
-        for c in 0..a.mesh.n_cells {
-            geo.cell_volume[c] = base.cell_volume[c];
-            geo.cell_centroid[c] = if self.rotor_cell[c] {
+        let (face_area, face_centroid) = Geometry::faces(&a.mesh);
+        let n = a.mesh.n_cells;
+        let mut cell_volume = vec![0.0; n + a.mesh.n_halo];
+        let mut cell_centroid = vec![[0.0; 3]; n + a.mesh.n_halo];
+        cell_volume[..n].copy_from_slice(&base.cell_volume[..n]);
+        for (c, x) in cell_centroid[..n].iter_mut().enumerate() {
+            *x = if self.rotor_cell[c] {
                 rotate(base.cell_centroid[c], self.origin, self.axis, a.angle)
             } else {
                 base.cell_centroid[c]
             };
         }
-        geo
+        Geometry {
+            face_area,
+            face_centroid,
+            cell_volume,
+            cell_centroid,
+        }
     }
 
     /// The largest closure defect of a cell of `a`: |Σ S| relative to Σ |S|.

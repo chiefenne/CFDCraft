@@ -833,7 +833,7 @@ impl Scalars {
                     r => r,
                 });
             }
-            let lsq = crate::simplec::disc_with(mesh, geo, &points)?.lsq;
+            let lsq = crate::simplec::lsq_with(mesh, geo, &points)?;
             let mut put = |v: &[f64]| -> Result<Buf> {
                 let b = dev.alloc(v.len())?;
                 dev.upload(b, v)?;

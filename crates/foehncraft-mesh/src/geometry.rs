@@ -149,6 +149,9 @@ pub fn polygon_area_centroid<T: Coord>(points: &[[T; 3]], nodes: &[u32]) -> ([T;
     (s, scale(c, T::ONE / w))
 }
 
+/// Below this many faces [`Geometry::faces`] runs on one thread.
+const SERIAL_FACES: usize = 50_000;
+
 /// Geometry of a mesh, for the local cells and faces.
 #[derive(Debug, Clone, Default)]
 pub struct Geometry {
@@ -167,10 +170,7 @@ impl Geometry {
     /// Computes the geometry of all faces and local cells. Halo entries are
     /// left at zero.
     pub fn compute(mesh: &Mesh) -> Self {
-        let (face_area, face_centroid): (Vec<_>, Vec<_>) = (0..mesh.n_faces())
-            .into_par_iter()
-            .map(|f| polygon_area_centroid(&mesh.points, mesh.face(f)))
-            .unzip();
+        let (face_area, face_centroid) = Self::faces(mesh);
         let mut cell_volume = vec![0.0; mesh.n_cells + mesh.n_halo];
         let mut cell_centroid = vec![[0.0; 3]; mesh.n_cells + mesh.n_halo];
         cell_volume[..mesh.n_cells]
@@ -187,6 +187,19 @@ impl Geometry {
             face_centroid,
             cell_volume,
             cell_centroid,
+        }
+    }
+
+    /// The area vectors and centroids of all faces (the face part of
+    /// [`Geometry::compute`]).
+    /// Small meshes run on the calling thread: handing the work to the
+    /// thread pool would cost more than it saves (same result).
+    pub fn faces(mesh: &Mesh) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
+        let one = |f: usize| polygon_area_centroid(&mesh.points, mesh.face(f));
+        if mesh.n_faces() < SERIAL_FACES {
+            (0..mesh.n_faces()).map(one).unzip()
+        } else {
+            (0..mesh.n_faces()).into_par_iter().map(one).unzip()
         }
     }
 
