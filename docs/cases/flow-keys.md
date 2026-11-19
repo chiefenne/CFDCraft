@@ -553,9 +553,9 @@ elliptic-blending k-ε of Billard & Laurence (2012) with the treatments
 | `solver.turbulence.destruction` | ω `"newton"`, ε `"picard"` | linearisation of the ω or ε destruction: `newton` (2βω in the diagonal) or `picard` |
 
 The checks: TURB001 (the first-cell y⁺ does not suit the wall treatment
-on more than a tenth of a wall: above 2 with `low-re`, or in the buffer
-layer between 3 and 20 with `automatic`, where C_f of the flat plate is up
-to 16 % high; below 30 with `scalable`, outside 30 … 300 with `standard`
+on more than a tenth of a wall: above 2 with `low-re`, or
+above 300 with `automatic` (validated on the flat plate for y⁺ 0.24 to 85,
+C_f within 2.6 %); below 30 with `scalable`, outside 30 … 300 with `standard`
 and `compound` of the k-ε family; above 2 with `low-re` of ζ-f, ζ-f₀ and the elliptic-blending k-ε,
 whose `compound` and `compound-2023` cover every y⁺), TURB002 (the floor of k or ω acted in the final tenth of the
 solves), TURB003 and TURB009 (inlet turbulence out of the usual range, or

@@ -37,7 +37,8 @@ wall_treatment = "low-re"   # or "automatic" (the default)
 the wall face, d₁ the height of the wall cell, as in the TMR's own codes.
 `automatic` takes any first-cell y⁺: the wall shear stress and ω in the
 first cell are blended between their viscous-sublayer and log-law values,
-and so is the production of k there.
+and above the sublayer the first cell takes the equilibrium production of
+the constant-stress layer (6g, PR #112).
 
 **The TMR flat plate** (`tmr_plate_sst.toml`). The 2D zero-pressure-gradient
 plate at Re = 5·10⁶ per metre with the TMR's free-stream values
