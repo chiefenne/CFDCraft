@@ -1,0 +1,61 @@
+# The baffled stirred vessel of sliding.toml as a transient frozen rotor
+# (D185): the moving reference frame of mrf.toml in a transient run, the
+# rotor zone kept where it is, from rest, at the Reynolds number of the
+# sliding mesh (400). The blades shed the same start-up vortices, but the
+# rotor never passes the baffles: the rotor-stator interaction is that of
+# one frozen position. Compare the fields at 0.15, 0.3 and 0.6 s with those
+# of sliding.toml.
+#
+#   pip install gmsh
+#   python3 examples/meshes/mixer.py
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/mrf_transient.toml
+#
+# 480 steps (0.6 s, about one revolution) take about a minute on four cores:
+# no imprint and no rebuild of the solver per step.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/mixer_conformal.msh"
+renumber = "rcm"
+
+[fluid]
+density = 1000.0
+viscosity = 0.05          # Pa s: nu = 5e-5 m^2/s
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.00125
+steps = 480               # 0.6 s: about one revolution
+start_time = 0.0
+
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+
+[boundary.blades]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 3000
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["vorticity"]
+fields_times = [0.15, 0.3, 0.6]

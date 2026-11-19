@@ -20,6 +20,9 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 96 | [The sliding mesh with a pitch ratio that is not one: the interface imprinted in every step](#sliding-mesh-imprint) | 6 | `[[sliding]] rotor_interface`, `[mesh.annulus] n_theta_stator`, `taylor_couette_imprint.toml` |
 | 98 | [A stirred vessel: blades and baffles with the moving reference frame and the sliding mesh](#stirred-vessel) | 6 | `[[mrf]]` and `[[sliding]]` on a Gmsh mesh, walls that turn with a zone, `studies/mixer.py`, `tools/plot/rotor_fields.py` |
 | 99 | [The flow a blade sees: relative and frame velocity, flow angles and rothalpy](#rotor-fields) | 6 | `output.derived`: `relative-velocity`, `frame-velocity`, `turbomachinery`, `relative-total-pressure`, `rothalpy`; `output.frame` |
+| 100 | [A turbulent rotor: the stirred vessel with water, in the frame and on the sliding mesh](#turbulent-rotor) | 6 | turbulence models on `[[mrf]]` and `[[sliding]]`, the wall distance of a turning rotor |
+| 101 | [Torque, shaft power and the performance of a machine: the rotor of the stirred vessel](#torque-power) | 6 | torque per wall and rotor, shaft power in the energy ledger, `[[output.machines]]`, `tools/plot/rotor_movie.py` |
+| 102 | [Several rotors at their own speeds, and the transient frozen rotor](#several-rotors) | 6 | several `[[sliding]]` tables, `[mesh.annulus] outer_rotor_layers`, `examples/meshes/twin_mixer.py`, `[[mrf]]` with `[time]` |
 
 ---
 
@@ -758,7 +761,8 @@ The spin-up on the case file's mesh (32 × 16): |u| at t = 0.22 s, 1.0 s and
 10 s. The momentum diffuses out from the inner cylinder through the
 interface (dashed) while the rotor turns by one sector per step.
 
-Limits: one rotor per case, a fixed time step, one process (CPU), rotor
+Limits: one rotor per case in conformal stepping (several by imprinting,
+entry 102), a fixed time step, one process (CPU), rotor
 boundaries that are walls turning with the rotor, slip walls, symmetry or
 wedge planes. A fluid that stands in space, with a CFL number of about one
 relative to the rotor, is smeared by the implicit upwind convection, as in any
@@ -1082,3 +1086,92 @@ form of the momentum rows has no −u_θ/r in the shear stress, and the torque
 of the turning cylinder was 35 % too small without it. Details on the
 [verification page](../verification/stage6.md#torque-shaft-power-and-machine-values-d184-pr-101).
 [Recipe 101](../recipes/flow.md#torque-power).
+
+<a id="several-rotors"></a>
+## 102. Several rotors at their own speeds, and the transient frozen rotor
+
+A case may have several sliding rotors (D185): one `[[sliding]]` table per
+rotor, each with its own zone, speed, axis and interface to the stator. In
+every step all interfaces are imprinted together at the angles of their
+rotors, and the solver is built again on that mesh. `[[mrf]]` now also runs
+in transient cases: the transient frozen rotor, whose rotor zone keeps its
+position.
+
+```toml
+[[sliding]]
+zone = "rotor_left"
+origin = [-0.08, 0.0, 0.0]
+omega = 10.0
+rotor_interface = "left_rotor_interface"
+stator_interface = "left_stator_interface"
+
+[[sliding]]
+zone = "rotor_right"
+origin = [0.08, 0.0, 0.0]
+omega = -15.0
+rotor_interface = "right_rotor_interface"
+stator_interface = "right_stator_interface"
+```
+
+![A vessel with two stirrers, the left one with three blades at +10 rad/s, the right one with four blades at −15 rad/s: the vorticity at t = 0.2, 0.4, 0.6 and 0.8 s after the start from rest](../figures/gallery/twin_mixer_vorticity.png)
+
+`examples/studies/twin_mixer/sliding.toml` on the mesh of
+`examples/meshes/twin_mixer.py` (16 953 cells, ν = 5·10⁻⁵ m²/s): two
+stirrers in a stadium-shaped vessel, each a sliding rotor with its own
+interface circle (64 rotor and 96 stator intervals). The left one turns
+anticlockwise at 10 rad/s (Re = Ω R_tip²/ν = 400), the right one clockwise
+at 15 rad/s. The blades shed vortices of their own sense, and the rings
+of opposite vorticity of the two rotors meet in the waist of the vessel.
+800 steps of 1 ms (1.3 and 1.9 revolutions) took 4.4 minutes on four cores.
+
+![The same vessel at t = 0.8 s: the speed with streamlines (two co-rotating cores and the counter-rotating cells between them and the wall) and the vorticity](../figures/gallery/twin_mixer_speed.png)
+
+![The stirred vessel of entry 98 started from rest, as a transient frozen rotor and on the sliding mesh: the vorticity at t = 0.3 and 0.6 s](../figures/gallery/mixer_frozen_vs_sliding.png)
+
+The difference between the transient frozen rotor
+(`examples/studies/mixer/mrf_transient.toml`, 480 steps in 33 s) and the
+sliding mesh (`sliding.toml`, 2.5 minutes) on the stirred vessel of
+[entry 98](#stirred-vessel). In the frozen rotor the blades stay where they
+are: the tip vortices of the start-up are carried out of the rotor in the
+rotating frame and collect at the interface, where the frame changes, as a
+ring of vorticity in front of the baffles. On the sliding mesh the blades turn
+past the baffles and the vortices are shed into the stator. The frozen rotor
+is right for a body of revolution (the spin-up test below) and as a quick
+start for a sliding run. It does not give the rotor–stator interaction.
+
+![The torque of the fluid on the rotor from t = 0.02 s: the stirred vessel as a frozen rotor and on the sliding mesh, and the two rotors of the twin vessel](../figures/gallery/rotor_torque_histories.png)
+
+The torque histories (`tools/plot/rotor_torque.py`; each torque about the
+axis along the rotor's own Ω, so a rotor that drives the fluid has a
+negative torque). The frozen rotor's torque falls smoothly from −1.7 to
+about −0.1 mN m and comes back towards the steady value of the frame,
+−0.25 mN m. The sliding mesh swings about that curve by ±0.7 mN m, with
+a period of about 0.24 s. Between 0.18 and 0.27 s the torque is positive:
+the fluid that the start-up set turning pushes the blades. It is the same in
+the twin vessel. The swing does not depend on the time step (half the step:
+the same torque to three digits) or on the outer iterations (10 instead
+of 4: four digits), and the energy ledger closes on it (numerical
+term 0.5 to 2 % of the work).
+Nor does it depend on the mesh: on a finer mesh (34 916 cells instead of
+16 326, `--size 1.7e-3` in `examples/meshes/mixer.py`) the torque
+is the same within 0.05 mN m up to 0.4 s (−1.85 instead of −1.89 mN m at
+0.05 s, +0.73 instead of +0.72 at 0.25 s). So the swing belongs to the
+computed flow and is not a discretisation error. Its period, 0.24 s, is not
+the blade-passing period 2π/(4Ω) = 0.16 s; what sets it is still open.
+
+![The rotor torque of the stirred vessel: frozen rotor, and the sliding mesh with the base settings, half the time step, ten outer iterations and a finer mesh; the four sliding curves lie on top of each other](../figures/gallery/mixer_torque_variants.png)
+
+Checks (`tests/sliding.rs`, `tests/mrf.rs`): Couette flow between two
+cylinders that turn at +10 and −5 rad/s, each a sliding rotor by imprinting
+with its own pitch (`examples/cases/flow/couette_two_rotors.toml`, 960
+cells), from rest to the exact solution u_θ = A r + B/r: L2 error 1.8 %. The
+two torques are within 0.8 % of 4π μ L r₁² r₂² (ω₂ − ω₁)/(r₂² − r₁²), and the
+shaft powers add up to the dissipation. The wall distance of two turning
+rotors equals that of the assembled mesh to round-off. The Taylor–Couette
+spin-up in the frame of the cylinder and in the opposite frame equals the
+inertial spin-up (0.7 % at a tenth of the viscous time) and ends in the
+steady frame's result to seven digits. Limits: an interface between two
+rotors (contra-rotating stages) is not available yet, and conformal
+stepping takes one rotor. Details on the
+[verification page](../verification/stage6.md#several-rotors-and-the-transient-frozen-rotor-d185-pr-102).
+[Recipe 102](../recipes/flow.md#several-rotors).

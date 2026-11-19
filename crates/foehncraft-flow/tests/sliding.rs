@@ -775,3 +775,85 @@ fn turbulence_is_carried_by_the_rotor() {
         assert!(left < 0.1 * k0, "{name}: {left} stayed at the start");
     }
 }
+
+// ---------------------------------------------------------------------
+// several rotors by imprinting (D185)
+// ---------------------------------------------------------------------
+
+fn two_rotors_text() -> String {
+    std::fs::read_to_string(cases().join("couette_two_rotors.toml"))
+        .unwrap()
+        .replace("\r\n", "\n")
+}
+
+/// The checks of several rotors: each needs the interface by imprinting
+/// and its own zone, and a zone is turned by a frame or a sliding mesh.
+#[test]
+fn several_rotors_are_checked() {
+    let valid = |t: &str| -> Result<(), String> {
+        FlowCase::from_toml(t, &cases())
+            .and_then(|c| c.validate())
+            .map_err(|e| code(&e))
+    };
+    let base = two_rotors_text();
+    valid(&base).unwrap();
+    // two rotors in conformal stepping
+    let conformal = base
+        .replace("rotor_interface = \"rotor_interface_outer\"\n", "")
+        .replace("stator_interface = \"stator_interface_outer\"\n", "");
+    assert_eq!(valid(&conformal).unwrap_err(), "SLD002");
+    // the same zone twice
+    let twice = base.replace("zone = \"rotor_outer\"", "zone = \"rotor\"");
+    assert_eq!(valid(&twice).unwrap_err(), "SLD002");
+    // a frame on the cells of a sliding rotor, or on all cells
+    let frame = format!("{base}\n[[mrf]]\nzone = \"rotor_outer\"\nomega = 1.0\n");
+    assert_eq!(valid(&frame).unwrap_err(), "MRF001");
+    let all = format!("{base}\n[[mrf]]\nomega = 1.0\n");
+    assert_eq!(valid(&all).unwrap_err(), "MRF001");
+}
+
+/// Couette flow between two cylinders that turn in opposite senses, each
+/// a sliding rotor by imprinting with its own speed (D185), from rest: the
+/// end is the exact solution u_θ = A r + B/r, the torque of the fluid on
+/// the inner cylinder is 4π μ L r₁² r₂² (ω₂ − ω₁)/(r₂² − r₁²) and that on the
+/// outer one is opposite (each is reported about the axis along its own
+/// Ω, so both are negative: both rotors drive the fluid), the shaft powers
+/// add up to the dissipation, and the angle of each rotor is its own.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn two_rotors_end_in_the_couette_flow_of_their_speeds() {
+    let c = parse(&two_rotors_text());
+    let r = run_case(&c, "two_rotors");
+    let e = l2(&r);
+    let s = &r.solves[0];
+    let v = s.rotors.as_ref().expect("rotors");
+    let (inner, outer) = (v.rotor("rotor").unwrap(), v.rotor("rotor_outer").unwrap());
+    let (r1, r2, depth, mu, w1, w2) = (0.05_f64, 0.10_f64, 0.01_f64, 5e-4_f64, 10.0, -5.0);
+    let t1 = 4.0 * std::f64::consts::PI * mu * depth * r1 * r1 * r2 * r2 * (w2 - w1)
+        / (r2 * r2 - r1 * r1);
+    eprintln!(
+        "two rotors: L2 {e:e}; torque inner {:e}, outer {:e} (exact {t1:e} each about its own Ω); power {:e} + {:e}",
+        inner.torque, outer.torque, inner.power, outer.power
+    );
+    assert!(e < 0.03, "{e}");
+    assert_eq!(inner.walls, ["inner"]);
+    assert_eq!(outer.walls, ["outer"]);
+    assert!((inner.torque / t1 - 1.0).abs() < 0.02, "{}", inner.torque);
+    assert!((outer.torque / t1 - 1.0).abs() < 0.02, "{}", outer.torque);
+    // the shaft powers are |Ω| times the torques, and their sum is the work
+    // done on the fluid, which the steady state dissipates
+    assert!((inner.power + w1 * inner.torque).abs() < 1e-12 * inner.power);
+    assert!((outer.power + w2.abs() * outer.torque).abs() < 1e-12 * outer.power);
+    let exact_power = -t1 * (w1 - w2);
+    let p = inner.power + outer.power;
+    assert!((p / exact_power - 1.0).abs() < 0.02, "{p} {exact_power}");
+    let b = s.balance.as_ref().unwrap();
+    let k = &b.last.kinetic_energy;
+    // (the ledger of the last step against the values at its end)
+    assert!((k.shaft / p - 1.0).abs() < 1e-4, "{} {p}", k.shaft);
+    assert!(
+        (k.viscous_dissipation / p - 1.0).abs() < 0.05,
+        "{} {p}",
+        k.viscous_dissipation
+    );
+}

@@ -1,0 +1,88 @@
+# A vessel with two stirrers that turn at their own speeds (D185): two
+# sliding rotors by imprinting, each with its own interface circle, in one
+# stator. The left rotor (three blades) turns at +10 rad/s, the right one
+# (four blades) at -15 rad/s, both about axes along z through their own
+# centres; transient, from rest. The Reynolds number omega R_tip^2 / nu of
+# the left rotor is 400, as in the single stirred vessel
+# (examples/studies/mixer/sliding.toml).
+#
+#   pip install gmsh
+#   python3 examples/meshes/twin_mixer.py
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/twin_mixer/sliding.toml
+#
+# The log has the angle, torque and shaft power of each rotor (its own
+# columns), forces.csv their histories, and the fields at four times show
+# the vortices of the blades meeting between the rotors. 800 steps (1.27
+# turns of the left rotor, 1.9 of the right one) take about seven minutes on
+# four cores.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/twin_mixer.msh"
+renumber = "rcm"
+
+[fluid]
+density = 1000.0
+viscosity = 0.05          # Pa s: nu = 5e-5 m^2/s
+
+[constants]
+left = 10.0               # rad/s
+right = -15.0             # rad/s
+xl = -0.08                # m, the axes
+xr = 0.08
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.001
+steps = 800
+start_time = 0.0
+
+[[sliding]]
+zone = "rotor_left"
+origin = [-0.08, 0.0, 0.0]
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "left_rotor_interface"
+stator_interface = "left_stator_interface"
+
+[[sliding]]
+zone = "rotor_right"
+origin = [0.08, 0.0, 0.0]
+axis = [0.0, 0.0, 1.0]
+omega = -15.0
+rotor_interface = "right_rotor_interface"
+stator_interface = "right_stator_interface"
+
+[boundary.blades_left]
+type = "wall"
+velocity = ["-left * y", "left * (x - xl)", 0.0]
+[boundary.blades_right]
+type = "wall"
+velocity = ["-right * y", "right * (x - xr)", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 4
+
+[log]
+columns = ["time.simulated", "rotor.rotor_left.angle", "rotor.rotor_right.angle",
+           "rotor.rotor_left.torque", "rotor.rotor_right.torque",
+           "rotor.rotor_left.power", "rotor.rotor_right.power"]
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["vorticity"]
+fields_times = [0.2, 0.4, 0.6, 0.8]

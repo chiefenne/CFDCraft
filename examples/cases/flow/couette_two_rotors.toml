@@ -1,0 +1,98 @@
+# Laminar Couette flow between two cylinders that turn in opposite senses,
+# each a sliding rotor by imprinting (D182 variant B, D185; stage 6, part 8
+# of 6g).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/couette_two_rotors.toml
+#
+# The gap between r = 0.05 m and r = 0.10 m is three rings: the inner rotor
+# (zone `rotor`, 32 sectors, the cylinder at 10 rad/s), a stator ring in the
+# middle (48 sectors) and the outer rotor (zone `rotor_outer`, 40 sectors,
+# the cylinder at -5 rad/s). Each rotor has its own interface to the stator,
+# both are imprinted at the angles of their rotors in every step, and the
+# two rotors turn at their own speeds. The flow starts from rest; at the end
+# (four viscous times of the gap) it is the steady Couette flow
+# u_theta = A r + B / r of the two cylinders, and the run fails if the
+# relative L2 error of the velocity exceeds the band. The log has the angle,
+# torque and shaft power of each rotor; the two torques are opposite.
+
+case_format = "0.6"
+
+[mesh.annulus]
+r_inner = 0.05
+r_outer = 0.10
+depth = 0.01
+n_theta = 16
+n_theta_stator = 24
+n_theta_outer = 20
+n_r = 12
+rotor_layers = 4
+outer_rotor_layers = 4
+refine = 1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-4
+
+[constants]
+spin = 10.0
+counter = -5.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.04
+steps = 500
+start_time = 0.0
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[[sliding]]
+zone = "rotor_outer"
+axis = [0.0, 0.0, 1.0]
+omega = -5.0
+rotor_interface = "rotor_interface_outer"
+stator_interface = "stator_interface_outer"
+
+[boundary.inner]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.outer]
+type = "wall"
+velocity = ["-counter * y", "counter * x", 0.0]
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 4
+
+[log]
+columns = ["time.simulated", "rotor.rotor.angle", "rotor.rotor_outer.angle", "rotor.rotor.torque", "rotor.rotor_outer.torque", "rotor.rotor.power", "rotor.rotor_outer.power"]
+
+[analytic]
+type = "taylor-couette"
+inner_radius = 0.05
+outer_radius = 0.10
+inner_omega = 10.0
+outer_omega = -5.0
+
+[verification]
+max_error = 0.03
+
+[output]
+vtkhdf = false
+wall_csv = false

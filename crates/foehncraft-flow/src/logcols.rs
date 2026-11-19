@@ -954,12 +954,16 @@ fn layout(s: &Spec, d: usize, transient: bool) -> Vec<Column> {
                 RotorQ::Power => ("power", "Power", "W"),
                 RotorQ::Angle => ("angle", "Angle", "deg"),
             };
+            // (the zone in the heading: several rotors turn at their own
+            // speeds, D185)
+            let head = format!("{name} {}", n.chars().take(14).collect::<String>());
+            let w = ws.max(head.chars().count());
             vec![col(
                 format!("rotor.{n}.{id}"),
-                name,
+                &head,
                 &format!("rotor {n}"),
                 unit,
-                ws,
+                w,
             )]
         }
         Spec::Machine(n, q) => {

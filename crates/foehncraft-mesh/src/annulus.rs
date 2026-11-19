@@ -20,7 +20,11 @@
 //! not one: the sliding mesh by imprinting, D182 variant B): `n_theta` is the
 //! rotor's, `n_theta_stator` the stator's, and the faces of the interface are
 //! the two boundaries `rotor_interface` and `stator_interface` instead of
-//! interior faces.
+//! interior faces. With `outer_rotor_layers > 0` as well, the outermost
+//! layers form a second rotor ring, the zone `rotor_outer` with
+//! `n_theta_outer` intervals around the axis, and its interface with the
+//! stator is the pair `stator_interface_outer`, `rotor_interface_outer`:
+//! two rotors that turn at their own speeds about one stator (D185).
 //!
 //! Boundaries: `inner` (r = `r_inner`), `outer` (r = `r_outer`), `zmin`,
 //! `zmax`, and with a split interface `rotor_interface`, `stator_interface`.
@@ -36,6 +40,15 @@ pub const ANNULUS_BOUNDARIES: [&str; 4] = ["inner", "outer", "zmin", "zmax"];
 /// The two boundaries of a split interface (`n_theta_stator > 0`): the
 /// rotor's faces and the stator's.
 pub const INTERFACE_BOUNDARIES: [&str; 2] = ["rotor_interface", "stator_interface"];
+
+/// The two boundaries of the interface between the stator and the outer
+/// rotor ring (`outer_rotor_layers > 0`): the stator's faces and the outer
+/// rotor's.
+pub const OUTER_INTERFACE_BOUNDARIES: [&str; 2] =
+    ["stator_interface_outer", "rotor_interface_outer"];
+
+/// The cell zone of the outer rotor ring (`outer_rotor_layers > 0`).
+pub const OUTER_ROTOR_ZONE: &str = "rotor_outer";
 
 /// Specification of an annulus (`[mesh.annulus]`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -67,6 +80,15 @@ pub struct AnnulusSpec {
     /// Radial intervals (of the unrefined mesh) next to the inner cylinder
     /// that form the cell zone `rotor` (0: one zone `fluid`).
     pub rotor_layers: usize,
+    /// Radial intervals (of the unrefined mesh) next to the outer cylinder
+    /// that form a second rotor, the cell zone `rotor_outer`, as a ring of
+    /// its own (0: none; needs `n_theta_stator`). Its interface with the
+    /// stator is the pair of boundaries `stator_interface_outer` and
+    /// `rotor_interface_outer`: two rotors that turn at their own speeds
+    /// about one stator ring.
+    pub outer_rotor_layers: usize,
+    /// Intervals around the axis of the outer rotor ring (0: as `n_theta`).
+    pub n_theta_outer: usize,
     /// Refinement level: every interval is halved `refine` times.
     pub refine: u32,
 }
@@ -84,6 +106,8 @@ impl Default for AnnulusSpec {
             radial_ratio: 1.0,
             symmetric: false,
             rotor_layers: 0,
+            outer_rotor_layers: 0,
+            n_theta_outer: 0,
             refine: 0,
         }
     }
@@ -108,6 +132,21 @@ impl AnnulusSpec {
         }
     }
 
+    /// Radial intervals and intervals around the axis of the outer rotor
+    /// ring after refinement ((0, 0) without one).
+    pub fn outer_intervals(&self) -> (usize, usize) {
+        if self.outer_rotor_layers == 0 {
+            return (0, 0);
+        }
+        let f = 1usize << self.refine;
+        let nt = if self.n_theta_outer > 0 {
+            self.n_theta_outer
+        } else {
+            self.n_theta
+        };
+        (self.outer_rotor_layers * f, nt * f)
+    }
+
     /// The interface is split into two boundaries (`n_theta_stator` set).
     pub fn split(&self) -> bool {
         self.n_theta_stator > 0
@@ -116,7 +155,8 @@ impl AnnulusSpec {
     /// Number of cells.
     pub fn estimated_cells(&self) -> usize {
         let [nt, nr, nz, nrot] = self.intervals();
-        nt * nrot * nz + self.stator_intervals() * (nr - nrot) * nz
+        let (nout, nto) = self.outer_intervals();
+        nt * nrot * nz + self.stator_intervals() * (nr - nrot - nout) * nz + nto * nout * nz
     }
 
     /// 2 for one cell layer (a 2D case), else 3.
@@ -145,12 +185,23 @@ impl AnnulusSpec {
                     .into(),
             );
         }
-        if self.rotor_layers >= self.n_r {
+        if self.rotor_layers + self.outer_rotor_layers >= self.n_r {
             return Err(format!(
-                "[mesh.annulus]: rotor_layers ({}) must be smaller than n_r ({}): the stator \
-                 needs at least one layer",
-                self.rotor_layers, self.n_r
+                "[mesh.annulus]: rotor_layers + outer_rotor_layers ({}) must be smaller than n_r \
+                 ({}): the stator needs at least one layer",
+                self.rotor_layers + self.outer_rotor_layers,
+                self.n_r
             ));
+        }
+        if self.outer_rotor_layers > 0 && self.n_theta_stator == 0 {
+            return Err(
+                "[mesh.annulus]: outer_rotor_layers needs n_theta_stator (the outer rotor is a \
+                 ring of its own, imprinted on the stator)"
+                    .into(),
+            );
+        }
+        if self.n_theta_outer > 0 && self.n_theta_outer < 3 {
+            return Err("[mesh.annulus]: need n_theta_outer >= 3".into());
         }
         if self.refine > 6 {
             return Err("[mesh.annulus]: refine must be <= 6".into());
@@ -250,39 +301,37 @@ impl AnnulusSpec {
         })
     }
 
-    /// The rotor ring and the stator ring as two separate meshes: the
-    /// interface faces of both are boundaries (`rotor_interface`,
-    /// `stator_interface`), the pitch of the two rings is `n_theta` and
-    /// `n_theta_stator`.
+    /// The rotor ring and the stator ring (and the outer rotor ring) as
+    /// separate meshes: the interface faces of each pair are boundaries
+    /// (`rotor_interface`, `stator_interface`; `stator_interface_outer`,
+    /// `rotor_interface_outer`), the pitch of the rings is `n_theta`,
+    /// `n_theta_stator` and `n_theta_outer`.
     fn generate_split(&self) -> Result<Mesh, String> {
         let [ntr, nr, nz, nrot] = self.intervals();
         let nts = self.stator_intervals();
+        let (nout, nto) = self.outer_intervals();
         let s = self.radial_nodes();
         let tau = std::f64::consts::TAU;
         let (ri, ro) = (self.r_inner, self.r_outer);
         let radius = |j: usize| ri + s[j] * (ro - ri);
-        // 2D nodes: the rotor ring (j = 0..=nrot), then the stator ring
-        // (j = nrot..=nr)
-        let nj_r = nrot + 1;
-        let nj_s = nr - nrot + 1;
-        let mut pts2: Vec<[f64; 2]> = Vec::with_capacity(ntr * nj_r + nts * nj_s);
-        for a in 0..ntr {
-            let th = tau * a as f64 / ntr as f64;
-            let (c, sn) = (th.cos(), th.sin());
-            for j in 0..=nrot {
-                pts2.push([radius(j) * c, radius(j) * sn]);
+        // the rings: radial node range, intervals around, zone
+        let mut rings = vec![(0, nrot, ntr, 1u32), (nrot, nr - nout, nts, 0u32)];
+        if nout > 0 {
+            rings.push((nr - nout, nr, nto, 2u32));
+        }
+        // 2D nodes ring by ring, index off + (j - j0) + (j1 - j0 + 1) a
+        let mut pts2: Vec<[f64; 2]> = Vec::new();
+        let mut offs = Vec::with_capacity(rings.len());
+        for &(j0, j1, nt, _) in &rings {
+            offs.push(pts2.len());
+            for a in 0..nt {
+                let th = tau * a as f64 / nt as f64;
+                let (c, sn) = (th.cos(), th.sin());
+                for j in j0..=j1 {
+                    pts2.push([radius(j) * c, radius(j) * sn]);
+                }
             }
         }
-        for a in 0..nts {
-            let th = tau * a as f64 / nts as f64;
-            let (c, sn) = (th.cos(), th.sin());
-            for j in nrot..=nr {
-                pts2.push([radius(j) * c, radius(j) * sn]);
-            }
-        }
-        let node_r = |a: usize, j: usize| (j + nj_r * (a % ntr)) as u32;
-        let off = (ntr * nj_r) as u32;
-        let node_s = |a: usize, j: usize| off + (j - nrot + nj_s * (a % nts)) as u32;
         let np = pts2.len() as u32;
         let mut pts = Vec::with_capacity(pts2.len() * (nz + 1));
         for k in 0..=nz {
@@ -290,75 +339,78 @@ impl AnnulusSpec {
             pts.extend(pts2.iter().map(|p| [p[0], p[1], z]));
         }
         let mut soup = CellSoup::new(pts);
-        soup.set_zone_names(vec!["stator".to_string(), "rotor".to_string()]);
+        let mut zones = vec!["stator".to_string(), "rotor".to_string()];
+        if nout > 0 {
+            zones.push(OUTER_ROTOR_ZONE.to_string());
+        }
+        soup.set_zone_names(zones);
         for k in 0..nz {
             let (lo, hi) = (k as u32 * np, (k as u32 + 1) * np);
-            let mut add = |q: [u32; 4], zone: u32| {
-                let hx = [
-                    q[0] + lo,
-                    q[1] + lo,
-                    q[2] + lo,
-                    q[3] + lo,
-                    q[0] + hi,
-                    q[1] + hi,
-                    q[2] + hi,
-                    q[3] + hi,
-                ];
-                let faces = hex_faces(&hx);
-                soup.add_cell_in_zone(faces.iter().map(|f| &f[..]), zone);
-            };
-            for a in 0..ntr {
-                for j in 0..nrot {
-                    add(
-                        [
-                            node_r(a, j),
-                            node_r(a, j + 1),
-                            node_r(a + 1, j + 1),
-                            node_r(a + 1, j),
-                        ],
-                        1,
-                    );
-                }
-            }
-            for a in 0..nts {
-                for j in nrot..nr {
-                    add(
-                        [
-                            node_s(a, j),
-                            node_s(a, j + 1),
-                            node_s(a + 1, j + 1),
-                            node_s(a + 1, j),
-                        ],
-                        0,
-                    );
+            for (&(j0, j1, nt, zone), &off) in rings.iter().zip(&offs) {
+                let node = |a: usize, j: usize| (off + (j - j0) + (j1 - j0 + 1) * (a % nt)) as u32;
+                for a in 0..nt {
+                    for j in j0..j1 {
+                        let q = [
+                            node(a, j),
+                            node(a, j + 1),
+                            node(a + 1, j + 1),
+                            node(a + 1, j),
+                        ];
+                        let hx = [
+                            q[0] + lo,
+                            q[1] + lo,
+                            q[2] + lo,
+                            q[3] + lo,
+                            q[0] + hi,
+                            q[1] + hi,
+                            q[2] + hi,
+                            q[3] + hi,
+                        ];
+                        let faces = hex_faces(&hx);
+                        soup.add_cell_in_zone(faces.iter().map(|f| &f[..]), zone);
+                    }
                 }
             }
         }
         let depth = self.depth;
-        let r_if = radius(nrot);
         // the faces are planar chords: their centroids lie at r cos(pi / n)
         let chord = |r: f64, n: usize| r * (std::f64::consts::PI / n as f64).cos();
-        let (c_rotor_if, c_outer) = (chord(r_if, ntr), chord(ro, nts));
-        let (c_inner, c_stator_if) = (chord(ri, ntr), chord(r_if, nts));
+        // the boundaries that face away from the axis and towards it, by the
+        // radius of their centroids
+        let mut away = vec![(chord(radius(nrot), ntr), "rotor_interface")];
+        let mut toward = vec![
+            (chord(ri, ntr), "inner"),
+            (chord(radius(nrot), nts), "stator_interface"),
+        ];
+        if nout > 0 {
+            let r2 = radius(nr - nout);
+            away.push((chord(r2, nts), OUTER_INTERFACE_BOUNDARIES[0]));
+            toward.push((chord(r2, nto), OUTER_INTERFACE_BOUNDARIES[1]));
+            away.push((chord(ro, nto), "outer"));
+        } else {
+            away.push((chord(ro, nts), "outer"));
+        }
+        let nearest = |list: &[(f64, &'static str)], r: f64| -> &'static str {
+            list.iter()
+                .min_by(|a, b| (a.0 - r).abs().total_cmp(&(b.0 - r).abs()))
+                .map(|x| x.1)
+                .expect("a boundary")
+        };
         let mut names: Vec<&str> = ANNULUS_BOUNDARIES.to_vec();
         names.extend(INTERFACE_BOUNDARIES);
+        if nout > 0 {
+            names.extend(OUTER_INTERFACE_BOUNDARIES);
+        }
         soup.finish(&names, move |b: BoundaryFace| {
             let c = b.centroid;
             let r = c[0].hypot(c[1]);
             let name = if b.normal[2].abs() > 0.5 {
                 if c[2] < 0.5 * depth { "zmin" } else { "zmax" }
             } else if (b.normal[0] * c[0] + b.normal[1] * c[1]) > 0.0 {
-                // out of the domain, away from the axis: the interface
-                // side of the rotor or the outer cylinder
-                if (r - c_rotor_if).abs() < (r - c_outer).abs() {
-                    "rotor_interface"
-                } else {
-                    "outer"
-                }
-            } else if (r - c_inner).abs() < (r - c_stator_if).abs() {
-                "inner"
+                // out of the domain, away from the axis
+                nearest(&away, r)
             } else {
-                "stator_interface"
+                nearest(&toward, r)
             };
             name.to_string()
         })
@@ -367,7 +419,15 @@ impl AnnulusSpec {
     /// One line for the log.
     pub fn describe(&self) -> String {
         let [nt, nr, nz, nrot] = self.intervals();
-        let rotor = if self.split() {
+        let (nout, nto) = self.outer_intervals();
+        let rotor = if self.split() && nout > 0 {
+            format!(
+                ", rotor zone: the inner {nrot} radial layers with {nt} intervals around the \
+                 axis, stator {}, outer rotor zone `{OUTER_ROTOR_ZONE}`: the outer {nout} radial \
+                 layers with {nto} (split interfaces)",
+                self.stator_intervals()
+            )
+        } else if self.split() {
             format!(
                 ", rotor zone: the inner {nrot} radial layers with {nt} intervals around the \
                  axis, stator {} (split interface)",
@@ -501,6 +561,67 @@ mod tests {
             ..Default::default()
         };
         assert!(bad.validate().unwrap_err().contains("rotor_layers"));
+    }
+
+    #[test]
+    fn an_outer_rotor_ring_has_its_own_interface() {
+        let s = AnnulusSpec {
+            n_theta: 12,
+            n_theta_stator: 18,
+            n_theta_outer: 15,
+            n_r: 6,
+            rotor_layers: 2,
+            outer_rotor_layers: 2,
+            ..Default::default()
+        };
+        let m = s.generate().unwrap();
+        assert_eq!(m.n_cells, s.estimated_cells());
+        assert_eq!(m.n_cells, 12 * 2 + 18 * 2 + 15 * 2);
+        let len = |name: &str| m.boundaries.iter().find(|p| p.name == name).unwrap().len;
+        assert_eq!(len("rotor_interface"), 12);
+        assert_eq!(len("stator_interface"), 18);
+        assert_eq!(len("stator_interface_outer"), 18);
+        assert_eq!(len("rotor_interface_outer"), 15);
+        assert_eq!(len("inner"), 12);
+        assert_eq!(len("outer"), 15);
+        assert_eq!(
+            m.zones,
+            vec![
+                "stator".to_string(),
+                "rotor".to_string(),
+                OUTER_ROTOR_ZONE.to_string()
+            ]
+        );
+        let g = Geometry::compute(&m);
+        for c in 0..m.n_cells {
+            assert!(g.cell_volume[c] > 0.0);
+            let s = g.closure(&m, c);
+            assert!(s.iter().all(|x| x.abs() < 1e-12), "cell {c}: {s:?}");
+        }
+        // the outer interface lies on the circle between the stator and the
+        // outer ring, its stator side points away from the axis
+        let r2 = 0.05 + 0.05 * 4.0 / 6.0;
+        for (name, sign) in [
+            ("stator_interface_outer", 1.0),
+            ("rotor_interface_outer", -1.0),
+        ] {
+            let p = m.boundaries.iter().find(|p| p.name == name).unwrap();
+            for f in p.range() {
+                for &n in m.face(f) {
+                    let x = m.points[n as usize];
+                    assert!((x[0].hypot(x[1]) - r2).abs() < 1e-12);
+                }
+                let c = g.face_centroid[f];
+                let (n, _) = g.normal_area(f);
+                assert!(sign * (n[0] * c[0] + n[1] * c[1]) > 0.0, "{name} {f}");
+            }
+        }
+        let bad = AnnulusSpec {
+            outer_rotor_layers: 1,
+            rotor_layers: 1,
+            ..Default::default()
+        };
+        assert!(bad.validate().unwrap_err().contains("n_theta_stator"));
     }
 
     #[test]

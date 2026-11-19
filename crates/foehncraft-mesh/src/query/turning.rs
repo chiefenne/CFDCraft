@@ -34,23 +34,24 @@ use crate::imprint::rotate;
 use crate::{Geometry, Mesh};
 use rayon::prelude::*;
 
-/// The wall distance of a mesh with a rigidly turning part (see the module
+/// The wall distance of a mesh with rigidly turning parts (see the module
 /// documentation).
 #[derive(Debug, Clone)]
 pub struct TurningWallDistance {
-    origin: [f64; 3],
-    axis: [f64; 3],
-    rotor: Vec<bool>,
-    /// The walls of the rotor (angle 0) and of the stator.
-    walls: [Option<Bvh>; 2],
+    /// Axis of every rotor: a point on it and the unit direction.
+    turns: Vec<([f64; 3], [f64; 3])>,
+    /// The part of every cell: rotor i < n, the stator n.
+    part: Vec<u32>,
+    /// The walls of every part (the rotors at the angle 0).
+    walls: Vec<Option<Bvh>>,
     /// The triangles of every face, per part (start, count).
-    face_tris: [Vec<(u32, u32)>; 2],
+    face_tris: Vec<Vec<(u32, u32)>>,
     /// The distance of every cell to the walls of its own part.
     own: Vec<f64>,
-    /// The cells that can see a wall of the other part nearer than their
-    /// own, and the face of the other part that was the nearest at the last
-    /// angle (`u32::MAX`: none yet).
-    candidates: Vec<(u32, u32)>,
+    /// The cells that can see a wall of another part nearer than their
+    /// own, and per part the face that was the nearest at the last angles
+    /// (`u32::MAX`: none yet).
+    candidates: Vec<(u32, Vec<u32>)>,
 }
 
 fn face_tris(s: &SurfaceFaces) -> Vec<(u32, u32)> {
@@ -83,29 +84,57 @@ impl TurningWallDistance {
         origin: [f64; 3],
         axis: [f64; 3],
     ) -> Self {
-        assert_eq!(centroid.len(), rotor.len(), "a part flag per cell");
-        let [wr, ws] = walls;
-        let ft = [face_tris(&wr), face_tris(&ws)];
-        let walls = [wr, ws].map(|w| (!w.is_empty()).then(|| Bvh::build(w)));
-        let open = open.map(|o| (!o.is_empty()).then(|| Bvh::build(o)));
-        let part = |c: usize| usize::from(!rotor[c]);
+        let part: Vec<u32> = rotor.iter().map(|&r| u32::from(!r)).collect();
+        Self::of_parts(
+            centroid,
+            &part,
+            walls.into(),
+            open.into(),
+            vec![(origin, axis)],
+        )
+    }
+
+    /// From `n` rotors and the stator (D185): per cell its centroid at the
+    /// angle 0 and its part (rotor i < n, the stator n); per part its wall
+    /// faces and its open faces; per rotor the axis of its turn (a point on
+    /// it and the unit direction).
+    pub fn of_parts(
+        centroid: &[[f64; 3]],
+        part: &[u32],
+        walls: Vec<SurfaceFaces>,
+        open: Vec<SurfaceFaces>,
+        turns: Vec<([f64; 3], [f64; 3])>,
+    ) -> Self {
+        let np = turns.len() + 1;
+        assert_eq!(centroid.len(), part.len(), "a part per cell");
+        assert!(
+            walls.len() == np && open.len() == np,
+            "walls and open faces per part"
+        );
+        let ft: Vec<_> = walls.iter().map(face_tris).collect();
+        let walls: Vec<Option<Bvh>> = walls
+            .into_iter()
+            .map(|w| (!w.is_empty()).then(|| Bvh::build(w)))
+            .collect();
+        let open: Vec<Option<Bvh>> = open
+            .into_iter()
+            .map(|o| (!o.is_empty()).then(|| Bvh::build(o)))
+            .collect();
+        let others_have_walls = |p: usize| (0..np).any(|q| q != p && walls[q].is_some());
         let pairs: Vec<(f64, bool)> = (0..centroid.len())
             .into_par_iter()
             .map(|c| {
                 let x = centroid[c];
-                let p = part(c);
+                let p = part[c] as usize;
                 let own = walls[p]
                     .as_ref()
                     .and_then(|b| b.closest(x))
                     .map_or(f64::INFINITY, |q| q.distance);
                 // the other walls can be nearer only through an open face
-                let reach = match (&walls[1 - p], &open[p]) {
-                    (None, _) => false,
-                    (Some(_), None) => false,
-                    (Some(_), Some(o)) => {
+                let reach = others_have_walls(p)
+                    && open[p].as_ref().is_some_and(|o| {
                         o.closest_within(x, own).is_some_and(|q| q.distance < own)
-                    }
-                };
+                    });
                 (own, reach)
             })
             .collect();
@@ -114,12 +143,11 @@ impl TurningWallDistance {
             .iter()
             .enumerate()
             .filter(|(_, p)| p.1)
-            .map(|(c, _)| (c as u32, u32::MAX))
+            .map(|(c, _)| (c as u32, vec![u32::MAX; np]))
             .collect();
         Self {
-            origin,
-            axis,
-            rotor: rotor.to_vec(),
+            turns,
+            part: part.to_vec(),
             walls,
             face_tris: ft,
             own,
@@ -145,21 +173,37 @@ impl TurningWallDistance {
         origin: [f64; 3],
         axis: [f64; 3],
     ) -> Self {
-        let mut w = [SurfaceFaces::default(), SurfaceFaces::default()];
-        let mut o = [SurfaceFaces::default(), SurfaceFaces::default()];
-        let part = |c: u32| usize::from(!rotor[c as usize]);
-        let mut support = Support::new(mesh, rotor, origin, axis);
+        let part: Vec<u32> = rotor.iter().map(|&r| u32::from(!r)).collect();
+        Self::of_mesh_parts(mesh, geo, &part, walls, vec![(origin, axis)])
+    }
+
+    /// [`Self::of_mesh`] for `n` rotors (D185): `part` of every cell (rotor
+    /// i < n, the stator n), `turns` the axis of every rotor.
+    pub fn of_mesh_parts(
+        mesh: &Mesh,
+        geo: &Geometry,
+        part: &[u32],
+        walls: &[usize],
+        turns: Vec<([f64; 3], [f64; 3])>,
+    ) -> Self {
+        let np = turns.len() + 1;
+        let mut w = vec![SurfaceFaces::default(); np];
+        let mut o = vec![SurfaceFaces::default(); np];
+        let mut support = Support::new(mesh, part, &turns);
         for f in 0..mesh.n_interior_faces() {
-            let (a, b) = (mesh.owner[f], mesh.neighbour[f]);
-            if rotor[a as usize] != rotor[b as usize] {
-                o[0].push_face(mesh, geo, f);
-                o[1].push_face(mesh, geo, f);
+            let (a, b) = (
+                part[mesh.owner[f] as usize],
+                part[mesh.neighbour[f] as usize],
+            );
+            if a != b {
+                o[a as usize].push_face(mesh, geo, f);
+                o[b as usize].push_face(mesh, geo, f);
             }
         }
         for (bi, b) in mesh.boundaries.iter().enumerate() {
             let wall = walls.contains(&bi);
             for f in b.range() {
-                let p = part(mesh.owner[f]);
+                let p = part[mesh.owner[f] as usize] as usize;
                 if wall {
                     w[p].push_face(mesh, geo, f);
                 } else if !support.holds(mesh, geo, f) {
@@ -167,17 +211,10 @@ impl TurningWallDistance {
                 }
             }
         }
-        Self::new(
-            &geo.cell_centroid[..mesh.n_cells],
-            rotor,
-            w,
-            o,
-            origin,
-            axis,
-        )
+        Self::of_parts(&geo.cell_centroid[..mesh.n_cells], part, w, o, turns)
     }
 
-    /// Cells that may see a wall of the other part nearer than their own
+    /// Cells that may see a wall of another part nearer than their own
     /// (the queries of every angle; the others keep their distance).
     pub fn candidates(&self) -> usize {
         self.candidates.len()
@@ -187,48 +224,73 @@ impl TurningWallDistance {
     /// (rad, about the axis) from the base mesh; `centroid` holds the cell
     /// centroids of the mesh at that angle (the rotor cells turned).
     pub fn at(&mut self, angle: f64, centroid: &[[f64; 3]]) -> Vec<f64> {
+        self.at_angles(&[angle], centroid)
+    }
+
+    /// The wall distance of every cell with rotor i turned by `angles[i]`
+    /// from the base mesh; `centroid` holds the cell centroids of the mesh
+    /// at these angles.
+    pub fn at_angles(&mut self, angles: &[f64], centroid: &[[f64; 3]]) -> Vec<f64> {
         assert_eq!(centroid.len(), self.own.len(), "a centroid per cell");
+        assert_eq!(angles.len(), self.turns.len(), "an angle per rotor");
         let mut d = self.own.clone();
-        let (o, a) = (self.origin, self.axis);
-        let (walls, ft, rotor, own) = (&self.walls, &self.face_tris, &self.rotor, &self.own);
-        let found: Vec<Option<(f64, u32)>> = self
+        let np = self.turns.len() + 1;
+        let (walls, ft, part, own, turns) = (
+            &self.walls,
+            &self.face_tris,
+            &self.part,
+            &self.own,
+            &self.turns,
+        );
+        let found: Vec<f64> = self
             .candidates
             .par_iter_mut()
-            .map(|(c, hint)| {
+            .map(|(c, hints)| {
                 let c = *c as usize;
-                // the other part, and the point in the frame of its walls
-                let (q, x) = if rotor[c] {
-                    (1, centroid[c])
-                } else {
-                    (0, rotate(centroid[c], o, a, -angle))
-                };
-                let bvh = walls[q].as_ref()?;
-                // the face nearest at the last angle bounds the search
-                let mut near = f64::INFINITY;
-                if *hint != u32::MAX {
-                    let (s, n) = ft[q][*hint as usize];
-                    let tris = &bvh.faces().tris;
-                    for t in &tris[s as usize..(s + n) as usize] {
-                        near = near.min(dist(x, closest_on_triangle(x, t)));
+                let p = part[c] as usize;
+                let mut best = f64::INFINITY;
+                for q in (0..np).filter(|&q| q != p) {
+                    let Some(bvh) = walls[q].as_ref() else {
+                        continue;
+                    };
+                    // the point in the frame of the walls of part q
+                    let x = if q < turns.len() {
+                        let (o, a) = turns[q];
+                        rotate(centroid[c], o, a, -angles[q])
+                    } else {
+                        centroid[c]
+                    };
+                    let hint = &mut hints[q];
+                    // the face nearest at the last angle bounds the search
+                    let mut near = f64::INFINITY;
+                    if *hint != u32::MAX {
+                        let (s, n) = ft[q][*hint as usize];
+                        let tris = &bvh.faces().tris;
+                        for t in &tris[s as usize..(s + n) as usize] {
+                            near = near.min(dist(x, closest_on_triangle(x, t)));
+                        }
+                    }
+                    let r = own[c].min(near);
+                    // (a hair wider than the bound, which is a square root of
+                    // a squared distance: the face of the hint is found again)
+                    match bvh.closest_within(x, r * (1.0 + 1e-12)) {
+                        Some(hit) => {
+                            *hint = hit.face as u32;
+                            best = best.min(hit.distance);
+                        }
+                        None => {
+                            if near < own[c] {
+                                best = best.min(near);
+                            }
+                        }
                     }
                 }
-                let r = own[c].min(near);
-                // (a hair wider than the bound, which is a square root of a
-                // squared distance: the face of the hint is found again)
-                match bvh.closest_within(x, r * (1.0 + 1e-12)) {
-                    Some(hit) => {
-                        *hint = hit.face as u32;
-                        Some((hit.distance, hit.face as u32))
-                    }
-                    None => (near < own[c]).then_some((near, *hint)),
-                }
+                best
             })
             .collect();
         for (&(c, _), f) in self.candidates.iter().zip(found) {
-            if let Some((dist, _)) = f {
-                let c = c as usize;
-                d[c] = d[c].min(dist);
-            }
+            let c = c as usize;
+            d[c] = d[c].min(f);
         }
         d
     }
@@ -236,10 +298,10 @@ impl TurningWallDistance {
 
 /// Planes that have the whole domain on one side at every rotor angle.
 struct Support {
-    /// Per node: it belongs to a rotor cell (it turns).
-    turns: Vec<bool>,
-    origin: [f64; 3],
-    axis: [f64; 3],
+    /// Per node: the rotor it turns with (`u32::MAX`: it stands).
+    turns: Vec<u32>,
+    /// Axis of every rotor.
+    axes: Vec<([f64; 3], [f64; 3])>,
     tol: f64,
     /// Planes already decided (normal and offset in units of `tol`).
     seen: std::collections::HashMap<[i64; 4], bool>,
@@ -250,15 +312,21 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 
 impl Support {
-    fn new(mesh: &Mesh, rotor: &[bool], origin: [f64; 3], axis: [f64; 3]) -> Self {
-        let mut turns = vec![false; mesh.points.len()];
+    fn new(mesh: &Mesh, part: &[u32], axes: &[([f64; 3], [f64; 3])]) -> Self {
+        let n = axes.len() as u32;
+        let mut turns = vec![u32::MAX; mesh.points.len()];
         for f in 0..mesh.n_faces() {
-            let o = rotor[mesh.owner[f] as usize];
-            let n = f < mesh.n_interior_faces() && rotor[mesh.neighbour[f] as usize];
-            if o || n {
-                for &v in mesh.face(f) {
-                    turns[v as usize] = true;
+            let mut mark = |c: u32| {
+                let p = part[c as usize];
+                if p < n {
+                    for &v in mesh.face(f) {
+                        turns[v as usize] = p;
+                    }
                 }
+            };
+            mark(mesh.owner[f]);
+            if f < mesh.n_interior_faces() {
+                mark(mesh.neighbour[f]);
             }
         }
         let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
@@ -270,8 +338,7 @@ impl Support {
         }
         Self {
             turns,
-            origin,
-            axis,
+            axes: axes.to_vec(),
             tol: 1e-9 * dist(lo, hi).max(f64::MIN_POSITIVE),
             seen: Default::default(),
         }
@@ -305,13 +372,12 @@ impl Support {
         if let Some(&h) = self.seen.get(&key) {
             return h;
         }
-        // the largest n·p of a point p turned about the axis
-        let (o, ax) = (self.origin, self.axis);
-        let na = dot(n, ax);
-        let n_perp = dot(n, n) - na * na;
-        let n_perp = n_perp.max(0.0).sqrt();
+        // the largest n·p of a point p turned about the axis of its rotor
         let h = mesh.points.iter().zip(&self.turns).all(|(&p, &t)| {
-            let reach = if t {
+            let reach = if t != u32::MAX {
+                let (o, ax) = self.axes[t as usize];
+                let na = dot(n, ax);
+                let n_perp = (dot(n, n) - na * na).max(0.0).sqrt();
                 let v = sub(p, o);
                 let va = dot(v, ax);
                 let v_perp = (dot(v, v) - va * va).max(0.0).sqrt();
@@ -510,6 +576,90 @@ mod tests {
                 assert!(
                     (d[c] - w).abs() <= 1e-12 * w.max(1.0),
                     "angle {angle}, cell {c}: {} vs {w}",
+                    d[c]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn two_rotors_agree_with_the_wall_distance_of_their_mesh() {
+        use crate::annulus::AnnulusSpec;
+        use crate::imprint::{Imprint, Interface, InterfaceSpec};
+        let mesh = AnnulusSpec {
+            n_theta: 12,
+            n_theta_stator: 18,
+            n_theta_outer: 15,
+            n_r: 9,
+            n_z: 2,
+            rotor_layers: 2,
+            outer_rotor_layers: 5,
+            ..Default::default()
+        }
+        .generate()
+        .unwrap();
+        let base = Geometry::compute(&mesh);
+        let spec = InterfaceSpec {
+            zone: "rotor".into(),
+            rotor_patch: "rotor_interface".into(),
+            stator_patch: "stator_interface".into(),
+            origin: [0.0; 3],
+            axis: [0.0, 0.0, 1.0],
+        };
+        let outer = InterfaceSpec {
+            zone: "rotor_outer".into(),
+            rotor_patch: "rotor_interface_outer".into(),
+            stator_patch: "stator_interface_outer".into(),
+            ..spec.clone()
+        };
+        let parts = vec![
+            Interface::new(&mesh, &spec).unwrap(),
+            Interface::new(&mesh, &outer).unwrap(),
+        ];
+        let part: Vec<u32> = (0..mesh.n_cells)
+            .map(|c| {
+                if parts[0].rotor_cells()[c] {
+                    0
+                } else if parts[1].rotor_cells()[c] {
+                    1
+                } else {
+                    2
+                }
+            })
+            .collect();
+        let imp = Imprint::new(&mesh, parts).unwrap();
+        let walls_of = |m: &Mesh| -> Vec<usize> {
+            m.boundaries
+                .iter()
+                .enumerate()
+                .filter(|(_, b)| b.name == "inner" || b.name == "outer")
+                .map(|(i, _)| i)
+                .collect()
+        };
+        let axis = ([0.0; 3], [0.0, 0.0, 1.0]);
+        let mut twd = TurningWallDistance::of_mesh_parts(
+            &mesh,
+            &base,
+            &part,
+            &walls_of(&mesh),
+            vec![axis, axis],
+        );
+        let n = mesh.n_cells;
+        assert!(
+            twd.candidates() > 0 && twd.candidates() < n,
+            "{}",
+            twd.candidates()
+        );
+        for angles in [[0.0, 0.0], [0.05, -0.3], [0.4, 1.0], [1.7, -2.2]] {
+            let a = imp.assemble(&mesh, &angles).unwrap();
+            let geo = imp.geometry(&a, &base);
+            let want = super::super::wall_distance(&a.mesh, &geo, &walls_of(&a.mesh)).unwrap();
+            let d = twd.at_angles(&angles, &geo.cell_centroid[..n]);
+            for c in 0..n {
+                let w = want[c].distance;
+                assert!(
+                    (d[c] - w).abs() <= 1e-12 * w.max(1.0),
+                    "angles {angles:?}, cell {c}: {} vs {w}",
                     d[c]
                 );
             }

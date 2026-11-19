@@ -72,7 +72,9 @@
 //! - The boundary faces of the rotor must be walls that turn with it, or
 //!   symmetry planes (`SLD004`); a wall with a prescribed velocity expression
 //!   (D53) of the rigid turn does that.
-//! - One rotor per case.
+//! - One rotor per case in conformal stepping; several rotors, each at its
+//!   own speed and with its own interface to the stator, by imprinting
+//!   (D185). An interface between two rotors is not available yet.
 //!
 //! # Turbulence
 //!
@@ -96,7 +98,7 @@ use crate::transient::{OldLevels, Transient};
 use anyhow::Result;
 use foehncraft_fv::Discretisation;
 use foehncraft_fv::disc::Soa3;
-use foehncraft_mesh::imprint::{FaceOrigin, Interface, InterfaceSpec};
+use foehncraft_mesh::imprint::{FaceOrigin, Imprint, Interface, InterfaceSpec};
 use foehncraft_mesh::query::TurningWallDistance;
 use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
@@ -234,62 +236,9 @@ pub fn validate(case: &FlowCase) -> Result<()> {
                 .into(),
         ));
     };
-    if case.sliding.len() > 1 {
-        return Err(err(
-            diag::SLIDING_ENTRY,
-            "sliding",
-            "[[sliding]]: one rotor per case so far".into(),
-        ));
-    }
-    let s = &case.sliding[0];
-    if let Err(e) = s.omega_vector() {
-        return Err(err(
-            diag::SLIDING_ENTRY,
-            "sliding[0]",
-            format!("[[sliding]]: {e}"),
-        ));
-    }
-    crate::need!(
-        s.omega_vector().is_ok_and(|o| norm(o) > 0.0),
-        SLIDING_ENTRY,
-        "[[sliding]]: the angular velocity must not be 0 (a rotor at rest needs no sliding mesh)"
-    );
-    crate::need!(
-        s.shift >= 1,
-        SLIDING_ENTRY,
-        "[[sliding]]: `shift` (sectors per time step) must be at least 1"
-    );
-    crate::need!(
-        s.rotor_interface.is_some() == s.stator_interface.is_some(),
-        SLIDING_ENTRY,
-        "[[sliding]]: `rotor_interface` and `stator_interface` go together (the two boundaries \
-         of the interface of variant B)"
-    );
-    if s.imprinted() {
-        crate::need!(
-            s.zone.is_some(),
-            SLIDING_ENTRY,
-            "[[sliding]]: `zone` (the cell zone of the rotor) is needed with `rotor_interface`"
-        );
-        crate::need!(
-            s.shift == 1,
-            SLIDING_ENTRY,
-            "[[sliding]]: `shift` belongs to conformal stepping; with `rotor_interface` the time \
-             step is free"
-        );
-        crate::need!(
-            !case.solver.extrapolation && case.solver.outer_iterations >= 2,
-            SLIDING_STEPPING,
-            "[[sliding]]: the sliding mesh by imprinting is fully implicit in the step: set \
-             [solver] extrapolation = false and outer_iterations of at least 2 (3 to 6 is usual), \
-             since an explicit term made of the vectors of the previous rotor angle would be \
-             stale on the turned mesh"
-        );
-        crate::need!(
-            case.run.restart.is_none(),
-            SLIDING_INTERFACE,
-            "[[sliding]]: a restart of the sliding mesh by imprinting is not available yet"
-        );
+    let several = case.sliding.len() > 1;
+    for (i, s) in case.sliding.iter().enumerate() {
+        validate_entry(case, i, s, several)?;
     }
     crate::need!(
         !t.adaptive && t.error_tolerance.is_none(),
@@ -304,6 +253,94 @@ pub fn validate(case: &FlowCase) -> Result<()> {
         "[[sliding]]: the time step follows from the mesh, so a sweep over levels or time steps \
          is a series of runs, not a [verification] table"
     );
+    Ok(())
+}
+
+/// The checks of the `[[sliding]]` table `i` (`several`: the case has more
+/// than one, D185).
+fn validate_entry(case: &FlowCase, i: usize, s: &SlidingSection, several: bool) -> Result<()> {
+    let key = format!("sliding[{i}]");
+    let need = |ok: bool, code: &'static str, msg: String| -> Result<()> {
+        if ok {
+            Ok(())
+        } else {
+            Err(err(code, &key, msg))
+        }
+    };
+    if let Err(e) = s.omega_vector() {
+        return Err(err(diag::SLIDING_ENTRY, &key, format!("[[sliding]]: {e}")));
+    }
+    need(
+        s.omega_vector().is_ok_and(|o| norm(o) > 0.0),
+        diag::SLIDING_ENTRY,
+        "[[sliding]]: the angular velocity must not be 0 (a rotor at rest needs no sliding mesh)"
+            .into(),
+    )?;
+    need(
+        s.shift >= 1,
+        diag::SLIDING_ENTRY,
+        "[[sliding]]: `shift` (sectors per time step) must be at least 1".into(),
+    )?;
+    need(
+        s.rotor_interface.is_some() == s.stator_interface.is_some(),
+        diag::SLIDING_ENTRY,
+        "[[sliding]]: `rotor_interface` and `stator_interface` go together (the two boundaries \
+         of the interface of variant B)"
+            .into(),
+    )?;
+    need(
+        !several || s.imprinted(),
+        diag::SLIDING_ENTRY,
+        format!(
+            "[[sliding]] entry {}: several rotors (D185) need the interface by imprinting \
+             (`rotor_interface` and `stator_interface` in every table): their time steps of \
+             whole sectors do not agree",
+            i + 1
+        ),
+    )?;
+    if several {
+        for (j, o) in case.sliding.iter().enumerate().skip(i + 1) {
+            need(
+                s.zone != o.zone,
+                diag::SLIDING_ENTRY,
+                format!(
+                    "[[sliding]] entries {} and {} turn the zone `{}` twice",
+                    i + 1,
+                    j + 1,
+                    s.zone.as_deref().unwrap_or("")
+                ),
+            )?;
+        }
+    }
+    if s.imprinted() {
+        need(
+            s.zone.is_some(),
+            diag::SLIDING_ENTRY,
+            "[[sliding]]: `zone` (the cell zone of the rotor) is needed with `rotor_interface`"
+                .into(),
+        )?;
+        need(
+            s.shift == 1,
+            diag::SLIDING_ENTRY,
+            "[[sliding]]: `shift` belongs to conformal stepping; with `rotor_interface` the time \
+             step is free"
+                .into(),
+        )?;
+        need(
+            !case.solver.extrapolation && case.solver.outer_iterations >= 2,
+            diag::SLIDING_STEPPING,
+            "[[sliding]]: the sliding mesh by imprinting is fully implicit in the step: set \
+             [solver] extrapolation = false and outer_iterations of at least 2 (3 to 6 is usual), \
+             since an explicit term made of the vectors of the previous rotor angle would be \
+             stale on the turned mesh"
+                .into(),
+        )?;
+        need(
+            case.run.restart.is_none(),
+            diag::SLIDING_INTERFACE,
+            "[[sliding]]: a restart of the sliding mesh by imprinting is not available yet".into(),
+        )?;
+    }
     Ok(())
 }
 
@@ -622,15 +659,17 @@ pub fn attach(
     Ok(Some((Sliding { plan, dt }, notes)))
 }
 
-/// The sliding mesh by imprinting (variant B of D182) of a run.
+/// The sliding mesh by imprinting (variant B of D182) of a run: one or
+/// several rotors (D185), each with its interface to the stator.
 #[derive(Debug, Clone)]
 pub struct Imprinting {
-    iface: Interface,
-    /// Angular velocity about the unit axis of the interface (rad/s).
-    omega: f64,
+    imp: Imprint,
+    /// Angular velocity of every rotor about the unit axis of its interface
+    /// (rad/s).
+    omega: Vec<f64>,
 }
 
-/// The mesh of one rotor angle.
+/// The mesh of one set of rotor angles.
 #[derive(Debug, Clone)]
 pub struct Working {
     /// The conformal mesh (the cells of the base mesh).
@@ -639,8 +678,8 @@ pub struct Working {
     pub geo: Geometry,
     /// The origin of every face.
     pub origin: Vec<FaceOrigin>,
-    /// The rotor angle (rad).
-    pub angle: f64,
+    /// The angle of every rotor (rad).
+    pub angles: Vec<f64>,
     /// Intersection polygons (faces between rotor and stator).
     pub pieces: usize,
 }
@@ -649,104 +688,125 @@ pub struct Working {
 /// conformal stepping or without `[[sliding]]`.
 pub fn attach_imprint(case: &FlowCase, mesh: &Mesh) -> Result<Option<(Imprinting, SlidingNotes)>> {
     validate(case)?;
-    let Some(entry) = case.sliding.first().filter(|e| e.imprinted()) else {
+    if !case.sliding.first().is_some_and(SlidingSection::imprinted) {
         return Ok(None);
-    };
+    }
     let fail = |key: &str, msg: String| err(diag::SLIDING_INTERFACE, key, msg);
-    let (rp, sp) = (
-        entry.rotor_interface.clone().unwrap_or_default(),
-        entry.stator_interface.clone().unwrap_or_default(),
-    );
-    let zone = entry.zone.clone().unwrap_or_default();
-    if !mesh.zones.contains(&zone) {
-        let hint = crate::bc::did_you_mean(&zone, mesh.zones.iter().map(String::as_str))
-            .map(|c| format!(" (did you mean `{c}`?)"))
-            .unwrap_or_default();
-        return Err(err(
-            diag::SLIDING_ENTRY,
-            "sliding[0].zone",
-            format!(
-                "[[sliding]]: the mesh has no cell zone `{zone}`{hint}; its zones are {:?}",
-                mesh.zones
-            ),
-        ));
-    }
-    for name in [&rp, &sp] {
-        if case.boundary.contains_key(name) {
-            return Err(fail(
-                &format!("boundary.{name}"),
-                format!(
-                    "[[sliding]]: `{name}` is an interface boundary of the sliding mesh; it gets \
-                     no [boundary.{name}] table (its faces are replaced by the imprint)"
-                ),
-            ));
-        }
-    }
-    let omega_vec = entry.omega_vector()?;
-    let iface = Interface::new(
-        mesh,
-        &InterfaceSpec {
-            zone: zone.clone(),
-            rotor_patch: rp.clone(),
-            stator_patch: sp.clone(),
-            origin: entry.origin,
-            axis: entry.axis,
-        },
-    )
-    .map_err(|e| fail("sliding[0].rotor_interface", format!("[[sliding]]: {e}")))?;
-    let omega = dot(omega_vec, iface.axis());
-    // the other boundaries of the rotor: walls that turn with it, or symmetry
-    let rotor = iface.rotor_cells();
-    let patches = iface.patches();
-    for (bi, b) in mesh.boundaries.iter().enumerate() {
-        if patches.contains(&bi) || !b.range().any(|f| rotor[mesh.owner[f] as usize]) {
-            continue;
-        }
-        let Some(bc) = case.boundary.get(&b.name) else {
-            continue;
-        };
-        use crate::bc::BoundaryCondition as Bc;
-        if !matches!(
-            bc,
-            Bc::Wall { .. } | Bc::SlipWall | Bc::Symmetry | Bc::Wedge
-        ) {
+    let mut parts = Vec::with_capacity(case.sliding.len());
+    let mut omega = Vec::with_capacity(case.sliding.len());
+    let mut notes = SlidingNotes::default();
+    for (i, entry) in case.sliding.iter().enumerate() {
+        let (rp, sp) = (
+            entry.rotor_interface.clone().unwrap_or_default(),
+            entry.stator_interface.clone().unwrap_or_default(),
+        );
+        let zone = entry.zone.clone().unwrap_or_default();
+        if !mesh.zones.contains(&zone) {
+            let hint = crate::bc::did_you_mean(&zone, mesh.zones.iter().map(String::as_str))
+                .map(|c| format!(" (did you mean `{c}`?)"))
+                .unwrap_or_default();
             return Err(err(
-                diag::SLIDING_ZONE,
-                &format!("boundary.{}", b.name),
+                diag::SLIDING_ENTRY,
+                &format!("sliding[{i}].zone"),
                 format!(
-                    "[[sliding]]: the boundary `{}` of the rotor is a `{}`; the boundary faces of \
-                     the rotor must be walls that turn with it, slip walls or symmetry planes",
-                    b.name,
-                    bc.type_name()
+                    "[[sliding]]: the mesh has no cell zone `{zone}`{hint}; its zones are {:?}",
+                    mesh.zones
                 ),
             ));
         }
-    }
-    let (nr, ns) = iface.faces();
-    let notes = SlidingNotes {
-        lines: vec![format!(
+        for name in [&rp, &sp] {
+            if case.boundary.contains_key(name) {
+                return Err(fail(
+                    &format!("boundary.{name}"),
+                    format!(
+                        "[[sliding]]: `{name}` is an interface boundary of the sliding mesh; it \
+                         gets no [boundary.{name}] table (its faces are replaced by the imprint)"
+                    ),
+                ));
+            }
+        }
+        let omega_vec = entry.omega_vector()?;
+        let iface = Interface::new(
+            mesh,
+            &InterfaceSpec {
+                zone: zone.clone(),
+                rotor_patch: rp.clone(),
+                stator_patch: sp.clone(),
+                origin: entry.origin,
+                axis: entry.axis,
+            },
+        )
+        .map_err(|e| {
+            fail(
+                &format!("sliding[{i}].rotor_interface"),
+                format!("[[sliding]]: {e}"),
+            )
+        })?;
+        let w = dot(omega_vec, iface.axis());
+        // the other boundaries of the rotor: walls that turn with it, or
+        // symmetry
+        let rotor = iface.rotor_cells();
+        let patches = iface.patches();
+        for (bi, b) in mesh.boundaries.iter().enumerate() {
+            if patches.contains(&bi) || !b.range().any(|f| rotor[mesh.owner[f] as usize]) {
+                continue;
+            }
+            let Some(bc) = case.boundary.get(&b.name) else {
+                continue;
+            };
+            use crate::bc::BoundaryCondition as Bc;
+            if !matches!(
+                bc,
+                Bc::Wall { .. } | Bc::SlipWall | Bc::Symmetry | Bc::Wedge
+            ) {
+                return Err(err(
+                    diag::SLIDING_ZONE,
+                    &format!("boundary.{}", b.name),
+                    format!(
+                        "[[sliding]]: the boundary `{}` of the rotor `{zone}` is a `{}`; the \
+                         boundary faces of a rotor must be walls that turn with it, slip walls \
+                         or symmetry planes",
+                        b.name,
+                        bc.type_name()
+                    ),
+                ));
+            }
+        }
+        let (nr, ns) = iface.faces();
+        notes.lines.push(format!(
             "sliding mesh (D182, variant B): zone `{zone}` turns about the axis {:?} through {:?} \
              at {:.6e} rad/s; the interface at r = {:.6e} m has {nr} rotor and {ns} stator faces \
              and is imprinted in every step (the solver is built again on the mesh of the angle, \
              fully implicit)",
             entry.axis,
             entry.origin,
-            omega,
+            w,
             iface.radius()
-        )],
-    };
-    Ok(Some((Imprinting { iface, omega }, notes)))
+        ));
+        parts.push(iface);
+        omega.push(w);
+    }
+    let n = parts.len();
+    let imp =
+        Imprint::new(mesh, parts).map_err(|e| fail("sliding", format!("[[sliding]]: {e}")))?;
+    if n > 1 {
+        notes.lines.push(format!(
+            "sliding mesh (D185): {n} rotors, each at its own speed, imprinted together on the \
+             stator in every step"
+        ));
+    }
+    Ok(Some((Imprinting { imp, omega }, notes)))
 }
 
 impl Imprinting {
-    /// The rotor angle at time `t` (rad): the base mesh is the rotor at
-    /// t = 0.
-    pub fn angle(&self, t: f64) -> f64 {
-        self.omega * t
+    /// The angle of every rotor at time `t` (rad): the base mesh is the
+    /// rotors at t = 0.
+    pub fn angles(&self, t: f64) -> Vec<f64> {
+        self.omega.iter().map(|w| w * t).collect()
     }
 
-    /// The exact wall distance of the turbulence model (D48) for every rotor
-    /// angle, kept per part of the base mesh (`mesh`, `geo`;
+    /// The exact wall distance of the turbulence model (D48) for every set
+    /// of rotor angles, kept per part of the base mesh (`mesh`, `geo`;
     /// [`TurningWallDistance`]); `None` in laminar flow, with the Poisson
     /// distance (computed again on the mesh of every step) or without walls.
     pub fn wall_distance(
@@ -776,33 +836,42 @@ impl Imprinting {
         if walls.is_empty() {
             return None;
         }
-        Some(TurningWallDistance::of_mesh(
+        let parts = self.imp.parts();
+        let n = parts.len() as u32;
+        let part: Vec<u32> = (0..mesh.n_cells)
+            .map(|c| {
+                parts
+                    .iter()
+                    .position(|p| p.rotor_cells()[c])
+                    .map_or(n, |i| i as u32)
+            })
+            .collect();
+        Some(TurningWallDistance::of_mesh_parts(
             mesh,
             geo,
-            self.iface.rotor_cells(),
+            &part,
             &walls,
-            self.iface.origin(),
-            self.iface.axis(),
+            parts.iter().map(|p| (p.origin(), p.axis())).collect(),
         ))
     }
 
-    /// The mesh and the geometry of the rotor at time `t`.
+    /// The mesh and the geometry of the rotors at time `t`.
     pub fn working(&self, mesh: &Mesh, base: &Geometry, t: f64) -> Result<Working> {
-        let angle = self.angle(t);
-        let a = self.iface.assemble(mesh, angle).map_err(|e| {
+        let angles = self.angles(t);
+        let a = self.imp.assemble(mesh, &angles).map_err(|e| {
             err(
                 diag::SLIDING_INTERFACE,
                 "sliding",
                 format!("[[sliding]]: {e}"),
             )
         })?;
-        let geo = self.iface.geometry(&a, base);
+        let geo = self.imp.geometry(&a, base);
         Ok(Working {
             geo,
             origin: a.origin,
             pieces: a.pieces.len(),
             mesh: a.mesh,
-            angle,
+            angles,
         })
     }
 

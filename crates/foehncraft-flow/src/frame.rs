@@ -1,6 +1,7 @@
 //! The moving reference frame (MRF, D55): zones of the mesh that rotate
-//! steadily about an axis, for pumps, fans and mixers in steady state
-//! ("frozen rotor"). Case file: one `[[mrf]]` table per zone.
+//! about an axis, for pumps, fans and mixers ("frozen rotor"), in steady
+//! state and in a transient run (D185). Case file: one `[[mrf]]` table per
+//! zone.
 //!
 //! # Equations
 //!
@@ -44,10 +45,26 @@
 //! - The source −ρ V_c **Ω** × **u**_c of the rotating cells is explicit
 //!   (lagged one outer iteration).
 //!
-//! The method is steady only (D55); the transient form is the sliding mesh
-//! of D182 ([`crate::sliding`]), which uses the same frame flux as the grid
-//! flux of its moving rotor cells and has no Coriolis source (the mesh
-//! moves instead of the frame).
+//! # Transient MRF (D185)
+//!
+//! In a transient run the equation gets the time term of the velocity
+//! whose components are those of the rotating basis, at a point that
+//! turns with the frame, u′(x′, t) = Rᵀ(t) **u**(R(t) x′, t): its time
+//! derivative is Rᵀ (∂**u**/∂t + (**Ω** × **r**)·∇**u** − **Ω** × **u**), so
+//! at the frozen instant (R = I)
+//!
+//! ∂(ρ **u**′)/∂t + ∇·(ρ **u**ᵣ ⊗ **u**) + ρ **Ω** × **u** = −∇p + ∇·τ(**u**),
+//!
+//! the steady equation with the ordinary time term of the solved velocity:
+//! the transient frozen rotor. It is exact in a zone that is a body of
+//! revolution about its axis with walls that turn with it or are bodies of
+//! revolution too (a Taylor–Couette spin-up in the rotating frame is the
+//! spin-up of the inertial frame); with blades it keeps the rotor at one
+//! position relative to the stator, so the rotor–stator interaction is that
+//! of the frozen position (the sliding mesh of D182, [`crate::sliding`],
+//! moves the rotor instead: same frame flux as its grid flux, no Coriolis
+//! source). A transient MRF zone and sliding rotors can share a case, in
+//! different zones (`MRF001`).
 
 use crate::case::FlowCase;
 use crate::device::Buf;
@@ -119,11 +136,22 @@ pub fn validate(case: &FlowCase) -> Result<()> {
     if case.mrf.is_empty() {
         return Ok(());
     }
-    crate::need!(
-        case.time.is_none(),
-        MRF_TRANSIENT,
-        "[[mrf]] is a steady method (D55); a transient run with a rotating zone needs the sliding mesh (D182)"
-    );
+    // a zone is turned by one method: a frame or a sliding mesh
+    for (i, m) in case.mrf.iter().enumerate() {
+        for s in &case.sliding {
+            crate::need!(
+                m.zone.is_some() && s.zone.is_some() && m.zone != s.zone,
+                MRF_SLIDING_ZONE,
+                "[[mrf]] entry {} and a [[sliding]] table turn the same cells (zone {}): a zone \
+                 is turned by a moving reference frame or by a sliding mesh, not both; give \
+                 each its own `zone`",
+                i + 1,
+                m.zone
+                    .as_deref()
+                    .map_or("all cells".to_string(), |z| format!("`{z}`"))
+            );
+        }
+    }
     for (i, m) in case.mrf.iter().enumerate() {
         if let Err(e) = m.omega_vector() {
             let mut d = Diagnostic::new(diag::MRF_ENTRY, format!("[[mrf]] entry {}: {e}", i + 1));

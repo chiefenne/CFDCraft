@@ -175,7 +175,9 @@ one `[[mrf]]` table per zone.
 | `omega` or `rpm` | none | the angular velocity in rad/s or in revolutions per minute (exactly one), positive about the axis by the right-hand rule |
 | `axis`, `origin` | [0, 0, 1], [0, 0, 0] | direction of the axis (any length) and a point on it (m) |
 
-The case is steady (`MRF001` otherwise); the solved velocity is the
+The case is steady, or transient with a `[time]` table (the transient
+frozen rotor, D185: the rotor stays where it is; `MRF001` for a zone that a
+`[[sliding]]` table turns as well); the solved velocity is the
 absolute one, its convecting flux, and that of the turbulence variables and
 passive scalars, is relative to the frame. A wall that turns with the frame
 takes its absolute velocity in `velocity` (an expression, D53).
@@ -213,6 +215,18 @@ rotor and the stator are separate meshes (`[mesh.annulus] n_theta_stator`).
 With them `zone` is needed, `shift` is not allowed (the time step is free),
 and the scheme must be fully implicit (`[solver] extrapolation = false`,
 `outer_iterations` ≥ 2, `SLD003`); a restart is not available (`SLD005`).
+
+Several rotors (D185, [recipe 102](../recipes/flow.md#several-rotors)): one
+`[[sliding]]` table per rotor, each with its own `zone`, speed, `axis`,
+`origin` and pair of interface boundaries to the stator; every table needs
+the interface by imprinting (`SLD002` for conformal stepping with several
+rotors, for a zone named twice), and a rotor may not border another rotor
+(`SLD005`: each needs its interface with the stator). The rotors turn at
+their own speeds and are imprinted together in every step; the log columns
+`rotor.<zone>.angle`, `.torque` and `.power` name each rotor.
+`[mesh.annulus] outer_rotor_layers` (with `n_theta_outer`) makes a second
+rotor ring at the outer cylinder, the zone `rotor_outer` with the interface
+boundaries `stator_interface_outer` and `rotor_interface_outer`.
 
 # Derived fields (D72)
 

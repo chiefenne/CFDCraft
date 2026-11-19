@@ -48,7 +48,7 @@ FLOW = {
         "poiseuille_periodic", "channel_heated_periodic", "pipe_heated_periodic",
         "pipe_rough_keps", "backstep_zeta_f0_coupled", "backstep_validation",
         "pipe_heated_keps", "plate_heated_keps", "jet_pipe_profile", "taylor_couette_mrf",
-        "taylor_couette_sliding", "taylor_couette_imprint",
+        "taylor_couette_sliding", "taylor_couette_imprint", "couette_two_rotors",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_convective", "cylinder_re20_gci",
