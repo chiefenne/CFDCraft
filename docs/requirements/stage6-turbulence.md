@@ -1218,6 +1218,16 @@ The acceptance target of section 3.4 is met. At Re_τ 180 the start
 (I 0.05, ν_t/ν 100) relaminarizes the channel; I 0.15 and ν_t/ν 20
 keep it turbulent. Flat plate (9.3): C_f(0.97) +0.5 % from White.
 
+**Results of 6g (PR #111, GCI of every model on three meshes; details
+on the [verification page](../verification/stage6.md#gci-of-the-turbulence-models-on-the-plate-and-the-channel-93-94-pr-111)).**
+Plate: no model shows an asymptotic order on levels 0 to 2 (SST, ζ-f and
+EB oscillatory, k-ε and ζ-f₀ divergent, the realizable k-ε p = 1.0); SST
+lies within 0.14 % of the TMR value with GCI 0.47 %; ζ-f does not
+converge on the finer plates (C_f +16 to +24 %, finding). Channel: GCI
+0.13 to 0.79 % for the low-Re models, the realizable k-ε with scalable
+wall functions +11 % on the finest mesh (finding). Levels 1 to 3 belong
+on the maintainer's machine.
+
 ### 9.5 Backward-facing step (Driver & Seegmiller 1985)
 
 Expansion ratio 1.125, Re_H ≈ 36 000 on the step height H, inflow boundary
