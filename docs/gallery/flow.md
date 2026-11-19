@@ -1000,9 +1000,10 @@ Every turbulence model runs with `[[mrf]]` and with both sliding meshes:
 the rotor carries k, ε, ω, ζ and f and their old time levels with it, and
 the wall distance of the turning rotor is updated in every step.
 
-<img src="../figures/gallery/mixer_turbulent_mrf.png" alt="The turbulent stirred vessel in the moving reference frame: the speed |u| with streamlines, highest at the blade tips and turning nearly as a solid body between the blades; the turbulent kinetic energy k, highest at the blade tips and in a ring around them; and the eddy viscosity ratio ν_t/ν, up to 150 in the swirl of the stator and lower in the blade passages" width="800" height="256">
+<img src="../figures/gallery/mixer_turbulent_mrf.png" alt="The turbulent five-blade stirred vessel in the moving reference frame: the speed |u| with streamlines, highest at the blade tips and turning nearly as a solid body between the blades; the turbulent kinetic energy k, highest at the blade tips and in a ring around them; and the eddy viscosity ratio ν_t/ν, up to 150 in the swirl of the stator and lower in the blade passages" width="800" height="256">
 
-The frame (16 326 cells, 337 iterations of the coupled solver, 27 s). The
+The frame (four-blade case file: 16 326 cells, 337 iterations of the coupled
+solver, 27 s; the five-blade vessel of the images converges in 389). The
 fluid between the blades turns nearly with them (highest speed 0.45 m/s,
 at the tips); k is highest at the blade tips (7.4·10⁻³ m²/s² at r = 45 mm)
 and in the ring of the tip vortices; ν_t/ν reaches 150 in the swirl of the
@@ -1012,10 +1013,11 @@ the fluid turns almost as a solid body. Across the interface (dashed) the
 convecting velocity changes from **w** to **c**, as the steady frame
 assumes, and ν_t changes steeply there.
 
-<img src="../figures/gallery/mixer_turbulent_sliding.png" alt="The turbulent stirred vessel on the sliding mesh after three revolutions from rest: the speed |u|, the rotor spun up and the stator still nearly at rest with slow eddies between the baffles; k in a ring around the blade tips; ν_t/ν up to 70 in that ring" width="800" height="256">
+<img src="../figures/gallery/mixer_turbulent_sliding.png" alt="The turbulent five-blade stirred vessel on the sliding mesh after three revolutions from rest: the speed |u|, the rotor spun up and the stator still nearly at rest; k in a ring around the blade tips; ν_t/ν up to 70 in that ring" width="800" height="256">
 
 The sliding mesh after three revolutions (1 508 steps of 1.25 ms, BDF2,
-10 min on four cores; the laminar run of entry 98 takes 7). The rotor has
+10 min on four cores; the laminar run of entry 98 takes 7; the numbers below
+are from the four-blade case file). The rotor has
 spun up (0.46 m/s at the tips), but the stator is still nearly at rest
 (0.001 m/s beyond r = 70 mm): the turbulence lives in the shear layer
 between the rotor and the resting fluid (k up to 6.3·10⁻³ m²/s² at the tips,

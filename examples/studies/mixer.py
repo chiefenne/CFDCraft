@@ -190,7 +190,7 @@ def tile(fields, dst, *opts):
     grey[:, int(0.85 * px.shape[1]):] = False
     ys = np.where(grey.sum(axis=1) > 20)[0]      # not the grey of the text
     xs = np.where(grey.sum(axis=0) > 20)[0]
-    box = im.crop((xs.min() + 4, ys.min() + 4, xs.max() - 4, ys.max() - 4))
+    box = im.crop((xs.min() + 10, ys.min() + 10, xs.max() - 10, ys.max() - 10))
     w, h = box.size
     if w / h > 1.5:
         cut = int((w - 1.5 * h) / 2)
