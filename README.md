@@ -10,38 +10,96 @@
 
 ---
 
-> **Status: stage 5 done (transient laminar flow, run control and Python,
-> release 0.5).** The requirements are in
-> [docs/requirements.md](docs/requirements.md). The code so far is the
-> workspace, continuous integration, the GPU kernel benchmark that decided
-> the GPU backend ([G1](docs/benchmarks/g1.md)), the polyhedral mesh (Gmsh
-> reader, test mesher, quality report, partitioning, VTKHDF output), the
-> finite-volume operators on a scalar transport equation on the CPU and
-> the GPU ([stage 2](docs/verification/stage2.md)), the pressure solver:
-> aggregation AMG with CG in mixed precision, with hypre as the reference
-> ([stage 3](docs/verification/stage3.md)), the steady laminar flow solver
-> with SIMPLEC, the Rhie–Chow interpolation and checked boundary
-> conditions ([stage 4](docs/verification/stage4.md)), and transient
-> laminar flow ([stage 5](docs/verification/stage5.md)): PISO with BDF2 and
-> Crank–Nicolson, outer correctors, a time step from the integration
-> error, restart and control files, verified on the Taylor–Green vortex and
-> the cylinder benchmark of Schäfer & Turek; the whole flow loop on NVIDIA
-> GPUs with results bitwise equal to the CPU; adjoint-ready kernels; a run
-> contract for scripts and agents with a mass and kinetic-energy ledger and
-> a divergence report; the boundary conditions of D29 (slip walls, wedges,
-> table profiles, backflow, convective outlets); derived fields; boundary
-> values, body forces and viscosities as expressions, with fluid
-> properties from a built-in material database; the Python package
-> `foehncraft`, which builds, runs and studies cases in process or through
-> the command line; and the grid convergence index of every sweep, with
-> every case and its pass bands in the generated
-> [verification manual](docs/verification/manual.md). Next is stage 6
-> (turbulence and wall functions).
+> **Status: stage 6 nearly done (RANS turbulence, heat transfer in forced
+> convection, rotating machinery); the last release is 0.5.** The stage
+> plan and every decision are in [docs/requirements.md](docs/requirements.md);
+> [What works today](#what-works-today) lists what is on `main` now. Next is
+> stage 7: the energy equation with buoyancy, variable density and conjugate
+> heat transfer.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
 [![Rust 1.89+](https://img.shields.io/badge/rust-1.89%2B-orange.svg)](Cargo.toml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+<table>
+  <tr>
+    <td colspan="3"><a href="docs/gallery/flow.md#cylinder"><img src="assets/readme/cylinder_vortex_street.jpg" alt="Vorticity of the Kármán vortex street behind a cylinder, Re = 100" width="900" height="167"></a></td>
+  </tr>
+  <tr>
+    <td><a href="docs/gallery/flow.md#cavity"><img src="assets/readme/cavity_3d_polyhedra.jpg" alt="Streamlines of the 3D lid-driven cavity at Re = 1000 on 1.03 million polyhedra" width="300" height="200"></a></td>
+    <td><a href="docs/gallery/meshes.md#tjunction"><img src="assets/readme/tjunction.jpg" alt="Streamlines of a jet in crossflow in a T-junction on 1.03 million tetrahedra" width="300" height="200"></a></td>
+    <td><a href="docs/gallery/meshes.md"><img src="assets/readme/pin_fins.jpg" alt="Streamlines and wall shear stress in a staggered pin-fin array on 1.29 million tetrahedra" width="300" height="200"></a></td>
+  </tr>
+  <tr>
+    <td><a href="docs/gallery/turbulence.md#impinging-jet"><img src="assets/readme/impinging_jet_temperature.jpg" alt="Temperature and streamlines of a turbulent round jet impinging on a heated plate" width="300" height="200"></a></td>
+    <td><a href="docs/gallery/flow.md#turbulent-rotor"><img src="assets/readme/stirred_vessel_mrf.jpg" alt="Speed and streamlines in a turbulent stirred vessel with baffles, moving reference frame" width="300" height="200"></a></td>
+    <td><a href="docs/gallery/flow.md#several-rotors"><img src="assets/readme/twin_rotors_vorticity.jpg" alt="Vorticity of two rotors turning at their own speeds on a sliding mesh" width="300" height="200"></a></td>
+  </tr>
+</table>
+
+<sub>Real results of Foehncraft, each linked to its gallery entry: the Kármán vortex street (Schäfer &amp; Turek benchmark); the lid-driven cavity on a million polyhedra; a T-junction and a pin-fin array on Gmsh tetrahedra; a turbulent jet on a heated plate (k-ε-ζ-f₀); a stirred vessel in water with k-ω SST and the moving reference frame; two rotors on a sliding mesh.</sub>
+
+## What works today
+
+Everything below is on `main`, verified by the cases of the
+[verification manual](docs/verification/manual.md) and shown in the
+[gallery](docs/gallery.md).
+
+- **Meshes.** Arbitrary polyhedral cells in 2D and 3D; the Gmsh v4 reader;
+  a built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra; graded
+  segments, the cylinder O-grid, annuli for rotors); a quality report with
+  automatic remediation of skewed cells; partitioning with METIS and halos;
+  VTKHDF output for ParaView.
+- **Numerics.** Cell-centred finite volumes with weighted least-squares
+  gradients, Venkatakrishnan(-Wang) limiters, linear upwind and bounded
+  central convection, non-orthogonal correction, the time-step-independent
+  Rhie–Chow interpolation; BDF2 and Crank–Nicolson; reproducible
+  (gather-based) assembly in double precision.
+- **Pressure–velocity coupling.** SIMPLEC and SIMPLE for steady flow, PISO
+  with outer correctors for transient flow, a time step from the
+  integration error, and a coupled pressure–velocity algorithm with
+  pseudo-time steps and multigrid sweeps (the backward-facing step 6 times
+  faster than SIMPLEC).
+- **Linear solvers.** Aggregation multigrid with CG for the pressure (mixed
+  precision, hypre as the reference), reduction multigrid for momentum and
+  turbulence, BiCGStab.
+- **Turbulence (RANS).** k-ω SST (2003), standard and realizable k-ε,
+  k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004), k-ε-ζ-f₀ (Popovac 2023)
+  and the elliptic-blending k-ε; wall treatments `low-re`, `automatic`,
+  `scalable`, `standard`, `compound` and `compound-2023`, rough walls; the
+  exact wall distance. Validated on the flat plate, the channel against DNS,
+  the backward-facing step and the impinging jet.
+- **Heat and mass transfer.** Passive scalars (temperature, concentration)
+  carried by laminar and turbulent flow, with the turbulent Prandtl number
+  (constant or Kays–Crawford) and thermal wall functions (Kader,
+  Jayatilleke): the heated pipe, plate and channel against correlations and
+  DNS, the Nusselt number of the impinging jet against the experiment.
+  Temperature-dependent properties, buoyancy and conjugate heat transfer
+  come with the energy equation of stage 7.
+- **Rotating machinery.** The moving reference frame (steady and transient
+  frozen rotor), the sliding mesh by conformal stepping and by imprinting
+  the interface in every step, several rotors at their own speeds,
+  turbulence on all of them; torque per wall and rotor, shaft power in the
+  energy balance, head and hydraulic efficiency; relative and frame
+  velocities, flow angles and rothalpy as output.
+- **Boundary conditions.** Velocity, mass-flow, static and total pressure
+  inlets and outlets, freely combinable and checked; walls (moving,
+  turning, with blowing or suction), slip walls and symmetry planes,
+  axisymmetric wedges, periodic pairs driven by a mass flow or a pressure
+  gradient, inlet profiles from tables, backflow handling, convective
+  outlets.
+- **Cases and properties.** TOML case files with checks and guidance;
+  boundary values, sources and viscosities as expressions; a material
+  database (air, water, oils, glycols) with sources.
+- **Runs and results.** Restart, control files (`.stop`, `.result_N`,
+  `.read_toml_N`), settings that change on a schedule, probes, forces,
+  derived fields (vorticity, Q, λ₂, wall shear stress, y⁺), mass, kinetic
+  energy and energy ledgers, a divergence report, a log that can be
+  circulated, JSON records for scripts and agents.
+- **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
+  equal to the CPU; the Python package `foehncraft` that builds, runs and
+  studies cases; the grid convergence index of every mesh sweep.
 
 ## Goal
 
@@ -68,9 +126,12 @@ The guiding targets are:
 
 ## First milestone
 
-Incompressible flow on unstructured meshes, with two or three RANS turbulence
-models, run from a text case file. Everything after that follows the roadmap
-in the [requirements](docs/requirements.md).
+Version 1.0: incompressible flow, steady and transient, on unstructured 3D
+meshes with the RANS models above, heat transfer with the energy equation,
+buoyancy and conjugate heat transfer (stage 7), on NVIDIA GPUs and CPUs with
+MPI (stage 8). Everything after that follows the roadmap in the
+[requirements](docs/requirements.md): reacting flows, sprays, multiphase
+flow, moving meshes and scale-resolving turbulence.
 
 ## Build and run
 
@@ -87,6 +148,9 @@ target/release/foehn scalar examples/cases/scalar/mms_poly_box.toml
 target/release/foehn poisson examples/cases/poisson/poisson_poly_box.toml
 target/release/foehn flow examples/cases/flow/cavity_re100.toml
 target/release/foehn flow examples/cases/flow/taylor_green_bdf2.toml
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0.toml
+target/release/foehn flow examples/cases/flow/impinging_jet.toml
+target/release/foehn flow examples/cases/flow/taylor_couette_mrf.toml
 ```
 
 ## Documentation
@@ -94,12 +158,12 @@ target/release/foehn flow examples/cases/flow/taylor_green_bdf2.toml
 | Kind | What it is for | Where |
 |---|---|---|
 | Tutorial | a first mesh, end to end, in about ten minutes | [docs/tutorial.md](docs/tutorial.md) |
-| How-to | steps for one task: build, run, check, partition, rerun G1, order of accuracy, pressure solver and hypre, GPU runs, flow cases and boundary conditions, transient runs, derived fields, restart and control files, scripts and agents, balances and divergence reports | [docs/recipes.md](docs/recipes.md) (index of topic pages) |
+| How-to | steps for one task: build, run, check, partition, rerun G1, order of accuracy, pressure solver and hypre, GPU runs, flow cases and boundary conditions, transient runs, turbulence models and wall treatments, scalars and heat transfer, the coupled algorithm, rotating machinery, derived fields, restart and control files, scripts and agents, balances and divergence reports | [docs/recipes.md](docs/recipes.md) (index of topic pages) |
 | Reference | every case file, its keys and defaults; the machine interfaces (JSON formats, exit codes, signals, diagnostic codes, balance and divergence files) | [docs/cases.md](docs/cases.md) (index of topic pages), [docs/keys.md](docs/keys.md), [docs/interfaces.md](docs/interfaces.md) |
 | Examples | what each feature computes, with pictures and the commands | [docs/gallery.md](docs/gallery.md) (index of topic pages) |
 | Sayings | the small words of the trade, for example *Residuen-gaffen* | [docs/sayings.md](docs/sayings.md) |
 | Contributing | the documentation every feature ships with (gallery example, case files, recipe) and where it goes | [CONTRIBUTING.md](CONTRIBUTING.md) |
-| Explanation | requirements, decisions, benchmark and verification results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md), [stage 2](docs/verification/stage2.md), [stage 3](docs/verification/stage3.md), [stage 4](docs/verification/stage4.md), [stage 5](docs/verification/stage5.md), [verification manual](docs/verification/manual.md) |
+| Explanation | requirements, decisions, benchmark and verification results and their reading | [docs/requirements.md](docs/requirements.md), [G1](docs/benchmarks/g1.md), [stage 2](docs/verification/stage2.md), [stage 3](docs/verification/stage3.md), [stage 4](docs/verification/stage4.md), [stage 5](docs/verification/stage5.md), [stage 6](docs/verification/stage6.md), [verification manual](docs/verification/manual.md) |
 
 The [changelog](CHANGELOG.md) lists every release.
 
@@ -108,12 +172,13 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
 | `foehncraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
 | `foehncraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
-| `foehncraft-mesh` | polyhedral mesh, geometry, quality report, Gmsh reader, test mesher (also the cylinder benchmark mesh), partitioning and halo, VTKHDF output, point location |
+| `foehncraft-mesh` | polyhedral mesh, geometry, quality report, Gmsh reader, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location, wall distance, the imprint of sliding interfaces |
 | `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU backend (the GPU backend is in `foehncraft-cuda`) |
-| `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the Rhie–Chow interpolation, boundary conditions and their check, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
+| `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |
 | `foehncraft-cuda` | all NVIDIA GPU code (D60): the flow executor, the scalar and multigrid backend, the G1 backends with the CUDA C reference |
 | `foehncraft-cli` | the `foehn` command |
+| `foehncraft-py` | the Python package `foehncraft` (in `python/`) |
 | `gpu/ptx-kernels` | the kernels compiled to NVIDIA PTX (nightly toolchain) |
 
 ## How it is built
@@ -165,9 +230,10 @@ Innsbruck since the early twentieth century. The command is `foehn`.
 
 ## Contributing
 
-The project is at stage 4 and has one maintainer. Comments on the
-requirements are welcome as GitHub issues. Contribution guidelines will
-follow with the first solver code.
+The project is at stage 6 and has one maintainer. Comments on the
+requirements are welcome as GitHub issues. [CONTRIBUTING.md](CONTRIBUTING.md)
+has the rules every pull request follows, among them that it keeps this
+README and the documentation up to date with what it changes.
 
 ## Licence
 
