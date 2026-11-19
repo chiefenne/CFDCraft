@@ -51,7 +51,7 @@ heat transfer stage 7. New order (O18, confirmed by the maintainer on 2026-11-17
 |---|---|---|
 | 6 | Turbulence and wall functions, including the thermal wall function and the turbulent Prandtl number with temperature as a passive scalar ([stage 6 page](stage6-turbulence.md), D129–D139) | v0.6 |
 | **7** | **Energy, buoyancy, conjugate heat transfer (this page, D150–D164)**, with the static non-conformal interfaces of D58 moved here from the old stage 7, because fluid and solid meshes made separately (D113) seldom match | v0.7 |
-| 8 | The old stage 7 without D58: multi-rank MPI with overlapped halos (D38), scaling, the internal-flow cases of D45 (now also with heat transfer: heated periodic pipe D111 with every turbulence model, T-junction with hot and cold inflow), cell-quality remediation (D50), tet-to-polyhedra conversion (D54), conformal rotating meshes (D56), the reproducible mode (D93) and its cost, GCI in the validation reports, user documentation | **v1.0** |
+| 8 | The old stage 7 without D58: multi-rank MPI with overlapped halos (D38), scaling, the internal-flow cases of D45 (now also with heat transfer: heated periodic pipe D111 with every turbulence model, T-junction with hot and cold inflow), cell-quality remediation (D50), tet-to-polyhedra conversion (D54), conformal rotating meshes (D56, moved to stage 6 with D182 on 2026-11-19), the reproducible mode (D93) and its cost, GCI in the validation reports, user documentation | **v1.0** |
 
 What this means for milestone 1: v1.0 moves one stage later, and its scope
 grows from "incompressible flow" to "incompressible and low-Mach
