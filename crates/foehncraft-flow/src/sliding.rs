@@ -53,7 +53,7 @@
 //! internal face between a rotor cell and a stator cell (mass and momentum
 //! flux conserved to round-off, no interpolation), and the cells, their
 //! volumes (a rigid turn) and their numbering are those of the base mesh.
-//! The flow solver is built again on that mesh ([`rebuild_flow`] in
+//! The flow solver is built again on that mesh (`rebuild_flow` in
 //! `unsteady.rs`) and takes over the cell fields, the old time levels and
 //! the face fluxes of the faces that stay; the intersections are new faces
 //! with the interpolated flux. The scheme is fully implicit in the step (the
