@@ -5,6 +5,7 @@ Part of the [Example gallery](../gallery.md): fields derived from the solution, 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 22 | [Derived fields: vorticity, Q, λ₂, wall shear stress and y⁺](#derived-fields) | 5 | `[output] derived`, `foehn post derive` |
+| 108 | [Derived fields of the turbulence models: Reynolds stress, scales, wall values](#turbulence-derived-fields) | 6 | `turbulence-scales`, `reynolds-stress`, `wall-normal`, `turbulence-wall` |
 
 ---
 
@@ -67,3 +68,45 @@ cmp output/couette_derived/fields.vtkhdf output/couette_derived/derived.vtkhdf &
 | `y-plus` | on the boundary blocks: `y_plus` | - |
 
 How to use them: [recipe 30](../recipes/post-processing.md#derived-fields).
+
+---
+
+<a id="turbulence-derived-fields"></a>
+## 108. Derived fields of the turbulence models: Reynolds stress, scales, wall values
+
+<img src="../figures/gallery/turbulence_derived.png" alt="The backward-facing step with k-ε-ζ-f₀ on 8 200 cells, x/H from −3 to 14: the Reynolds shear stress u'v'/U_ref² of the Boussinesq estimate (down to −0.011 in the shear layer at x/H 4 to 7), the eddy-viscosity ratio ν_t/ν (up to 490 near the wall downstream of reattachment) and the time scale T of the model" width="800" height="576">
+
+**What the model carries.** The step of
+[gallery 74](turbulence.md#zeta-f0) (Driver & Seegmiller, Re_H = 36 000,
+k-ε-ζ-f₀, 8 200 cells, 1 500 iterations, 66 s) kept its restart
+file; `foehn post derive` added the quantities of the turbulence model.
+The Reynolds shear stress −2 ν_t S_xy grows along the shear layer that
+leaves the step corner and is largest, −0.011 U_ref², at x/H 4 to 7, just
+upstream of the reattachment at 6.4 H; the eddy viscosity is largest near
+the lower wall downstream of the reattachment, where the new boundary
+layer grows under the turbulent remains of the shear layer (ν_t/ν up to
+490); the time scale of the model is short in the shear layer and long in
+the slowly decaying free stream and the recirculation bubble.
+
+```
+target/release/foehn flow examples/cases/flow/backstep_zeta_f0.toml --set run.restart_final=true
+target/release/foehn post derive examples/cases/flow/backstep_zeta_f0.toml \
+    --fields turbulence-scales,reynolds-stress,turbulence-wall
+python3 -m tools.plot.turbulence_fields turbulence_derived.png \
+    output/backstep_zeta_f0/derived.vtkhdf
+```
+
+| Name in `derived` | Datasets | Unit |
+|---|---|---|
+| `turbulence-scales` | `dissipation_rate` ε (β* k ω for SST), `specific_dissipation_rate` ω (ε/(C_μ k) for the ε models), `time_scale` T of the model (1/(β* ω), k/ε, or the bounded T of ζ-f and EB), `length_scale` k^{3/2}/ε, `viscosity_ratio` ν_t/ν | m²/s³, 1/s, s, m, - |
+| `reynolds-stress` | `reynolds_stress_xx`, `_yy`, `_zz`, `_xy`, `_yz`, `_xz`: ⅔ k δᵢⱼ − 2 ν_t Sᵢⱼ | m²/s² |
+| `wall-normal` | `wall_normal_x`, `_y`, `_z`: ∇α/\|∇α\| of the elliptic-blending k-ε | - |
+| `turbulence-wall` | on the boundary blocks: `friction_velocity` u_τ of the wall treatment, `y_star` = d C_μ^¼ k_P^½/ν | m/s, - |
+
+**Checked on the channel** of every model family (SST, k-ε, EB;
+`tests/turbulence_derived.rs`): ε = C_μ k ω, T and L from their
+definitions, the trace of the Reynolds stress 2k, u'v' negative below the
+centre line and positive above, u_τ that of the wall treatment, and the
+EB wall normal a unit vector pointing away from the nearer wall.
+
+How to use them: [recipe 108](../recipes/post-processing.md#turbulence-derived-fields).

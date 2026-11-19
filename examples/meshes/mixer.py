@@ -1,13 +1,18 @@
 """A baffled stirred vessel in 2D (one cell layer): a rotor with four blades
-on a hub inside a circular interface, and a stator ring with four baffles on
-the vessel wall. Meshes for the moving reference frame and for the sliding
-mesh by imprinting (D55, D182).
+(`--blades`) on a hub inside a circular interface, and a stator ring with
+four baffles (`--baffles`) on the vessel wall. Meshes for the moving
+reference frame and for the sliding mesh by imprinting (D55, D182).
 
     pip install gmsh
     python3 examples/meshes/mixer.py              # both meshes, default size
     python3 examples/meshes/mixer.py --size 1.2e-3
+    python3 examples/meshes/mixer.py --blades 5 --baffles 3   # mixer5_*.msh
 
-Writes, next to this script,
+The five-blade vessel with three baffles is the one of the gallery images
+(CONTRIBUTING.md, "Images": no four-fold rotor patterns in published
+images); the four-blade meshes are the ones of the torque studies.
+
+Writes, next to this script (`mixer5_...` for five blades),
 
 - `mixer_conformal.msh`: rotor and stator share the nodes of the interface
   circle (interior faces between the cell zones `rotor` and `stator`), for
@@ -45,24 +50,24 @@ def rect(x0, x1, half, angle):
     return (2, s)
 
 
-def rotor():
+def rotor(blades):
     occ = gmsh.model.occ
     disk = (2, occ.addDisk(0, 0, 0, R_IFACE, R_IFACE))
     tools = [(2, occ.addDisk(0, 0, 0, R_HUB, R_HUB))]
-    for k in range(4):
-        tools.append(rect(0.5 * R_HUB, R_TIP, 0.5 * T_BLADE, k * math.pi / 2))
+    for k in range(blades):
+        tools.append(rect(0.5 * R_HUB, R_TIP, 0.5 * T_BLADE, 2.0 * math.pi * k / blades))
     out, _ = occ.cut([disk], tools)
     return out
 
 
-def stator(hole):
+def stator(hole, baffles):
     occ = gmsh.model.occ
     ring = (2, occ.addDisk(0, 0, 0, R_VESSEL, R_VESSEL))
     tools = [(2, occ.addDisk(0, 0, 0, hole, hole))]
-    for k in range(4):
-        # baffles between the blades' angles, through the wall
+    for k in range(baffles):
+        # baffles through the wall (between the blades' angles for four)
         tools.append(rect(R_VESSEL - L_BAFFLE, R_VESSEL + 0.01, 0.5 * T_BAFFLE,
-                          (k + 0.5) * math.pi / 2))
+                          2.0 * math.pi * (k + 0.5) / baffles))
     out, _ = occ.cut([ring], tools)
     return out
 
@@ -73,13 +78,13 @@ def on_circle(dim, tag, r):
     return abs(xmax - r) < 1e-6 and abs(xmin + r) < 1e-6 and abs(ymax - r) < 1e-6
 
 
-def build(split, size, path):
+def build(split, size, path, blades=4, baffles=4):
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
     gmsh.model.add("mixer")
     occ = gmsh.model.occ
-    rot = rotor()
-    sta = stator(R_IFACE)
+    rot = rotor(blades)
+    sta = stator(R_IFACE, baffles)
     if not split:
         occ.fragment(rot, sta)
     occ.synchronize()
@@ -164,10 +169,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--size", type=float, default=2.5e-3, help="largest cell size (m)")
     ap.add_argument("--out", default=os.path.dirname(os.path.abspath(__file__)))
+    ap.add_argument("--blades", type=int, default=4, help="number of blades")
+    ap.add_argument("--baffles", type=int, default=4, help="number of baffles")
     a = ap.parse_args()
-    for split, name in [(False, "mixer_conformal.msh"), (True, "mixer_split.msh")]:
+    stem = "mixer" if a.blades == 4 else f"mixer{a.blades}"
+    for split, name in [(False, f"{stem}_conformal.msh"), (True, f"{stem}_split.msh")]:
         path = os.path.join(a.out, name)
-        n = build(split, a.size, path)
+        n = build(split, a.size, path, a.blades, a.baffles)
         print(f"{path}: {n} cells")
 
 

@@ -33,8 +33,8 @@
   </tr>
   <tr>
     <td><a href="docs/gallery/turbulence.md#impinging-jet"><img src="assets/readme/impinging_jet_temperature.jpg" alt="Temperature and streamlines of a turbulent round jet impinging on a heated plate" width="300" height="200"></a></td>
-    <td><a href="docs/gallery/flow.md#turbulent-rotor"><img src="assets/readme/stirred_vessel_mrf.jpg" alt="Speed and streamlines in a turbulent stirred vessel with baffles, moving reference frame" width="300" height="200"></a></td>
-    <td><a href="docs/gallery/flow.md#several-rotors"><img src="assets/readme/twin_rotors_vorticity.jpg" alt="Vorticity of two rotors turning at their own speeds on a sliding mesh" width="300" height="200"></a></td>
+    <td><a href="docs/gallery/flow.md#turbulent-rotor"><img src="assets/readme/stirred_vessel_mrf.jpg" alt="Speed and streamlines in a turbulent stirred vessel with a five-blade rotor and three baffles, moving reference frame" width="300" height="200"></a></td>
+    <td><a href="docs/gallery/flow.md#several-rotors"><img src="assets/readme/twin_rotors_vorticity.jpg" alt="Vorticity of two rotors with three and five blades turning at their own speeds on a sliding mesh" width="300" height="200"></a></td>
   </tr>
 </table>
 
@@ -95,7 +95,7 @@ Everything below is on `main`, verified by the cases of the
   database (air, water, oils, glycols) with sources.
 - **Runs and results.** Restart, control files (`.stop`, `.result_N`,
   `.read_toml_N`), settings that change on a schedule, probes, forces,
-  derived fields (vorticity, Q, λ₂, wall shear stress, y⁺), mass, kinetic
+  derived fields (vorticity, Q, λ₂, wall shear stress, y⁺, and the Reynolds stress, scales and wall values of the turbulence models), mass, kinetic
   energy and energy ledgers, a divergence report, a log that can be
   circulated, JSON records for scripts and agents.
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
