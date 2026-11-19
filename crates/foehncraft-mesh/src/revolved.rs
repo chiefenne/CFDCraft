@@ -12,11 +12,11 @@
 //! reaches the axis; the cells there are wedges about one node per z on the
 //! axis, so a disc of the interface can pass through the centre.
 //!
-//! `cone` (degrees) tilts the inner z breakpoints: the line z = z[b] becomes
-//! z = z[b] + (r − r_mid) tan(cone), r_mid the middle of the r range, so
+//! `cone` (degrees) tilts the inner z breakpoints: the line `z = z[b]` becomes
+//! `z = z[b] + (r − r_mid) tan(cone)`, r_mid the middle of the r range, so
 //! interfaces on those lines are cones.
 //!
-//! Boundaries: `inner` (r = r[0], only when it is not the axis), `outer`,
+//! Boundaries: `inner` (`r = r[0]`, only when it is not the axis), `outer`,
 //! `zmin`, `zmax`, and `wall` around the blocks listed in `solid`; the faces
 //! of rotor cells on them get the suffix `_rotor` (`inner_rotor`, a hub that
 //! turns with the rotor; `wall_rotor`, an impeller disc); and the two
