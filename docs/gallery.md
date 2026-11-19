@@ -22,7 +22,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
 | [Verification](gallery/verification.md) | the discretisation uncertainty of mesh sweeps (grid convergence index) and the generated verification manual | 25 |
-| [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22, 108 |
+| [Post-processing](gallery/post-processing.md) | derived fields: vorticity, Q, λ₂, wall shear stress, y⁺, from the run or a restart file | 22, 108, 110 |
 | [Run control, health and adjoint readiness](gallery/runs.md) | adjoint-ready kernels, runs that a program drives, balances and the divergence report, the log, the table columns, scheduled changes | 17, 18, 19, 27, 28, 29 |
 
 ## All examples by number
@@ -84,6 +84,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="several-rotors"></a>102 | [Several rotors at their own speeds, and the transient frozen rotor](gallery/flow.md#several-rotors) | [Incompressible flow](gallery/flow.md) |
 | <a id="revolved-interfaces"></a>103 | [Interfaces of any rotationally symmetric shape: a disc impeller in a pot, a turning duct section between cones](gallery/flow.md#revolved-interfaces) | [Incompressible flow](gallery/flow.md) |
 | <a id="turbulence-derived-fields"></a>108 | [Derived fields of the turbulence models: Reynolds stress, scales, wall values](gallery/post-processing.md#turbulence-derived-fields) | [Post-processing](gallery/post-processing.md) |
+| <a id="transient-statistics"></a>110 | [Statistics of a transient run: the mean and the fluctuations of a vortex street](gallery/post-processing.md#transient-statistics) | [Post-processing](gallery/post-processing.md) |
 
 ## Adding a feature
 
