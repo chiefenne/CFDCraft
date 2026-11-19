@@ -9,7 +9,7 @@ Sets (times are the Linux CI runner, main run of 2026-11-15):
   linux-1  mesh, scalar, poisson, the 3D cavities           about 2.2 min
   linux-2  cylinder Re 20, cavity Re 1000, Poiseuille       about 2.7 min
   linux-3  Taylor-Green, transient cavity, the rest         about 2.2 min
-  long     cylinder Re 100 (long and short channels) and the
+  long     cylinder Re 100 (long and short channels, statistics) and the
            cylinder Re 20 on three meshes                   main, nightly and full-ci only
   quick    macOS and Windows: mesh, scalar, poisson and the quick flows
 
@@ -52,7 +52,7 @@ FLOW = {
         "axial_stage_uniform", "pot_solid_body", "pot_solid_body_viscous",
     ],
     "long": [
-        "cylinder_re100", "cylinder_re100_short", "cylinder_re100_convective", "cylinder_re20_gci",
+        "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
         "tmr_plate_zeta_f", "backstep_zeta_f0", "tmr_plate_eb", "backstep_eb", "impinging_jet",
     ],
     "quick": [

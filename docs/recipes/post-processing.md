@@ -1,11 +1,12 @@
 # Post-processing
 
-Part of the [Recipes](../recipes.md): derived fields with the output or afterwards from a restart file. The keys are on the [key page](../cases/flow-keys.md#derived-fields-d72).
+Part of the [Recipes](../recipes.md): derived fields with the output or afterwards from a restart file, and the statistics of transient runs. The keys are on the [key page](../cases/flow-keys.md#derived-fields-d72).
 
 | # | Recipe |
 |---|---|
 | 30 | [Write vorticity, Q, λ₂, wall shear stress and other derived fields](#derived-fields) |
 | 108 | [Write the Reynolds stress, the scales and the wall values of a turbulence model](#turbulence-derived-fields) |
+| 110 | [Average a transient run: mean, RMS, covariance, confidence interval](#transient-statistics) |
 
 ---
 
@@ -102,3 +103,58 @@ derived = ["turbulence-scales", "reynolds-stress", "turbulence-wall"]
 
 A laminar case refuses all four with CASE005. Pictures:
 [gallery 108](../gallery/post-processing.md#turbulence-derived-fields).
+
+---
+
+<a id="transient-statistics"></a>
+## 110. Average a transient run: mean, RMS, covariance, confidence interval
+
+`[output.statistics]` (D71) averages a transient run in simulated time
+from `start` to the end:
+
+```toml
+[output.statistics]
+start = 5.0            # s; default the start of the run
+batches = 10           # batches of the confidence interval (≥ 2, default 20)
+phase_period = 0.3311  # optional: phase averages over this period (s)
+phase_bins = 24        # bins per period (default 24)
+fields = true          # default: also the fields (statistics.vtkhdf)
+tolerance = 1e-3       # default: see "Is the window long enough?"
+```
+
+Every step is weighted with its time step, so an adaptive time step gives
+time means, not step means.
+
+- `statistics.vtkhdf` (with `[output] vtkhdf`): `mean_*` and `rms_*` of
+  `velocity_x`, `_y`, `_z`, `pressure`, `k` (with a turbulence model) and
+  every scalar by its name, the covariances `covariance_velocity_xy`,
+  `_yz`, `_xz` (the resolved Reynolds shear stresses) and
+  `covariance_velocity_x_<scalar>`, `_y_`, `_z_` (the resolved scalar
+  fluxes). RMS is the standard deviation in
+  time, √(⟨φ²⟩ − ⟨φ⟩²).
+- `statistics.csv`: for every probe component `probes.<name>.u`, `.v`,
+  `.w`, `.p` and the force coefficients `coefficients.cd`, `.cl`: mean,
+  RMS, min, max, the half width of the 95 % confidence interval of the
+  mean from `batches` batch means (Schmeiser 1982), the lag-1 correlation
+  r1 of the batch means (von Neumann form) and a verdict.
+- `statistics_phase.csv` (with `phase_period`): the time mean of every
+  series in each bin of the phase (t − start)/P mod 1, the phase average
+  of a periodic flow (a vortex street, a blade passing period).
+
+**Is the window long enough?** The verdict is `sufficient` when the batch
+means pass the von Neumann test of independence (Fishman 1978): their
+lag-1 correlation r1 below 1.645 √((B − 2)/(B² − 1)), 0.47 for 10
+batches, 0.35 for 20; else `too short`, and the run warns with STAT001. A
+trend (a decay, a start-up still in the window) gives `too short`; start
+later or run longer. With `phase_period` the batches hold whole periods
+(as many as fit equally; the rest of the window enters the mean only), so
+a periodic flow needs at least `batches` periods for the full number of
+batches. A mean known well enough passes as well: when the half width,
+widened for the correlation by √((1 + r1)/(1 − r1)), is below `tolerance`
+(0.1 %) of the size √var + |mean| of the series, a slow drift far below
+the size does not count (`tolerance = 0` keeps the test alone). The log
+lists every series with its mean ± half width.
+
+The section needs a transient run (CASE005) and checks `batches` and
+`phase_period` (CASE004). Pictures:
+[gallery 110](../gallery/post-processing.md#transient-statistics).

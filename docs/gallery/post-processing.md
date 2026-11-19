@@ -1,11 +1,12 @@
-# Post-processing: derived fields
+# Post-processing: derived fields and statistics
 
-Part of the [Example gallery](../gallery.md): fields derived from the solution, written with the fields or afterwards from a restart file (D72).
+Part of the [Example gallery](../gallery.md): fields derived from the solution, written with the fields or afterwards from a restart file (D72), and the statistics of transient runs (D71).
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 22 | [Derived fields: vorticity, Q, λ₂, wall shear stress and y⁺](#derived-fields) | 5 | `[output] derived`, `foehn post derive` |
 | 108 | [Derived fields of the turbulence models: Reynolds stress, scales, wall values](#turbulence-derived-fields) | 6 | `turbulence-scales`, `reynolds-stress`, `wall-normal`, `turbulence-wall` |
+| 110 | [Statistics of a transient run: the mean and the fluctuations of a vortex street](#transient-statistics) | 6 | `[output.statistics]` |
 
 ---
 
@@ -110,3 +111,49 @@ centre line and positive above, u_τ that of the wall treatment, and the
 EB wall normal a unit vector pointing away from the nearer wall.
 
 How to use them: [recipe 108](../recipes/post-processing.md#turbulence-derived-fields).
+
+---
+
+<a id="transient-statistics"></a>
+## 110. Statistics of a transient run: the mean and the fluctuations of a vortex street
+
+<img src="../figures/gallery/transient_statistics.png" alt="The cylinder at Re = 100 averaged from t = 5 to 12 s: the time mean of u with the recirculation behind the cylinder (down to −0.41 Ū), the RMS of v largest on the wake axis 2 to 3 D behind the cylinder (0.72 Ū), the resolved shear stress ⟨u'v'⟩ of opposite sign in the two shear layers (±0.19 Ū²), and the phase averages of C_L and of v at a probe 3 D behind the cylinder over two shedding periods" width="700" height="817">
+
+**What a time mean shows.** The vortex street of
+[gallery 22](post-processing.md#derived-fields) (Schäfer & Turek 2D-2,
+Re = 100, 6 144 cells, `cylinder_re100_statistics.toml`) averaged with
+`[output.statistics]` over the 20.7 shedding periods from t = 5 to 12 s
+(7 495 steps, 4 min on one core of the cloud machine). The mean flow
+has a closed recirculation bubble reaching 1.3 D behind the cylinder,
+which no instant of the street shows; the RMS of v is largest on the wake
+axis where the vortices of both sides pass in turn; ⟨u'v'⟩, the resolved
+Reynolds shear stress, is negative in the upper and positive in the lower
+shear layer and carries the momentum that closes the bubble. The phase
+averages over the shedding period 0.3384 s fold the 20 periods into one
+cycle of 24 bins: the lift and the cross-flow velocity in the wake move
+together.
+
+```
+target/release/foehn flow examples/cases/flow/cylinder_re100_statistics.toml
+python3 -m tools.plot.statistics_fields transient_statistics.png \
+    output/cylinder_re100_statistics/statistics.vtkhdf \
+    output/cylinder_re100_statistics/statistics_phase.csv
+```
+
+| Series (`statistics.csv`) | Mean ± 95 % | RMS | r1 | Verdict |
+|---|---|---|---|---|
+| `coefficients.cd` | 3.20207 ± 1.0e-4 | 0.0208 | +0.65 | `sufficient` (by the tolerance) |
+| `coefficients.cl` | −0.0104 ± 5.4e-5 | 0.700 | +0.26 | `sufficient` |
+| `probes.wake.u` (3 D behind the centre) | 0.9539 ± 3.0e-4 | 0.166 | +0.51 | `sufficient` (by the tolerance) |
+| `probes.wake.v` | 0.0234 ± 7.6e-5 | 0.686 | −0.20 | `sufficient` |
+
+The ten batches hold two periods each. The drag and the streamwise
+velocity oscillate at twice the shedding frequency and still drift by
+about 10⁻⁴ between batches, so their batch means are correlated; the
+interval, widened for that correlation, is below 0.1 % of the value, and
+the `tolerance` passes them. The benchmark of the case is unchanged (C_D,max
+3.232, St 0.2955 inside the reference ranges). The decaying Taylor–Green
+vortex, a trend, is `too short` with warning STAT001
+([verification](../verification/stage6.md#statistics-of-transient-runs-d71-pr-110)).
+
+How to use it: [recipe 110](../recipes/post-processing.md#transient-statistics).

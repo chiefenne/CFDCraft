@@ -673,6 +673,11 @@ pub struct OutputSection {
     /// efficiency and Euler work between an inlet and an outlet (D184).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub machines: Vec<crate::rotor::MachineSection>,
+    /// Transient: running means, RMS and covariances of the fields and the
+    /// statistics of the probes and force coefficients with batch-means
+    /// confidence intervals and phase averages (D71).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub statistics: Option<crate::statistics::StatisticsSection>,
 }
 
 impl Default for OutputSection {
@@ -697,6 +702,7 @@ impl Default for OutputSection {
             reference: Default::default(),
             frame: None,
             machines: Vec::new(),
+            statistics: None,
         }
     }
 }
@@ -1319,6 +1325,9 @@ impl FlowCase {
             );
         }
         crate::derived::validate(self)?;
+        if let Some(st) = &self.output.statistics {
+            st.validate(transient)?;
+        }
         let v = &self.verification;
         if !v.time_steps.is_empty() {
             crate::need!(
@@ -1637,6 +1646,9 @@ pub struct Solve {
     /// The turbulence model (stage 6): first-cell y⁺ per wall, ν_t/ν max.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub turbulence: Option<crate::turbulence::TurbulenceSummary>,
+    /// The statistics of a transient run (D71).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub statistics: Option<crate::statistics::StatisticsSummary>,
 }
 
 /// The value of a wall probe at the end of a solve.
@@ -3120,6 +3132,7 @@ pub fn run_steered(
             wall_probes: wall_probe_values,
             wall_crossings: wall_crossing_values,
             turbulence,
+            statistics: None,
         });
         if stopped {
             rep.stopped = true;
