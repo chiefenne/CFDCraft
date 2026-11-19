@@ -23,6 +23,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 100 | [A turbulent rotor: the stirred vessel with water, in the frame and on the sliding mesh](#turbulent-rotor) | 6 | turbulence models on `[[mrf]]` and `[[sliding]]`, the wall distance of a turning rotor |
 | 101 | [Torque, shaft power and the performance of a machine: the rotor of the stirred vessel](#torque-power) | 6 | torque per wall and rotor, shaft power in the energy ledger, `[[output.machines]]`, `tools/plot/rotor_movie.py` |
 | 102 | [Several rotors at their own speeds, and the transient frozen rotor](#several-rotors) | 6 | several `[[sliding]]` tables, `[mesh.annulus] outer_rotor_layers`, `examples/meshes/twin_mixer.py`, `[[mrf]]` with `[time]` |
+| 103 | [Interfaces of any rotationally symmetric shape: a disc impeller in a pot, a turning duct section between cones](#revolved-interfaces) | 6 | `[[sliding]]` with disc, cone and pot interfaces (D186), `[mesh.revolved]`, `tools/plot/meridional_fields.py` |
 
 ---
 
@@ -1175,3 +1176,73 @@ rotors (contra-rotating stages) is not available yet, and conformal
 stepping takes one rotor. Details on the
 [verification page](../verification/stage6.md#several-rotors-and-the-transient-frozen-rotor-d185-pr-102).
 [Recipe 102](../recipes/flow.md#several-rotors).
+
+<a id="revolved-interfaces"></a>
+## 103. Interfaces of any rotationally symmetric shape: a disc impeller in a pot, a turning duct section between cones
+
+The interface of a sliding rotor may be any surface of revolution about its
+axis whose meridian is made of straight pieces (D186): a cylinder as before,
+a disc (an axial gap between two blade rows), a cone, or a chain of them,
+also through the axis. There is one interface per rotor, however many
+pieces it has. The faces of rotor and stator are clipped in the unrolled
+(angle, meridian length) coordinates, and the corners of the pieces are
+inserted into the neighbouring face edges, so every imprinted cell closes
+to round-off. `[mesh.revolved]` builds such meshes from a block grid in
+(r, z).
+
+```toml
+[mesh.revolved]
+r = [0.0, 0.03, 0.045, 0.10]
+z = [0.0, 0.03, 0.045, 0.055, 0.07, 0.10]
+n_r = [10, 5, 12]
+n_z = [8, 6, 4, 6, 8]
+rotor = [[0, 1], [0, 3], [1, 1], [1, 2], [1, 3]]
+solid = [[0, 2]]           # the disc
+n_theta = 48
+n_theta_stator = 72
+```
+
+![A disc impeller in a closed vessel after eight revolutions: the swirl u_θ and the meridional flow with its streamlines, averaged around the axis; the dashed line is the sliding interface, a pot of disc, cylinder and disc around the impeller whose two discs pass through the axis](../figures/gallery/disc_pot_fields.png)
+
+`examples/studies/revolved/disc_pot.toml` (54 528 cells, 8 minutes): a disc
+of radius 0.03 m turning at 20 rad/s in the middle of a closed vessel of
+radius 0.10 m (Re = Ω R²/ν = 1 800; the cells are coarser than the 0.7 mm boundary layers of the disc, so this is a picture of the flow, not a validation). The rotor is the pot r < 0.045 m,
+0.03 < z < 0.07 m around the disc: 48 intervals around the axis, against 72 in
+the stator. The disc drags the fluid round in its boundary layers and throws
+it outwards from its rim (the von Kármán pump). Fluid comes back to the disc
+along the axis from above and below, and two meridional cells fill the vessel.
+They cross the interface through all three of its pieces, the disc below,
+the cylinder and the disc above, both discs where they pass through the
+axis, without a mark at the interface. The fluid holds the disc back with
+a torque of 4.5·10⁻⁴ N m; the shaft power of 9.0 mW goes into the energy
+balance of the run (D184).
+
+![A turning section of an annular duct between two fixed ones: the swirl u_θ and the axial velocity u_z; the dashed lines are the two cones of the interface](../figures/gallery/swirl_stage_fields.png)
+
+`examples/studies/revolved/swirl_stage.toml` (34 560 cells, 2.5 minutes):
+an annular duct (hub 0.05 m, casing 0.10 m) whose middle section, hub and
+casing, turns at 20 rad/s. The interface is two separate cones that lean
+20° against the radial direction, one before and one after the rotor (two
+parts of the meridian, 48 rotor and 64 stator intervals). The flow enters
+at 0.5 m/s without swirl, takes swirl from the turning walls in the rotor,
+carries it through the downstream cone and loses it again along the fixed
+walls. The axial profile develops through the cones without a step.
+
+Checks (`tests/sliding.rs`, `imprint.rs`, `revolved.rs`): every cell closes
+below 10⁻¹² at every rotor angle on a stage (disc, cylinder and disc on a
+hub), its cones, a pot through the axis and a rotor row between two discs.
+A uniform axial flow between slip walls through a turning rotor
+(`examples/cases/flow/axial_stage_uniform.toml`) is kept to 1.5·10⁻⁶ by a
+pot through the axis. Through the stage on the hub it is kept within
+0.23 %, 0.076 % and 0.022 % at 24/34, 48/68 and 96/136 intervals: where the
+interface meets the hub, the hub of the rotor is a polygon of 24 sides and
+that of the stator one of 34. The small step between them is an error of
+second order in the pitch, not of the imprint. With aligned pitches the
+error is 4·10⁻¹². Solid-body rotation in a vessel whose rotor pot passes
+through the axis (`pot_solid_body.toml`) is kept to 0.8 % through half a
+revolution. Limits: the meridian must be made of straight pieces with a
+ring of nodes at every kink; a rotor ring that touches nothing (a closed
+meridian) and rotor–rotor interfaces are not available yet; general
+non-matching interfaces are D58 (stage 7). Details on the
+[verification page](../verification/stage6.md#interfaces-of-any-rotationally-symmetric-shape-d186-pr-103).
+[Recipe 103](../recipes/flow.md#revolved-interfaces).

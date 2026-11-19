@@ -22,8 +22,7 @@ quantity:
 
 Options: --quantities swirl,meridional (default), --interface r0,z0,r1,z1;...
 (draws the meridian of the sliding interface, pieces separated by `;`),
---axis-z z0,z1 (draws the axis), --title, --labels (panel titles, comma
-separated), --limits lo:hi,... (colour limits per panel), --mesh (cell
+--axis-z z0,z1 (draws the axis), --title, --labels (panel titles, separated by `|`), --limits lo:hi,... (colour limits per panel), --mesh (cell
 edges), --no-mirror, --dpi, --palette (a 256-colour PNG, needs pillow).
 """
 import argparse
@@ -40,12 +39,12 @@ from matplotlib.tri import LinearTriInterpolator, Triangulation  # noqa: E402
 LABELS = {
     "swirl": ("u_θ (m/s)", "magma"),
     "meridional": ("|(u_r, u_z)| (m/s)", "viridis"),
-    "axial": ("u_z (m/s)", "RdBu_r"),
+    "axial": ("u_z (m/s)", "viridis"),
     "radial": ("u_r (m/s)", "RdBu_r"),
     "pressure": ("p − p_min (Pa)", "cividis"),
     "speed": ("|u| (m/s)", "magma"),
 }
-SIGNED = ("axial", "radial")
+SIGNED = ("radial",)
 
 
 def read(path):
@@ -167,7 +166,7 @@ def main():
     allp = np.concatenate(shapes)
     rmax = allp[:, 0].max()
     window = [-rmax if mirror else allp[:, 0].min(), rmax, allp[:, 1].min(), allp[:, 1].max()]
-    titles = a.labels.split(",") if a.labels else names
+    titles = a.labels.split("|") if a.labels else names
     limits = a.limits.split(",") if a.limits else [""] * len(names)
     w = (window[1] - window[0]) / (window[3] - window[2])
     fig, axes = plt.subplots(1, len(names), figsize=(4.2 * w * len(names) + 1.2, 4.6),
@@ -182,7 +181,7 @@ def main():
             vals += vals
         vals = np.array(vals)
         lo, hi = (None, None)
-        if lim:
+        if lim.strip(":"):
             lo, hi = (float(x) for x in lim.split(":"))
         elif name in SIGNED:
             m = np.abs(vals).max()

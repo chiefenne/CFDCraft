@@ -1799,3 +1799,12 @@ The tests are in `crates/foehncraft-mesh/src/imprint.rs`,
    `pot_solid_body.toml`, every wall at 10 rad/s, 30 steps, half a
    revolution): L2 error 0.82 % against u = Ω × r (the cylinder imprint of
    PR #96 on its ring: below 3 %).
+
+Open: the disc impeller of gallery 103 (`disc_pot.toml`) runs at
+ν = 10⁻⁵ m²/s but diverges in step 17 at ν = 10⁻⁴ m²/s, also with half the
+time step and with the cell-quality remediation. The failing cells are the
+thin wedge cells at the axis (skewness up to 2.85), so the explicit part of
+the viscous term on those cells is the suspect, not the interface (the pot
+passes through the axis in the uniform-flow and solid-body checks above).
+Grading the cells at the axis, or treating that part implicitly, is the
+next step.
