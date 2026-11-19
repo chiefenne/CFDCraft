@@ -20,7 +20,7 @@ e.g. (level 1 of `backstep_validation.toml`, 44 160 cells):
     target/release/foehn post derive examples/cases/flow/backstep_validation.toml --out output/cc_off $S \\
         --fields turbulence-scales
     python3 -m tools.plot.curvature_fields docs/figures/gallery/curvature_correction.png \\
-        output/cc_on/derived.vtkhdf output/cc_off/derived.vtkhdf 6.873 6.747
+        output/cc_on/derived.vtkhdf output/cc_off/derived.vtkhdf 6.869 6.743
 """
 import sys
 

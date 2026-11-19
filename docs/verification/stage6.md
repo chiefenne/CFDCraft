@@ -2097,14 +2097,14 @@ in a transient run. Ω_ij is the rotation tensor of the absolute velocity.
 | f_r1 of a rotating shear flow by hand (kernel test) | f_r1 | 10⁻¹² | met |
 | The same flow in the inertial frame (absolute gradient) and in the turning frame (relative gradient, spin) | f_r1 | 10⁻¹⁴ | met: the sign of the frame term of Ω_ij is the consistent one |
 | Channel in spanwise rotation, Re_b 5 800, Ro = 2Ωh/U_b = 0.15 (`channel_rotating_sst.toml`, 192 cells) | τ_w lower/upper | DNS of Kristoffersen & Andersson (1993) ±15 % | SST 1.000 (no rotation effect, as expected for a linear model), corrected 1.627, unstable side the lower wall. **Open:** the DNS value (the paper's data are not in the repository) |
-| Backward-facing step, 44 160 cells (level 1 of `backstep_validation.toml`) | x_r/H | reported | 6.747 SST, 6.873 corrected (+1.9 %; experiment 6.26): the correction damps the turbulence in the curved shear layer by up to 10 % and the bubble grows |
+| Backward-facing step, 44 160 cells (level 1 of `backstep_validation.toml`) | x_r/H | reported | 6.743 SST, 6.869 corrected (+1.9 %; experiment 6.26): the correction damps the turbulence in the curved shear layer by up to 10 % and the bubble grows |
 | Manufactured solution with the correction | observed order | 1.8–2.2 | **open** (the SST MMS of 6g does not exist yet) |
 
 **Findings.** (1) In the irrotational free stream r* = S/Ω is large and
 f_r1 sits at its upper limit 1.25. The production there is zero, so the
 results do not change, but the derived field shows 1.25 outside the shear
 layers. (2) On the step the correction moves the reattachment away from
-the experiment (+7.8 % to +9.8 % of 6.26 on this mesh). This is the known
+the experiment (+7.7 % to +9.7 % of 6.26 on this mesh). This is the known
 behaviour of SST with this correction behind steps. (3) Sources differ in
 the sign of the frame term of Ω_ij. The one used here gives the absolute
 rotation tensor. With it, r* and r̃ both mark the side of the rotating

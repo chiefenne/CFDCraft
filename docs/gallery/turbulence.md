@@ -705,7 +705,7 @@ python3 examples/studies/impinging_jet.py output/impinging_jet_study --jobs 2 --
 <a id="curvature-correction"></a>
 ## 113. Curvature and rotation correction of SST: channel in spanwise rotation, backward-facing step
 
-<img src="../figures/gallery/curvature_correction.png" alt="Three panels behind the backward-facing step with k-ω SST and the curvature correction on 44 160 cells: the rotation function f_r1 (blue below 1 where the curvature of the shear layer damps the turbulence, red above 1 in the corner vortex and the outer part of the shear layer, 1.25 in the irrotational free stream), the eddy-viscosity ratio, and its change against plain SST (up to 10 % less in the shear layer); the reattachment points 6.75 (SST) and 6.87 (corrected) are marked" width="800" height="576">
+<img src="../figures/gallery/curvature_correction.png" alt="Three panels behind the backward-facing step with k-ω SST and the curvature correction on 44 160 cells: the rotation function f_r1 (blue below 1 where the curvature of the shear layer damps the turbulence, red above 1 in the corner vortex and the outer part of the shear layer, 1.25 in the irrotational free stream), the eddy-viscosity ratio, and its change against plain SST (up to 10 % less in the shear layer); the reattachment points 6.74 (SST) and 6.87 (corrected) are marked" width="800" height="576">
 
 `turbulence.curvature_correction = true` multiplies the production of k
 and ω of SST by the rotation function f_r1 of Spalart & Shur (1997) in
@@ -716,7 +716,7 @@ the rotation of the principal axes of the strain rate along a streamline
 components). In pure shear f_r1 = 1 and the model is SST. Behind the step
 it damps the turbulence where the shear layer curves round the separation
 bubble (the change of ν_t in the lower panel) and the bubble grows by
-1.9 % (x_r/H 6.75 to 6.87, the experiment 6.26). In the free stream,
+1.9 % (x_r/H 6.74 to 6.87, the experiment 6.26). In the free stream,
 where the vorticity vanishes, r* is large and f_r1 sits at its limit 1.25,
 which acts on a production that is zero there.
 
@@ -742,7 +742,7 @@ are not in the repository).
 | Pure shear: channel without rotation, with and without the correction (band 10⁻⁶) | equal driving force to the last digit (`tests/curvature.rs`) |
 | f_r1 by hand in a rotating shear flow; the same flow in the inertial and in the turning frame | 10⁻¹² and 10⁻¹⁴ (kernel tests) |
 | Rotating channel, Ro = 0.15, wall shear stress lower/upper | SST 1.000, corrected 1.627 |
-| Backward-facing step, 44 160 cells, x_r/H | 6.747 (SST), 6.873 (corrected), experiment 6.26 |
+| Backward-facing step, 44 160 cells, x_r/H | 6.743 (SST), 6.869 (corrected), experiment 6.26 |
 
 | | |
 |---|---|
