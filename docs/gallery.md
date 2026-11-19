@@ -15,7 +15,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Kernel benchmarks and GPU runs](gallery/benchmarks.md) | gate G1 on CPUs and GPUs, on box, polyhedral and tetrahedral meshes, and the flow loop on a GPU | 1, 2, 7, 16 |
 | [Meshes](gallery/meshes.md) | the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes | 3, 4, 5, 6, 26 |
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
-| [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98 |
+| [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
@@ -78,6 +78,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="sliding-mesh"></a>95 | [Rotating machinery, transient: the sliding mesh on Taylor–Couette flow](gallery/flow.md#sliding-mesh) | [Incompressible flow](gallery/flow.md) |
 | <a id="sliding-mesh-imprint"></a>96 | [The sliding mesh with a pitch ratio that is not one: the interface imprinted in every step](gallery/flow.md#sliding-mesh-imprint) | [Incompressible flow](gallery/flow.md) |
 | <a id="stirred-vessel"></a>98 | [A stirred vessel: blades and baffles with the moving reference frame and the sliding mesh](gallery/flow.md#stirred-vessel) | [Incompressible flow](gallery/flow.md) |
+| <a id="rotor-fields"></a>99 | [The flow a blade sees: relative and frame velocity, flow angles and rothalpy](gallery/flow.md#rotor-fields) | [Incompressible flow](gallery/flow.md) |
 
 ## Adding a feature
 
