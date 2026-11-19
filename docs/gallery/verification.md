@@ -11,7 +11,7 @@ Part of the [Example gallery](../gallery.md): the discretisation uncertainty of 
 <a id="gci"></a>
 ## 25. Grid convergence index: Couette flow and the cylinder at Re = 20
 
-![Left: the force on the lower wall of Couette flow with μ = μ0 (1 + 4 y) on three meshes, the curve of the observed order through them, the extrapolated value next to the exact one and the band of the finest mesh. Right: the drag coefficient of the cylinder at Re = 20 on three meshes inside the reference range of Schäfer and Turek](../figures/gallery/gci.svg)
+<img src="../figures/gallery/gci.svg" alt="Left: the force on the lower wall of Couette flow with μ = μ0 (1 + 4 y) on three meshes, the curve of the observed order through them, the extrapolated value next to the exact one and the band of the finest mesh. Right: the drag coefficient of the cylinder at Re = 20 on three meshes inside the reference range of Schäfer and Turek" width="800" height="356">
 
 **What the report adds.** Every sweep of three or more meshes (or time
 steps) now ends with a table of the discretisation uncertainty of its

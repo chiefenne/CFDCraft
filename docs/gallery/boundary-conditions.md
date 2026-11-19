@@ -12,7 +12,7 @@ Part of the [Example gallery](../gallery.md): slip walls, axisymmetric wedges, i
 <a id="boundary-conditions"></a>
 ## 21. Boundary conditions: slip walls, wedges, tables, backflow, convective outlets
 
-![Hagen–Poiseuille flow on a wedge of 20°, coloured by speed](../figures/gallery/pipe_wedge_speed.png)
+<img src="../figures/gallery/pipe_wedge_speed.png" alt="Hagen–Poiseuille flow on a wedge of 20°, coloured by speed" width="800" height="343">
 
 **Axisymmetric flow on a wedge.** A 2D mesh of the half plane y ≥ 0 is
 revolved about the x axis into a wedge one cell thick
@@ -26,7 +26,7 @@ polygonal pipe of 360°/θ sides; its result differs from the round pipe by
 about θ²/8 (9e-4 at 5°), so applications take 2–5° and a convergence
 study 0.5–1°.
 
-![Lift coefficient over the last second at Re = 100: long channel, short channel with a pressure outlet, short channel with a convective outlet](../figures/gallery/cylinder_outlets.svg)
+<img src="../figures/gallery/cylinder_outlets.svg" alt="Lift coefficient over the last second at Re = 100: long channel, short channel with a pressure outlet, short channel with a convective outlet" width="760" height="420">
 
 **The outlet close behind a body.** The cylinder of [gallery 15](flow.md#cylinder) at Re = 100
 with the outlet 5.5 D behind the cylinder instead of 20 D: the vortices
@@ -78,7 +78,7 @@ python3 -m tools.plot.outlet_chart cylinder_outlets.svg
 <a id="periodic"></a>
 ## 67. Periodic modules: a channel and a short heated pipe
 
-![Left: the temperature across the short periodic heated pipe at x = 0.5 m, 16 x 16 cells against the exact profile. Middle: the Nusselt numbers of the periodic heated channel and pipe on three meshes approaching 140/17 and 48/11. Right: the driving force that holds the mass flow of the periodic channel and pipe, converging to the exact pressure gradients](../figures/gallery/periodic.svg)
+<img src="../figures/gallery/periodic.svg" alt="Left: the temperature across the short periodic heated pipe at x = 0.5 m, 16 x 16 cells against the exact profile. Middle: the Nusselt numbers of the periodic heated channel and pipe on three meshes approaching 140/17 and 48/11. Right: the driving force that holds the mass flow of the periodic channel and pipe, converging to the exact pressure gradients" width="800" height="298">
 
 **One module instead of a long duct.** A fully developed flow repeats
 itself along the duct, so one module with its inlet and outlet as a

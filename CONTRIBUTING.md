@@ -56,6 +56,36 @@ When you add an entry:
 Keep a topic page below a few hundred lines; when one grows past that,
 split it into two topic pages the same way.
 
+### Images carry their size
+
+Write an image on a gallery page or in the README as
+`<img src="..." alt="..." width="W" height="H">`, or write `![alt](src)`
+and run `python -m tools.docs.images`, which adds the size of the file
+(scaled to at most 800 pixels wide, 200 in a table row). Without a size an
+image takes no room until it has loaded, so a link to an entry far down a
+page lands thousands of pixels too high while the images above it arrive.
+CI runs `python -m tools.docs.images --check`.
+
+## README and documentation stay current
+
+Every pull request that is merged to main leaves the README and the
+documentation describing main as it is after the merge. When a pull
+request adds, changes or removes a feature, it updates in the same pull
+request:
+
+- the status line and the list "What works today" in the
+  [README](README.md) (and the commands under "Build and run" and the crate
+  table when they change);
+- the gallery entry, case files and recipe (above), the verification page
+  of the stage, and `docs/keys.md` for new keys;
+- the requirements (`docs/requirements.md`): the "Implemented" note of the
+  decision or stage row;
+- its changelog fragment.
+
+A pull request that changes nothing a user can see says so in its
+description. The checklist of the pull request template repeats these
+points.
+
 ## Working in parallel
 
 Several pull requests are often open at once. These rules keep them from

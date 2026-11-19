@@ -14,7 +14,7 @@ Part of the [Example gallery](../gallery.md): convection–diffusion order of ac
 <a id="scalar-mms"></a>
 ## 8. Convection–diffusion, manufactured solution
 
-![Error of φ on 35 937 polyhedra, one octant cut away](../figures/gallery/mms_poly_error.png)
+<img src="../figures/gallery/mms_poly_error.png" alt="Error of φ on 35 937 polyhedra, one octant cut away" width="800" height="650">
 
 Steady convection–diffusion of a scalar with a manufactured solution
 (Roache 2002) on perturbed polyhedral meshes: φ = 1 + sin(πx + 0.5)
@@ -26,7 +26,7 @@ correction, gather-based assembly into a sliced-ELL matrix, BiCGStab with
 Jacobi. The picture is the error φ − φ_exact on the finest level; it is
 largest in the interior, where the solution has its largest curvature.
 
-![Convergence: L2 error over mesh size, observed order 1.83 and 1.98](../figures/gallery/mms_poly_convergence.svg)
+<img src="../figures/gallery/mms_poly_convergence.svg" alt="Convergence: L2 error over mesh size, observed order 1.83 and 1.98" width="640" height="440">
 
 The same case on hexahedra, tetrahedra, mixed cells and 2D polygons gives
 observed orders between 1.87 and 2.08 on the finest pair; table and
@@ -58,9 +58,9 @@ python3 -m tools.mesh.render_mesh output/mms_poly_box/fields.vtkhdf mms_poly_err
 
 | first-order upwind | linear upwind, no limiter | linear upwind, Venkatakrishnan (K = 0) | bounded central (β = 0.5) |
 |---|---|---|---|
-| ![upwind](../figures/gallery/oblique_step_upwind.png) | ![linear upwind](../figures/gallery/oblique_step_linear-upwind.png) | ![Venkatakrishnan](../figures/gallery/oblique_step_venkatakrishnan.png) | ![bounded central](../figures/gallery/oblique_step_bounded-central.png) |
+| <img src="../figures/gallery/oblique_step_upwind.png" alt="upwind" width="200" height="192"> | <img src="../figures/gallery/oblique_step_linear-upwind.png" alt="linear upwind" width="200" height="192"> | <img src="../figures/gallery/oblique_step_venkatakrishnan.png" alt="Venkatakrishnan" width="200" height="192"> | <img src="../figures/gallery/oblique_step_bounded-central.png" alt="bounded central" width="200" height="192"> |
 
-![φ along x = 0.8 for the five schemes](../figures/gallery/oblique_step_profile.svg)
+<img src="../figures/gallery/oblique_step_profile.svg" alt="φ along x = 0.8 for the five schemes" width="640" height="440">
 
 Pure convection of a step at 30° to the x axis across 2 401 polygonal
 prisms. Upwind is bounded but smears the step over many cells. Linear
@@ -94,7 +94,7 @@ python3 -m tools.mesh.render_mesh output/oblique_step_2d/venkatakrishnan/fields.
 <a id="poisson-iterations"></a>
 ## 10. Pressure solver: iterations over the mesh size
 
-![CG iterations to 1e-10 over the number of cells on polyhedral meshes](../figures/gallery/poisson_poly_iterations.svg)
+<img src="../figures/gallery/poisson_poly_iterations.svg" alt="CG iterations to 1e-10 over the number of cells on polyhedral meshes" width="640" height="440">
 
 The Poisson equation −∇·(Γ∇φ) = s, the model of the pressure equation, on
 perturbed polyhedral meshes from 729 to 274 625 cells, each solved from

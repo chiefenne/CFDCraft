@@ -84,9 +84,10 @@ jobs:
       # also on docs-only changes: the number tables can be generated (no
       # number used twice, every topic page listed) and the changelog
       # fragments are well named
-      - name: Docs indexes and changelog fragments
+      - name: Docs indexes, image sizes and changelog fragments
         run: |
           python3 -m tools.docs.indexes
+          python3 -m tools.docs.images --check
           python3 -m tools.release.changelog --print > /dev/null
       - uses: dorny/paths-filter@v3
         id: filter

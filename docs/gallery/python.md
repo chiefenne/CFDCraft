@@ -11,7 +11,7 @@ Part of the [Example gallery](../gallery.md): cases built, run and studied from 
 <a id="python-study"></a>
 ## 24. A parametric study from Python: Couette flow with a viscosity gradient
 
-![The wall shear stress of plane Couette flow with μ = μ0 (1 + a y) for six viscosity gradients a, from a study run in Python, against the exact μ0 U a / ln(1 + a)](../figures/gallery/python_study.svg)
+<img src="../figures/gallery/python_study.svg" alt="The wall shear stress of plane Couette flow with μ = μ0 (1 + a y) for six viscosity gradients a, from a study run in Python, against the exact μ0 U a / ln(1 + a)" width="640" height="380">
 
 **Six runs, one table.** `examples/studies/couette_viscosity_study.py`
 takes `couette_viscosity.toml` (gallery 23) as the base case and varies
@@ -48,4 +48,4 @@ python examples/python/poiseuille_inflow.py output/poiseuille_py
 target/release/foehn flow output/poiseuille_py/poiseuille_py.toml   # the same run
 ```
 
-How to use it: [recipe 33](../recipes/python.md#python).
+How to use it: [recipe 33](../recipes/python.md#python-api).

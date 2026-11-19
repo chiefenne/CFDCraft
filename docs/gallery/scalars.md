@@ -11,7 +11,7 @@ Part of the [Example gallery](../gallery.md): passive scalars carried by the flo
 <a id="passive-scalars"></a>
 ## 63. A heated channel and a bounded front
 
-![Left: the temperature profile across the heated channel at x = 1 m, 64 x 32 cells against the exact quartic. Middle: the Nusselt number on three meshes converging to 140/17. Right: the head of a front of a bounded scalar, plain BDF2 overshooting the upper bound by 3.3e-4, the bounded BDF2 staying below it](../figures/gallery/passive_scalars.svg)
+<img src="../figures/gallery/passive_scalars.svg" alt="Left: the temperature profile across the heated channel at x = 1 m, 64 x 32 cells against the exact quartic. Middle: the Nusselt number on three meshes converging to 140/17. Right: the head of a front of a bounded scalar, plain BDF2 overshooting the upper bound by 3.3e-4, the bounded BDF2 staying below it" width="800" height="298">
 
 **The laminar heated channel.** `channel_heated.toml` carries a passive
 temperature θ in the Poiseuille flow of `poiseuille_hex.toml` (channel

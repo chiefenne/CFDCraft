@@ -4,11 +4,11 @@ Part of the [Recipes](../recipes.md): the `foehncraft` Python package (D61): cas
 
 | # | Recipe |
 |---|---|
-| 33 | [Build, run and study cases from Python](#python) |
+| 33 | [Build, run and study cases from Python](#python-api) |
 
 ---
 
-<a id="python"></a>
+<a id="python-api"></a>
 ## 33. Build, run and study cases from Python
 
 **Install.** The package builds its native module from the Rust sources

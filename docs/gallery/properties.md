@@ -11,7 +11,7 @@ Part of the [Example gallery](../gallery.md): boundary values, body forces and v
 <a id="expressions-materials"></a>
 ## 23. Expressions and materials: variable viscosity, blowing and suction, water from the database
 
-![Left: plane Couette flow with the viscosity μ0 (1 + 4 y) from an expression. Middle: Couette flow with blowing through the lower wall and suction through the upper, Re = 4. Right: the viscosity of water in the material database, with the point of poiseuille_water.toml](../figures/gallery/expressions_materials.svg)
+<img src="../figures/gallery/expressions_materials.svg" alt="Left: plane Couette flow with the viscosity μ0 (1 + 4 y) from an expression. Middle: Couette flow with blowing through the lower wall and suction through the upper, Re = 4. Right: the viscosity of water in the material database, with the point of poiseuille_water.toml" width="800" height="298">
 
 **A viscosity that varies in space.** `couette_viscosity.toml` gives the
 viscosity as the string `"mu0 * (1 + a * y)"` with the constants

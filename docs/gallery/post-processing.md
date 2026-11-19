@@ -11,9 +11,9 @@ Part of the [Example gallery](../gallery.md): fields derived from the solution, 
 <a id="derived-fields"></a>
 ## 22. Derived fields: vorticity, Q, λ₂, wall shear stress and y⁺
 
-![The vortex street behind the cylinder at Re = 100, t = 8 s: vorticity ω_z](../figures/gallery/cylinder_vorticity.png)
+<img src="../figures/gallery/cylinder_vorticity.png" alt="The vortex street behind the cylinder at Re = 100, t = 8 s: vorticity ω_z" width="800" height="509">
 
-![The same instant: the Q criterion, Q > 0 in the vortex cores](../figures/gallery/cylinder_q_criterion.png)
+<img src="../figures/gallery/cylinder_q_criterion.png" alt="The same instant: the Q criterion, Q &gt; 0 in the vortex cores" width="800" height="509">
 
 **Vortices behind a cylinder.** The short channel of
 [gallery 21](boundary-conditions.md#boundary-conditions) at Re = 100,
