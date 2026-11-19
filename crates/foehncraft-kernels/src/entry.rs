@@ -2429,7 +2429,7 @@ impl Entry for WallFaces {
                 u_tau_old: a.u_tau_old.read(i),
             };
             let r = crate::turb::wall::wall_face(&inp, &a.c, a.treatment);
-            let m = 1.0 - r.blending;
+            let m = r.prod_weight;
             *a.u_tau.out().add(i) = r.u_tau;
             *a.y_plus.out().add(i) = r.y_plus;
             *a.y_star.out().add(i) = r.y_plus;

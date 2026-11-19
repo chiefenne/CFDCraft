@@ -111,7 +111,7 @@ codes! {
     // passive scalars (D51, D116)
     SCALAR_BOUNDARY = "SCAL001", Error, "A `[boundary.<name>.scalar.<scalar>]` table for an unknown scalar or boundary, without exactly one of `value` and `flux`, or with a condition its boundary does not take (a flux at an inlet, anything at an outlet, `periodic` away from a periodic pair, the heat-flux mode with fixed values).";
     // turbulence models (stage 6, D137)
-    TURB_Y_PLUS = "TURB001", Warning, "First-cell y⁺ outside the claimed range of the wall treatment on more than 10 % of a wall's area: above 2 with `low-re`, between 3 and 20 (the buffer layer) with `automatic`, below 30 with `scalable`, outside 30 to 300 with `standard` and `compound` of the k-ε family (per boundary with the area-weighted min, mean and max).";
+    TURB_Y_PLUS = "TURB001", Warning, "First-cell y⁺ outside the claimed range of the wall treatment on more than 10 % of a wall's area: above 2 with `low-re`, above 300 (above the log layer) with `automatic`, below 30 with `scalable`, outside 30 to 300 with `standard` and `compound` of the k-ε family (per boundary with the area-weighted min, mean and max).";
     TURB_FLOOR = "TURB002", Warning, "A positivity floor of k, ω or ε acted on more than 0.1 % of the cells in an iteration of the final tenth of the solves (equation and cell count); the run record counts all iterations (`turbulence_floors`).";
     TURB_INLET_RANGE = "TURB003", Warning, "Inlet turbulence outside the usual range: I > 0.5, or a viscosity ratio below 10⁻² or above 10⁵.";
     TURB_KATO_ROTATING = "TURB004", Note, "Kato–Launder production in a rotating zone: Ω is the absolute-frame vorticity.";
