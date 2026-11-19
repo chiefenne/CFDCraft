@@ -201,7 +201,7 @@ impl FieldMoments {
         self.cov[p].iter().map(|c| c / w).collect()
     }
 
-    /// The datasets: mean_<name>, rms_<name>, then the covariances.
+    /// The datasets: `mean_<name>`, `rms_<name>`, then the covariances.
     pub fn datasets(&self) -> Vec<(String, Vec<f64>)> {
         let mut out = Vec::new();
         for (v, n) in self.names.iter().enumerate() {

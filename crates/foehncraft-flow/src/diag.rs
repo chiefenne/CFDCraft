@@ -387,7 +387,7 @@ mod tests {
             assert!(
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
-                    "REG", "MESH", "TURB", "MRF", "SLD", "ROT"
+                    "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT"
                 ]
                 .contains(&p),
                 "{}",
