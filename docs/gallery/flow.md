@@ -19,6 +19,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 95 | [Rotating machinery, transient: the sliding mesh on Taylor–Couette flow](#sliding-mesh) | 6 | `[[sliding]]`, `time_step`, `taylor_couette_sliding.toml` |
 | 96 | [The sliding mesh with a pitch ratio that is not one: the interface imprinted in every step](#sliding-mesh-imprint) | 6 | `[[sliding]] rotor_interface`, `[mesh.annulus] n_theta_stator`, `taylor_couette_imprint.toml` |
 | 98 | [A stirred vessel: blades and baffles with the moving reference frame and the sliding mesh](#stirred-vessel) | 6 | `[[mrf]]` and `[[sliding]]` on a Gmsh mesh, walls that turn with a zone, `studies/mixer.py`, `tools/plot/rotor_fields.py` |
+| 99 | [The flow a blade sees: relative and frame velocity, flow angles and rothalpy](#rotor-fields) | 6 | `output.derived`: `relative-velocity`, `frame-velocity`, `turbomachinery`, `relative-total-pressure`, `rothalpy`; `output.frame` |
 
 ---
 
@@ -917,3 +918,57 @@ Limits: laminar (a turbulence model works with `[[mrf]]` but no case checks it
 yet; the sliding mesh refuses it, `SLD004`), 2D, and no torque or power of the
 blades in the output yet. Checks: `a_turning_box_carries_its_fluid` in
 `crates/foehncraft-flow/tests/mrf.rs`. [Recipe 98](../recipes/flow.md#stirred-vessel).
+
+<a id="rotor-fields"></a>
+## 99. The flow a blade sees: relative and frame velocity, flow angles and rothalpy
+
+A rotor is designed by the flow relative to its blades: the incidence at the
+leading edge, the deviation at the trailing edge, the relative eddy of a blade
+passage, the losses. With an `[[mrf]]` or a `[[sliding]]` table five derived
+fields (D183) write that flow with the solution, in the notation of
+turbomachinery: **c** the absolute (solved) velocity, **u** = **Ω** × (**x** −
+**x**₀) the blade speed, **w** = **c** − **u** the relative velocity.
+
+| Field | Datasets |
+|---|---|
+| `relative-velocity` | **w** and \|w\|: in each turning zone relative to it, elsewhere **c** |
+| `frame-velocity` | **u** and \|u\| (0 outside the zones) |
+| `turbomachinery` | c_r, c_u, c_a, c_m, w_u about the axis of the zone (along **Ω**), the flow angles α and β from the circumferential direction |
+| `relative-total-pressure` | p + ½ρ\|w\|² |
+| `rothalpy` | I = p/ρ + ½\|w\|² − ½\|u\|² |
+
+`output.frame = "<zone>"` takes the frame of one zone in every cell. Sample
+lines get the columns of **w** and of the cylindrical components, the point
+probes of a transient run **w**; on the sliding mesh every value is taken at
+the current position of the cell.
+
+![The stirred vessel of entry 98 with the moving reference frame: the relative speed |w| with the streamlines of w, which in the rotor are the closed eddies of the blade passages and in the stator the absolute flow around the baffles; the relative flow angle β in the rotor, above 90° near the hub where the fluid overtakes the blades and near 0° beyond the tips where it falls behind; and the rothalpy in the rotor, lowest at the blade tips](../figures/gallery/mixer_relative.png)
+
+The stirred vessel of [entry 98](#stirred-vessel) with the frame (`studies/mixer/mrf.toml`,
+which writes all five fields). Left |w| with the streamlines of **w**: one
+picture with the relative flow in the rotor (the closed eddy of each blade
+passage) and the absolute flow in the stator (the swirl and the baffles); |w|
+jumps at the interface, where the frame changes. In the middle the relative
+flow angle β in the rotor: above 90° near the hub (median 133° at r = 13 to
+25 mm, the fluid overtakes the blades, w_u > 0), about 67° near the tips, and
+2° beyond them (r = 45 to 60 mm), where the slower fluid passes the blades
+backwards almost along the circumference. Right the rothalpy in the rotor,
+which a steady relative flow without losses keeps along its streamlines: it
+is lowest at the blade tips (r = 44.7 mm), where the flow separates around
+the tip; its range in the rotor, 0.038 m²/s², is mostly these tip spots (the
+dynamic head of the blade tip, ½(ΩR_tip)², is 0.10 m²/s²). In the stator I is
+the total pressure over ρ.
+
+Checks: on Taylor–Couette flow in the frame (1 024 cells) the frame
+velocity is Ω × x in the rotor to round-off and zero in the stator (or Ω × x
+everywhere with `frame = "rotor"`), c_u − w_u = Ωr, c_u is the exact u_θ to
+the discretisation error (largest deviation 0.7 % of the wall speed), and
+ρI = p + ½ρ|w|² − ½ρ|u|²; the identities c = w + u, c_r² + c_u² + c_a² = |c|²,
+c_u − w_u = |Ω|r for either sense of rotation and the angles on random values;
+on the sliding mesh by imprinting the probe and line columns against
+c − Ω × x at the current position. Building these found that the line samples
+and the reference comparison of the imprinted sliding mesh located their points
+on the mesh of the start (the rotor cells had moved on); they now use the mesh
+of the end of the run. `tests/mrf.rs` (`relative_and_frame_velocities_of_taylor_couette`),
+`tests/sliding.rs` (`probes_and_fields_follow_the_rotor`), unit test
+`turbomachinery_identities`. [Recipe 99](../recipes/flow.md#rotor-fields).

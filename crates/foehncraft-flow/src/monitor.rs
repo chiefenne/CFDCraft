@@ -65,6 +65,22 @@ impl Probes {
             .collect()
     }
 
+    /// The velocity relative to the turning zone at every probe (D183),
+    /// from the values `vals` of [`Probes::values`].
+    pub fn relative(
+        &self,
+        frames: &crate::derived::Frames,
+        mesh: &foehncraft_mesh::Mesh,
+        vals: &[([f64; 3], f64)],
+    ) -> Vec<[f64; 3]> {
+        self.cells
+            .iter()
+            .zip(&self.points)
+            .zip(vals)
+            .map(|((&c, &x), (u, _))| frames.at(mesh, c, x, *u).w)
+            .collect()
+    }
+
     /// Value of the probe `name`.
     pub fn index(&self, name: &str) -> Option<usize> {
         self.names.iter().position(|n| n == name)

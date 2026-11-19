@@ -18,6 +18,13 @@ first quantity:
                 streamlines
     vorticity   the z component of the vorticity
     pressure    p, from its minimum
+    NAME        any cell dataset of the file, e.g. the fields of rotating
+                machinery of `output.derived` (D183):
+                relative_velocity_magnitude (with the streamlines of the
+                relative velocity, w in the turning zones and c elsewhere),
+                relative_flow_angle, flow_angle, rothalpy,
+                relative_total_pressure, velocity_circumferential, ...;
+                NAME@rotor draws it in the rotor only (r < --rotor-radius)
 
 Options: --quantities speed,vorticity (default), --omega (rad/s, for
 `relative`), --rotor-radius (m, draws the interface circle and bounds
@@ -47,7 +54,19 @@ LABELS = {
     "relative": ("|u − Ω×r| (m/s)", "magma"),
     "vorticity": ("ω_z (1/s)", "RdBu_r"),
     "pressure": ("p − p_min (Pa)", "viridis"),
+    "relative_velocity_magnitude": ("|w| (m/s)", "magma"),
+    "frame_velocity_magnitude": ("|u| = Ω r (m/s)", "magma"),
+    "relative_flow_angle": ("β (°)", "RdBu_r"),
+    "flow_angle": ("α (°)", "RdBu_r"),
+    "rothalpy": ("I − I_min (m²/s²)", "viridis"),
+    "relative_total_pressure": ("p + ½ρ|w|² − min (Pa)", "viridis"),
+    "velocity_circumferential": ("c_u (m/s)", "RdBu_r"),
+    "relative_velocity_circumferential": ("w_u (m/s)", "RdBu_r"),
+    "velocity_radial": ("c_r (m/s)", "RdBu_r"),
 }
+SIGNED = ("vorticity", "velocity_circumferential", "relative_velocity_circumferential",
+          "velocity_radial")
+FROM_MIN = ("pressure", "rothalpy", "relative_total_pressure")
 
 
 def read(path):
@@ -74,6 +93,13 @@ def read(path):
 
 
 def quantity(name, cen, data, omega, r_rotor):
+    name, _, region = name.partition("@")
+    if region:
+        if region != "rotor":
+            raise SystemExit(f"unknown region {region} (only @rotor)")
+        inside = np.hypot(cen[:, 0], cen[:, 1]) < r_rotor
+        val = np.ma.masked_where(~inside, quantity(name, cen, data, omega, r_rotor))
+        return val - val.min() if name in FROM_MIN else val
     u, v = data["velocity_x"], data["velocity_y"]
     if name == "speed":
         return np.hypot(u, v)
@@ -83,15 +109,20 @@ def quantity(name, cen, data, omega, r_rotor):
         return np.ma.masked_where(~inside, val)
     if name == "vorticity":
         return data["vorticity_z"]
-    if name == "pressure":
-        return data["pressure"] - data["pressure"].min()
-    raise SystemExit(f"unknown quantity {name}")
+    if name in FROM_MIN and name in data:
+        return data[name] - data[name].min()
+    if name in data:
+        return data[name]
+    raise SystemExit(f"unknown quantity {name} (datasets: {', '.join(sorted(data))})")
 
 
 def streamlines(ax, cen, data, omega, r_rotor, relative, window, outline):
     """Streamlines of the cell-centre velocity, interpolated on a grid (the
     points outside the fluid masked)."""
     u, v = data["velocity_x"].copy(), data["velocity_y"].copy()
+    if relative == "file":
+        u, v = data["relative_velocity_x"].copy(), data["relative_velocity_y"].copy()
+        relative = False
     if relative:
         inside = np.hypot(cen[:, 0], cen[:, 1]) < r_rotor
         u = np.where(inside, u + omega * cen[:, 1], u)
@@ -161,12 +192,15 @@ def main():
     for k, (ax, name) in enumerate(zip(axes[0], names)):
         polys, cen, data = frames[k]
         val = quantity(name, cen, data, a.omega, a.rotor_radius)
-        label, cmap = LABELS[name]
+        base = name.partition("@")[0]
+        label, cmap = LABELS.get(base, (base, "viridis"))
         if limits[k]:
             lo, hi = (float(v) for v in limits[k].split(":"))
-        elif name == "vorticity":
+        elif base in SIGNED:
             hi = np.percentile(np.abs(val), 98)
             lo = -hi
+        elif base.endswith("_angle"):
+            lo, hi = 0.0, 180.0
         else:
             lo, hi = 0.0, np.percentile(np.ma.compressed(val), 99.5)
         pc = PolyCollection(polys, array=val, cmap=cmap, edgecolors="face", linewidths=0.2)
@@ -175,9 +209,9 @@ def main():
             pc.set_edgecolor((0, 0, 0, 0.35))
             pc.set_linewidth(0.25)
         ax.add_collection(pc)
-        if name in ("speed", "relative") and not a.no_streamlines:
-            streamlines(ax, cen, data, a.omega, a.rotor_radius, name == "relative", window,
-                        a.outer_radius)
+        if name in ("speed", "relative", "relative_velocity_magnitude") and not a.no_streamlines:
+            rel = "file" if name == "relative_velocity_magnitude" else name == "relative"
+            streamlines(ax, cen, data, a.omega, a.rotor_radius, rel, window, a.outer_radius)
         if a.rotor_radius > 0:
             t = np.linspace(0, 2 * math.pi, 400)
             ax.plot(a.rotor_radius * np.cos(t), a.rotor_radius * np.sin(t), color="w",
