@@ -520,3 +520,126 @@ fn two_independent_frames() {
         "{e_two} {e_inertial}"
     );
 }
+
+/// Torque and shaft power of the inner cylinder of Taylor–Couette flow
+/// (D184): T = −4π μ ω r₁² r₂² L / (r₂² − r₁²), in any frame; the shaft
+/// power −Ω·T equals the work of the wall on the fluid and the power the
+/// kinetic-energy ledger books for it; the stator carries the opposite
+/// torque.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn torque_and_shaft_power_of_taylor_couette_flow() {
+    let (r1, r2, depth, mu, w) = (0.05_f64, 0.10_f64, 0.01_f64, 5e-4_f64, 10.0_f64);
+    let t_exact =
+        -4.0 * std::f64::consts::PI * mu * w * r1 * r1 * r2 * r2 * depth / (r2 * r2 - r1 * r1);
+    let base = parse(&text());
+    for (name, omega) in [
+        ("t_inner", 10.0),
+        ("t_inertial_zone", 0.0),
+        ("t_faster", 25.0),
+    ] {
+        let mut c = base.clone();
+        c.mrf[0].omega = Some(omega);
+        let rep = run_case(&c, name);
+        let s = &rep.solves[0];
+        let v = s.rotors.as_ref().expect("a rotor");
+        let r = v.rotor("rotor").expect("the rotor");
+        assert_eq!(r.walls, ["inner"]);
+        let e = (r.torque / t_exact - 1.0).abs();
+        eprintln!(
+            "{name}: torque {:e} (exact {t_exact:e}, {:.2} %), power {:e}, wall work {:e}, slip {:e}, angular momentum {:?}",
+            r.torque,
+            100.0 * e,
+            r.power,
+            r.wall_work,
+            r.slip,
+            r.angular_momentum
+        );
+        assert!(e < 0.03, "{name}: torque {} against {t_exact}", r.torque);
+        // the torque does not depend on the frame; the power is Ω·T of the zone
+        assert!(
+            (r.power + omega.abs() * r.torque).abs() <= 1e-12 * r.power.abs() + 1e-300
+                || omega == 0.0,
+            "{name}"
+        );
+        // the outer wall carries the opposite torque
+        let outer = s.boundaries.iter().find(|b| b.name == "outer").unwrap();
+        let inner = s.boundaries.iter().find(|b| b.name == "inner").unwrap();
+        assert!(
+            (inner.torque.unwrap() + outer.torque.unwrap()).abs() < 0.02 * t_exact.abs(),
+            "{name}: {:?} {:?}",
+            inner.torque,
+            outer.torque
+        );
+        // when the zone turns with the wall, the shaft power is its work on
+        // the fluid and the ledger books it
+        if omega == 10.0 {
+            assert!(r.slip < 1e-12, "{}", r.slip);
+            assert!(
+                ((r.wall_work - r.power) / r.power).abs() < 1e-10,
+                "{} {}",
+                r.wall_work,
+                r.power
+            );
+            let b = s.balance.as_ref().unwrap();
+            let k = &b.last.kinetic_energy;
+            let inner_power: f64 = b
+                .last
+                .boundaries
+                .iter()
+                .find(|p| p.boundary == "inner")
+                .unwrap()
+                .power();
+            eprintln!(
+                "ledger: shaft {:e}, inner wall power {:e}, dissipation {:e}",
+                k.shaft, inner_power, k.viscous_dissipation
+            );
+            let tr = r.transposed_work;
+            assert!(
+                ((k.shaft - inner_power - tr) / k.shaft).abs() < 5e-3,
+                "{} {} {tr}",
+                k.shaft,
+                inner_power
+            );
+            // the shaft power is the exact dissipation of the flow
+            assert!(((k.shaft - w * t_exact.abs()) / k.shaft).abs() < 0.03);
+        }
+    }
+}
+
+/// The performance values of a machine (D184) on a flow with a known
+/// pressure loss: plane Poiseuille flow through a zone that does not turn
+/// (Ω = 0): Δp_t = −12 μ U L / h², Q = U h d, no shaft power, no Euler work.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn machine_values_of_poiseuille_flow() {
+    let t = std::fs::read_to_string(cases().join("poiseuille_hex.toml"))
+        .unwrap()
+        .replace("\r\n", "\n")
+        .replace("levels = [0, 1, 2]\nexpected_order = [1.8, 2.2]\n", "")
+        + "\n[[mrf]]\naxis = [0.0, 0.0, 1.0]\nomega = 0.0\n\n[[output.machines]]\nname = \"duct\"\ninlet = [\"xmin\"]\noutlet = [\"xmax\"]\n";
+    let rep = run_case(&parse(&t), "machine_poiseuille");
+    let v = rep.solves[0].rotors.as_ref().expect("values");
+    let m = v.machine("duct").expect("the machine");
+    eprintln!("{m:?}");
+    let dpt = -12.0 * 0.1 * 1.0 * 2.0 / 1.0;
+    assert!(
+        (m.total_pressure_rise / dpt - 1.0).abs() < 0.02,
+        "{} {dpt}",
+        m.total_pressure_rise
+    );
+    assert!(
+        (m.volume_flow - 0.1).abs() < 5e-3 * 0.1,
+        "{}",
+        m.volume_flow
+    );
+    assert!((m.head - dpt / 9.80665).abs() < 0.02 * (dpt / 9.80665).abs());
+    assert!(
+        (m.hydraulic_power / (0.1 * dpt) - 1.0).abs() < 0.02,
+        "{}",
+        m.hydraulic_power
+    );
+    assert_eq!(m.shaft_power, 0.0);
+    assert!(m.efficiency.is_nan());
+    assert!(m.euler_work.abs() < 1e-9, "{}", m.euler_work);
+}

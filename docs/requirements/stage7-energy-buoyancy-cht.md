@@ -671,6 +671,41 @@ acceptance is stage 8. The multi-region data layout is built for ranks now:
   and region; the end-of-run plot shows the heat flows (D89).
 
 
+### 13.1 Turbomachines: compressors, turbines, turbochargers (D184)
+
+The performance of rotating machinery of stage 6 (D184: torque, shaft power,
+total pressure rise, head, hydraulic efficiency, Euler work, the angle of
+every sliding rotor) is built for incompressible flow. The energy equation
+adds what a turbocharger needs, as outputs of `[[output.machines]]` with the
+same inlet, outlet and rotor:
+
+- **Enthalpy rise** Δh_t = h̄_t,out − h̄_t,in of the mass-flow weighted total
+  enthalpy h_t = h + ½|c|² (absolute velocity), and the shaft power balance
+  P = ṁ Δh_t + Q̇ (the heat flow through the walls, the ledger of section
+  13); the rothalpy I = h + ½|w|² − ½|u|² of D183 is constant along a relative
+  streamline without losses and heat transfer.
+- **Pressure ratio** Π = p̄_t,out / p̄_t,in (total to total) and total to
+  static, with the mass-flow weighted total pressure of the ideal gas.
+- **Isentropic efficiency** η_is = (h_t,out,is − h_t,in)/(h_t,out − h_t,in) for
+  a compressor (the inverse for a turbine), with the isentropic outlet state
+  from Π and γ (or from the property tables for a real gas); **polytropic
+  efficiency** from the same states.
+- **Corrected quantities** for the map of a machine: corrected mass flow
+  ṁ √(T_t,in/T_ref)/(p_t,in/p_ref) and corrected speed N/√(T_t,in/T_ref).
+- **Thermal effects of a turbocharger:** the heat flow from the turbine side
+  through the bearing housing to the compressor side (conjugate heat transfer
+  of the solid regions, D157) enters the compressor enthalpy rise; the
+  efficiencies are reported with and without it ("adiabatic" and "diabatic"
+  efficiency).
+- **Compressibility:** the compressor and turbine need the high-Mach
+  compressible flow (L-series, after milestone 1); the low-Mach energy
+  equation of stage 7 covers fans, pumps and the compressor at low pressure
+  ratio only. The outputs are specified now so that the case file and the log
+  columns (`machine.<name>.enthalpy_rise`, `pressure_ratio`, `efficiency_is`)
+  do not change when the compressible solver arrives.
+- **Operating line** of a machine map: a study (D62) over the speed and the
+  outlet pressure or mass flow, one row per point with the quantities above.
+
 ## 14. Verification and validation (D162)
 
 Every case runs on hexahedral, tetrahedral, polyhedral and mixed meshes

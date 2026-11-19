@@ -75,7 +75,7 @@ use crate::simplec::{self, Flow, Physics, Residuals, Settings, Solution, Timings
 use crate::transient::TimeScheme;
 use anyhow::{Context, Result, bail};
 use foehncraft_mesh::case::{MeshSection, build_mesh};
-use foehncraft_mesh::geometry::{dot, norm, sub};
+use foehncraft_mesh::geometry::{cross, dot, norm, sub};
 use foehncraft_mesh::locate::Locator;
 use foehncraft_mesh::renumber::renumber;
 use foehncraft_mesh::{Geometry, Mesh};
@@ -669,6 +669,10 @@ pub struct OutputSection {
     /// frame the relative velocity of every cell is taken in (D183); default:
     /// each turning zone in its own frame, the rest in the fixed one.
     pub frame: Option<String>,
+    /// Pumps, fans and turbines: flow, pressure rise, head, shaft power,
+    /// efficiency and Euler work between an inlet and an outlet (D184).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub machines: Vec<crate::rotor::MachineSection>,
 }
 
 impl Default for OutputSection {
@@ -692,6 +696,7 @@ impl Default for OutputSection {
             derived: Vec::new(),
             reference: Default::default(),
             frame: None,
+            machines: Vec::new(),
         }
     }
 }
@@ -1205,6 +1210,7 @@ impl FlowCase {
     pub fn validate(&self) -> Result<()> {
         crate::frame::validate(self)?;
         crate::sliding::validate(self)?;
+        crate::rotor::validate(self)?;
         if let Some(d) = &self.fluid.density
             && let Some(v) = d.number()
         {
@@ -1554,6 +1560,10 @@ pub struct BoundarySummary {
     pub mean_pressure: f64,
     /// Force of the fluid on the boundary, pressure and viscous (N).
     pub force: [f64; 3],
+    /// Torque of the fluid on a wall about the axis of its rotor, or of the
+    /// first turning zone (N m, D184); none without a turning zone.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub torque: Option<f64>,
 }
 
 /// One solve (one level).
@@ -1597,6 +1607,10 @@ pub struct Solve {
     /// Force coefficients (drag, lift) of `[output.coefficients]` at the
     /// end.
     pub coefficients: Option<[f64; 2]>,
+    /// Torque, shaft power and machine performance of the turning zones at
+    /// the end (D184).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rotors: Option<crate::rotor::Values>,
     /// Transient run.
     pub transient: Option<crate::unsteady::TransientSummary>,
     /// Benchmark comparison.
@@ -2593,7 +2607,7 @@ pub fn run_steered(
         let mut csv = csv_preamble("residuals", name, None, &units);
         csv.push_str(&head);
         csv.push('\n');
-        let (bunits, bhead) = balance::csv_head(false);
+        let (bunits, bhead) = balance::csv_head(false, !case.turning().is_empty());
         let mut bcsv = csv_preamble("balance", name, None, &bunits);
         bcsv.push_str(&bhead);
         bcsv.push('\n');
@@ -2760,12 +2774,15 @@ pub fn run_steered(
                 } else {
                     None
                 };
+                let rotors = (cols.needs_rotors() && sol.is_some())
+                    .then(|| crate::rotor::evaluate(sol.as_ref().unwrap(), &mesh, &geo, &case));
                 let entries = cols.eval(
                     &crate::logcols::RowCtx {
                         index: it,
                         res: &res,
                         time: None,
                         sol: sol.as_ref(),
+                        rotors: rotors.as_ref(),
                     },
                     &geo,
                 );
@@ -2997,6 +3014,7 @@ pub fn run_steered(
             lg.frame(&verification);
         }
         lg.frame(&crate::logblocks::results(&boundaries));
+        let rotor_values = rotor_report(sol, &mesh, &geo, &case, &mut lg, &mut rep.warnings);
         // the ledger of the final state (D88, D89, D90 part 4)
         let bal = balance::steady(
             &balance::rates(
@@ -3087,6 +3105,7 @@ pub fn run_steered(
             boundaries,
             mass_imbalance,
             coefficients,
+            rotors: rotor_values,
             transient: None,
             benchmark,
             balance: Some(summary),
@@ -3589,6 +3608,54 @@ pub(crate) fn wall_face_values(
     (p, fv, tau)
 }
 
+/// The torques and machine values of the end state: the log block, the
+/// warnings (`ROT001`) and the values for the report (D184).
+pub(crate) fn rotor_report<F: FnMut(&str)>(
+    sol: &Solution,
+    mesh: &Mesh,
+    geo: &Geometry,
+    case: &FlowCase,
+    lg: &mut Log<'_, F>,
+    warnings: &mut Vec<crate::diag::Diagnostic>,
+) -> Option<crate::rotor::Values> {
+    let v = crate::rotor::evaluate(sol, mesh, geo, case);
+    if v.rotors.is_empty() {
+        return None;
+    }
+    lg.frame(&crate::logblocks::rotors(&v));
+    for d in crate::rotor::check(&v) {
+        lg.warn(&format!("{}: {}", d.code, d.message));
+        warnings.push(d);
+    }
+    Some(v)
+}
+
+/// The transposed part of the viscous force of the fluid on a moving wall
+/// face (D184): −μ (∇u)ᵀ·S, with the gradient of the cell next to the face.
+/// The momentum rows hold the Laplacian form ∇·(μ∇u), whose force
+/// [`wall_face_values`] gives; the full stress μ(∇u + ∇uᵀ) has this term
+/// besides. It is zero on a wall at rest (no slip), and on a wall that moves
+/// in its own plane without curvature; on a turning cylinder it is the
+/// difference between the torque of the Laplacian form (which misses the
+/// −u_θ/r of the shear stress) and the true one.
+pub(crate) fn wall_face_transposed(fl: &Solution, geo: &Geometry, f: usize, ni: usize) -> [f64; 3] {
+    let ub = fl.ub.get(f - ni);
+    if ub == [0.0; 3] {
+        return [0.0; 3];
+    }
+    let c = fl.disc.owner[f] as usize;
+    let s = geo.face_area[f];
+    let mu = fl.mu_eff_at(f);
+    let mut out = [0.0; 3];
+    for (j, sj) in s.iter().enumerate() {
+        let g = fl.grad_u[j].get(c);
+        for (o, gi) in out.iter_mut().zip(g) {
+            *o -= mu * sj * gi;
+        }
+    }
+    out
+}
+
 pub(crate) fn boundary_summaries(
     fl: &Solution,
     mesh: &Mesh,
@@ -3596,26 +3663,45 @@ pub(crate) fn boundary_summaries(
     case: &FlowCase,
 ) -> Vec<BoundarySummary> {
     let ni = mesh.n_interior_faces();
+    // the torque of a wall about the axis of its rotor, or of the first
+    // turning zone (D184)
+    let rotors = crate::rotor::rotors(case, mesh);
     mesh.boundaries
         .iter()
-        .map(|p| {
+        .enumerate()
+        .map(|(b, p)| {
             let bc = &case.boundary[&p.name];
-            let (mut area, mut q, mut pa) = (0.0, 0.0, 0.0);
+            let wall = matches!(bc, BoundaryCondition::Wall { .. });
+            let axis = (wall && !rotors.is_empty()).then(|| {
+                &rotors
+                    .iter()
+                    .find(|r| r.walls.contains(&b))
+                    .unwrap_or(&rotors[0])
+                    .turning
+            });
+            let (mut area, mut q, mut pa, mut torque) = (0.0, 0.0, 0.0, 0.0);
             let mut force = [0.0; 3];
             for f in p.range() {
                 let s = geo.face_area[f];
                 let a = norm(s);
                 area += a;
                 q += fl.mass_flux[f];
-                let (pf, fv) = if matches!(bc, BoundaryCondition::Wall { .. }) {
+                let (pf, fv) = if wall {
                     let (pf, fv, _) = wall_face_values(fl, geo, f, ni);
                     (pf, fv)
                 } else {
                     (fl.pb[f - ni], [0.0; 3])
                 };
                 pa += pf * a;
+                let ff = [pf * s[0] + fv[0], pf * s[1] + fv[1], pf * s[2] + fv[2]];
                 for i in 0..3 {
-                    force[i] += pf * s[i] + fv[i];
+                    force[i] += ff[i];
+                }
+                if let Some(t) = axis {
+                    // the torque has the full stress (D184)
+                    let tr = wall_face_transposed(fl, geo, f, ni);
+                    let ff = [ff[0] + tr[0], ff[1] + tr[1], ff[2] + tr[2]];
+                    torque += dot(t.axis, cross(sub(geo.face_centroid[f], t.origin), ff));
                 }
             }
             BoundarySummary {
@@ -3625,6 +3711,7 @@ pub(crate) fn boundary_summaries(
                 mass_flow: q,
                 mean_pressure: if area > 0.0 { pa / area } else { 0.0 },
                 force,
+                torque: axis.map(|_| torque),
             }
         })
         .collect()
@@ -3648,13 +3735,13 @@ pub(crate) fn write_outputs(
         &name,
         at,
         "boundary -, type -, area m², mass_flow kg/s (out of the domain), mean_pressure Pa, \
-         force_x force_y force_z N",
+         force_x force_y force_z N, torque N m (of a wall about the axis of its rotor, D184)",
     );
-    csv.push_str("boundary,type,area,mass_flow,mean_pressure,force_x,force_y,force_z\n");
+    csv.push_str("boundary,type,area,mass_flow,mean_pressure,force_x,force_y,force_z,torque\n");
     for p in boundaries {
         let _ = writeln!(
             csv,
-            "{},{},{:e},{:e},{:e},{:e},{:e},{:e}",
+            "{},{},{:e},{:e},{:e},{:e},{:e},{:e},{}",
             p.name,
             p.kind,
             p.area,
@@ -3662,7 +3749,8 @@ pub(crate) fn write_outputs(
             p.mean_pressure,
             p.force[0],
             p.force[1],
-            p.force[2]
+            p.force[2],
+            p.torque.map_or(String::new(), |t| format!("{t:e}"))
         );
     }
     std::fs::write(out.join("boundaries.csv"), csv)?;
@@ -4276,20 +4364,24 @@ impl FlowReport {
         if let Some(v) = self.solves.last() {
             let _ = writeln!(
                 s,
-                "\n| Boundary | Type | Mass flow (kg/s) | Mean pressure (Pa) | Force (N) |\n|---|---|---|---|---|"
+                "\n| Boundary | Type | Mass flow (kg/s) | Mean pressure (Pa) | Force (N) | Torque (N m) |\n|---|---|---|---|---|---|"
             );
             for p in &v.boundaries {
                 let _ = writeln!(
                     s,
-                    "| {} | {} | {:.6e} | {:.6e} | [{:.4e}, {:.4e}, {:.4e}] |",
+                    "| {} | {} | {:.6e} | {:.6e} | [{:.4e}, {:.4e}, {:.4e}] | {} |",
                     p.name,
                     p.kind,
                     p.mass_flow,
                     p.mean_pressure,
                     p.force[0],
                     p.force[1],
-                    p.force[2]
+                    p.force[2],
+                    p.torque.map_or("-".to_string(), |t| format!("{t:.4e}"))
                 );
+            }
+            if let Some(r) = &v.rotors {
+                s.push_str(&crate::rotor::markdown(r));
             }
             let t = &v.timings;
             let mut sweeps = String::new();

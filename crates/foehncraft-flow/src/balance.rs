@@ -200,6 +200,38 @@ pub struct Rates {
     /// Scale of the mass flows: the largest boundary mass flow, or in a closed
     /// domain ρ |u|max times the largest boundary area (kg/s).
     pub mass_scale: f64,
+    /// Torque and shaft power of the rotors, machine values (D184).
+    pub rotors: crate::rotor::Values,
+}
+
+/// The shaft work of one rotor (D184): −Ω·T, the work of its walls on the
+/// fluid when they turn with the zone, booked in the wall terms of its walls.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct ShaftTerms {
+    /// The rotor (its zone).
+    pub rotor: String,
+    /// Its walls.
+    pub walls: Vec<String>,
+    /// Shaft power (W), or shaft work over a run (J).
+    pub power: f64,
+    /// Of it the work of the transposed viscous stress, which is not in the
+    /// wall terms (the ledger has the Laplacian form of the viscous term).
+    pub transposed: f64,
+}
+
+impl ShaftTerms {
+    fn of(r: &Rates) -> Vec<Self> {
+        r.rotors
+            .rotors
+            .iter()
+            .map(|v| Self {
+                rotor: v.name.clone(),
+                walls: v.walls.clone(),
+                power: v.power,
+                transposed: v.transposed_work,
+            })
+            .collect()
+    }
 }
 
 /// The terms of a state on the host. `volume` holds the cell volumes of
@@ -276,6 +308,9 @@ pub fn rates(
     }
     let mut boundaries = Vec::with_capacity(mesh.boundaries.len());
     let mut scale = 0.0f64;
+    // in a turning zone the kinetic energy is carried by the convecting
+    // flux, relative to the zone (zero on a wall that turns with it)
+    let turning = case.turning();
     for p in &mesh.boundaries {
         let bc = &case.boundary[&p.name];
         let wall = matches!(bc, crate::bc::BoundaryCondition::Wall { .. });
@@ -294,7 +329,12 @@ pub fn rates(
             let mf = sol.mass_flux[fc];
             m.push(mf);
             area.push(norm(s));
-            kc.push(mf * 0.5 * dot(ub, ub));
+            let conv = if turning.is_empty() {
+                mf
+            } else {
+                mf - crate::rotor::frame_flux(&turning, mesh, geo, fc, rho)
+            };
+            kc.push(conv * 0.5 * dot(ub, ub));
             let pf = if wall {
                 wall_face_values(sol, geo, fc, ni).0
             } else {
@@ -350,6 +390,7 @@ pub fn rates(
         pressure_source_power: pairwise_sum(&press),
         viscous_dissipation: pairwise_sum(&phi),
         mass_scale: scale,
+        rotors: crate::rotor::evaluate(sol, mesh, geo, case),
     }
 }
 
@@ -375,6 +416,8 @@ pub struct EnergyBalance {
     pub storage: f64,
     /// Power of all boundaries into the fluid.
     pub boundary: f64,
+    /// Of it the shaft power of the rotors, −Ω·T (D184).
+    pub shaft: f64,
     /// Power of the body force.
     pub body_force: f64,
     /// Viscous dissipation (physical, ≥ 0).
@@ -416,6 +459,9 @@ pub struct Balance {
     pub kinetic_energy: EnergyBalance,
     /// Boundary terms per boundary (rates; integrals over a run).
     pub boundaries: Vec<BoundaryTerms>,
+    /// The shaft work per rotor, in the terms of its walls (D184).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub shafts: Vec<ShaftTerms>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -423,6 +469,7 @@ fn close(
     storage_ke: f64,
     energy: f64,
     boundaries: Vec<BoundaryTerms>,
+    shafts: &[ShaftTerms],
     body: f64,
     source: f64,
     phi: f64,
@@ -465,6 +512,7 @@ fn close(
             energy,
             storage: storage_ke,
             boundary,
+            shaft: pairwise_sum(&shafts.iter().map(|t| t.power).collect::<Vec<_>>()),
             body_force: body,
             viscous_dissipation: phi,
             numerical_dissipation: num,
@@ -478,10 +526,12 @@ fn close(
 
 /// The ledger of a steady state (no storage).
 pub fn steady(r: &Rates, iteration: usize) -> Balance {
+    let shafts = ShaftTerms::of(r);
     let (mass, kinetic_energy, boundaries) = close(
         0.0,
         r.kinetic_energy,
         r.boundaries.clone(),
+        &shafts,
         r.body_force_power,
         r.pressure_source_power,
         r.viscous_dissipation,
@@ -492,6 +542,7 @@ pub fn steady(r: &Rates, iteration: usize) -> Balance {
         mass,
         kinetic_energy,
         boundaries,
+        shafts,
         ..Default::default()
     }
 }
@@ -505,6 +556,7 @@ pub struct Ledger {
     time: f64,
     step: usize,
     boundaries: Vec<BoundaryTerms>,
+    shafts: Vec<ShaftTerms>,
     body: f64,
     source: f64,
     phi: f64,
@@ -533,6 +585,14 @@ impl Ledger {
             time: t,
             step,
             boundaries: r.boundaries.iter().map(|p| p.scaled(0.0)).collect(),
+            shafts: ShaftTerms::of(&r)
+                .into_iter()
+                .map(|t| ShaftTerms {
+                    power: 0.0,
+                    transposed: 0.0,
+                    ..t
+                })
+                .collect(),
             prev: Some(r),
             ..Default::default()
         }
@@ -556,6 +616,15 @@ impl Ledger {
                 m
             })
             .collect();
+        let shafts: Vec<ShaftTerms> = ShaftTerms::of(&prev)
+            .into_iter()
+            .zip(ShaftTerms::of(&r))
+            .map(|(a, b)| ShaftTerms {
+                power: half * (a.power + b.power),
+                transposed: half * (a.transposed + b.transposed),
+                ..b
+            })
+            .collect();
         let body = half * (prev.body_force_power + r.body_force_power);
         let source = half * (prev.pressure_source_power + r.pressure_source_power);
         let phi = half * (prev.viscous_dissipation + r.viscous_dissipation);
@@ -569,6 +638,7 @@ impl Ledger {
             storage,
             r.kinetic_energy,
             boundaries,
+            &shafts,
             body,
             source,
             phi,
@@ -576,6 +646,10 @@ impl Ledger {
         );
         for (acc, p) in self.boundaries.iter_mut().zip(&boundaries) {
             acc.add(p, dt);
+        }
+        for (acc, t) in self.shafts.iter_mut().zip(&shafts) {
+            acc.power += dt * t.power;
+            acc.transposed += dt * t.transposed;
         }
         self.body += dt * body;
         self.source += dt * source;
@@ -597,6 +671,7 @@ impl Ledger {
             mass,
             kinetic_energy,
             boundaries,
+            shafts,
             ..Default::default()
         }
     }
@@ -607,6 +682,7 @@ impl Ledger {
             self.energy - self.start_energy,
             self.energy,
             self.boundaries.clone(),
+            &self.shafts,
             self.body,
             self.source,
             self.phi,
@@ -619,6 +695,7 @@ impl Ledger {
             mass,
             kinetic_energy,
             boundaries,
+            shafts: self.shafts.clone(),
             ..Default::default()
         }
     }
@@ -700,8 +777,13 @@ pub fn check(s: &BalanceSummary, set: &BalanceSection) -> Vec<Diagnostic> {
 
 /// One compact line for the progress log (transient).
 pub fn compact(b: &Balance) -> String {
+    let shaft = if b.shafts.is_empty() {
+        String::new()
+    } else {
+        format!(" (shaft {:+.3e} W)", b.kinetic_energy.shaft)
+    };
     format!(
-        "      balance  mass {:+.2e}  kinetic energy: dK/dt {:+.3e} W, boundary {:+.3e} W, \
+        "      balance  mass {:+.2e}  kinetic energy: dK/dt {:+.3e} W, boundary {:+.3e} W{shaft}, \
          dissipation {:.3e} W, numerical {:+.3e} W ({:+.1e})",
         b.mass.relative,
         b.kinetic_energy.storage,
@@ -742,30 +824,59 @@ pub fn table(title: &str, b: &Balance, integrated: bool) -> String {
         m,
     );
     s.push_str(&format!("{ind}  kinetic energy\n"));
-    for p in &b.boundaries {
+    let wall_rows = |s: &mut String, p: &BoundaryTerms, pre: &str| {
         if p.viscous_power != 0.0 {
             row(
-                &mut s,
-                &format!("  {} viscous work in", p.boundary),
+                s,
+                &format!("{pre}{} viscous work in", p.boundary),
                 p.viscous_power,
                 e,
             );
         }
         if p.convective_power != 0.0 {
             row(
-                &mut s,
-                &format!("  {} convected out", p.boundary),
+                s,
+                &format!("{pre}{} convected out", p.boundary),
                 p.convective_power,
                 e,
             );
         }
         if p.pressure_power != 0.0 {
             row(
-                &mut s,
-                &format!("  {} pressure work out", p.boundary),
+                s,
+                &format!("{pre}{} pressure work out", p.boundary),
                 p.pressure_power,
                 e,
             );
+        }
+    };
+    // the shaft work of a rotor (D184) with the terms of its walls
+    for t in &b.shafts {
+        row(
+            &mut s,
+            &format!("  shaft work of rotor {} in (-Ω·T)", t.rotor),
+            t.power,
+            e,
+        );
+        for p in b
+            .boundaries
+            .iter()
+            .filter(|p| t.walls.contains(&p.boundary))
+        {
+            wall_rows(&mut s, p, "    of it ");
+        }
+        if t.transposed != 0.0 {
+            row(
+                &mut s,
+                "    of it transposed viscous stress",
+                t.transposed,
+                e,
+            );
+        }
+    }
+    for p in &b.boundaries {
+        if !b.shafts.iter().any(|t| t.walls.contains(&p.boundary)) {
+            wall_rows(&mut s, p, "  ");
         }
     }
     let k = &b.kinetic_energy;
@@ -806,6 +917,17 @@ pub fn markdown(s: &BalanceSummary, cells: usize) -> String {
         s.largest_mass_relative,
         "",
     );
+    for t in &b.shafts {
+        row(
+            format!(
+                "shaft work of rotor {} (−Ω·T, in the power of {})",
+                t.rotor,
+                t.walls.join(", ")
+            ),
+            t.power,
+            unit_e,
+        );
+    }
     for p in &b.boundaries {
         if p.power() != 0.0 {
             row(
@@ -850,20 +972,27 @@ scheme_dissipation";
 
 /// The units line (of the D75 preamble) and the header of
 /// `balance.csv`: per time step with the time (transient), or per outer
-/// iteration (steady).
-pub fn csv_head(transient: bool) -> (String, String) {
-    let units = "mass_outflow kg/s, mass_relative -, kinetic_energy J, storage boundary_power \
-                 body_force_power viscous_dissipation numerical_dissipation W, numerical_relative -, \
-                 pressure_dissipation scheme_dissipation W";
+/// iteration (steady); with rotors (D184) a last column `shaft_power`.
+pub fn csv_head(transient: bool, shaft: bool) -> (String, String) {
+    let mut units = String::from(
+        "mass_outflow kg/s, mass_relative -, kinetic_energy J, storage boundary_power \
+         body_force_power viscous_dissipation numerical_dissipation W, numerical_relative -, \
+         pressure_dissipation scheme_dissipation W",
+    );
+    let mut terms = String::from(CSV_TERMS);
+    if shaft {
+        units.push_str(", shaft_power W (of the rotors, in boundary_power)");
+        terms.push_str(",shaft_power");
+    }
     if transient {
         (
             format!("step -, time s, {units}"),
-            format!("step,time,{CSV_TERMS}"),
+            format!("step,time,{terms}"),
         )
     } else {
         (
             format!("iteration -, {units}"),
-            format!("iteration,{CSV_TERMS}"),
+            format!("iteration,{terms}"),
         )
     }
 }
@@ -890,6 +1019,9 @@ pub fn csv_row(b: &Balance) -> String {
     ] {
         s.push_str(&format!(",{v:e}"));
     }
+    if !b.shafts.is_empty() {
+        s.push_str(&format!(",{:e}", k.shaft));
+    }
     s
 }
 
@@ -911,6 +1043,9 @@ pub fn record_row(b: &Balance) -> serde_json::Value {
         "scheme_dissipation": k.scheme_dissipation,
     });
     if let Some(m) = v.as_object_mut() {
+        if !b.shafts.is_empty() {
+            m.insert("shaft_power".into(), k.shaft.into());
+        }
         if let Some(s) = b.step {
             m.insert("step".into(), s.into());
         }
@@ -970,6 +1105,7 @@ mod tests {
             pressure_source_power: 0.0,
             viscous_dissipation: phi,
             mass_scale: 1.0,
+            rotors: Default::default(),
         }
     }
 

@@ -1106,3 +1106,48 @@ the turbulent stirred vessel of gallery 100; `examples/studies/mixer.py
 
 [Gallery 100](../gallery/flow.md#turbulent-rotor); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
+
+<a id="torque-power"></a>
+## 101. Read the torque and power of a rotor, and the head and efficiency of a machine
+
+```toml
+[[mrf]]                      # or [[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+walls = ["blades", "hub"]    # default: the walls all of whose faces lie in the zone
+
+[[output.machines]]
+name = "pump"
+rotor = "rotor"              # default: the only turning zone
+inlet = ["inlet"]
+outlet = ["outlet"]
+gravity = 9.80665            # of the head H = dp_t / (rho g)
+```
+
+- The torque (N m) of the fluid on every wall about the axis of its rotor is
+  the column `torque` of `boundaries.csv`, the column of the results table and,
+  in a transient run, `<wall>_torque` of `forces.csv`; with it
+  `<rotor>_torque`, `<rotor>_power` (shaft power −Ω·T), `<rotor>_angle` (degrees,
+  sliding mesh) and per machine `<name>_flow`, `_dpt`, `_head`, `_power`,
+  `_efficiency`. The end of the log and `flow.md` have a block "Rotors and
+  machines".
+- The log table gets the columns `rotor.<zone>.torque` and, on the sliding
+  mesh, `rotor.<zone>.angle` by default, `machine.<name>.head` and
+  `.efficiency` for every machine; `[log] columns` takes
+  `rotor.<zone>.torque|power|angle` and
+  `machine.<name>.flow|pressure_rise|head|efficiency`.
+- The shaft power is in the energy ledger: the rows "shaft work of rotor … in"
+  of the tables, the column `shaft_power` of `balance.csv`, the compact line of
+  every step. `ROT001` warns when a rotor wall does not turn with its zone.
+- The efficiency is hydraulic (flux of total pressure over shaft power; the
+  inverse for a turbine), also total to static; the Euler work is ṁ Ω Δ(r c_u).
+  Enthalpy rise, isentropic efficiency and pressure ratio of compressors and
+  turbochargers come with the energy equation (stage 7, section 13.1).
+- An animation of a field series: `fields_every = 10` in `[output]`, then
+  `pvpython tools/plot/rotor_movie.py output/<case>` (colour map, isolines,
+  colour bar and colours by options, see its header) and the `ffmpeg` command it
+  prints.
+
+[Gallery 101](../gallery/flow.md#torque-power); the keys are in
+[cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).

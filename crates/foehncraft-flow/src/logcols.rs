@@ -13,6 +13,8 @@
 //! | `cell.<index>.<q>` | value in one cell (debugging) |
 //! | `min.<q>`, `max.<q>` | extreme over the domain and the cell it occurs in |
 //! | `boundary.<name>.mass_flow` | mass flow out of a boundary (kg/s) |
+//! | `rotor.<zone>.torque`, `.power` | torque of the fluid on a rotor (N m), its shaft power (W, D184) |
+//! | `machine.<name>.flow`, `.pressure_rise`, `.head`, `.efficiency` | an `[[output.machines]]` entry (D184) |
 //! | `time.simulated`, `.dt`, `.courant`, `.outer`, `.error` | transient runs |
 //! | `time.elapsed`, `time.per_iteration` | wall-clock seconds |
 //!
@@ -116,6 +118,10 @@ pub enum Spec {
     Max(Quantity),
     /// `boundary.<name>.mass_flow`.
     BoundaryMassFlow(String),
+    /// `rotor.<zone>.<quantity>` (D184).
+    Rotor(String, RotorQ),
+    /// `machine.<name>.<quantity>` (D184).
+    Machine(String, MachineQ),
     /// `time.simulated`.
     Simulated,
     /// `time.dt`.
@@ -132,6 +138,52 @@ pub enum Spec {
     PerIteration,
 }
 
+/// A quantity of a rotor (D184).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RotorQ {
+    /// `torque`: of the fluid on its walls (N m).
+    Torque,
+    /// `power`: the shaft power (W).
+    Power,
+    /// `angle`: the angle the rotor has turned since the start, |Ω| t
+    /// (degrees; transient runs, the sliding mesh).
+    Angle,
+}
+
+/// A quantity of a machine of `[[output.machines]]` (D184).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MachineQ {
+    /// `flow`: volume flow (m³/s).
+    Flow,
+    /// `pressure_rise`: total pressure rise (Pa).
+    PressureRise,
+    /// `head`: H (m).
+    Head,
+    /// `efficiency`: hydraulic efficiency (-).
+    Efficiency,
+}
+
+impl MachineQ {
+    fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "flow" => Self::Flow,
+            "pressure_rise" => Self::PressureRise,
+            "head" => Self::Head,
+            "efficiency" => Self::Efficiency,
+            _ => return None,
+        })
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Self::Flow => "flow",
+            Self::PressureRise => "pressure_rise",
+            Self::Head => "head",
+            Self::Efficiency => "efficiency",
+        }
+    }
+}
+
 /// The names that `[log] columns` accepts, for the schema and the hints.
 pub const KINDS: &[&str] = &[
     "residual.momentum",
@@ -146,6 +198,8 @@ pub const KINDS: &[&str] = &[
     "min.<quantity>",
     "max.<quantity>",
     "boundary.<name>.mass_flow",
+    "rotor.<zone>.<torque|power|angle>",
+    "machine.<name>.<flow|pressure_rise|head|efficiency>",
     "time.simulated",
     "time.dt",
     "time.courant",
@@ -197,6 +251,23 @@ impl Spec {
             ("boundary", n) if n >= 3 && parts[n - 1] == "mass_flow" => {
                 Self::BoundaryMassFlow(target())
             }
+            ("rotor", n) if n >= 3 => match parts[n - 1] {
+                "torque" => Self::Rotor(target(), RotorQ::Torque),
+                "power" => Self::Rotor(target(), RotorQ::Power),
+                "angle" => Self::Rotor(target(), RotorQ::Angle),
+                _ => {
+                    return Err(bad(name, "a rotor column is `torque`, `power` or `angle`"));
+                }
+            },
+            ("machine", n) if n >= 3 => match MachineQ::parse(parts[n - 1]) {
+                Some(q) => Self::Machine(target(), q),
+                None => {
+                    return Err(bad(
+                        name,
+                        "a machine column is `flow`, `pressure_rise`, `head` or `efficiency`",
+                    ));
+                }
+            },
             ("time", 2) => match parts[1] {
                 "simulated" => Self::Simulated,
                 "dt" => Self::Dt,
@@ -226,7 +297,13 @@ impl Spec {
                 | Self::Min(_)
                 | Self::Max(_)
                 | Self::BoundaryMassFlow(_)
+                | Self::Rotor(..)
+                | Self::Machine(..)
         )
+    }
+
+    fn needs_rotors(&self) -> bool {
+        matches!(self, Self::Rotor(..) | Self::Machine(..))
     }
 }
 
@@ -251,6 +328,17 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
                 CASE_BAD_VALUE,
                 "[log] columns: `{n}`: no boundary `{b}` in the case"
             ),
+            Spec::Rotor(r, _) => crate::need!(
+                rotor_names(case).contains(r),
+                CASE_BAD_VALUE,
+                "[log] columns: `{n}`: no turning zone `{r}` ([[mrf]] or [[sliding]] zones: {})",
+                rotor_names(case).join(", ")
+            ),
+            Spec::Machine(m, _) => crate::need!(
+                case.output.machines.iter().any(|x| &x.name == m),
+                CASE_BAD_VALUE,
+                "[log] columns: `{n}`: no `{m}` in [[output.machines]]"
+            ),
             s if s.transient_only() => crate::need!(
                 transient,
                 CASE_BAD_VALUE,
@@ -265,6 +353,19 @@ pub fn validate(case: &crate::case::FlowCase) -> Result<()> {
         "[log] digits must be between 1 and 8"
     );
     Ok(())
+}
+
+/// The names of the rotors of `case` (D184).
+fn rotor_names(case: &crate::case::FlowCase) -> Vec<String> {
+    case.mrf
+        .iter()
+        .map(|m| crate::rotor::rotor_name(&m.zone))
+        .chain(
+            case.sliding
+                .iter()
+                .map(|s| crate::rotor::rotor_name(&s.zone)),
+        )
+        .collect()
 }
 
 /// One column of the table.
@@ -316,6 +417,9 @@ pub struct RowCtx<'a> {
     pub time: Option<TimeInfo>,
     /// The fields (needed when [`Columns::needs_state`]).
     pub sol: Option<&'a Solution<'a>>,
+    /// Torques, powers and machine values (needed when
+    /// [`Columns::needs_rotors`]).
+    pub rotors: Option<&'a crate::rotor::Values>,
 }
 
 /// The table columns of a run.
@@ -376,6 +480,28 @@ impl Columns {
                 Spec::LinPressure,
             ],
         };
+        // a turning zone: the torque of its rotor, the head and efficiency
+        // of the machines (D184)
+        if case.log.columns.is_none() {
+            specs.extend(
+                rotor_names(case)
+                    .into_iter()
+                    .map(|r| Spec::Rotor(r, RotorQ::Torque)),
+            );
+            // the angle of every sliding rotor (D184): they may turn at
+            // different speeds
+            if transient {
+                specs.extend(
+                    case.sliding
+                        .iter()
+                        .map(|m| Spec::Rotor(crate::rotor::rotor_name(&m.zone), RotorQ::Angle)),
+                );
+            }
+            for m in &case.output.machines {
+                specs.push(Spec::Machine(m.name.clone(), MachineQ::Head));
+                specs.push(Spec::Machine(m.name.clone(), MachineQ::Efficiency));
+            }
+        }
         if case.log.columns.is_none() && !case.turbulence.is_laminar() {
             let at = specs
                 .iter()
@@ -447,6 +573,11 @@ impl Columns {
     /// Whether a row needs the fields (and so a download from the device).
     pub fn needs_state(&self) -> bool {
         self.specs.iter().any(Spec::needs_state)
+    }
+
+    /// Whether a row needs the torques and machine values (D184).
+    pub fn needs_rotors(&self) -> bool {
+        self.specs.iter().any(Spec::needs_rotors)
     }
 
     /// The columns, in order.
@@ -575,6 +706,35 @@ impl Columns {
                     let v = ctx.sol.and_then(|sol| {
                         let (_, r) = self.boundaries.iter().find(|(n, _)| n == name)?;
                         Some(r.clone().map(|f| sol.mass_flux[f]).sum::<f64>())
+                    });
+                    out.push(v.map_or_else(dash, num));
+                }
+                Spec::Rotor(name, q) => {
+                    let v = ctx
+                        .rotors
+                        .and_then(|v| v.rotor(name))
+                        .and_then(|r| match q {
+                            RotorQ::Torque => Some(r.torque),
+                            RotorQ::Power => Some(r.power),
+                            RotorQ::Angle => ctx.time.map(|t| (r.omega * t.time).to_degrees()),
+                        });
+                    out.push(v.map_or_else(dash, |v| {
+                        if *q == RotorQ::Angle {
+                            Entry {
+                                text: format!("{v:.2}"),
+                                value: json_num(v),
+                            }
+                        } else {
+                            num(v)
+                        }
+                    }));
+                }
+                Spec::Machine(name, q) => {
+                    let v = ctx.rotors.and_then(|v| v.machine(name)).map(|m| match q {
+                        MachineQ::Flow => m.volume_flow,
+                        MachineQ::PressureRise => m.total_pressure_rise,
+                        MachineQ::Head => m.head,
+                        MachineQ::Efficiency => m.efficiency,
                     });
                     out.push(v.map_or_else(dash, num));
                 }
@@ -788,6 +948,35 @@ fn layout(s: &Spec, d: usize, transient: bool) -> Vec<Column> {
             "kg/s",
             ws.max(n.chars().count().min(14)),
         )],
+        Spec::Rotor(n, q) => {
+            let (id, name, unit) = match q {
+                RotorQ::Torque => ("torque", "Torque", "N m"),
+                RotorQ::Power => ("power", "Power", "W"),
+                RotorQ::Angle => ("angle", "Angle", "deg"),
+            };
+            vec![col(
+                format!("rotor.{n}.{id}"),
+                name,
+                &format!("rotor {n}"),
+                unit,
+                ws,
+            )]
+        }
+        Spec::Machine(n, q) => {
+            let (name, unit) = match q {
+                MachineQ::Flow => ("Q", "m³/s"),
+                MachineQ::PressureRise => ("dpt", "Pa"),
+                MachineQ::Head => ("H", "m"),
+                MachineQ::Efficiency => ("eta", "-"),
+            };
+            vec![col(
+                format!("machine.{n}.{}", q.id()),
+                name,
+                &format!("machine {n}"),
+                unit,
+                ws,
+            )]
+        }
         Spec::Simulated => vec![col("time.simulated".into(), "Time [s]", "time", "s", d + 7)],
         Spec::Dt => vec![col("time.dt".into(), "Dt [s]", "time", "s", w)],
         Spec::Courant => vec![col("time.courant".into(), "Cour.", "time", "", 5)],

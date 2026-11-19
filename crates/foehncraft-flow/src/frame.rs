@@ -77,6 +77,10 @@ pub struct MrfSection {
     /// Angular velocity in revolutions per minute. Give this or `omega`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rpm: Option<f64>,
+    /// The walls of the rotor, whose torque gives the shaft power (D184);
+    /// default: every wall all of whose faces lie in the zone.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub walls: Vec<String>,
 }
 
 impl Default for MrfSection {
@@ -87,6 +91,7 @@ impl Default for MrfSection {
             axis: [0.0, 0.0, 1.0],
             omega: None,
             rpm: None,
+            walls: Vec::new(),
         }
     }
 }
