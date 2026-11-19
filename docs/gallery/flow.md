@@ -827,10 +827,11 @@ stator cells without growth; a passive scalar ends in its exact solution to
 that is at its point now, the fields are written with the interface cells as
 polyhedra.
 
-<img src="../figures/gallery/mixer_sliding_interface.png" alt="The imprinted interface in the stirred vessel of entry 98 after three revolutions, at the tip of a blade: the vorticity with the cell edges; the rotor mesh has 64 faces on the interface circle, the stator mesh 96, and the cells on both sides of the circle are polyhedra with the nodes of both" width="780" height="750">
+<img src="../figures/gallery/mixer_sliding_interface.png" alt="The imprinted interface in the five-blade stirred vessel of entry 98 after three revolutions, at the tip of a blade: the vorticity with the cell edges; the rotor mesh has 64 faces on the interface circle, the stator mesh 96, and the cells on both sides of the circle are polyhedra with the nodes of both" width="780" height="750">
 
-The interface of a rotor with blades ([entry 98](#stirred-vessel)) after three
-revolutions, 64 rotor against 96 stator faces: the vorticity of the blade tip
+The interface of a rotor with blades (the five-blade vessel of
+[entry 98](#stirred-vessel)) after three revolutions, 64 rotor against 96
+stator faces: the vorticity of the blade tip
 crosses it without a seam.
 
 Limits: one rotor, a fixed time step (`SLD003` for the adaptive one), no restart (`SLD005`;
@@ -853,15 +854,25 @@ conformal stepping, solid body, scalar, probes and fields).
 Entries 94 to 96 verify the two methods on cylinders, where the walls move
 along themselves. A rotor has blades, and a blade moves **normal to itself**.
 The baffled stirred vessel of `examples/studies/mixer/` (2D, one cell layer)
-has a rotor of four blades on a hub (blade tip radius 0.045 m, thickness
-5 mm) inside the interface circle r = 0.06 m, and a vessel of radius 0.10 m
-with four baffles on its wall, 45° from the blades. `examples/meshes/mixer.py`
-(Gmsh) meshes it with quadrilaterals, finer near the walls, 16 326 cells, once
-conformal (rotor and stator share the nodes of the interface circle) and once
-split (64 rotor and 96 stator intervals on the circle). Water density, Ω =
-10 rad/s, tip speed 0.45 m/s, and a viscosity that keeps the flow laminar.
+has a rotor of blades on a hub (blade tip radius 0.045 m, thickness 5 mm)
+inside the interface circle r = 0.06 m, and a vessel of radius 0.10 m with
+baffles on its wall. `examples/meshes/mixer.py` (Gmsh) meshes it with
+quadrilaterals, finer near the walls, once conformal (rotor and stator share
+the nodes of the interface circle) and once split (64 rotor and 96 stator
+intervals on the circle). Water density, Ω = 10 rad/s, tip speed 0.45 m/s,
+and a viscosity that keeps the flow laminar.
 
-<img src="../figures/gallery/mixer_mrf.png" alt="The stirred vessel with the moving reference frame at Re = 100: the speed with streamlines, highest at the blade tips; the relative speed |u − Ω×r| in the rotor, where the fluid between two blades turns in a closed eddy against the rotation; and the vorticity, 2Ω in the core that turns with the blades and negative in the shear layer around it" width="800" height="256">
+The case files mesh four blades and four baffles (16 326 cells); the numbers
+in the text of entries 98 to 102 are from them. The images show the same
+case files on the vessel with **five blades and three baffles**
+(`mixer.py --blades 5 --baffles 3`, 16 848 cells conformal, 16 897 split),
+which `examples/studies/mixer.py` runs with `--set mesh.file=...`: a
+four-blade rotor draws a four-armed pattern that could be misread as a
+symbol, and published images show none (CONTRIBUTING.md). The flow is the
+same in kind (in the frame 987 iterations instead of 972, the blade torque
+−2.84·10⁻⁴ instead of −2.47·10⁻⁴ N m with one blade more).
+
+<img src="../figures/gallery/mixer_mrf.png" alt="The five-blade stirred vessel with the moving reference frame at Re = 100: the speed with streamlines, highest at the blade tips; the relative speed |u − Ω×r| in the rotor, where the fluid between two blades turns in a closed eddy against the rotation; and the vorticity, 2Ω in the core that turns with the blades and negative in the shear layer around it" width="800" height="256">
 
 **Moving reference frame** (`mrf.toml`, Re = ΩR²_tip/ν = 100, steady, 972
 SIMPLEC iterations, 22 s on four cores). Left the absolute speed with
@@ -876,18 +887,18 @@ the blade tips the fluid lags far behind (u_θ = 0.5 Ωr at the interface), and
 solid body (ω_z ≈ 2Ω = 20 1/s); the shear layer around it and the tip vortices
 are negative.
 
-<img src="../figures/gallery/mixer_sliding.png" alt="The stirred vessel with the sliding mesh at Re = 400 after three revolutions: the speed with four recirculation cells between the baffles, the relative speed in the rotor with its eddies, and the vorticity with the shear layer broken up by the baffles" width="800" height="256">
+<img src="../figures/gallery/mixer_sliding.png" alt="The five-blade stirred vessel with the sliding mesh at Re = 400 after three revolutions: the speed with slow recirculation cells between the three baffles, the relative speed in the rotor with one eddy per blade passage, and the vorticity of the core and the shear layer around it" width="800" height="256">
 
 **Sliding mesh by imprinting** (`sliding.toml`, Re = 400, from rest, Δt = 1.25 ms,
 the rotor turning 0.72° per step, an eighth of a rotor face on the interface;
 1 508 steps = three revolutions, four outer iterations, 7 min on four cores).
 At the lower viscosity the swirl does not reach the wall: the baffles hold
-four recirculation cells between them; the rotor eddies stay, and the fluid at
+slow recirculation cells between them (four in the four-blade case file); the rotor eddies stay, and the fluid at
 the interface lags more (u_θ = 0.33 Ωr).
 
-<img src="../figures/gallery/mixer_sliding_startup.png" alt="Start-up of the stirred vessel from rest, vorticity at t = 0.15, 0.3 and 0.6 s and after three revolutions: each blade sheds a starting vortex, the vortices roll up around the rotor and merge into a shear layer at the interface radius" width="800" height="192">
+<img src="../figures/gallery/mixer_sliding_startup.png" alt="Start-up of the five-blade stirred vessel from rest, vorticity at t = 0.15, 0.3 and 0.6 s and after three revolutions: each blade sheds a starting vortex, the vortices roll up around the rotor and merge into a shear layer at the interface radius" width="800" height="192">
 
-The start-up: each blade sheds a starting vortex (t = 0.15 s), the four
+The start-up: each blade sheds a starting vortex (t = 0.15 s), the five
 vortices are wrapped around the rotor (0.3 s, 0.6 s) and merge into the
 shear layer at the interface radius, which the baffles break up. The
 interface itself is in [entry 96](#sliding-mesh-imprint).
@@ -912,8 +923,9 @@ cargo build --release -p foehncraft-cli
 python3 examples/studies/mixer.py output/mixer
 ```
 
-builds the meshes, runs both cases and draws the four figures of this entry
-and entry 96 with `tools/plot/rotor_fields.py`, which draws any 2D run with a
+builds the five-blade meshes, runs both cases and draws the four figures of
+this entry and entry 96 (`--blades 4` runs the four-blade case files and
+draws no figures) with `tools/plot/rotor_fields.py`, which draws any 2D run with a
 rotor: `speed` (with streamlines), `relative`, `vorticity` and `pressure`, a
 time series of `fields_<step>.vtkhdf`, a zoom with the cell edges.
 
@@ -944,10 +956,11 @@ lines get the columns of **w** and of the cylindrical components, the point
 probes of a transient run **w**; on the sliding mesh every value is taken at
 the current position of the cell.
 
-<img src="../figures/gallery/mixer_relative.png" alt="The stirred vessel of entry 98 with the moving reference frame: the relative speed |w| with the streamlines of w, which in the rotor are the closed eddies of the blade passages and in the stator the absolute flow around the baffles; the relative flow angle β in the rotor, above 90° near the hub where the fluid overtakes the blades and near 0° beyond the tips where it falls behind; and the rothalpy in the rotor, lowest at the blade tips" width="800" height="256">
+<img src="../figures/gallery/mixer_relative.png" alt="The five-blade stirred vessel of entry 98 with the moving reference frame: the relative speed |w| with the streamlines of w, which in the rotor are the closed eddies of the blade passages and in the stator the absolute flow around the baffles; the relative flow angle β in the rotor, above 90° near the hub where the fluid overtakes the blades and near 0° beyond the tips where it falls behind; and the rothalpy in the rotor, lowest at the blade tips" width="800" height="256">
 
 The stirred vessel of [entry 98](#stirred-vessel) with the frame (`studies/mixer/mrf.toml`,
-which writes all five fields). Left |w| with the streamlines of **w**: one
+which writes all five fields; image of the five-blade vessel, numbers of the
+four-blade case file). Left |w| with the streamlines of **w**: one
 picture with the relative flow in the rotor (the closed eddy of each blade
 passage) and the absolute flow in the stator (the swirl and the baffles); |w|
 jumps at the interface, where the frame changes. In the middle the relative
@@ -1114,25 +1127,28 @@ rotor_interface = "right_rotor_interface"
 stator_interface = "right_stator_interface"
 ```
 
-<img src="../figures/gallery/twin_mixer_vorticity.png" alt="A vessel with two stirrers, the left one with three blades at +10 rad/s, the right one with four blades at −15 rad/s: the vorticity at t = 0.2, 0.4, 0.6 and 0.8 s after the start from rest" width="800" height="192">
+<img src="../figures/gallery/twin_mixer_vorticity.png" alt="A vessel with two stirrers, the left one with three blades at +10 rad/s, the right one with five blades at −15 rad/s: the vorticity at t = 0.2, 0.4, 0.6 and 0.8 s after the start from rest" width="800" height="192">
 
 `examples/studies/twin_mixer/sliding.toml` on the mesh of
-`examples/meshes/twin_mixer.py` (16 953 cells, ν = 5·10⁻⁵ m²/s): two
+`examples/meshes/twin_mixer.py` (ν = 5·10⁻⁵ m²/s; the case file has three
+and four blades, 16 953 cells, the images three and five blades,
+`--right-blades 5`, 17 775 cells, for the reason in [entry 98](#stirred-vessel)): two
 stirrers in a stadium-shaped vessel, each a sliding rotor with its own
 interface circle (64 rotor and 96 stator intervals). The left one turns
 anticlockwise at 10 rad/s (Re = Ω R_tip²/ν = 400), the right one clockwise
 at 15 rad/s. The blades shed vortices of their own sense, and the rings
 of opposite vorticity of the two rotors meet in the waist of the vessel.
-800 steps of 1 ms (1.3 and 1.9 revolutions) took 4.4 minutes on four cores.
+800 steps of 1 ms (1.3 and 1.9 revolutions) took 4.4 minutes on four cores
+(four-blade case file).
 
 <img src="../figures/gallery/twin_mixer_speed.png" alt="The same vessel at t = 0.8 s: the speed with streamlines (two co-rotating cores and the counter-rotating cells between them and the wall) and the vorticity" width="800" height="385">
 
-<img src="../figures/gallery/mixer_frozen_vs_sliding.png" alt="The stirred vessel of entry 98 started from rest, as a transient frozen rotor and on the sliding mesh: the vorticity at t = 0.3 and 0.6 s" width="800" height="192">
+<img src="../figures/gallery/mixer_frozen_vs_sliding.png" alt="The five-blade stirred vessel of entry 98 started from rest, as a transient frozen rotor and on the sliding mesh: the vorticity at t = 0.3 and 0.6 s" width="800" height="192">
 
 The difference between the transient frozen rotor
 (`examples/studies/mixer/mrf_transient.toml`, 480 steps in 33 s) and the
 sliding mesh (`sliding.toml`, 2.5 minutes) on the stirred vessel of
-[entry 98](#stirred-vessel). In the frozen rotor the blades stay where they
+[entry 98](#stirred-vessel) (the image: five blades and three baffles). In the frozen rotor the blades stay where they
 are: the tip vortices of the start-up are carried out of the rotor in the
 rotating frame and collect at the interface, where the frame changes, as a
 ring of vorticity in front of the baffles. On the sliding mesh the blades turn
@@ -1142,7 +1158,7 @@ start for a sliding run. It does not give the rotor–stator interaction.
 
 <img src="../figures/gallery/rotor_torque_histories.png" alt="The torque of the fluid on the rotor from t = 0.02 s: the stirred vessel as a frozen rotor and on the sliding mesh, and the two rotors of the twin vessel" width="800" height="240">
 
-The torque histories (`tools/plot/rotor_torque.py`; each torque about the
+The torque histories of the four-blade case files (`tools/plot/rotor_torque.py`; each torque about the
 axis along the rotor's own Ω, so a rotor that drives the fluid has a
 negative torque). The frozen rotor's torque falls smoothly from −1.7 to
 about −0.1 mN m and comes back towards the steady value of the frame,
