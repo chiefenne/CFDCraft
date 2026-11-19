@@ -1800,11 +1800,65 @@ The tests are in `crates/foehncraft-mesh/src/imprint.rs`,
    revolution): L2 error 0.82 % against u = Ω × r (the cylinder imprint of
    PR #96 on its ring: below 3 %).
 
-Open: the disc impeller of gallery 103 (`disc_pot.toml`) runs at
-ν = 10⁻⁵ m²/s but diverges in step 17 at ν = 10⁻⁴ m²/s, also with half the
-time step and with the cell-quality remediation. The failing cells are the
-thin wedge cells at the axis (skewness up to 2.85), so the explicit part of
-the viscous term on those cells is the suspect, not the interface (the pot
-passes through the axis in the uniform-flow and solid-body checks above).
-Grading the cells at the axis, or treating that part implicitly, is the
-next step.
+The disc impeller of gallery 103 (`disc_pot.toml`) at first ran only at
+ν = 10⁻⁵ m²/s and diverged in step 17 at ν = 10⁻⁴ m²/s; the cause was
+the PISO corrector, fixed in PR #106 (next section).
+
+## The PISO corrector on thin wedge cells at an axis (PR #106)
+
+**Finding.** `disc_pot.toml` at ν = 10⁻⁴ m²/s diverged in step 17, also
+with half the time step and with the cell-quality remediation. Narrowed
+down on that case with 40 steps:
+
+| Variant | Result |
+|---|---|
+| as set (PISO, 2 correctors, 3 outer iterations, BDF2) | Courant number ×30 per step from step 4, diverged in step 17 |
+| without the non-orthogonal and skewness correction | diverged in step 18 |
+| Stokes flow (no convection) | ×45 per step, unbounded |
+| rotor at rest (Ω = 10⁻⁶ rad/s), Stokes | ×45 per step |
+| every axis cell in the stator (rotor block away from the axis), Stokes | ×40 per step |
+| without the axis (`r[0]` = 1.5 mm, symmetry), as set | grows later and slower (Courant number 126 in step 30) |
+| cell-quality remediation off / BDF1, Stokes | ×40 / ×110 per step |
+| 50 instead of 1 000 momentum iterations | the same to four digits |
+| 8 outer iterations, Stokes | ×5·10⁴ per step: ×3.9 per outer iteration |
+| 4 correctors, Stokes | stable |
+
+So it is neither the sliding mesh nor the interface nor the explicit
+parts of the viscous term: it is an instability of the outer iteration of
+PISO on the axis cells, and more correctors suppress it. The growing mode
+is axisymmetric: a radial velocity towards the axis in the wedge cells,
+outwards in the ring next to them, and a pressure that alternates along
+the axis. Printed per stage, the pressure grows by 2.4 in every outer
+iteration: the first corrector moves it by ten times its value and the
+second takes most of that back.
+
+**Cause.** The wedge cells at the axis are thin around the axis (72 to a
+turn in the stator), so at high viscosity their a_P is almost all coupling
+to their two neighbours around the axis, about 50 times the time term
+ρV/Δt. Issa's corrector takes D = V/a_P, which neglects the neighbours: it
+underestimates the velocity response to the pressure there by
+a_P/(a_P − Σ|a_N|). The correctors then leave a pressure that the momentum
+predictor of the next outer iteration, which sees the full coupling,
+answers too strongly. (On a uniform cavity at the same diffusion number,
+Σ|a_N|/a_P = 0.97, Issa's form is stable; the wedges add the rotation of
+the Cartesian components between neighbours and the anisotropy.)
+
+**Fix.** The correctors use the SIMPLEC coefficient
+D^C = V/(a_P/α − Σ|a_N|) (Van Doormaal & Raithby 1984), and between two
+correctors the consistent neighbour correction
+δ = Σ_N |a_N| (u'_N − u'_P)/a_P (D^C already counts Σ|a_N| u'_P;
+`foehncraft_kernels::flow::neighbour_difference`). The Rhie–Chow flux
+keeps D, so a converged step is the same as before. Changing only δ while
+keeping D made it worse (×1 000 per step): the two belong together.
+
+**Checks.**
+
+1. **Solid-body rotation at high viscosity**
+   (`solid_body_rotation_is_kept_at_high_viscosity_on_the_axis_wedges`,
+   `pot_solid_body_viscous.toml`: `pot_solid_body.toml` at ν = 10⁻²
+   m²/s, the wedges' coupling about 90 times their time term): L2 error
+   0.11 % after 30 steps; with Issa's corrector 2.0 (the mode grows from
+   round-off). `pot_solid_body.toml` at ν = 10⁻³: PENDING_POT.
+2. **The disc impeller at ν = 10⁻⁴ m²/s** (`disc_pot.toml`, 400 steps,
+   eight revolutions): PENDING_DISC.
+3. **The other transient checks**: PENDING_TESTS.
