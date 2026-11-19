@@ -650,9 +650,16 @@ the excess k (Nu₀ 155) and Kato–Launder 111 % (Nu₀ 75). The realizable
 k-ε has the anomaly as well (Nu₀ 207, 4.6 times the axis k of ζ-f₀). SST has no
 anomaly to remove: its own bound ν_t = a₁k/(F₂S) holds along the whole
 axis, so `none`, `menter` and `durbin` give the same Nu₀ (160.5) and
-only Kato–Launder changes it (144.6). The experiment of Baughn et al. is
-not in the repository yet; the study compares with it once its data are
-in `examples/studies/impinging_jet/data`.
+only Kato–Launder changes it (144.6). Against the
+experiment (ERCOFTAC case 025, Nu/Re^0.7 of Baughn et al. scaled to Re
+23 750, Nu₀ 141.4) Nu₀ is −0.2 % for SST and +7.2 % for ζ-f₀, but
++22.9 % for ζ-f and +76 % for EB (the band is ±15 %); the RMS difference
+of Nu for 0 ≤ r/D ≤ 4 is 13.7 % for SST and 21 to 32 % for the others;
+at r/D = 1, where the experiment has its dip, every model is 18 to 45 %
+above (finding 8 of the verification page). The data are not in the
+repository (the wiki of the database is licensed CC BY-NC-SA 4.0, which
+does not fit the MIT licence here), so the charts show the models only; the study draws the experiment when its files are in
+`examples/studies/impinging_jet/data`.
 
 The radial velocity of the wall jet at the stations of Cooper et al.:
 
@@ -662,6 +669,8 @@ The radial velocity of the wall jet at the stations of Cooper et al.:
 |---|---|
 | Nu₀ at the axis, three meshes (band GCI ≤ 3 %) | ζ-f 0.12 %, SST 2.9 %, EB 0.19 %; ζ-f₀ 7.2 %, p 0.67 (finding) |
 | Nu at r/D = 0.1, three meshes | ζ-f 0.03 %, EB 0.40 %, SST 0.31 %; ζ-f₀ 5.3 % (finding) |
+| Nu₀ against the experiment (±15 % ζ-f, EB; ±20 % SST) | SST −0.2 %, ζ-f₀ +7.2 % (inside); ζ-f +22.9 %, EB +76 % (outside, findings) |
+| RMS of Nu(r/D), 0 to 4, against the experiment (band 15 %) | SST 13.7 % (met); ζ-f₀ 23.7 %, ζ-f 31.5 %, EB 21.2 % (not met) |
 | Secondary maximum (ζ-f, EB) | ζ-f 118.4 at r/D 2.27, EB 93.4 at 2.31 (weak); ζ-f₀ 128.7 at 1.95 |
 | Anomaly, k-ε `none` / `durbin` / `kato-launder` (10 400 cells) | Nu₀ 210.7 / 154.7 / 74.5; excess k removed 71 % / 111 % |
 | Anomaly, SST `none` / `menter` / `durbin` / `kato-launder` | Nu₀ 160.5 / 160.5 / 160.5 / 144.6; k on the axis below that of ζ-f₀, no excess |
@@ -679,7 +688,8 @@ The radial velocity of the wall jet at the stations of Cooper et al.:
 
 ```
 target/release/foehn flow examples/cases/flow/impinging_jet.toml
-python3 examples/studies/impinging_jet.py output/impinging_jet_study --jobs 2 --chart docs/figures/gallery
+python3 examples/studies/impinging_jet.py output/impinging_jet_study --jobs 2 --no-experiment \
+    --chart docs/figures/gallery
 ```
 
 [↑ back to top](#turbulence-models)

@@ -1194,10 +1194,20 @@ and 0.8 from iteration 100 (EB 0.3, with 0.5 its coarse mesh diverges at
 iteration 10), the pressure CG limit at 200 iterations; EB with the
 tolerance 2·10⁻⁵ (finding 5). The limiter cases run on 10 400 cells.
 
-The experiment is not in the repository yet: its data must be uploaded
-by hand (this machine cannot reach the source), and their licence is
-open. Until then the study reports the models only, and the bands of 9.6
-that compare with the experiment are open.
+**The experiment.** The data are those of the ERCOFTAC classic database,
+case 025, files `ij2lr-*` (H/D = 2, Re = 23 000), uploaded by the
+maintainer: Nu/Re^0.7 along the plate of Baughn et al. (labelled 1992 in
+the file) and the single-wire mean velocity U/U_bulk of Cooper et al. at
+r/D = 0.5, 1, 2, 2.5 and 3. The study takes Nu = (Nu/Re^0.7)·23 750^0.7
+(factor 1 156.0, the source's own normalisation), so the experiment has
+Nu₀ = 141.4, a minimum of 89.6 at r/D = 1.26 and a secondary maximum of
+108.8 at r/D = 1.94 (the wiki of the database, cfd.mace.manchester.ac.uk/ercoftac,
+is licensed CC BY-NC-SA 4.0 except where otherwise noted). That licence
+is non-commercial and share-alike, which does not fit this MIT repository, so
+the files are not in it (`.gitignore` keeps them out; the README of the
+data folder says how to get them and `ercoftac_to_csv.py` makes the CSV
+files the study reads), the charts of the gallery show the models only,
+and this page quotes a few scalar values with their source.
 
 ### Results
 
@@ -1225,11 +1235,14 @@ that compare with the experiment are open.
 | The jet, realizable k-ε, `scalable`, coupled (tolerance 10⁻⁴) | Nu₀; Nu at r/D = 0.1 | reported | 208.3, 205.1, 207.2; 208.6, 205.4, 207.8 (oscillatory: the two coarser meshes stall); the anomaly: k on the axis 0.0552, 4.6 times that of ζ-f₀ |
 | | secondary maximum; Nu at r/D 1, 2, 3, 4 | reported | 141.1 at r/D 1.65; 162.3, 135.3, 96.4, 71.0 |
 | | iterations | – | 4 000 and 4 000 (stalled, **finding** 5), 783 (converged) |
-| Stagnation-point anomaly, 10 400 cells, standard k-ε | Nu₀ with `none` | > +50 % of the experiment | 210.7 (+34 % above ζ-f₀'s 156.9; the experiment is not in the repository yet); k_max on the axis 0.0787 against 0.0120 of ζ-f₀ |
+| Stagnation-point anomaly, 10 400 cells, standard k-ε | Nu₀ with `none` | > +50 % of the experiment | 210.7: +49.0 % from the experiment's 141.4, **1 point short of the band** (+34 % above ζ-f₀'s 156.9); k_max on the axis 0.0787 against 0.0120 of ζ-f₀ |
 | | excess k removed by `durbin` (default), `kato-launder` | ≥ 70 % | 71 % (Nu₀ 154.7), 111 % (Nu₀ 74.5: below ζ-f₀, k on the axis 0.0045) |
-| Stagnation-point anomaly, 10 400 cells, SST | Nu₀ with `none` | > +50 % | 160.5 (+2 % above ζ-f₀); k_max on the axis 0.0104, below the 0.0120 of ζ-f₀: no excess (**finding** 3) |
+| Stagnation-point anomaly, 10 400 cells, SST | Nu₀ with `none` | > +50 % | 160.5 (+13.5 % from the experiment, +2 % above ζ-f₀); k_max on the axis 0.0104, below the 0.0120 of ζ-f₀: no excess (**finding** 3) |
 | | excess k removed by `menter`, `kato-launder`, `durbin` | ≥ 70 % | `menter` and `durbin` 160.5, the same field (k 0.0104); `kato-launder` 144.6 (k 0.0038); no excess to remove |
-| Nu(r/D), wall-jet profiles at r/D = 0.5 … 3 | against the experiment | RMS ≤ 15 %; secondary maximum within ±0.5 D; reported | open: the data are not in the repository (`examples/studies/impinging_jet/data`); the models' profiles are in `summary.md` of the study and in the gallery |
+| Nu₀ against the experiment (141.4), 41 600 cells | Nu₀ of the axis face | ζ-f, EB ±15 %; SST with a limiter ±20 % (ζ-f₀ as ζ-f) | SST −0.2 % and ζ-f₀ +7.2 % inside; ζ-f +22.9 % and EB +76.2 % (+45 % at r/D 0.1) **outside** (**finding** 8); reported: k-ε +9.7 %, realizable k-ε +46.6 % |
+| Nu(r/D), 0 ≤ r/D ≤ 4 | RMS of the relative difference from the experiment | ≤ 15 % | SST 13.7 % met; EB 21.2 %, ζ-f₀ 23.7 %, ζ-f 31.5 % **not met**; reported: k-ε 31.0 %, realizable k-ε 45.9 % |
+| Secondary maximum | r/D of the maximum | within ±0.5 of the experiment's 1.94 | ζ-f 2.27, EB 2.31 and ζ-f₀ 1.95 inside; SST 1.84 |
+| Wall jet, u_r,max/U at r/D = 0.5, 1, 2, 2.5, 3 | difference from the experiment's 0.732, 1.089, 0.789, 0.594, 0.463 | reported | ζ-f₀ −2, −1, −6, −3, 0 %; SST +4, +3, 0, +6, +11 %; ζ-f −3, 0, +10, +16, +18 %; EB +2, +1, +5, +14, +23 %; k-ε −4, −8, −19, −14, −9 %; realizable k-ε −3, −9, −14, −9, −4 % |
 | Wall probe with scalars (`tests/thermal.rs`, heated plate) | θ_w at the probe against the wall faces; flux; GCI quantities | interpolated between the two nearest faces; `wall_probes.<p>.theta_wall`, `_flux` | asserted |
 | Inlet table with turbulence columns (`tests/inlet_table.rs`, the ζ-f₀ plate) | a table of constant columns (`u_x`, `u_y`, `u_z`, `k`, `epsilon`, `zeta`, in any order) against the constant inlet; ten times its k; turbulence values (`turbulence_intensity`, `zeta`) next to such a table; an unknown column | bit for bit; another run; refused | asserted; BC029, BC019 |
 | `foehncraft.profiles` (`python/tests/test_profiles.py`) | one row per cell, the wall row; a laminar line | as specified; refused | asserted |
@@ -1310,4 +1323,18 @@ faster scalar path is solver work for later. (7) Run time, two runs of
 two threads sharing four cores, the three meshes in one run: EB 8 min,
 ζ-f 13, SST 11, k-ε 12, realizable k-ε 15, ζ-f₀ 16; the eight limiter
 cases on 10 400 cells about a minute each; the study 42 min with the
-pipes.
+pipes. (8) Against the experiment. At r/D = 1 the models are 18 to 45 % above
+the experiment (96.4): EB 113.9, SST 121.6, ζ-f₀ 129.8, ζ-f 139.3. The
+dip of the experiment (89.6 at r/D 1.26) comes earlier and is deeper
+than that of ζ-f₀ (115.1 at 1.45) and SST (109.3 at 1.48). From r/D = 2
+on SST is within 5 % (110.2, 82.8, 61.7 against 107.7, 79.9, 59.2),
+ζ-f₀ 17 to 20 % above, ζ-f 9, 33 and 37 % above, and EB 19 % below at
+r/D = 2 and within 2 % at 3 and 4. So the Nu₀ band of ζ-f (+22.9 %) and
+EB (+76 %) is not met, nor the RMS band of any model but SST. EB peaks
+at the axis (249 at the face next to it, 205 at r/D 0.1, 181 at 0.15;
+the other models are flat there), but even at r/D = 0.1 it is +45 %.
+The experiment's Nu is scaled from Re 23 000 to 23 750 with Re^0.7
+(2.3 %); the models were not run at 23 000. The anomaly test of 9.6
+(more than +50 %) is missed by 1 point on 10 400 cells (+49.0 %,
+standard k-ε with `none`); the finest mesh was not run for the limiter
+cases.

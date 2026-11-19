@@ -8,7 +8,7 @@ and 3.
 
     python3 examples/studies/impinging_jet.py [OUT] [--models zf0,zf,...]
         [--levels 0,1,2] [--jobs 2] [--no-limiters] [--report-only]
-        [--chart DIR]
+        [--no-experiment] [--chart DIR]
 
 Each model first runs the developed pipe flow of
 examples/cases/flow/jet_pipe_profile.toml (OUT/pipe_<model>), whose line
@@ -25,7 +25,8 @@ with `none`, `menter` (its default), `kato-launder` and `durbin`, and
 k-ε-ζ-f₀ as the reference of the excess k. A finished run with an
 unchanged case is not run again; `--report-only` only evaluates what is
 there. `--chart DIR` writes impinging_jet_nusselt.svg and
-impinging_jet_profiles.svg.
+impinging_jet_profiles.svg, with the experiment's points when its files are in
+the data folder (`--no-experiment` leaves them out).
 
 Models (key, label, wall treatment, algorithm):
 
@@ -516,7 +517,8 @@ def main(argv):
                    for m, lm in LIMITERS]
             Study(base, listing(lim), lim_root,
                   name=lambda i, v: _lim_name(*LIMITERS[i])).run(jobs=jobs)
-    exp = experiment()
+    exp = ({"nusselt": None, "velocity": {}} if "--no-experiment" in argv
+           else experiment())
     res = {m: evaluate(out / m, exp) for m in MODELS}
     lim = evaluate_limiters(lim_root)
     text = table(res, lim, exp)
