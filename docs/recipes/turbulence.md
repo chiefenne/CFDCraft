@@ -12,6 +12,7 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 | 89 | [Validate the turbulence models on the backward-facing step](#step-validation) |
 | 90 | [Feed a jet with a developed pipe profile and compute the Nusselt number](#impinging-jet) |
 | 113 | [Make SST sensitive to curvature and system rotation](#curvature-correction) |
+| 115 | [Get the secondary flow of non-circular ducts with SST](#qcr) |
 
 ---
 
@@ -626,5 +627,39 @@ a factor 1.63 at Ro = 0.15. The cost is six extra gradients per outer
 iteration. Combined with `production_limiter = "kato-launder"` the two
 act on the same regions (stagnation and swirl); the paper uses the
 standard production.
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="qcr"></a>
+## 115. Get the secondary flow of non-circular ducts with SST
+
+A linear eddy-viscosity model gives no secondary flow in a straight
+square or rectangular duct, nor in the corners of blades and walls. The
+quadratic constitutive relation makes the normal stresses anisotropic,
+which drives the corner vortices:
+
+```toml
+[turbulence]
+model = "k-omega-sst"
+qcr = "qcr2000"          # or "qcr2013"; "none" is the default
+# constants = { c_cr1 = 0.3, c_cr2 = 2.5 }   # the papers' values
+```
+
+- The non-linear stress is explicit. It is added to the momentum
+  equations from the velocity gradient of the current iteration and ν_t
+  of the last turbulence update. The implicit diffusion stays μ + μ_t, and
+  the production of k keeps the linear form, as in the papers.
+- `"qcr2013"` adds an isotropic stress. In incompressible flow that only
+  changes the pressure, so the velocity is the one of QCR2000.
+- For SST only. It combines with `curvature_correction`.
+- The secondary velocity is about 1.5 % of U_b, so converge the
+  in-plane residuals (V, W) well. In the gallery duct they fall like the
+  others and the run needs about 2 600 iterations on 10 368 cells.
+
+```
+target/release/foehn flow examples/cases/flow/square_duct_qcr.toml
+```
 
 [↑ back to top](#turbulence-models)
