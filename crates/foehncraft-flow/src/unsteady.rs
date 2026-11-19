@@ -1239,6 +1239,54 @@ fn run_one<F: FnMut(&str)>(
         &bhead,
         cont,
     )?;
+    // the statistics of D71 (the final solve of a sweep only)
+    let stat_cfg = case.output.statistics.clone().filter(|_| last);
+    let stat_start = stat_cfg
+        .as_ref()
+        .map(|c| c.start.unwrap_or(time0.start_time).max(tr.clock.time));
+    if let (Some(c), Some(s0)) = (&stat_cfg, stat_start)
+        && restart_from.is_some()
+        && c.start.unwrap_or(time0.start_time) < s0
+    {
+        lg.note(&format!(
+            "statistics (D71) start at the restart time {s0:.6e} s: the averages \
+             of the earlier run are not continued"
+        ));
+    }
+    let mut stat_series = stat_cfg.as_ref().map(|_| {
+        let mut names = Vec::new();
+        for n in &probes.names {
+            for c in ["u", "v", "w", "p"] {
+                names.push(format!("probes.{n}.{c}"));
+            }
+        }
+        if case.output.coefficients.is_some() {
+            names.push("coefficients.cd".into());
+            names.push("coefficients.cl".into());
+        }
+        crate::statistics::Series::new(names)
+    });
+    let mut stat_fields = stat_cfg.as_ref().filter(|c| c.fields).map(|_| {
+        let mut names: Vec<String> = ["velocity_x", "velocity_y", "velocity_z", "pressure"]
+            .map(String::from)
+            .into();
+        let mut pairs = vec![
+            (0, 1, "covariance_velocity_xy".to_string()),
+            (1, 2, "covariance_velocity_yz".to_string()),
+            (0, 2, "covariance_velocity_xz".to_string()),
+        ];
+        if !case.turbulence.is_laminar() {
+            names.push("k".into());
+        }
+        for sname in case.scalars.keys() {
+            let i = names.len();
+            names.push(sname.clone());
+            for (j, c) in ["x", "y", "z"].into_iter().enumerate() {
+                pairs.push((j, i, format!("covariance_velocity_{c}_{sname}")));
+            }
+        }
+        crate::statistics::FieldMoments::new(names, pairs, mesh.n_cells)
+    });
     let mut ledger = {
         let sol = Solution {
             state: fl.state()?,
@@ -1556,6 +1604,39 @@ fn run_one<F: FnMut(&str)>(
             ledger.tolerance = case.balance.tolerance_energy;
             ledger.step(r, n, rp.time)
         };
+        if let Some(s0) = stat_start
+            && rp.time - 0.5 * h >= s0
+        {
+            let sol = Solution {
+                state: fl.state()?,
+                disc: &fl.disc,
+                phys: fl.physics(),
+            };
+            if let Some(m) = stat_fields.as_mut() {
+                let mut x: Vec<&[f64]> = vec![&sol.u.x, &sol.u.y, &sol.u.z, &sol.p];
+                if let Some(t) = &sol.state.turbulence {
+                    x.push(&t.k);
+                }
+                for st in &sol.state.scalars {
+                    x.push(&st.phi);
+                }
+                m.add(h, &x);
+            }
+            if let Some(ser) = stat_series.as_mut() {
+                let here = imprint.is_some().then(|| probes.relocated(mesh, geo));
+                let pr = here.as_ref().unwrap_or(&probes);
+                let mut row = Vec::with_capacity(ser.names.len());
+                for (u, p) in pr.values(&sol, geo) {
+                    row.extend([u[0], u[1], u[2], p]);
+                }
+                if case.output.coefficients.is_some() {
+                    let b = boundary_summaries(&sol, mesh, geo, &case);
+                    let [cd, cl] = monitor::coefficients(&case, &b).unwrap_or([f64::NAN; 2]);
+                    row.extend([cd, cl]);
+                }
+                ser.add(rp.time, h, row);
+            }
+        }
         if n.is_multiple_of(case.output.history_every) {
             balance_csv.row(&balance::csv_row(&bal));
             if steer.record.on() {
@@ -2131,6 +2212,22 @@ fn run_one<F: FnMut(&str)>(
     for (w, c) in wall_crossing_values.iter().zip(&case.output.wall_crossings) {
         lg.line(&crate::case::wall_crossing_line(w, c));
     }
+    let statistics = match (&stat_cfg, stat_start, &stat_series) {
+        (Some(c), Some(s0), Some(ser)) => Some(crate::statistics::finish(
+            &case,
+            c,
+            s0,
+            ser,
+            stat_fields.as_ref(),
+            out,
+            name,
+            mesh,
+            (tr.clock.step, tr.clock.time),
+            lg,
+            warnings,
+        )?),
+        _ => None,
+    };
     let scalar_fields: Vec<Vec<f64>> = sol.state.scalars.iter().map(|x| x.phi.clone()).collect();
     let solve = Solve {
         scalars,
@@ -2138,6 +2235,7 @@ fn run_one<F: FnMut(&str)>(
         wall_probes: wall_probe_values,
         wall_crossings: wall_crossing_values,
         turbulence,
+        statistics,
         remediation,
         balance: Some(balance_summary),
         mesh: desc.into(),
