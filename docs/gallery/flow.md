@@ -20,6 +20,9 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 96 | [The sliding mesh with a pitch ratio that is not one: the interface imprinted in every step](#sliding-mesh-imprint) | 6 | `[[sliding]] rotor_interface`, `[mesh.annulus] n_theta_stator`, `taylor_couette_imprint.toml` |
 | 98 | [A stirred vessel: blades and baffles with the moving reference frame and the sliding mesh](#stirred-vessel) | 6 | `[[mrf]]` and `[[sliding]]` on a Gmsh mesh, walls that turn with a zone, `studies/mixer.py`, `tools/plot/rotor_fields.py` |
 | 99 | [The flow a blade sees: relative and frame velocity, flow angles and rothalpy](#rotor-fields) | 6 | `output.derived`: `relative-velocity`, `frame-velocity`, `turbomachinery`, `relative-total-pressure`, `rothalpy`; `output.frame` |
+| 100 | [A turbulent rotor: the stirred vessel with water, in the frame and on the sliding mesh](#turbulent-rotor) | 6 | turbulence models on `[[mrf]]` and `[[sliding]]`, the wall distance of a turning rotor |
+| 101 | [Torque, shaft power and the performance of a machine: the rotor of the stirred vessel](#torque-power) | 6 | torque per wall and rotor, shaft power in the energy ledger, `[[output.machines]]`, `tools/plot/rotor_movie.py` |
+| 102 | [Several rotors at their own speeds, and the transient frozen rotor](#several-rotors) | 6 | several `[[sliding]]` tables, `[mesh.annulus] outer_rotor_layers`, `examples/meshes/twin_mixer.py`, `[[mrf]]` with `[time]` |
 
 ---
 
@@ -758,7 +761,8 @@ The spin-up on the case file's mesh (32 × 16): |u| at t = 0.22 s, 1.0 s and
 10 s. The momentum diffuses out from the inner cylinder through the
 interface (dashed) while the rotor turns by one sector per step.
 
-Limits: one rotor per case, a fixed time step, one process (CPU), rotor
+Limits: one rotor per case in conformal stepping (several by imprinting,
+entry 102), a fixed time step, one process (CPU), rotor
 boundaries that are walls turning with the rotor, slip walls, symmetry or
 wedge planes. A fluid that stands in space, with a CFL number of about one
 relative to the rotor, is smeared by the implicit upwind convection, as in any

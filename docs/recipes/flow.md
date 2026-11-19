@@ -21,6 +21,9 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 96 | [Turn a rotor against a stator with a different pitch (sliding mesh by imprinting)](#sliding-mesh-imprint) |
 | 98 | [Mesh and run a rotor with blades from Gmsh, and draw its relative flow](#stirred-vessel) |
 | 99 | [Write the relative flow of a rotor: relative and frame velocity, flow angles, rothalpy](#rotor-fields) |
+| 100 | [Run a turbulent rotor: the frame or the sliding mesh with a turbulence model](#turbulent-rotor) |
+| 101 | [Read the torque and power of a rotor, and the head and efficiency of a machine](#torque-power) |
+| 102 | [Run several rotors at their own speeds, and a transient frozen rotor](#several-rotors) |
 
 ---
 
@@ -808,8 +811,9 @@ origin = [0.0, 0.0, 0.0]  # a point on the axis (m)
 rpm = 1500                # or omega = ... in rad/s
 ```
 
-- The case is **steady**; `[time]` with `[[mrf]]` is refused (`MRF001`).
-  The transient form is the sliding mesh (D182).
+- The case is **steady**, or **transient** with a `[time]` table (the
+  transient frozen rotor, D185, recipe 102): the rotor keeps its position.
+  The rotor that moves is the sliding mesh (D182).
 - The solved velocity is the **absolute** one. Walls that turn with the zone
   take their absolute velocity from `velocity`: `["-spin * y", "spin * x", 0.0]`
   for a rotation about the z axis through the origin (D53). Walls that stand
@@ -1096,8 +1100,9 @@ algorithm = "coupled"            # steady and from rest at a high Reynolds numbe
   otherwise): in the buffer layer the k of the first cell of the automatic
   treatment depends on the mesh along the wall, also without a frame
   (verification page, section on turbulence on the frame).
-- Limits: one sliding rotor per case, no restart of a sliding run (`SLD005`),
-  no torque or power output yet (next), and the frame is steady (`MRF001`).
+- Limits: no restart of a sliding run by imprinting (`SLD005`); several
+  sliding rotors need the interface by imprinting (recipe 102); torque and
+  power: recipe 101.
 
 `examples/studies/mixer/mrf_turbulent.toml` and `sliding_turbulent.toml` are
 the turbulent stirred vessel of gallery 100; `examples/studies/mixer.py
@@ -1150,4 +1155,64 @@ gravity = 9.80665            # of the head H = dp_t / (rho g)
   prints.
 
 [Gallery 101](../gallery/flow.md#torque-power); the keys are in
+[cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
+
+<a id="several-rotors"></a>
+## 102. Run several rotors at their own speeds, and a transient frozen rotor
+
+```toml
+[[sliding]]                  # one table per rotor
+zone = "rotor_left"
+origin = [-0.08, 0.0, 0.0]   # each rotor its own axis
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "left_rotor_interface"
+stator_interface = "left_stator_interface"
+
+[[sliding]]
+zone = "rotor_right"
+origin = [0.08, 0.0, 0.0]
+axis = [0.0, 0.0, 1.0]
+omega = -15.0                # its own speed and sense
+rotor_interface = "right_rotor_interface"
+stator_interface = "right_stator_interface"
+
+[log]
+columns = ["time.simulated", "rotor.rotor_left.angle", "rotor.rotor_right.angle",
+           "rotor.rotor_left.torque", "rotor.rotor_right.torque"]
+```
+
+- Every rotor needs its own cell zone and its own pair of interface
+  boundaries **to the stator** (the interface by imprinting, recipe 96);
+  conformal stepping takes one rotor only (`SLD002`), and a rotor that
+  borders another rotor is refused (`SLD005`). All interfaces are imprinted
+  together in every step, at the angle |Ω| t of each rotor.
+- The walls of each rotor turn with it: give them their absolute velocity,
+  `["-w * y", "w * (x - x0)", 0.0]` for a rotor at `w` rad/s about the z
+  axis through `(x0, 0)`.
+- The log, `forces.csv` and the report have the angle, torque and shaft
+  power of each rotor; the torque is about the axis along the rotor's own
+  Ω, so a rotor that drives the fluid has a negative torque and a positive
+  shaft power whatever its sense.
+- Meshes: `examples/meshes/twin_mixer.py` (a vessel with two stirrers,
+  `pip install gmsh`), `[mesh.annulus] outer_rotor_layers = 4` with
+  `n_theta_outer` (a second rotor ring at the outer cylinder: zone
+  `rotor_outer`, interface `stator_interface_outer` / `rotor_interface_outer`).
+- A **transient frozen rotor**: a `[[mrf]]` table in a case with `[time]`
+  (D185). The rotor zone keeps its position; the time term is that of the
+  velocity in the rotating basis. It is exact for a rotor that is a body of
+  revolution and a quick start-up for a bladed one, but it never moves the
+  blades past the stator: use the sliding mesh for rotor-stator
+  interaction. `[[mrf]]` zones and sliding rotors can share a transient case
+  in different zones (`MRF001` for one zone turned by both).
+
+```sh
+python3 examples/meshes/twin_mixer.py
+cargo run --release -p foehncraft-cli -- flow examples/studies/twin_mixer/sliding.toml
+cargo run --release -p foehncraft-cli -- flow examples/cases/flow/couette_two_rotors.toml
+python3 examples/meshes/mixer.py
+cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/mrf_transient.toml
+```
+
+[Gallery 102](../gallery/flow.md#several-rotors); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).

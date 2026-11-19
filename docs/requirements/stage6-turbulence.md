@@ -1374,8 +1374,10 @@ cells is explicit. Σ_f ρ **S**·**V** = 0 for every closed cell with planar
 faces, so the relative flux conserves mass wherever all faces carry their
 exact frame flux: inside a zone, on boundaries and on interfaces that are
 surfaces of revolution about the axis, the limit of every frozen-rotor
-method; MRF003 reports the cells where the closure fails. The method is
-steady only (MRF001); the transient form is the sliding mesh (D182).
+method; MRF003 reports the cells where the closure fails. The method was
+steady only at first; D185 adds the transient frozen rotor (the time term
+of the velocity in the rotating basis), and the moving rotor is the
+sliding mesh (D182).
 Laminar Taylor–Couette flow (r₁ = 0.05, r₂ = 0.10 m, ω₁ = 10 rad/s, Re = 50,
 the inner half in the frame): L2 error of the velocity 3.46, 0.69 and 0.13 %
 on 256, 1 024 and 4 096 cells, observed order 2.32 and 2.41, and on 1 024

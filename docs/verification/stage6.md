@@ -1732,3 +1732,35 @@ The tests are in `tests/mrf.rs`, the code in `crates/foehncraft-flow/src/rotor.r
 4. **Sliding mesh:** a run of 40 steps of the stirred vessel shows the angle
    column (|Ω| t in degrees: 21.49° at t = 0.0375 s), the shaft power in the
    compact balance line and the torque columns of `forces.csv`.
+
+## Several rotors and the transient frozen rotor (D185, PR #102)
+
+The tests are in `tests/sliding.rs`, `tests/mrf.rs`,
+`crates/foehncraft-mesh/src/imprint.rs` and `query/turning.rs`.
+
+1. **Two rotors in one mesh** (`two_rotors_turn_at_their_own_angles`): an
+   annulus of three rings (rotor of 12, stator of 18, outer rotor of 14
+   sectors, two layers in z) assembled at four pairs of angles: every cell
+   closes to 10⁻¹², the rotor cells are turned by the angle of their own
+   rotor and keep their volumes, the pieces are those of the two interfaces
+   alone, and the same rotor given twice is refused.
+2. **Wall distance of two turning rotors**
+   (`two_rotors_agree_with_the_wall_distance_of_their_mesh`): one hierarchy
+   per part, the point turned into the frame of each other part, equals the
+   wall distance of the assembled mesh at four pairs of angles to 10⁻¹².
+3. **Couette flow of two counter-rotating cylinders**
+   (`two_rotors_end_in_the_couette_flow_of_their_speeds`,
+   `couette_two_rotors.toml`; r₁ = 0.05 m at ω₁ = +10 rad/s, r₂ = 0.10 m at
+   ω₂ = −5 rad/s, each cylinder a sliding rotor by imprinting with its own
+   pitch, 960 cells, 500 steps of 0.04 s from rest): L2 error 1.76 % against
+   u_θ = A r + B/r; the torques −3.167·10⁻⁶ and −3.163·10⁻⁶ N m (each about
+   the axis along its own Ω) against 4π μ L r₁² r₂² (ω₂ − ω₁)/(r₂² − r₁²) =
+   −3.142·10⁻⁶ N m (0.8 % and 0.7 %); the shaft powers 3.17·10⁻⁵ and
+   1.58·10⁻⁵ W add up to the exact Ω-weighted work 4.71·10⁻⁵ W (0.8 %) and to
+   the dissipation of the ledger.
+4. **Transient frozen rotor** (`the_spin_up_does_not_depend_on_the_frame`,
+   `taylor_couette_mrf.toml` with `[time]`, 25 steps of 0.02 s): at
+   t = 0.5 s the L2 distance from the steady state is 0.1299 in the inertial
+   frame, 0.1296 in the frame of the cylinder and 0.1308 in the opposite
+   frame (0.7 %); after 1 000 steps the transient frame ends at the L2 error
+   of the steady frame, 6.93966·10⁻³ against 6.93966·10⁻³.
