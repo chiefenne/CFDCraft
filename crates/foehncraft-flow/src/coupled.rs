@@ -1027,7 +1027,8 @@ impl Flow {
             u_old2: f.u,
             explicit: (0.0, f.u),
         });
-        let scale = self.momentum_assembly(f.mass_flux, alpha, 1.0, time)?;
+        let conv = self.convecting_flux()?;
+        let scale = self.momentum_assembly(conv, alpha, 1.0, time)?;
         let sym = self.bc.mom_kind.contains(&k::MOM_SYMMETRY);
         for (i, residual) in res.momentum.iter_mut().enumerate() {
             self.momentum_matrix(i, sym)?;

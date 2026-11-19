@@ -8,6 +8,7 @@
 //! - [`quality`]: the mesh quality report;
 //! - [`generate`]: the built-in generator for canonical test meshes (D34);
 //! - [`cylinder`]: the built-in channel with a cylinder (Schäfer & Turek);
+//! - [`annulus`]: the built-in annulus (Taylor–Couette, rotor–stator);
 //! - [`wedge`]: axisymmetric wedge meshes revolved from a 2D mesh;
 //! - [`gmsh`]: the Gmsh `.msh` 4.1 reader (D33);
 //! - [`periodic`]: translational periodic boundary pairs (D29, D109);
@@ -17,6 +18,7 @@
 //! - [`decompose`]: local meshes with halo cells and the halo exchange plan;
 //! - [`vtkhdf`]: VTKHDF output (D41), with the feature `hdf5`.
 
+pub mod annulus;
 pub mod builder;
 pub mod case;
 pub mod case_format;

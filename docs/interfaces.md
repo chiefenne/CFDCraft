@@ -294,6 +294,9 @@ A code keeps its meaning; a retired code stays in the table.
 | `MAT005` | error | A property value that is not positive and finite. |
 | `REG001` | error | A region that is not a fluid: solids and porous zones come with the energy equation (L1). |
 | `REG002` | error | A region that names a cell zone the mesh does not have, or a zone in two regions. |
+| `MRF001` | error | A rotating zone `[[mrf]]` in a transient case (the moving reference frame of D55 is steady; the transient form is the sliding mesh of D182). |
+| `MRF002` | error | An `[[mrf]]` table with no or two angular velocities (`omega`, `rpm`), a zero axis, a cell zone the mesh does not have (with the nearest name as a hint), no `zone` where there are several tables, or a zone that two tables rotate. |
+| `MRF003` | warning | The interface or a boundary of a rotating zone is not a surface of revolution about its axis: the relative flux of the cells next to it does not close, and the solution there is not that of a frozen rotor (cell count and worst closure error). |
 | `MESH001` | warning | Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised). |
 | `MESH002` | note | Cell-quality remediation (D50): the run uses other schemes than set because of poor cells. |
 | `RUN001` | note | Stopped by the `.stop` control file. |
