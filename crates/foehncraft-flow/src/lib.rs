@@ -59,6 +59,7 @@ pub mod schedule;
 pub mod schema;
 pub mod simplec;
 pub mod sliding;
+pub mod statistics;
 pub mod transient;
 pub mod turbulence;
 pub mod uncertainty;
