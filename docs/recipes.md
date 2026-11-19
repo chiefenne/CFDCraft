@@ -14,7 +14,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes | 7, 8, 9, 11, 36 |
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
-| [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87 |
+| [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87, 94 |
 | [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | 63 |
 | [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks | 68, 71, 73, 74, 88, 89, 90 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 29, 67 |
@@ -83,6 +83,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="elliptic-blending"></a>88 | [Run a case with the elliptic-blending k-ε](recipes/turbulence.md#elliptic-blending) | [Turbulence models](recipes/turbulence.md) |
 | <a id="step-validation"></a>89 | [Validate the turbulence models on the backward-facing step](recipes/turbulence.md#step-validation) | [Turbulence models](recipes/turbulence.md) |
 | <a id="impinging-jet"></a>90 | [Feed a jet with a developed pipe profile and compute the Nusselt number](recipes/turbulence.md#impinging-jet) | [Turbulence models](recipes/turbulence.md) |
+| <a id="mrf"></a>94 | [Run a rotating zone in a fixed frame (pump, fan, mixer, rotor)](recipes/flow.md#mrf) | [Incompressible flow](recipes/flow.md) |
 
 ## Adding a feature
 
