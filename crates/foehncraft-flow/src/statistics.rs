@@ -22,9 +22,17 @@
 //! half width of the 95 % confidence interval of the mean is
 //! t(0.975, B − 1) s_B/√B with s_B the standard deviation of the batch
 //! means. The batch means are only independent when a batch is longer than
-//! the correlation time of the series; their lag-1 autocorrelation r₁
-//! tells: |r₁| ≤ 0.3 gives the verdict `sufficient`, else `too short` (a
-//! longer window, or fewer batches, is needed; STAT001 in the report).
+//! the correlation time of the series; the von Neumann test of their lag-1
+//! correlation tells (Fishman 1978): r₁ = 1 − Σ(b_{i+1} − b_i)²/(2 Σ(b_i −
+//! b̄)²) is about normal with mean 0 and variance (B − 2)/(B² − 1) for
+//! independent batch means, so r₁ ≤ 1.645 √((B − 2)/(B² − 1)) (one-sided,
+//! 95 %; 0.47 for 10 batches, 0.35 for 20) gives the verdict `sufficient`,
+//! else `too short` (a longer window, or fewer batches, is needed; STAT001
+//! in the report). A negative r₁ (alternating batch means) only widens the
+//! interval and passes. A mean known well enough passes too: when the half
+//! width widened for the correlation, h √((1 + r₁)/(1 − r₁)), is below
+//! `tolerance` (default 10⁻³) of the size √var + |mean| of the series (a
+//! slow drift of a well-converged mean).
 //!
 //! With `phase_period` P the samples are also sorted into `phase_bins`
 //! bins of the phase ((t − start)/P mod 1), and the time mean of each bin
@@ -52,6 +60,11 @@ pub struct StatisticsSection {
     pub phase_period: Option<f64>,
     /// Number of phase bins per period.
     pub phase_bins: usize,
+    /// A mean whose confidence interval, widened for the correlation of
+    /// the batch means, is below this fraction of the size of its series
+    /// (√var + |mean|) is `sufficient` also when the batch means are
+    /// correlated (0: the test of the batch means alone).
+    pub tolerance: f64,
 }
 
 impl Default for StatisticsSection {
@@ -62,6 +75,7 @@ impl Default for StatisticsSection {
             batches: 20,
             phase_period: None,
             phase_bins: 24,
+            tolerance: 1e-3,
         }
     }
 }
@@ -79,6 +93,11 @@ impl StatisticsSection {
             CASE_RANGE,
             "[output.statistics] batches must be at least 2 (it is {})",
             self.batches
+        );
+        crate::need!(
+            self.tolerance >= 0.0 && self.tolerance.is_finite(),
+            CASE_RANGE,
+            "[output.statistics] tolerance must be ≥ 0"
         );
         if let Some(p) = self.phase_period {
             crate::need!(
@@ -158,8 +177,9 @@ impl FieldMoments {
             }
         }
         for (p, (i, j, _)) in self.pairs.iter().enumerate() {
-            for c in 0..x[*j].len() {
-                self.cov[p][c] += h * self.d[*i][c] * (x[*j][c] - self.mean[*j][c]);
+            let (di, mj) = (&self.d[*i], &self.mean[*j]);
+            for (c, cv) in self.cov[p].iter_mut().enumerate() {
+                *cv += h * di[c] * (x[*j][c] - mj[c]);
             }
         }
     }
@@ -235,7 +255,8 @@ pub struct SeriesStatistics {
     pub half_width: f64,
     /// Lag-1 autocorrelation of the batch means.
     pub batch_correlation: f64,
-    /// `sufficient` when |r₁| ≤ 0.3, else `too short`.
+    /// `sufficient` when r₁ passes the von Neumann test (see the module), else
+    /// `too short`.
     pub verdict: String,
 }
 
@@ -290,8 +311,60 @@ impl Series {
     /// The statistics of every series over the window from `start`, with
     /// `batches` batches of equal time.
     pub fn summary(&self, start: f64, batches: usize) -> StatisticsSummary {
+        self.summary_periodic(start, batches, None, 0.0)
+    }
+
+    /// As [`Series::summary`]; with a `period` the batches hold whole
+    /// periods (as many as fit equally, at least one each, so fewer
+    /// batches when the window holds fewer periods), and the rest of the
+    /// window enters the mean but no batch: the batch mean of a periodic
+    /// signal over part of a period would carry its phase from batch to
+    /// batch.
+    pub fn summary_periodic(
+        &self,
+        start: f64,
+        batches: usize,
+        period: Option<f64>,
+        tolerance: f64,
+    ) -> StatisticsSummary {
         let end = self.time.last().copied().unwrap_or(start);
         let len = (end - start).max(1e-300);
+        let (batches, blen) = match period {
+            Some(p) if p > 0.0 && len / p >= 2.0 - 1e-9 => {
+                let n = (len / p + 1e-9).floor() as usize;
+                let nb = batches.min(n);
+                (nb, (n / nb) as f64 * p)
+            }
+            _ => (batches, len / batches as f64),
+        };
+        // the size of each series, √(var) + |mean|; the velocity components
+        // of a probe share the largest (a component that is round-off in a
+        // 2D case then has no correlation to test)
+        let size: Vec<f64> = (0..self.names.len())
+            .map(|k| {
+                let (mut w, mut m, mut m2) = (0.0, 0.0, 0.0);
+                for (h, row) in self.step.iter().zip(&self.values) {
+                    w += h;
+                    let d = row[k] - m;
+                    m += h / w * d;
+                    m2 += h * d * (row[k] - m);
+                }
+                (m2 / f64::max(w, 1e-300)).max(0.0).sqrt() + m.abs()
+            })
+            .collect();
+        let group = |k: usize| -> f64 {
+            let n = &self.names[k];
+            match n.rsplit_once('.') {
+                Some((head, "u" | "v" | "w")) => (0..self.names.len())
+                    .filter(|&j| {
+                        matches!(self.names[j].rsplit_once('.'),
+                            Some((h, "u" | "v" | "w")) if h == head)
+                    })
+                    .map(|j| size[j])
+                    .fold(0.0, f64::max),
+                _ => size[k],
+            }
+        };
         let series = (0..self.names.len())
             .map(|k| {
                 let (mut w, mut m, mut m2) = (0.0, 0.0, 0.0);
@@ -308,9 +381,16 @@ impl Series {
                     hi = hi.max(x);
                     // the batch of the middle of the step
                     let mid = t - 0.5 * h;
-                    let b = (((mid - start) / len * batches as f64) as usize).min(batches - 1);
-                    bw[b] += h;
-                    bs[b] += h * x;
+                    let b = ((mid - start) / blen) as usize;
+                    let b = if period.is_none() {
+                        b.min(batches - 1)
+                    } else {
+                        b
+                    };
+                    if b < batches {
+                        bw[b] += h;
+                        bs[b] += h * x;
+                    }
                 }
                 let means: Vec<f64> = bw
                     .iter()
@@ -319,15 +399,15 @@ impl Series {
                     .map(|(w, s)| s / w)
                     .collect();
                 let nb = means.len();
-                let scale = (m2 / w.max(1e-300)).max(0.0).sqrt() + m.abs();
+                let scale = group(k);
                 let (half, r1) = if nb >= 2 {
                     let mb = means.iter().sum::<f64>() / nb as f64;
                     let var = means.iter().map(|x| (x - mb).powi(2)).sum::<f64>();
                     let sb = (var / (nb - 1) as f64).sqrt();
-                    let lag: f64 = means.windows(2).map(|p| (p[0] - mb) * (p[1] - mb)).sum();
+                    let succ: f64 = means.windows(2).map(|p| (p[1] - p[0]).powi(2)).sum();
                     // batch means equal to round-off: nothing to correlate
                     let r1 = if sb > 1e-12 * scale && var > 0.0 {
-                        lag / var
+                        1.0 - succ / (2.0 * var)
                     } else {
                         0.0
                     };
@@ -343,7 +423,11 @@ impl Series {
                     max: hi,
                     half_width: half,
                     batch_correlation: r1,
-                    verdict: if r1.abs() <= 0.3 && nb >= 2 {
+                    verdict: if nb >= 3
+                        && (r1 <= correlation_bound(nb)
+                            || (r1 < 1.0
+                                && half * ((1.0 + r1) / (1.0 - r1)).sqrt() <= tolerance * scale))
+                    {
                         "sufficient".into()
                     } else {
                         "too short".into()
@@ -407,7 +491,7 @@ pub(crate) fn finish<F: FnMut(&str)>(
     lg: &mut crate::case::Log<F>,
     warnings: &mut Vec<crate::diag::Diagnostic>,
 ) -> Result<StatisticsSummary> {
-    let mut sum = series.summary(start, cfg.batches);
+    let mut sum = series.summary_periodic(start, cfg.batches, cfg.phase_period, cfg.tolerance);
     let pre = |what: &str, units: &str| {
         crate::case::csv_preamble(what, name, Some((at.0, Some(at.1))), units)
     };
@@ -532,6 +616,13 @@ fn write_fields(
     Ok(())
 }
 
+/// The one-sided 95 % bound of the von Neumann lag-1 correlation of `nb`
+/// independent batch means, 1.645 √((nb − 2)/(nb² − 1)).
+pub fn correlation_bound(nb: usize) -> f64 {
+    let n = nb as f64;
+    1.645 * ((n - 2.0).max(0.0) / (n * n - 1.0).max(1.0)).sqrt()
+}
+
 /// The CSV text of the phase averages of `series` (D75 preamble included).
 pub fn phase_csv(preamble: &str, series: &Series, rows: &[(f64, f64, Vec<f64>)]) -> String {
     use std::fmt::Write as _;
@@ -643,7 +734,7 @@ mod tests {
         }
         let e = &q.summary(0.0, 20).series[0];
         assert_eq!(e.verdict, "too short", "{e:?}");
-        assert!(e.batch_correlation > 0.3);
+        assert!(e.batch_correlation > correlation_bound(20));
         // the phase average of the sine is the sine at the bin centres,
         // to the bin width
         let ph = s.phase(0.0, period, 10);
@@ -652,6 +743,70 @@ mod tests {
             let exact = a * (2.0 * std::f64::consts::PI * c).sin();
             assert!((v[0] - exact).abs() < 0.07 * a, "{c} {} {exact}", v[0]);
         }
+    }
+
+    /// A velocity component that is round-off (w of a 2D case) has no
+    /// correlation to test: its verdict follows the size of the probe's
+    /// velocity, not its own.
+    #[test]
+    fn round_off_component_of_a_probe_is_not_too_short() {
+        let mut s = Series::new(vec!["probes.a.u".into(), "probes.a.w".into()]);
+        for i in 1..=400 {
+            let t = i as f64 * 0.01;
+            // a slow drift of round-off size in w
+            s.add(t, 0.01, vec![1.0 + 0.1 * (40.0 * t).sin(), 1e-19 * t]);
+        }
+        let e = &s.summary(0.0, 10).series;
+        assert_eq!(e[1].verdict, "sufficient", "{e:?}");
+        assert_eq!(e[1].batch_correlation, 0.0);
+    }
+
+    /// A vortex street with fewer periods than batches would put part of a
+    /// period in each batch; with its period the batches hold whole
+    /// periods, so the batch means of the sine agree.
+    #[test]
+    fn batches_hold_whole_periods() {
+        let (p, dt) = (0.33, 0.33 / 97.0);
+        let mut s = Series::new(vec!["v".into()]);
+        let n = (9.3 * p / dt) as usize;
+        for i in 1..=n {
+            let t = i as f64 * dt;
+            s.add(t, dt, vec![(2.0 * std::f64::consts::PI * t / p).sin()]);
+        }
+        let plain = &s.summary(0.0, 10);
+        assert_eq!(plain.series[0].verdict, "too short", "{plain:?}");
+        let whole = &s.summary_periodic(0.0, 10, Some(p), 0.0);
+        assert_eq!(whole.batches, 9);
+        assert_eq!(whole.series[0].verdict, "sufficient", "{whole:?}");
+        assert!(whole.series[0].half_width < 1e-3, "{whole:?}");
+        // 20 periods in 10 batches: two periods each
+        let n = (20.0 * p / dt) as usize + 1;
+        let mut s = Series::new(vec!["v".into()]);
+        for i in 1..=n {
+            let t = i as f64 * dt;
+            s.add(t, dt, vec![(2.0 * std::f64::consts::PI * t / p).sin()]);
+        }
+        let two = &s.summary_periodic(0.0, 10, Some(p), 0.0);
+        assert_eq!(two.batches, 10);
+        assert_eq!(two.series[0].verdict, "sufficient", "{two:?}");
+    }
+
+    /// A converged mean with a slow drift far below its size (the drag of a
+    /// vortex street): the batch means are correlated, but the widened
+    /// interval is below the tolerance.
+    #[test]
+    fn tolerance_passes_a_drift_far_below_the_size() {
+        let (p, dt) = (0.3, 0.3 / 60.0);
+        let mut s = Series::new(vec!["cd".into()]);
+        for i in 1..=(20 * 60) {
+            let t = i as f64 * dt;
+            let x = 3.2 + 0.02 * (4.0 * std::f64::consts::PI * t / p).sin() + 2e-6 * t * t;
+            s.add(t, dt, vec![x]);
+        }
+        let strict = &s.summary_periodic(0.0, 10, Some(p), 0.0).series[0];
+        assert_eq!(strict.verdict, "too short", "{strict:?}");
+        let tol = &s.summary_periodic(0.0, 10, Some(p), 1e-3).series[0];
+        assert_eq!(tol.verdict, "sufficient", "{tol:?}");
     }
 
     /// White noise: the 95 % interval of the batch means holds the true
