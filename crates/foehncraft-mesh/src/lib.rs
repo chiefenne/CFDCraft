@@ -9,6 +9,8 @@
 //! - [`generate`]: the built-in generator for canonical test meshes (D34);
 //! - [`cylinder`]: the built-in channel with a cylinder (Schäfer & Turek);
 //! - [`annulus`]: the built-in annulus (Taylor–Couette, rotor–stator);
+//! - [`imprint`]: the sliding interface of a rotor and a stator with different
+//!   pitch, imprinted at the current rotor angle (D58, D182);
 //! - [`wedge`]: axisymmetric wedge meshes revolved from a 2D mesh;
 //! - [`gmsh`]: the Gmsh `.msh` 4.1 reader (D33);
 //! - [`periodic`]: translational periodic boundary pairs (D29, D109);
@@ -27,6 +29,7 @@ pub mod decompose;
 pub mod generate;
 pub mod geometry;
 pub mod gmsh;
+pub mod imprint;
 pub mod locate;
 pub mod mesh;
 pub mod partition;
