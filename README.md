@@ -95,7 +95,9 @@ Everything below is on `main`, verified by the cases of the
   database (air, water, oils, glycols) with sources.
 - **Runs and results.** Restart, control files (`.stop`, `.result_N`,
   `.read_toml_N`), settings that change on a schedule, probes, forces,
-  derived fields (vorticity, Q, λ₂, wall shear stress, y⁺, and the Reynolds stress, scales and wall values of the turbulence models), mass, kinetic
+  derived fields (vorticity, Q, λ₂, wall shear stress, y⁺, and the Reynolds stress, scales and wall values of the turbulence models),
+  statistics of transient runs (time mean, RMS, covariance, phase averages,
+  a confidence interval that says whether the window is long enough), mass, kinetic
   energy and energy ledgers, a divergence report, a log that can be
   circulated, JSON records for scripts and agents.
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise

@@ -1920,3 +1920,34 @@ Not in this part: the blending weight of the compound and automatic
 treatments as a wall field (the wall kernels do not store it); the
 heat-transfer coefficient and T⁺ of the scalars stay in the wall CSV.
 
+
+## Statistics of transient runs (D71, PR #110)
+
+`[output.statistics]` takes the time moments of the fields, probes and
+force coefficients with weighted Welford updates (West 1979; each step
+weighted with its time step) and the confidence interval of each mean from
+batch means (Schmeiser 1982), with the von Neumann test of the lag-1
+correlation of the batch means (Fishman 1978) as the test of the window;
+with `phase_period` the batches hold whole periods.
+
+| Check | Quantity | Band | Result |
+|---|---|---|---|
+| Weighted samples with unequal weights and a mean of 10⁶ (`weighted_moments_match_the_two_pass_values`) | mean, RMS, covariance against the two-pass values | 1e-9 relative | asserted |
+| White noise, 20 000 samples (`batch_means_of_noise`) | the 95 % interval holds the true mean; half width against 1.96 σ/√N; verdict | factor 2; `sufficient` | asserted |
+| A sine over whole periods; a quarter period (`batch_means_of_a_sine`) | mean 0, RMS a/√2, phase averages at the bin centres; verdict | 1e-3; 7 % of a; `sufficient` / `too short` | asserted |
+| A sine over 9.3 periods in 10 batches; 20 periods (`batches_hold_whole_periods`) | batches of whole periods: 9 batches of one, 10 of two; verdict | `too short` without the period, `sufficient` with it | asserted |
+| A drag-like series, 3.2 + 0.02 sin + a drift of 10⁻⁵ (`tolerance_passes_a_drift_far_below_the_size`) | verdict | `too short` with `tolerance = 0`, `sufficient` with 10⁻³ | asserted |
+| The w of a probe in a 2D case, round-off (`round_off_component_of_a_probe_is_not_too_short`) | verdict | `sufficient` | asserted |
+| Decaying Taylor–Green vortex, 32² cells, Δt 0.005, t 0.1 to 0.4 (`taylor_green_statistics_meet_the_exact_time_moments`): u = u₀(x) f(t), so the mean is u₀⟨f⟩, the RMS \|u₀\|σ_f, the covariance u₀v₀σ_f² | L2 of the mean / RMS / covariance fields against the exact moments | 1 % / 2 % / 3 % | 0.60 % / 1.02 % / 1.71 % |
+| | probes a (0.125, 0.375) and b (0.3, 0.1): mean and RMS of u and v | 1 % of \|u₀\| | inside |
+| | verdict of the decay (a trend) | `too short`, STAT001 | asserted |
+| Cylinder at Re = 100, t = 5 to 12 s, 10 batches of two periods (`cylinder_re100_statistics.toml`, gallery 110) | every series of the probes and coefficients; the benchmark | `sufficient`; inside its ranges | all 14 `sufficient` (C_D 3.20207 ± 1.0e-4, C_L −0.0104 ± 5.4e-5; the drag and three probe series by the tolerance, r1 0.51 to 0.72); C_D,max 3.232, St 0.2955 |
+| Steady case; `batches = 1`; `phase_period = 0` (`statistics_keys_are_checked`) | refused | CASE005; CASE004 | asserted |
+
+Found while making gallery 110: with ten batches over nine shedding periods
+each batch held part of a period, and the batch means of the lift carried
+the phase from batch to batch (r1 0.71, `too short`, although the mean was
+converged). With `phase_period` the batches now hold whole periods. The
+plain test of the batch means then still flagged the drag (it drifts by
+10⁻⁴ of its value over the window), so `tolerance` passes a mean whose
+widened interval is below 0.1 % of its size.

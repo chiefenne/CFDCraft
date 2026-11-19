@@ -173,6 +173,16 @@ restart file (D72, stage 5 part 5c); the keys are on the
 | `flow/couette_derived.toml` | generated poly 2D, perturbed by 15 %, 153 cells | every derived field of plane Couette flow, exact (vorticity −1/s, Q = λ₂ = 0, wall shear stress 0.1 Pa); `foehn post derive` writes the same file from `restart.h5` | [gallery 22](../gallery/post-processing.md#derived-fields), [recipe 30](../recipes/post-processing.md#derived-fields) |
 | `flow/cylinder_re100_short.toml` | built-in cylinder mesh, 4 928 hexahedra | vorticity and Q criterion of the vortex street at t = 8 s, from the restart file with `foehn post derive` | [gallery 22](../gallery/post-processing.md#derived-fields), [recipe 30](../recipes/post-processing.md#derived-fields) |
 
+## Statistics of transient runs
+
+Time means, RMS, covariances and phase averages of a transient run with a
+confidence interval of each mean (D71); the keys are on the
+[key page](flow-keys.md#statistics-of-transient-runs-d71).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/cylinder_re100_statistics.toml` | built-in cylinder mesh, 6 144 hexahedra | mean, RMS and ⟨u'v'⟩ of the Re = 100 vortex street from t = 5 to 12 s, a wake probe and C_D, C_L with their phase averages over the shedding period (Linux, on main, nightly and with the label `full-ci`) | [gallery 110](../gallery/post-processing.md#transient-statistics), [recipe 110](../recipes/post-processing.md#transient-statistics) |
+
 ## Expressions and materials
 
 Values as expressions of x, y, z and t, constants and tables (D53), the
