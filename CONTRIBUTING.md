@@ -66,6 +66,25 @@ image takes no room until it has loaded, so a link to an entry far down a
 page lands thousands of pixels too high while the images above it arrive.
 CI runs `python -m tools.docs.images --check`.
 
+### Images must not resemble symbols
+
+Never publish an image (gallery, README, docs, posts) whose pattern could
+be misread as a symbol. Flow fields of rotating machinery take the
+symmetry of the rotor, and a four-blade rotor in particular draws a
+four-armed pinwheel in its vorticity and speed that can be mistaken for a
+hateful symbol. So:
+
+- show rotors with **three or five blades** in published images (the
+  gallery vessels: `examples/meshes/mixer.py --blades 5 --baffles 3`,
+  `examples/meshes/twin_mixer.py --right-blades 5`); four-blade meshes,
+  cases and tests may stay, and their numbers may appear as text and in
+  line plots, but not their flow fields;
+- avoid other four-fold, swastika-like or otherwise symbol-like
+  arrangements (blades with baffles, vortex patterns, crosses of jets);
+- look at every rendered image before it is committed, at full size and as
+  a thumbnail, and ask whether anyone could read a symbol into it; when in
+  doubt, change the geometry, the time or the crop.
+
 ## README and documentation stay current
 
 Every pull request that is merged to main leaves the README and the

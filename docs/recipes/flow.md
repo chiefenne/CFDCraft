@@ -972,7 +972,10 @@ python3 -m tools.plot.rotor_fields mixer.png output/mixer/mrf/fields.vtkhdf \
 ```
 
 (`python3 examples/studies/mixer.py` does all of it and draws the figures of
-gallery 98.) What a mesh of your own needs, with `examples/meshes/mixer.py` as
+gallery 98 on the vessel with five blades and three baffles, `python3
+examples/meshes/mixer.py --blades 5 --baffles 3` and `--set
+mesh.file=../../meshes/mixer5_split.msh`: rotors in published images have
+three or five blades, see CONTRIBUTING.md.) What a mesh of your own needs, with `examples/meshes/mixer.py` as
 the pattern:
 
 - **A cell zone for the rotor**: a Gmsh physical volume (`rotor`) that holds
@@ -1213,6 +1216,15 @@ cargo run --release -p foehncraft-cli -- flow examples/studies/twin_mixer/slidin
 cargo run --release -p foehncraft-cli -- flow examples/cases/flow/couette_two_rotors.toml
 python3 examples/meshes/mixer.py
 cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/mrf_transient.toml
+```
+
+The images of gallery 102 show the twin vessel with three and five blades
+and the single vessel with five blades and three baffles (no four-fold
+rotor patterns in published images, CONTRIBUTING.md); one script runs and
+draws them:
+
+```sh
+python3 examples/studies/mixer.py output/mixer --rotors
 ```
 
 [Gallery 102](../gallery/flow.md#several-rotors); the keys are in
