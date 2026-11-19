@@ -16,6 +16,10 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 83 | [See and tune the pressure hierarchy of the coupled preconditioner](#pressure-hierarchy) |
 | 85 | [Add heat transfer to a turbulent flow: wall function and turbulent Prandtl number](#thermal-wall-function) |
 | 86 | [Compare the heated channel with the DNS Nusselt numbers](#heated-channel-dns) |
+| 94 | [Run a rotating zone in a fixed frame (pump, fan, mixer, rotor)](#mrf) |
+| 95 | [Turn a rotor through the mesh in time (sliding mesh, conformal stepping)](#sliding-mesh) |
+| 96 | [Turn a rotor against a stator with a different pitch (sliding mesh by imprinting)](#sliding-mesh-imprint) |
+| 98 | [Mesh and run a rotor with blades from Gmsh, and draw its relative flow](#stirred-vessel) |
 
 ---
 
@@ -945,4 +949,54 @@ outer_iterations = 4      # 3 to 6 is usual
   and the step may be one sector.
 
 [Gallery 96](../gallery/flow.md#sliding-mesh-imprint); the keys are in
+[cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
+
+<a id="stirred-vessel"></a>
+## 98. Mesh and run a rotor with blades from Gmsh, and draw its relative flow
+
+```
+pip install gmsh matplotlib h5py numpy pillow
+cargo build --release -p foehncraft-cli
+python3 examples/meshes/mixer.py
+target/release/foehn flow examples/studies/mixer/mrf.toml --out output/mixer/mrf
+target/release/foehn flow examples/studies/mixer/sliding.toml --out output/mixer/sliding
+python3 -m tools.plot.rotor_fields mixer.png output/mixer/mrf/fields.vtkhdf \
+    --quantities speed,relative,vorticity --omega 10 --rotor-radius 0.06 --outer-radius 0.1
+```
+
+(`python3 examples/studies/mixer.py` does all of it and draws the figures of
+gallery 98.) What a mesh of your own needs, with `examples/meshes/mixer.py` as
+the pattern:
+
+- **A cell zone for the rotor**: a Gmsh physical volume (`rotor`) that holds
+  every cell that turns, bounded by a surface of revolution about the axis (a
+  cylinder here). The rest can be one or more zones (`stator`).
+- **For `[[mrf]]`**: one conformal mesh, rotor and stator sharing the nodes
+  of the interface (Gmsh: `fragment` the two surfaces, extrude them in one
+  call, `removeAllDuplicates`). The interface faces are interior faces, they
+  get no boundary group.
+- **For `[[sliding]]` by imprinting**: two meshes with their own nodes on the
+  interface (no `fragment`), and the two sides as boundary groups
+  (`rotor_interface`, `stator_interface`) that the `[[sliding]]` table names and
+  that get no `[boundary.<name>]` table. The node counts on the circle may differ
+  (64 and 96 here). The mesh must be extruded along the axis.
+- **Walls of the rotor** (blades, hub) are a group of their own with the
+  velocity of the rigid turn, `velocity = ["-spin * y", "spin * x", 0.0]` for a
+  turn about z through the origin. In a turning zone a wall moves normal to
+  itself with the zone, so the normal part of that velocity is used, too (a wall
+  that stands keeps only the tangential part of a given velocity, `BC010`).
+  Walls of the stator (vessel, baffles) keep the default.
+- Write the fields with `output.vtkhdf = true` and `output.derived = ["vorticity"]`;
+  for a transient run `output.fields_times = [...]` adds `fields_<step>.vtkhdf`
+  at those times, on the mesh of that rotor angle.
+
+`tools/plot/rotor_fields.py` draws the lower face of every cell of a 2D run:
+`speed` (|u| with streamlines), `relative` (|u − Ω × r| inside
+`--rotor-radius`, with the streamlines of the relative velocity; the stator is
+grey), `vorticity`, `pressure`; several fields files make a time series of
+the first quantity; `--mesh --window x0,x1,y0,y1` zooms in with the cell
+edges; `--palette` writes a small PNG for the docs. The relative velocity is
+what a blade sees: judge the rotor by it, the stator by the absolute one.
+
+[Gallery 98](../gallery/flow.md#stirred-vessel); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).

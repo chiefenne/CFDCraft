@@ -1,0 +1,57 @@
+# A baffled stirred vessel in 2D with a moving reference frame (D55): a rotor
+# with four blades turns at 10 rad/s inside a vessel with four baffles; the
+# rotor zone is solved in its rotating frame, steady ("frozen rotor"). The
+# same vessel with the sliding mesh is sliding.toml; examples/studies/mixer.py
+# runs both and draws the gallery figures (gallery 98).
+#
+#   pip install gmsh
+#   python3 examples/meshes/mixer.py
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/mrf.toml
+#
+# 16 300 cells, about 1 000 iterations, 20 s on four cores.
+#
+# Water-like units scaled to a laminar flow: blade tip radius 0.045 m, tip
+# speed 0.45 m/s, Reynolds number omega R_tip^2 / nu = 100.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/mixer_conformal.msh"
+renumber = "rcm"
+
+[fluid]
+density = 1000.0
+viscosity = 0.2           # Pa s: nu = 2e-4 m^2/s
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+
+[boundary.blades]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.8
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["vorticity"]
