@@ -1316,9 +1316,15 @@ pub struct NeighbourArgs {
     pub diag: Raw<f64>,
     /// Output.
     pub out: Raw<f64>,
+    /// 1 after a SIMPLEC-type corrector (subtract Σ_N val_PN x_P), 0 after
+    /// Issa's.
+    pub own: f64,
 }
 
-/// −Σ_N val_PN x_N / diag of cell `c`.
+/// −Σ_N val_PN (x_N − own x_P) / diag of cell `c`: the PISO neighbour
+/// correction H(x)/a_P after Issa's corrector (`own` = 0), or
+/// Σ_N |a_N| (x_N − x_P)/a_P after a corrector with D^C = V/(a_P − Σ|a_N|)
+/// (`own` = 1).
 pub struct NeighbourCorrection;
 impl Entry for NeighbourCorrection {
     type Args = NeighbourArgs;
@@ -1327,9 +1333,14 @@ impl Entry for NeighbourCorrection {
     unsafe fn run(c: usize, a: &NeighbourArgs) {
         // SAFETY: guaranteed by the caller.
         unsafe {
-            *a.out.out().add(c) =
-                -k::neighbour_sum(c, &a.m.topo(), &a.m.layout(), a.val.get(), a.x.get())
-                    / a.diag.read(c)
+            *a.out.out().add(c) = -k::neighbour_difference(
+                c,
+                &a.m.topo(),
+                &a.m.layout(),
+                a.val.get(),
+                a.x.get(),
+                a.own,
+            ) / a.diag.read(c)
         }
     }
 }

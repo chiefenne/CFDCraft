@@ -6,8 +6,8 @@
 #
 # Vessel: radius 0.10 m, height 0.10 m, stationary walls. Impeller: a disc
 # of radius 0.03 m and thickness 0.01 m at mid-height, turning at 20 rad/s
-# (Re = Ω R² / ν = 1 800, laminar; the boundary layers of the disc,
-# sqrt(ν / Ω) = 0.7 mm thick, are thinner than the cells: a qualitative
+# (ν = 1e-4 m²/s, Re = Ω R² / ν = 180, laminar; the boundary layers of the
+# disc, sqrt(ν / Ω) = 2.2 mm thick, are about one cell thick: a qualitative
 # run). The rotor is the pot r < 0.045 m, 0.03 < z < 0.07 m around the disc
 # ([mesh.revolved], 48 intervals around the axis in the rotor, 72 in the
 # stator); its interface (a disc below, a
@@ -31,7 +31,7 @@ n_theta_stator = 72
 
 [fluid]
 density = 1000.0
-viscosity = 0.01
+viscosity = 0.1
 
 [constants]
 spin = 20.0

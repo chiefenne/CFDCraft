@@ -138,7 +138,11 @@ St 0.295–0.305, Δp 2.46–2.50 Pa):
    (the PISO coefficient), the fluxes corrected to continuity,
    u' = δ − D∇p', p += p'; between two correctors the neighbour
    correction δ = H(u')/a_P, which the first corrector neglects, is added
-   to u and its flux to ṁ;
+   to u and its flux to ṁ (*2026-11-19, PR #106:* with outer iterations
+   the correctors use by default the SIMPLEC form D^C = V/(a_P/α − Σ|a_N|)
+   with δ = Σ_N |a_N| (u'_N − u'_P)/a_P, `solver.corrector`; Issa's form
+   diverged on thin wedge cells at an axis at high viscosity, see
+   [stage 6](stage6.md#the-piso-corrector-on-thin-wedge-cells-at-an-axis-pr-106));
 3. boundary values and gradients of the new level, the old-level
    difference of the Rhie–Chow time-step term and the largest Courant
    number.

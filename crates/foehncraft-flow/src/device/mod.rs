@@ -769,8 +769,18 @@ pub trait FlowDevice {
     fn correct_fluxes(&mut self, cf: Buf, m: Buf, pc: Buf, out: Buf) -> Result<()>;
     /// u_i −= D^C ∇p'_i.
     fn correct_velocity(&mut self, dc: Buf, grad: Buf3, u: Buf3) -> Result<()>;
-    /// out = −Σ_N val_PN x_N / diag (the neighbour correction H(x)/A).
-    fn neighbour_correction(&mut self, val: Buf, x: Buf, diag: Buf, out: Buf) -> Result<()>;
+    /// out = −Σ_N val_PN (x_N − own x_P) / diag: the neighbour correction
+    /// H(x)/A of PISO after Issa's corrector (`own` = 0), or after a
+    /// SIMPLEC-type corrector, whose D^C already holds Σ_N val_PN x_P
+    /// (`own` = 1).
+    fn neighbour_correction(
+        &mut self,
+        val: Buf,
+        x: Buf,
+        diag: Buf,
+        out: Buf,
+        own: f64,
+    ) -> Result<()>;
     /// Mass flux of a cell velocity increment.
     fn delta_flux(&mut self, delta: Buf3, out: Buf) -> Result<()>;
     /// out = Aᵀ in the storage of A = `val` (D59: the same solvers and the

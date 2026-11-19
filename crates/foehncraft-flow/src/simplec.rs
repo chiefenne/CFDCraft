@@ -120,6 +120,29 @@ pub enum Remediation {
     Off,
 }
 
+/// The pressure corrector of PISO (`solver.corrector`).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum PisoCorrector {
+    /// `simplec` with outer iterations (`outer_iterations` > 1), `issa` for
+    /// plain PISO.
+    #[default]
+    Auto,
+    /// Issa's corrector: D = V/(a_P/α) and the neighbour correction
+    /// H(u')/a_P between two correctors. It damps more in plain PISO
+    /// (Crank–Nicolson at Courant number 4 settles with it), but where a_P
+    /// is almost all neighbour coupling (thin wedge cells about an axis at
+    /// high viscosity) the pressure can grow from one outer iteration to the
+    /// next.
+    Issa,
+    /// The SIMPLEC form: D^C = V/(a_P/α − Σ|a_N|) and the neighbour
+    /// correction Σ_N |a_N| (u'_N − u'_P)/a_P; stable on such cells with
+    /// outer iterations.
+    Simplec,
+}
+
 /// The cell-quality remediation of a run (D50): what the mesh check found
 /// and what was changed.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -260,6 +283,9 @@ pub struct Settings {
     pub correctors: usize,
     /// PISO: outer iterations per time step (1: plain PISO).
     pub outer_iterations: usize,
+    /// PISO: the pressure corrector (`auto`: `simplec` with outer
+    /// iterations, `issa` for plain PISO).
+    pub corrector: PisoCorrector,
     /// PISO: an outer iteration ends the time step when the momentum and
     /// continuity residuals of its start are below this value.
     pub outer_tolerance: f64,
@@ -372,6 +398,7 @@ impl Default for Settings {
             amg_rebuild: 10,
             log_every: 10,
             correctors: 2,
+            corrector: PisoCorrector::Auto,
             outer_iterations: 1,
             outer_tolerance: 1e-6,
             extrapolation: true,
@@ -406,6 +433,15 @@ impl Settings {
         self.pressure
             .tolerance
             .unwrap_or(if transient { 1e-8 } else { 1e-2 })
+    }
+
+    /// PISO with the SIMPLEC-type corrector ([`PisoCorrector`]).
+    pub fn simplec_corrector(&self) -> bool {
+        match self.corrector {
+            PisoCorrector::Auto => self.outer_iterations > 1,
+            PisoCorrector::Issa => false,
+            PisoCorrector::Simplec => true,
+        }
     }
 
     /// α_u. With the coupled algorithm it only caps the local Courant
@@ -2003,10 +2039,10 @@ impl Flow {
             }
         }
         self.add_coriolis()?;
-        if matches!(
-            self.settings.algorithm(self.transient),
-            Algorithm::Simple | Algorithm::Piso
-        ) {
+        let alg = self.settings.algorithm(self.transient);
+        if alg == Algorithm::Simple
+            || (alg == Algorithm::Piso && !self.settings.simplec_corrector())
+        {
             self.dev.copy(w.d, w.dc)?;
         }
         // residual scale ‖a_P u‖ + ‖b‖ over the three components (unrelaxed

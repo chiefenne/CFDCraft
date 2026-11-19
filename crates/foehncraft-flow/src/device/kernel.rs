@@ -1051,7 +1051,14 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.go::<e::CorrectVelocity>(self.nc, &args)
     }
 
-    fn neighbour_correction(&mut self, val: Buf, x: Buf, diag: Buf, out: Buf) -> Result<()> {
+    fn neighbour_correction(
+        &mut self,
+        val: Buf,
+        x: Buf,
+        diag: Buf,
+        out: Buf,
+        own: f64,
+    ) -> Result<()> {
         check(&[out], &[val, x, diag])?;
         let args = e::NeighbourArgs {
             m: self.m,
@@ -1059,6 +1066,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             x: self.r(x),
             diag: self.r(diag),
             out: self.r(out),
+            own,
         };
         self.go::<e::NeighbourCorrection>(self.nc, &args)
     }

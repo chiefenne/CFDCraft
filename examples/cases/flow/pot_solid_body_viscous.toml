@@ -1,0 +1,82 @@
+# Solid-body rotation at high viscosity in a closed vessel with a sliding
+# rotor pot whose interface passes through the axis: the regression case of
+# the PISO corrector on thin wedge cells (gallery 103).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pot_solid_body_viscous.toml
+#
+# As pot_solid_body.toml, with ten times the viscosity (nu = 1e-2 m2/s). The
+# wedge cells at the axis are 24 to a turn, so their coupling to the
+# neighbours around the axis is about 90 times their time term. With Issa's
+# corrector (D = V/a_P) the pressure grew in every outer iteration there and
+# the run left the exact solution within 30 steps (L2 error 2.0, from
+# round-off); with the SIMPLEC-type corrector (solver.corrector = "auto"
+# with outer iterations) it keeps it to 0.1 %.
+
+case_format = "0.6"
+
+[mesh.revolved]
+r = [0.0, 0.04, 0.10]
+z = [0.0, 0.04, 0.08, 0.15]
+n_r = [4, 5]
+n_z = [4, 4, 6]
+rotor = [[0, 1]]
+n_theta = 16
+n_theta_stator = 24
+
+[fluid]
+density = 1.0
+viscosity = 1e-2
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.01
+steps = 30
+start_time = 0.0
+
+[initial]
+from_analytic = true
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[boundary.outer]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.zmin]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.zmax]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+
+[solver]
+tolerance = 1e-10
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 3
+
+# solid-body rotation: Taylor-Couette flow with equal speeds of the two
+# cylinders (the radii only fix the two constants)
+[analytic]
+type = "taylor-couette"
+inner_radius = 0.05
+outer_radius = 0.10
+inner_omega = 10.0
+outer_omega = 10.0
+
+[verification]
+max_error = 0.01
+
+[output]
+vtkhdf = false
+wall_csv = false
