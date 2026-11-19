@@ -131,7 +131,10 @@ pub struct SlidingSection {
     /// Variant B of D182, a pitch ratio that is not one: the boundary of the
     /// mesh that holds the faces of the rotor on the interface (with
     /// `stator_interface`; `[mesh.annulus]` makes them with
-    /// `n_theta_stator`). The interface is imprinted at the rotor angle of
+    /// `n_theta_stator`, `[mesh.revolved]` always). The interface is any
+    /// surface of revolution about the axis whose meridian is made of
+    /// straight pieces: a cylinder, a disc, a cone, or a chain of them, also
+    /// through the axis (D186). The interface is imprinted at the rotor angle of
     /// every time step, which is free then.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rotor_interface: Option<String>,
@@ -775,13 +778,13 @@ pub fn attach_imprint(case: &FlowCase, mesh: &Mesh) -> Result<Option<(Imprinting
         let (nr, ns) = iface.faces();
         notes.lines.push(format!(
             "sliding mesh (D182, variant B): zone `{zone}` turns about the axis {:?} through {:?} \
-             at {:.6e} rad/s; the interface at r = {:.6e} m has {nr} rotor and {ns} stator faces \
+             at {:.6e} rad/s; the interface ({}) has {nr} rotor and {ns} stator faces \
              and is imprinted in every step (the solver is built again on the mesh of the angle, \
              fully implicit)",
             entry.axis,
             entry.origin,
             w,
-            iface.radius()
+            iface.surface()
         ));
         parts.push(iface);
         omega.push(w);

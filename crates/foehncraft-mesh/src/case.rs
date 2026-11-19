@@ -12,6 +12,8 @@
 //! cells = [16, 16, 16]
 //! # or [mesh.cylinder]: a channel with a cylinder (crate::cylinder::CylinderSpec)
 //! # or [mesh.annulus]: the gap between two cylinders (crate::annulus::AnnulusSpec)
+//! # or [mesh.revolved]: a block grid turned about the axis, rotor and stator
+//! #   with an interface of revolution (crate::revolved::RevolvedSpec)
 //! ```
 
 use crate::Geometry;
@@ -24,6 +26,7 @@ use crate::mesh::Mesh;
 use crate::partition::{Method, PartitionStats, partition};
 use crate::quality::QualityReport;
 use crate::renumber::{Ordering, bandwidth, renumber};
+use crate::revolved::RevolvedSpec;
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -61,6 +64,10 @@ pub struct MeshSection {
     pub cylinder: Option<CylinderSpec>,
     /// Built-in annulus (the gap between two coaxial cylinders).
     pub annulus: Option<AnnulusSpec>,
+    /// Built-in mesh of revolution: a block grid in (r, z) turned about the
+    /// z axis, a rotor and a stator with an interface of cylinders, discs and
+    /// cones (D186).
+    pub revolved: Option<RevolvedSpec>,
     /// Convert a tetrahedral mesh into polyhedra (the dual mesh, one cell
     /// per node).
     pub polyhedral: bool,
@@ -80,6 +87,7 @@ impl Default for MeshSection {
             generate: None,
             cylinder: None,
             annulus: None,
+            revolved: None,
             polyhedral: false,
             renumber: Ordering::None,
             seed: 2026,
@@ -223,10 +231,12 @@ pub fn build_mesh(case: &MeshSection) -> Result<(Mesh, String, Vec<String>)> {
         case.generate.is_some(),
         case.cylinder.is_some(),
         case.annulus.is_some(),
+        case.revolved.is_some(),
     ];
     if given.iter().filter(|&&g| g).count() > 1 {
         bail!(
-            "[mesh]: give one of `file`, `[mesh.generate]`, `[mesh.cylinder]` and `[mesh.annulus]`"
+            "[mesh]: give one of `file`, `[mesh.generate]`, `[mesh.cylinder]`, `[mesh.annulus]` and \
+             `[mesh.revolved]`"
         );
     }
     if let Some(spec) = &case.cylinder {
@@ -243,11 +253,19 @@ pub fn build_mesh(case: &MeshSection) -> Result<(Mesh, String, Vec<String>)> {
         }
         return Ok((mesh, spec.describe(), Vec::new()));
     }
+    if let Some(spec) = &case.revolved {
+        let mut mesh = spec.generate().map_err(anyhow::Error::msg)?;
+        for (old, new) in &case.boundaries {
+            mesh.rename_boundary(old, new).map_err(anyhow::Error::msg)?;
+        }
+        return Ok((mesh, spec.describe(), Vec::new()));
+    }
     let (mut mesh, source, warnings) = match (&case.file, &case.generate) {
         (Some(_), Some(_)) => bail!("[mesh]: give either `file` or `[mesh.generate]`, not both"),
         (None, None) => {
             bail!(
-                "[mesh]: give `file`, a `[mesh.generate]`, a `[mesh.cylinder]` or a `[mesh.annulus]` table"
+                "[mesh]: give `file`, a `[mesh.generate]`, a `[mesh.cylinder]`, a `[mesh.annulus]` or \
+                 a `[mesh.revolved]` table"
             )
         }
         (Some(f), None) => {

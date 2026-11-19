@@ -857,3 +857,61 @@ fn two_rotors_end_in_the_couette_flow_of_their_speeds() {
         k.viscous_dissipation
     );
 }
+
+/// Interfaces of any rotationally symmetric shape (D186): uniform axial flow
+/// between slip walls through a turning rotor.
+///
+/// A pot whose two discs pass through the axis, away from every wall: the
+/// uniform flow is exact on every imprinted mesh (the cells close, the fluxes
+/// through the pieces are conservative), to the level of the skewed wedge
+/// cells at the axis. The stage (disc, cylinder, disc on the hub) and its
+/// cones: where the interface meets the hub, the hub of the rotor is a
+/// polygon of 24 sides and the hub of the stator one of 34, and the small
+/// step between them stops a little of the flow along the hub; the error is
+/// that of the polygons and falls with the square of the pitch.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn uniform_flow_crosses_discs_cones_and_the_axis() {
+    let t = std::fs::read_to_string(cases().join("axial_stage_uniform.toml"))
+        .unwrap()
+        .replace("\r\n", "\n");
+    let base = parse(&t);
+    let pot = parse(
+        &t.replace("r = [0.05, 0.09, 0.10]", "r = [0.0, 0.04, 0.10]")
+            .replace("[boundary.inner]\ntype = \"slip-wall\"\n", "")
+            .replace("[boundary.inner_rotor]\ntype = \"slip-wall\"\n", ""),
+    );
+    let e = l2(&run_case(&pot, "uniform_pot"));
+    eprintln!("uniform flow through the pot: L2 {e:e}");
+    assert!(e < 1e-5, "pot: {e}");
+    for cone in [0.0, 20.0] {
+        let mut errors = Vec::new();
+        for f in [1, 2] {
+            let mut c = base.clone();
+            let m = c.mesh.revolved.as_mut().unwrap();
+            m.cone = cone;
+            m.n_theta *= f;
+            m.n_theta_stator *= f;
+            c.verification.max_error = None;
+            errors.push(l2(&run_case(&c, &format!("uniform_stage_{f}"))));
+        }
+        eprintln!("uniform flow through the stage, cone {cone}: L2 {errors:?}");
+        assert!(errors[0] < 3e-3, "cone {cone}: {errors:?}");
+        assert!(errors[0] / errors[1] > 2.8, "cone {cone}: {errors:?}");
+    }
+}
+
+/// Solid-body rotation in a closed vessel with a rotor pot whose interface
+/// passes through the axis (D186): every wall turns with the rotor, and the
+/// imprinted meshes keep the exact flow through half a revolution.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn solid_body_rotation_is_kept_by_a_pot_through_the_axis() {
+    let t = std::fs::read_to_string(cases().join("pot_solid_body.toml"))
+        .unwrap()
+        .replace("\r\n", "\n");
+    let r = run_case(&parse(&t), "pot_solid");
+    let e = l2(&r);
+    eprintln!("pot solid body, L2 {e:e}");
+    assert!(e < 0.03, "{e}");
+}

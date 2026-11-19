@@ -9,6 +9,8 @@
 //! - [`generate`]: the built-in generator for canonical test meshes (D34);
 //! - [`cylinder`]: the built-in channel with a cylinder (Schäfer & Turek);
 //! - [`annulus`]: the built-in annulus (Taylor–Couette, rotor–stator);
+//! - [`revolved`]: the built-in mesh of revolution (rotor and stator with an
+//!   interface of cylinders, discs and cones, D186);
 //! - [`imprint`]: the sliding interface of a rotor and a stator with different
 //!   pitch, imprinted at the current rotor angle (D58, D182);
 //! - [`wedge`]: axisymmetric wedge meshes revolved from a 2D mesh;
@@ -37,6 +39,7 @@ pub mod periodic;
 pub mod quality;
 pub mod query;
 pub mod renumber;
+pub mod revolved;
 pub mod wedge;
 
 pub use geometry::Geometry;

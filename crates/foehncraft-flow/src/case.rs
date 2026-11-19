@@ -1370,9 +1370,11 @@ impl FlowCase {
             crate::need!(
                 self.mesh.generate.is_some()
                     || self.mesh.cylinder.is_some()
-                    || self.mesh.annulus.is_some(),
+                    || self.mesh.annulus.is_some()
+                    || self.mesh.revolved.is_some(),
                 CASE_INCONSISTENT,
-                "[verification] levels need a [mesh.generate], [mesh.cylinder] or [mesh.annulus] table"
+                "[verification] levels need a [mesh.generate], [mesh.cylinder], [mesh.annulus] or \
+                 [mesh.revolved] table"
             );
         }
         if v.expected_order.is_some() {
@@ -2080,6 +2082,9 @@ pub(crate) fn mesh_for(case: &FlowCase, level: Option<u32>) -> Result<(Mesh, Geo
         g.refine = l;
     }
     if let (Some(l), Some(g)) = (level, sec.annulus.as_mut()) {
+        g.refine = l;
+    }
+    if let (Some(l), Some(g)) = (level, sec.revolved.as_mut()) {
         g.refine = l;
     }
     let (mut mesh, source, _) = build_mesh(&sec)?;

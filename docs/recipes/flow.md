@@ -24,6 +24,7 @@ Part of the [Recipes](../recipes.md): Couette, Poiseuille, cavity and cylinder r
 | 100 | [Run a turbulent rotor: the frame or the sliding mesh with a turbulence model](#turbulent-rotor) |
 | 101 | [Read the torque and power of a rotor, and the head and efficiency of a machine](#torque-power) |
 | 102 | [Run several rotors at their own speeds, and a transient frozen rotor](#several-rotors) |
+| 103 | [Give a rotor an interface of any rotationally symmetric shape: discs, cones, pots](#revolved-interfaces) |
 
 ---
 
@@ -1216,3 +1217,67 @@ cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/mrf_transie
 
 [Gallery 102](../gallery/flow.md#several-rotors); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
+
+<a id="revolved-interfaces"></a>
+## 103. Give a rotor an interface of any rotationally symmetric shape: discs, cones, pots
+
+```toml
+[mesh.revolved]              # a block grid in (r, z) turned about the z axis
+r = [0.0, 0.03, 0.045, 0.10] # radial breakpoints; r[0] = 0 reaches the axis
+z = [0.0, 0.03, 0.045, 0.055, 0.07, 0.10]
+n_r = [10, 5, 12]            # intervals per block
+n_z = [8, 6, 4, 6, 8]
+rotor = [[0, 1], [0, 3], [1, 1], [1, 2], [1, 3]]   # [r block, z block]
+solid = [[0, 2]]             # no cells: the boundary wall_rotor (a disc)
+n_theta = 48                 # around the axis: rotor
+n_theta_stator = 72          # and stator
+cone = 0.0                   # degrees: tilts the inner z breakpoints (cones)
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 20.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+```
+
+- One interface per rotor (one pair of boundaries), of any shape that is a
+  surface of revolution about the rotor's axis with a meridian of straight
+  pieces (D186): a cylinder (radial gap), a disc (an axial gap between two
+  blade rows), a cone, or a chain of them. A pot of disc, cylinder and disc
+  around an impeller is one interface; so are two discs before and after a
+  rotor row that reaches hub and casing. Discs may pass through the axis.
+- The meshes of the two sides meet on that surface with their own nodes and
+  their own pitch, and need a ring of nodes at every kink of the meridian
+  (each face lies on one straight piece). A meridian that branches or closes
+  on itself (a rotor ring that touches nothing) is refused. Curved
+  meridians are later work; fully general non-matching interfaces are D58
+  (stage 7).
+- The log line of the sliding mesh names the shape it found ("a disc at
+  z = …", "a cone from …", "a surface of revolution of 3 straight pieces in
+  1 part, 2 through the axis").
+- `[mesh.revolved]` names the boundaries `inner` (when r[0] > 0), `outer`,
+  `zmin`, `zmax` and `wall` (around `solid` blocks); on rotor cells they get
+  the suffix `_rotor` (walls that turn with the rotor: give them the
+  velocity `["-w * y", "w * x", 0.0]`). The interface is always split into
+  `rotor_interface` and `stator_interface`.
+- Where the interface meets a wall (a hub), the rotor's and the stator's
+  polygons of that wall differ by a small step: an error of second order in
+  the pitch (0.2 % of a uniform flow at 24 and 34 intervals). Away from
+  walls the imprint keeps a uniform flow to round-off level.
+- Meridional images: `tools/plot/meridional_fields.py` averages the rings of
+  a mesh of revolution and draws (r, z), mirrored.
+
+```sh
+cargo run --release -p foehncraft-cli -- flow examples/studies/revolved/disc_pot.toml
+cargo run --release -p foehncraft-cli -- flow examples/studies/revolved/swirl_stage.toml
+cargo run --release -p foehncraft-cli -- flow examples/cases/flow/axial_stage_uniform.toml
+cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pot_solid_body.toml
+pip install matplotlib h5py numpy
+python3 -m tools.plot.meridional_fields disc_pot.png output/disc_pot/fields.vtkhdf \
+    --quantities swirl,meridional \
+    --interface "0,0.03,0.045,0.03;0.045,0.03,0.045,0.07;0.045,0.07,0,0.07"
+```
+
+[Gallery 103](../gallery/flow.md#revolved-interfaces); the keys are in
+[keys.md](../keys.md).

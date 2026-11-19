@@ -1,0 +1,83 @@
+# Solid-body rotation in a closed vessel with a sliding rotor pot whose
+# interface passes through the axis (D186).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/pot_solid_body.toml
+#
+# A vessel of radius 0.10 m and height 0.15 m ([mesh.revolved] with r[0] = 0:
+# wedge cells about the axis). The rotor is the cylinder r < 0.04 m between
+# z = 0.04 and 0.08 m: its interface with the stator is a disc through the
+# axis, a cylinder and a second disc through the axis, imprinted at the
+# rotor angle in every step (16 intervals around the axis in the rotor, 24
+# in the stator). Every wall turns at the rotor's 10 rad/s and the fluid
+# starts in solid-body rotation, u = Ω × r, p = ρ Ω² r² / 2: the exact
+# solution of the flow, which the imprinted meshes must keep while the rotor
+# turns through half a revolution.
+
+case_format = "0.6"
+
+[mesh.revolved]
+r = [0.0, 0.04, 0.10]
+z = [0.0, 0.04, 0.08, 0.15]
+n_r = [4, 5]
+n_z = [4, 4, 6]
+rotor = [[0, 1]]
+n_theta = 16
+n_theta_stator = 24
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.01
+steps = 30
+start_time = 0.0
+
+[initial]
+from_analytic = true
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[boundary.outer]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.zmin]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.zmax]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+
+[solver]
+tolerance = 1e-10
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 3
+
+# solid-body rotation: Taylor-Couette flow with equal speeds of the two
+# cylinders (the radii only fix the two constants)
+[analytic]
+type = "taylor-couette"
+inner_radius = 0.05
+outer_radius = 0.10
+inner_omega = 10.0
+outer_omega = 10.0
+
+[verification]
+max_error = 0.03
+
+[output]
+vtkhdf = false
+wall_csv = false

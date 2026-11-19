@@ -1,0 +1,85 @@
+# Uniform axial flow through a sliding rotor whose interface is a surface of
+# revolution (D186): a disc before the rotor row, a cylinder over it and a
+# disc after it.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/axial_stage_uniform.toml
+#
+# An annular duct (hub 0.05 m, casing 0.10 m) with a rotor block on the hub
+# between z = 0.05 and 0.08 m and up to r = 0.09 m, 24 intervals around the
+# axis in the rotor and 34 in the stator ([mesh.revolved]). The rotor turns
+# at 40 rad/s and the interface is imprinted in every time step; the walls
+# are slip walls, so the uniform flow u = (0, 0, 1) m/s is the solution of
+# the round duct. The fluid crosses the two discs of the interface on
+# imprinted meshes whose cells close and whose fluxes are conservative; what
+# is left is the step where the interface meets the hub, between the hub
+# polygon of the rotor (24 sides) and the one of the stator (34): it stops a
+# little of the flow along the hub, an error of the polygons (0.2 % here)
+# that falls with the square of the pitch. Set `cone` in [mesh.revolved] to
+# turn the two discs into cones; with r = [0.0, 0.04, 0.10] the rotor is a
+# pot whose discs pass through the axis, away from the walls, and the
+# uniform flow is kept to 1e-6.
+
+case_format = "0.6"
+
+[mesh.revolved]
+r = [0.05, 0.09, 0.10]
+z = [0.0, 0.05, 0.08, 0.13]
+n_r = [4, 1]
+n_z = [5, 3, 5]
+rotor = [[0, 1]]
+n_theta = 24
+n_theta_stator = 34
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.005
+steps = 20
+start_time = 0.0
+
+[initial]
+from_analytic = true
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 40.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[boundary.zmin]
+type = "velocity-inlet"
+profile = "analytic"
+[boundary.zmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.inner]
+type = "slip-wall"
+[boundary.inner_rotor]
+type = "slip-wall"
+[boundary.outer]
+type = "slip-wall"
+
+[solver]
+tolerance = 1e-12
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 3
+
+[analytic]
+type = "uniform"
+velocity = [0.0, 0.0, 1.0]
+length = 0.05
+
+[verification]
+max_error = 3e-3
+
+[output]
+vtkhdf = false
+wall_csv = false

@@ -1,0 +1,80 @@
+# A turning section of an annular duct between two fixed ones, on a sliding
+# mesh whose interface is two separate cones (D186; gallery 103).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/revolved/swirl_stage.toml
+#
+# Duct: hub 0.05 m, casing 0.10 m, length 0.25 m, inflow 0.5 m/s, nu = 1e-3
+# m²/s (Re = 25 on the gap, laminar). The middle section, from the cone
+# z = 0.05 m to the cone z = 0.15 m (at the mid radius; `cone = 20`: both
+# lean 20 degrees against the radial direction), is the rotor: its hub and
+# casing turn at 20 rad/s and put swirl into the flow. The interface is two
+# cones that do not touch each other (two parts of the meridian), with 48
+# intervals around the axis in the rotor and 64 in the stator. The swirl
+# grows from the walls through the rotor, leaves it through the downstream
+# cone and decays along the fixed duct. 1 s from the uniform start, two
+# flow-through times.
+
+case_format = "0.6"
+
+[mesh.revolved]
+r = [0.05, 0.10]
+z = [0.0, 0.05, 0.15, 0.25]
+n_r = [12]
+n_z = [10, 20, 20]
+rotor = [[0, 1]]
+n_theta = 48
+n_theta_stator = 64
+cone = 20.0
+
+[fluid]
+density = 1000.0
+viscosity = 1.0
+
+[constants]
+spin = 20.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.005
+steps = 200
+start_time = 0.0
+
+[initial]
+velocity = [0.0, 0.0, 0.5]
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 20.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[boundary.zmin]
+type = "velocity-inlet"
+velocity = [0.0, 0.0, 0.5]
+[boundary.zmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.inner_rotor]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.outer_rotor]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.inner]
+type = "wall"
+[boundary.outer]
+type = "wall"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 2000
+extrapolation = false
+outer_iterations = 3
+
+[output]
+vtkhdf = true
+wall_csv = false
