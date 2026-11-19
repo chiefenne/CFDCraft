@@ -1594,3 +1594,34 @@ Findings:
    vortices that wrap around the rotor and merge into a shear layer at the
    interface radius. No reference solution exists for this geometry; the case
    is a demonstration and a regression of the wall fix, not a validation.
+
+## Fields of rotating machinery (D183, PR #99)
+
+Five derived fields for `[[mrf]]` and `[[sliding]]`: the relative velocity
+**w** = **c** − Ω × (x − x₀), the frame velocity, the cylindrical components
+with the flow angles, the relative total pressure and the rothalpy.
+
+1. Taylor–Couette flow in the frame (1 024 cells,
+   `relative_and_frame_velocities_of_taylor_couette`): the frame velocity is
+   Ω × x in the rotor to 10⁻¹² and zero in the stator, Ω × x everywhere with
+   `output.frame = "rotor"`; c_u − w_u = Ωr and ρI = p + ½ρ|w|² − ½ρ|u|² to
+   round-off; the largest deviation of c_u from the exact u_θ is 0.7 % of the
+   wall speed, of c_r 2.9 % (the L∞ error of the velocity is 2.95 %), α below
+   1.8°. The fields come from the restart file (`foehn post derive`), so the
+   path after the run is checked as well.
+2. The identities on 200 random velocities, points, axes and both senses of
+   rotation (`turbomachinery_identities`): c = w + u, c_r² + c_u² + c_a² =
+   |c|², c_u − w_u = |u| = |Ω| r, the angles from their definitions in [0°,
+   180°], the fixed frame, a fluid turning with its frame (w = 0, α = 0), the
+   axis itself (no radial or circumferential direction).
+3. **Found on the way:** the sample lines and the reference comparison of the
+   sliding mesh by imprinting located their points with the locator of the
+   start of the run; the rotor cells had moved on, so a line in the rotor
+   read the cell that had stood there at t = 0 and extrapolated its value
+   with the gradient (0.68 m/s instead of 0.47 m/s at r = 52 mm). They use the
+   mesh of the end of the run now; `probes_and_fields_follow_the_rotor` checks
+   a radial line against the exact solution and c_u − w_u = Ωr in the rotor
+   and 0 in the stator. The log columns `probe.<name>.<q>` are still located
+   once, at the start (open).
+4. On a sliding run of the stirred vessel (100 steps) the frame velocity in
+   the written fields matches Ω r at the turned positions of the rotor cells.

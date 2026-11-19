@@ -1345,8 +1345,8 @@ derived = ["wall-distance"]
             let x = [rnd(), rnd(), rnd()];
             let v = turbo(c, x, Some(&t), &t);
             let s = norm(c) + norm(v.u);
-            for i in 0..3 {
-                assert!(tol(v.w[i] + v.u[i], c[i], s), "c = w + u");
+            for ((w, u), c) in v.w.iter().zip(v.u).zip(c) {
+                assert!(tol(w + u, c, s), "c = w + u");
             }
             assert!(tol(v.c_r.hypot(v.c_u).hypot(v.c_a), norm(c), s), "|c|");
             assert!(tol(v.c_m, v.c_r.hypot(v.c_a), s));
