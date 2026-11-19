@@ -41,6 +41,10 @@ RUN_KEYS = ("backend", "ptx", "threads")
 
 def strip(o):
     if isinstance(o, dict):
+        if o.get("name") == "case.resolved.toml":
+            # its lines are compared on their own, without the device keys
+            # of [run] (backend, ptx, threads), so its hash and size may differ
+            o = {k: v for k, v in o.items() if k not in ("sha256", "bytes")}
         return {k: strip(v) for k, v in o.items() if not any(s in k for s in SKIP_KEYS)}
     if isinstance(o, list):
         return [strip(v) for v in o]
