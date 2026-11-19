@@ -1159,6 +1159,8 @@ is the same within 0.05 mN m up to 0.4 s (−1.85 instead of −1.89 mN m at
 computed flow and is not a discretisation error. Its period, 0.24 s, is not
 the blade-passing period 2π/(4Ω) = 0.16 s; what sets it is still open.
 
+![The rotor torque of the stirred vessel: frozen rotor, and the sliding mesh with the base settings, half the time step, ten outer iterations and a finer mesh; the four sliding curves lie on top of each other](../figures/gallery/mixer_torque_variants.png)
+
 Checks (`tests/sliding.rs`, `tests/mrf.rs`): Couette flow between two
 cylinders that turn at +10 and −5 rad/s, each a sliding rotor by imprinting
 with its own pitch (`examples/cases/flow/couette_two_rotors.toml`, 960
