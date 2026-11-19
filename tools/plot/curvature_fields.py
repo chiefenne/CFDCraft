@@ -27,12 +27,12 @@ import sys
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-from matplotlib.colors import TwoSlopeNorm  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+from matplotlib.colors import TwoSlopeNorm
 
-from tools.plot import backstep_chart as bc  # noqa: E402
-from tools.plot.turbulence_fields import read  # noqa: E402
+from tools.plot import backstep_chart as bc
+from tools.plot.turbulence_fields import read
 
 
 def main():

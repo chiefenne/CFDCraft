@@ -21,8 +21,8 @@ import sys
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
 
 U_B = 14.95
 
@@ -37,7 +37,8 @@ def profile(d):
 
 
 def walls(d):
-    s = json.load(open(os.path.join(d, "flow.json")))["solves"][-1]
+    with open(os.path.join(d, "flow.json")) as fh:
+        s = json.load(fh)["solves"][-1]
     f = {b["name"]: b["force"][0] for b in s["boundaries"]}
     return f["ymin"], f["ymax"]
 
