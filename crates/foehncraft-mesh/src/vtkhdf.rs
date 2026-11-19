@@ -289,6 +289,18 @@ fn standard_cell(mesh: &Mesh, c: usize) -> Option<(u8, Vec<i64>)> {
         .cell_face_iter(c)
         .map(|(f, nb)| outward(mesh, f, nb))
         .collect();
+    // a cell whose faces do not close on the nodes of its shape (a face of an
+    // imprinted interface, D182, has corners of its own) is a polyhedron
+    let nodes: std::collections::HashSet<i64> = faces.iter().flatten().copied().collect();
+    let expected = match shape {
+        CellShape::Tetrahedron => 4,
+        CellShape::Hexahedron => 8,
+        CellShape::Prism => 6,
+        _ => 5,
+    };
+    if nodes.len() != expected {
+        return None;
+    }
     // node adjacent to `n` along an edge, not in `base`
     let up = |n: i64, base: &[i64]| -> i64 {
         for f in &faces {

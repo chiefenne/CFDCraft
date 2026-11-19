@@ -1,0 +1,84 @@
+# Laminar Taylor-Couette flow with a sliding mesh by imprinting (D58, D182,
+# variant B; stage 6, part 7 of 6g).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/taylor_couette_imprint.toml
+#
+# The same flow as taylor_couette_sliding.toml (a cylinder of radius 0.05 m
+# turning at 10 rad/s inside a fixed one of radius 0.10 m, Re = 50, started
+# from rest), now with a rotor and a stator that do not match at the
+# interface: the rotor ring has 32 sectors, the stator ring 48. The interface
+# at the middle of the gap is two boundaries, `rotor_interface` and
+# `stator_interface`, of two separate meshes (`n_theta_stator`), and the
+# time step is free: in every step the interface is imprinted at the rotor
+# angle, every intersection of a rotor face with a stator face is an internal
+# face (mass and momentum flux conserved to round-off, no interpolation), and
+# the flow solver is built again on that mesh. The scheme is fully
+# implicit in the step: no extrapolation, several outer iterations. The run
+# fails if the relative L2 error of the velocity at the end exceeds the band.
+
+case_format = "0.6"
+
+[mesh.annulus]
+r_inner = 0.05
+r_outer = 0.10
+depth = 0.01
+n_theta = 16
+n_theta_stator = 24
+n_r = 8
+rotor_layers = 4
+refine = 1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-4
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.02
+steps = 500
+start_time = 0.0
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[boundary.inner]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.outer]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 4
+
+[analytic]
+type = "taylor-couette"
+inner_radius = 0.05
+outer_radius = 0.10
+inner_omega = 10.0
+
+[verification]
+max_error = 0.03
+
+[output]
+vtkhdf = false
+wall_csv = false

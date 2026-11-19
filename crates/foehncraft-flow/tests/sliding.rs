@@ -1,11 +1,17 @@
-//! The sliding mesh with conformal stepping (D56, D182, stage 6 part 6 of
-//! 6g): the rotor of a ring mesh turns by whole sectors per time step.
+//! The sliding mesh (D56, D182, stage 6 parts 6 and 7 of 6g).
 //!
-//! The checks: the shift of the rotor cells (a bijection, N of them are
-//! the identity), the refusals of the case file, laminar Taylor–Couette
-//! flow from rest against the exact solution on a series of meshes
-//! (second order, Δt ∝ h), a fluid in solid-body rotation that the scheme
-//! keeps, a rotor with a shift of two sectors, and a passive scalar.
+//! Variant A, conformal stepping: the rotor of a ring mesh turns by whole
+//! sectors per time step. The checks: the shift of the rotor cells (a
+//! bijection, N of them are the identity), the refusals of the case file,
+//! laminar Taylor–Couette flow from rest against the exact solution on a
+//! series of meshes (second order, Δt ∝ h), a fluid in solid-body rotation
+//! that the scheme keeps, a rotor with a shift of two sectors, and a passive
+//! scalar.
+//!
+//! Variant B, imprinting: the interface of a rotor and a stator with
+//! different numbers of sectors is imprinted at the rotor angle of every
+//! (free) time step. The same flows, with the refusals of its case file, and
+//! the comparison with variant A on a mesh whose two pitches are equal.
 
 use foehncraft_flow::case::{FlowCase, FlowReport, run};
 use foehncraft_flow::diag;
@@ -335,4 +341,249 @@ fn a_frame_and_a_sliding_mesh_do_not_mix() {
         .unwrap_err();
     assert_eq!(code(&e), "MRF001", "{e:#}");
     let _ = MrfSection::default();
+}
+
+// ---------------------------------------------------------------------
+// variant B: the interface is imprinted in every step (D182)
+// ---------------------------------------------------------------------
+
+fn imprint_text() -> String {
+    std::fs::read_to_string(cases().join("taylor_couette_imprint.toml"))
+        .unwrap()
+        .replace("\r\n", "\n")
+}
+
+/// The imprint case at refinement `level` (the sectors of the rotor and the
+/// stator double with it) with a time step proportional to the cell size
+/// (0.04 s on the coarsest mesh), to the time `end`.
+fn imprint_at(base: &FlowCase, level: u32, end: f64) -> FlowCase {
+    let mut c = base.clone();
+    c.verification.max_error = None;
+    c.mesh.annulus.as_mut().unwrap().refine = level;
+    let dt = 0.04 / f64::from(1u32 << level);
+    let mut t = c.time.unwrap();
+    t.time_step = dt;
+    t.steps = Some((end / dt).round() as usize);
+    t.end_time = None;
+    c.time = Some(t);
+    c
+}
+
+/// The refusals of the case file that need no mesh.
+#[test]
+fn the_imprint_case_is_checked() {
+    let valid = |t: &str| -> Result<(), String> {
+        FlowCase::from_toml(t, &cases())
+            .and_then(|c| c.validate())
+            .map_err(|e| code(&e))
+    };
+    let base = imprint_text();
+    valid(&base).unwrap();
+    // the two boundaries go together
+    let one = base.replace("stator_interface = \"stator_interface\"\n", "");
+    assert_eq!(valid(&one).unwrap_err(), "SLD002");
+    // the rotor is a zone, the time step is free (shift belongs to variant A)
+    let no_zone = base.replace("zone = \"rotor\"\n", "");
+    assert_eq!(valid(&no_zone).unwrap_err(), "SLD002");
+    let shift = base.replace(
+        "omega = 10.0\nrotor_interface",
+        "omega = 10.0\nshift = 2\nrotor_interface",
+    );
+    assert_eq!(valid(&shift).unwrap_err(), "SLD002");
+    // fully implicit in the step
+    let extrapolated = base.replace("extrapolation = false", "extrapolation = true");
+    assert_eq!(valid(&extrapolated).unwrap_err(), "SLD003");
+    let one_outer = base.replace("outer_iterations = 4", "outer_iterations = 1");
+    assert_eq!(valid(&one_outer).unwrap_err(), "SLD003");
+    let adaptive = base.replace("[time]\n", "[time]\nadaptive = true\n");
+    assert_eq!(valid(&adaptive).unwrap_err(), "SLD003");
+    // a restart is not available yet
+    let restart = base.replace("[output]\n", "[run]\nrestart = \"x.h5\"\n\n[output]\n");
+    assert_eq!(valid(&restart).unwrap_err(), "SLD005");
+}
+
+/// What the mesh decides: the names of the interface, the zone, the shape
+/// of the interface, and the physics that is not available yet.
+#[test]
+fn the_imprint_mesh_is_checked() {
+    let base = imprint_text();
+    let refused = |t: String| -> (String, String) {
+        let c = parse(&t);
+        let e = try_run(&c, "imprint_refused").unwrap_err();
+        (code(&e), format!("{e:#}"))
+    };
+    // an interface that is not on the mesh
+    let (c, m) = refused(base.replace(
+        "rotor_interface = \"rotor_interface\"",
+        "rotor_interface = \"rotor_interfac\"",
+    ));
+    assert!(
+        m.contains("SLD005") && m.contains("did you mean `rotor_interface`"),
+        "{c}: {m}"
+    );
+    // a conformal mesh has no interface boundaries
+    let (_, m) = refused(base.replace("n_theta_stator = 24\n", ""));
+    assert!(m.contains("SLD005") && m.contains("has no boundary"), "{m}");
+    // the zone, with the nearest name
+    let (c, m) = refused(base.replace("zone = \"rotor\"", "zone = \"rotr\""));
+    assert_eq!(c, "SLD002", "{m}");
+    assert!(m.contains("did you mean `rotor`"), "{m}");
+    // an interface boundary gets no condition
+    let (c, m) = refused(format!(
+        "{base}\n[boundary.rotor_interface]\ntype = \"wall\"\n"
+    ));
+    assert_eq!(c, "SLD005", "{m}");
+    assert!(m.contains("interface boundary"), "{m}");
+    // a turbulence model
+    let (c, _) = refused(base.replace(
+        "[flow]\n",
+        "[turbulence]\nmodel = \"k-omega-sst\"\n\n[flow]\n",
+    ));
+    assert_eq!(c, "SLD004");
+}
+
+/// Taylor–Couette flow from rest with 2n sectors in the rotor and 3n in the
+/// stator, a time step that no sector decides: the error against the exact
+/// solution falls with the second power of the mesh width (160, 640 and
+/// 5 120 cells, Δt ∝ h).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn taylor_couette_with_unequal_pitch_converges_with_second_order() {
+    let base = parse(&imprint_text());
+    let e: Vec<f64> = (0..3)
+        .map(|l| l2(&run_case(&imprint_at(&base, l, 10.0), &format!("itc{l}"))))
+        .collect();
+    let order: Vec<f64> = e.windows(2).map(|w| (w[0] / w[1]).log2()).collect();
+    eprintln!("imprinted Taylor–Couette: L2 {e:?}, orders {order:?}");
+    assert!(e[1] < 0.02 && e[2] < 0.004, "{e:?}");
+    assert!(
+        order.iter().all(|o| (1.9..2.8).contains(o)),
+        "orders {order:?}"
+    );
+    // the mass that crosses the interface is the mass that leaves one side
+    // and enters the other: the balance closes to round-off
+    let r = run_case(&imprint_at(&base, 1, 2.0), "itc_mass");
+    assert!(
+        r.solves[0].mass_imbalance.abs() < 1e-12,
+        "{}",
+        r.solves[0].mass_imbalance
+    );
+}
+
+/// With the same number of sectors on both sides and the time step of
+/// variant A, imprinting and conformal stepping solve the same problem on
+/// the same mesh: the errors agree (the imprint pieces are the faces of the
+/// mesh at every step that turns the rotor by whole sectors).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn equal_pitch_agrees_with_conformal_stepping() {
+    let conformal = l2(&run_case(
+        &at_level(&parse(&text()), 1, 1, 10.0),
+        "pitch_conformal",
+    ));
+    let mut c = parse(&imprint_text());
+    c.verification.max_error = None;
+    let n = {
+        let a = c.mesh.annulus.as_mut().unwrap();
+        a.refine = 1;
+        a.n_theta_stator = a.n_theta;
+        a.n_theta << a.refine
+    };
+    let dt = 2.0 * std::f64::consts::PI / (n as f64 * 10.0);
+    let mut t = c.time.unwrap();
+    t.time_step = dt;
+    t.steps = Some((10.0 / dt).round() as usize);
+    c.time = Some(t);
+    let imprinted = l2(&run_case(&c, "pitch_imprinted"));
+    eprintln!("equal pitch: conformal {conformal:e}, imprinted {imprinted:e}");
+    assert!(
+        (imprinted / conformal - 1.0).abs() < 0.1,
+        "{conformal} {imprinted}"
+    );
+}
+
+/// A fluid in solid-body rotation with both cylinders turning, started
+/// from the exact solution: the rotor mesh turns through the fixed stator
+/// mesh and the fluid, which does not move relative to the rotor, flows
+/// through the stator cells; the error does not grow.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn solid_body_rotation_is_kept_by_imprinting() {
+    let t = imprint_text()
+        .replace(
+            "[boundary.outer]\ntype = \"wall\"\n",
+            "[boundary.outer]\ntype = \"wall\"\nvelocity = [\"-spin * y\", \"spin * x\", 0.0]\n",
+        )
+        .replace(
+            "inner_omega = 10.0",
+            "inner_omega = 10.0\nouter_omega = 10.0",
+        )
+        .replace("[flow]\n", "[initial]\nfrom_analytic = true\n\n[flow]\n");
+    let base = parse(&t);
+    let short = l2(&run_case(&imprint_at(&base, 1, 0.6), "isolid_short"));
+    let long = l2(&run_case(&imprint_at(&base, 1, 3.0), "isolid_long"));
+    eprintln!("imprinted solid body, L2: {short:e} at 0.6 s, {long:e} at 3 s");
+    assert!(short < 0.03 && long < 0.03, "{short} {long}");
+    assert!(long < 1.5 * short, "{short} {long}");
+}
+
+/// A passive scalar between the cylinders with the rotor turning through it:
+/// the scalar of a cell is carried through the rebuilt solver, and it ends
+/// in the exact solution.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn a_passive_scalar_ends_in_the_exact_solution_with_imprinting() {
+    let t = imprint_text()
+        + "\n[scalars.theta]\ndiffusivity = 1e-3\ninitial = 0.0\n\
+           exact = \"log(0.1 / sqrt(x^2 + y^2)) / log(2.0)\"\n\
+           [boundary.inner.scalar.theta]\nvalue = 1.0\n\
+           [boundary.outer.scalar.theta]\nvalue = 0.0\n";
+    let base = parse(&t);
+    let r = run_case(&imprint_at(&base, 1, 12.0), "itheta");
+    assert!(r.failures.is_empty(), "{:?}", r.failures);
+    let e = r.solves[0].scalars[0].l2.expect("exact solution of theta");
+    eprintln!("imprinted theta L2 {e:e}");
+    assert!(e < 1.5e-2, "{e}");
+}
+
+/// The outputs of a run on imprinted meshes: a probe in the rotor finds the
+/// cell that is there now (not the cell that was there at the start), a
+/// probe in the stator the stator's, and the fields of a mesh whose
+/// interface cells are polyhedra are written.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn probes_and_fields_follow_the_rotor() {
+    let t = imprint_text()
+        + "\n[[output.probes]]\nname = \"rot\"\npoint = [0.06, 0.0, 0.005]\n\
+           \n[[output.probes]]\nname = \"sta\"\npoint = [0.0, 0.09, 0.005]\n";
+    let t = t.replace("vtkhdf = false", "vtkhdf = true");
+    let mut c = parse(&t);
+    c.verification.max_error = None;
+    let dir = out("outputs");
+    let rep = run(&c, "outputs", &dir, |_| {}).unwrap();
+    assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+    let csv = std::fs::read_to_string(dir.join("probes.csv")).unwrap();
+    let last: Vec<f64> = csv
+        .lines()
+        .rfind(|l| !l.starts_with('#') && !l.is_empty())
+        .unwrap()
+        .split(',')
+        .map(|x| x.parse().unwrap())
+        .collect();
+    let fields = dir.join("fields.vtkhdf").exists();
+    let _ = std::fs::remove_dir_all(&dir);
+    // u_θ = A r + B / r of Taylor–Couette flow (r₁ = 0.05, r₂ = 0.10, Ω = 10)
+    let exact = |r: f64| -10.0 * 0.0025 / 0.0075 * r + 10.0 * 0.0025 * 0.01 / 0.0075 / r;
+    // columns: step, time, rot u v w p, sta u v w p
+    let (rot_v, sta_u) = (last[3], last[6]);
+    eprintln!(
+        "probes: rotor v {rot_v} (exact {}), stator u {sta_u} (exact {})",
+        exact(0.06),
+        -exact(0.09)
+    );
+    assert!((rot_v / exact(0.06) - 1.0).abs() < 0.05, "{rot_v}");
+    assert!((sta_u / -exact(0.09) - 1.0).abs() < 0.05, "{sta_u}");
+    if cfg!(feature = "hdf5") {
+        assert!(fields, "fields.vtkhdf");
+    }
 }

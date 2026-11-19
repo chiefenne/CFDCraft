@@ -880,3 +880,67 @@ omega = 10.0              # or rpm = ... (nonzero)
 
 [Gallery 95](../gallery/flow.md#sliding-mesh); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
+
+<a id="sliding-mesh-imprint"></a>
+## 96. Turn a rotor against a stator with a different pitch (sliding mesh by imprinting)
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/taylor_couette_imprint.toml
+```
+
+When the rotor and the stator have different numbers of sectors, or the time
+step should be free, the interface between them is imprinted in every step
+(D182, variant B). The mesh has the rotor and the stator as two meshes that
+meet in **two boundaries** on a circular cylinder about the axis (the built-in
+annulus mesh makes them with `n_theta_stator`; from your own mesh give a cell
+zone for the rotor and two boundary patches):
+
+```toml
+[mesh.annulus]
+n_theta = 16
+n_theta_stator = 24       # 0: one conformal mesh; with a value the interface is split
+rotor_layers = 4          # radial layers of the zone "rotor"
+
+[time]
+scheme = "bdf2"
+time_step = 0.02          # free
+steps = 500
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0              # or rpm = ...
+rotor_interface = "rotor_interface"     # the boundaries of the two sides
+stator_interface = "stator_interface"
+
+[solver]
+extrapolation = false     # fully implicit in the step
+outer_iterations = 4      # 3 to 6 is usual
+```
+
+- The two interface boundaries get **no** `[boundary.<name>]` table (`SLD005`
+  if they do): their faces are replaced by the imprint at every step. A name
+  that is not on the mesh is refused with the nearest one.
+- The time step is **free**: `shift` does not apply (`SLD002`). The step must
+  be fixed (no `adaptive`, no `error_tolerance`, no sweep over `[verification]`
+  levels, `SLD003`), and the scheme must be fully implicit: `extrapolation = false`
+  and at least two `outer_iterations` (`SLD003`, with the reason). Two outer
+  iterations are enough to keep the error of the case file to 1.35 %, four give
+  1.29 %. Courant numbers near 1 relative to the rotor are fine.
+- The interface must lie on one circular cylinder about the axis, with the same
+  total area on both sides, rotor and stator cells must not share a face or a
+  node, and the mesh must be extruded along the axis so that the cells next to
+  the interface close (a faces-do-not-close warning, `SLD006`, otherwise).
+- Laminar flow and passive scalars; boundaries of the rotor are walls turning
+  with it (`velocity = [...]`), slip walls or symmetry planes (`SLD004`); one
+  rotor; no restart (`SLD005`, and no restart file is written).
+- Probes find the cell that is at their point at the time of the sample, and
+  the fields file (`vtkhdf`) is written on the mesh of the end of the run with
+  the cells at the interface as polyhedra.
+- The run builds the solver in every step, so it takes several times the time
+  of a run on a fixed mesh of the same size. Use variant A (recipe 95) when the
+  two pitches are equal and the step may be one sector.
+
+[Gallery 96](../gallery/flow.md#sliding-mesh-imprint); the keys are in
+[cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
