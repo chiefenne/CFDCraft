@@ -7,12 +7,16 @@ its own axis.
     pip install gmsh
     python3 examples/meshes/twin_mixer.py              # default size
     python3 examples/meshes/twin_mixer.py --size 1.2e-3
+    python3 examples/meshes/twin_mixer.py --right-blades 5   # twin_mixer5.msh
 
 Writes `twin_mixer.msh` next to this script: the vessel is a stadium (two
 half circles of radius 0.10 m joined by straight walls, 0.36 m long), the
 rotors sit at x = -0.08 m (zone `rotor_left`, three blades) and x = +0.08 m
 (zone `rotor_right`, four blades), and each meets the stator on its circle
 of radius 0.06 m with its own nodes (64 rotor and 96 stator intervals).
+`--right-blades 5` writes `twin_mixer5.msh` with five blades on the right
+rotor: the mesh of the gallery images (CONTRIBUTING.md, "Images": no
+four-fold rotor patterns in published images).
 
 Boundaries: `blades_left`, `blades_right` (blades and hubs, turning with
 their rotors), `vessel` (the vessel wall), `left_rotor_interface`,
@@ -165,8 +169,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--size", type=float, default=2.5e-3, help="largest cell size (m)")
     ap.add_argument("--out", default=os.path.dirname(os.path.abspath(__file__)))
+    ap.add_argument("--right-blades", type=int, default=4,
+                    help="number of blades of the right rotor")
     a = ap.parse_args()
-    path = os.path.join(a.out, "twin_mixer.msh")
+    global ROTORS
+    ROTORS = [("left", -X_ROTOR, 3), ("right", X_ROTOR, a.right_blades)]
+    name = "twin_mixer.msh" if a.right_blades == 4 else f"twin_mixer{a.right_blades}.msh"
+    path = os.path.join(a.out, name)
     print(f"{path}: {build(a.size, path)} cells")
 
 
