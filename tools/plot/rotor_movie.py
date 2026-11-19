@@ -21,7 +21,15 @@ Options:
     --size W H       pixels (default 1600 1600)
     --out DIR        where the frames go (default DIR/movie)
     --every N        every N-th file only (default 1)
-    --preset NAME    ParaView colour map (default "Inferno (matplotlib)")
+    --preset NAME    ParaView colour map by name (default "Inferno (matplotlib)";
+                     e.g. "Cool to Warm", "Viridis (matplotlib)", "Turbo",
+                     "Jet", "Rainbow Uniform", "Black-Body Radiation");
+                     a name this ParaView does not have falls back to inferno
+    --isocolor R G B colour of the isolines, 0 to 1
+                     (default 1 1 1; on a light map use e.g. 0 0 0)
+    --wallcolor R G B  colour of the wall lines (default 0 0 0)
+    --background R G B  background (default 1 1 1)
+    --colorbar on|off  the colour bar (default on)
     --cells          flat cell colours instead of the smoothed point values
                      (the default: cell data to point data, smooth contours)
     --isolines N     also N black contour lines of the field
@@ -123,6 +131,10 @@ def main():
     ap.add_argument("--preset", default="Inferno (matplotlib)")
     ap.add_argument("--cells", action="store_true")
     ap.add_argument("--isolines", type=int, default=0)
+    ap.add_argument("--isocolor", type=float, nargs=3, default=[1.0, 1.0, 1.0])
+    ap.add_argument("--wallcolor", type=float, nargs=3, default=[0.0, 0.0, 0.0])
+    ap.add_argument("--background", type=float, nargs=3, default=[1.0, 1.0, 1.0])
+    ap.add_argument("--colorbar", choices=["on", "off"], default="on")
     ap.add_argument("--slice", action="store_true")
     ap.add_argument("--fps", type=int, default=25)
     a = ap.parse_args()
@@ -168,7 +180,7 @@ def main():
     v = CreateView("RenderView")
     v.ViewSize = list(a.size)
     v.OrientationAxesVisibility = 0
-    v.Background = [1.0, 1.0, 1.0]
+    v.Background = list(a.background)
     opt(v, "UseColorPaletteForBackground", 0)
     opt(v, "BackgroundColorMode", "Single Color")
 
@@ -204,7 +216,7 @@ def main():
                         ("WindowLocation", "Any Location"), ("Orientation", "Vertical"),
                         ("Position", [0.86, 0.25]), ("ScalarBarLength", 0.5)):
         opt(bar, name, value)
-    d.SetScalarBarVisibility(v, True)
+    d.SetScalarBarVisibility(v, a.colorbar == "on")
 
     if a.isolines > 0 and not a.cells:
         mid = Slice(Input=shown)
@@ -216,8 +228,8 @@ def main():
                                    for k in range(a.isolines)])
         ci = Show(iso, v)
         ColorBy(ci, None)
-        ci.AmbientColor = [0.0, 0.0, 0.0]
-        ci.DiffuseColor = [0.0, 0.0, 0.0]
+        ci.AmbientColor = list(a.isocolor)
+        ci.DiffuseColor = list(a.isocolor)
         opt(ci, "LineWidth", 1.5)
         opt(ci, "Position", [0.0, 0.0, 0.5 * (z1 - z0) + 1e-3 * (x1 - x0)])
     w = Show(lines, v)
@@ -225,8 +237,8 @@ def main():
         ColorBy(w, None)
     except Exception:  # noqa: BLE001  ("invalid association string 'NONE'")
         pass
-    w.AmbientColor = [0.0, 0.0, 0.0]
-    w.DiffuseColor = [0.0, 0.0, 0.0]
+    w.AmbientColor = list(a.wallcolor)
+    w.DiffuseColor = list(a.wallcolor)
     opt(w, "LineWidth", 2.5)
 
     label = Text(Text="")

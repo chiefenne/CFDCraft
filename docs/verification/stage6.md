@@ -1705,3 +1705,30 @@ The tests are in `tests/mrf.rs` and `tests/sliding.rs`, the wall distance in
    EB k-ε model on the sliding mesh, and a comparison with measured data of a
    stirred vessel (3D).
 
+
+## Torque, shaft power and machine values (D184, PR #101)
+
+The tests are in `tests/mrf.rs`, the code in `crates/foehncraft-flow/src/rotor.rs`.
+
+1. **Torque of laminar Taylor–Couette flow** (`torque_and_shaft_power_of_taylor_couette_flow`;
+   r₁ = 0.05 m, r₂ = 0.10 m, μ = 5·10⁻⁴ Pa s, ω = 10 rad/s, 1 024 cells):
+   the torque of the inner cylinder −4π μ ω r₁² r₂² L/(r₂² − r₁²) = −2.094·10⁻⁶ N m
+   to 0.47 % with the frame at the cylinder speed, 0.94 % in the inertial
+   frame and 1.26 % in a frame at 25 rad/s; the outer cylinder carries the
+   opposite torque (angular momentum imbalance 0.2 %, 0.7 %, 1.0 %). Without
+   the transposed viscous stress the torque was 1.37·10⁻⁶ N m (35 % low): the
+   Laplacian form ∇·(μ∇u) of the momentum rows has no ∇uᵀ term, which gives the
+   shear stress μ(du_θ/dr − u_θ/r) its second part. A wall at rest is not
+   affected (the term vanishes at a no-slip wall).
+2. **Shaft power** in the same test: −Ω·T equals the work of the wall on the
+   fluid to 10⁻¹⁰ (they are the same sum by construction for a wall that
+   turns with the zone), the exact dissipation Ω |T| to 3 %, and the ledger
+   books it: shaft work = wall power of the Laplacian form + work of the
+   transposed stress (5·10⁻³).
+3. **Machine values of plane Poiseuille flow** (`machine_values_of_poiseuille_flow`):
+   through a zone at Ω = 0, Δp_t = −12 μ U L/h² = −2.4 Pa to 0.4 %,
+   Q = U h d to 0.2 %, hydraulic power Q Δp_t, no Euler work, an undefined
+   efficiency at zero shaft power.
+4. **Sliding mesh:** a run of 40 steps of the stirred vessel shows the angle
+   column (|Ω| t in degrees: 21.49° at t = 0.0375 s), the shaft power in the
+   compact balance line and the torque columns of `forces.csv`.

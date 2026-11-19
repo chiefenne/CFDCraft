@@ -1030,3 +1030,55 @@ Limits: 2D, one sliding rotor, no torque or power output yet (next), no
 restart of a sliding run, first cells of the blades in the buffer layer on
 62 % of their area (`TURB001`), no comparison with measured data.
 [Recipe 100](../recipes/flow.md#turbulent-rotor).
+
+<a id="torque-power"></a>
+## 101. Torque, shaft power and the performance of a machine: the rotor of the stirred vessel
+
+The rotor of a turning zone (`[[mrf]]`, `[[sliding]]`) has a torque, a shaft
+power and, between an inlet and an outlet, the performance values of a
+pump, fan or turbine (D184). The torque of the fluid on every wall is
+taken about the axis of its rotor (the walls inside its zone, or the list
+`walls`) and appears in the results table, in `boundaries.csv`, in
+`forces.csv` and in the log (`rotor.<zone>.torque`); the shaft power −Ω·T is
+booked in the energy balance of every step and of the run as the work of the
+rotor on the fluid, with the wall terms it is made of. The angle of every
+sliding rotor is a log column (`rotor.<zone>.angle`), one per rotor, each with
+its own speed.
+
+```toml
+[[sliding]]
+zone = "rotor"
+omega = 10.0
+
+[[output.machines]]          # a pump or fan: flow, head, efficiency
+name = "pump"
+inlet = ["inlet"]
+outlet = ["outlet"]
+```
+
+![The torque of the rotor of the stirred vessel of entry 98 on the sliding mesh, in its first revolution from rest: the impulsive start, then the passage of the blades by the baffles](../figures/gallery/mixer_torque.png)
+
+The stirred vessel of [entry 98](#stirred-vessel) (laminar, ν = 5·10⁻⁵ m²/s).
+In the moving reference frame the torque of the fluid on the blades is
+−2.47·10⁻⁴ N m and the shaft power 2.47·10⁻³ W (the frozen rotor, at the
+blade position of the mesh). On the sliding mesh from rest the torque of the
+first revolution starts with the impulsive start, and after one revolution
+the shaft torque is 2.6·10⁻⁴ N m, near that of the frame; it is not yet
+periodic (the spin-up of the vessel takes many revolutions) and changes sign
+twice while the blades pass the wakes of the baffles. The sign changes were
+not investigated further. In the transient balance the shaft work equals the
+sum of the kinetic energy stored, dissipated and numerically dissipated: the
+compact line of every step shows it.
+
+Checks (`tests/mrf.rs`): the torque of the inner cylinder of laminar
+Taylor–Couette flow against the exact −4π μ ω r₁² r₂² L/(r₂² − r₁²): 0.5 %
+with the frame at the cylinder speed, 0.9 and 1.3 % in other frames; the
+shaft power equals the work of the wall on the fluid and the exact
+dissipation (within 3 %); the torque of the outer cylinder is opposite
+(within 2 %); plane Poiseuille flow through a machine gives the total
+pressure rise −12 μ U L/h² (2 %), the volume flow and no Euler work. The
+torque of a moving wall needs the transposed viscous stress: the Laplacian
+form of the momentum rows has no −u_θ/r in the shear stress, and the torque
+of the turning cylinder was 35 % too small without it. Details on the
+[verification page](../verification/stage6.md#torque-shaft-power-and-machine-values-d184-pr-101).
+[Recipe 101](../recipes/flow.md#torque-power).
