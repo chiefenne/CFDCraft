@@ -125,8 +125,10 @@ pub struct Assembled {
     pub origin: Vec<FaceOrigin>,
     /// The intersections, in order of creation.
     pub pieces: Vec<Piece>,
-    /// The rotor angle (rad).
+    /// The rotor angle (rad; of the first rotor).
     pub angle: f64,
+    /// The angle of every rotor (rad).
+    pub angles: Vec<f64>,
 }
 
 /// Rotation of `p` about the axis through `o` along the unit vector `a` by
@@ -514,113 +516,14 @@ impl Interface {
     /// intersection polygons. The cells and their numbering are those of
     /// `mesh`, the other boundaries keep their order.
     pub fn assemble(&self, mesh: &Mesh, angle: f64) -> Result<Assembled, String> {
-        let mut points = mesh.points.clone();
-        if angle != 0.0 {
-            for (p, &turn) in points.iter_mut().zip(&self.rotor_node) {
-                if turn {
-                    *p = rotate(*p, self.origin, self.axis, angle);
-                }
-            }
-        }
-        let pieces_poly = self.intersections(angle);
-        // the corners of the polygons are new nodes
-        let mut piece_nodes: Vec<Vec<u32>> = Vec::with_capacity(pieces_poly.len());
-        let mut pieces = Vec::with_capacity(pieces_poly.len());
-        for (ri, si, poly, _) in &pieces_poly {
-            let (r, s) = (&self.rotor[*ri as usize], &self.stator[*si as usize]);
-            // the orientation of the rotor face: out of the rotor cell
-            let ids: Vec<u32> = poly
-                .iter()
-                .map(|q| {
-                    // θ of the polygon is in the frame of the stator
-                    let id = points.len() as u32;
-                    points.push(self.point(q[0], q[1]));
-                    id
-                })
-                .collect();
-            let ordered: Vec<u32> = if r.sign > 0.0 {
-                ids
-            } else {
-                ids.into_iter().rev().collect()
-            };
-            piece_nodes.push(ordered);
-            pieces.push(Piece {
-                rotor_face: r.face,
-                stator_face: s.face,
-                rotor_cell: r.cell,
-                stator_cell: s.cell,
-                area: 0.0,
-            });
-        }
-        let mut b = MeshBuilder::new(points, mesh.n_cells);
-        b.set_zones(mesh.zones.clone(), mesh.cell_zone.clone());
-        let skip = |name: &str| {
-            mesh.boundaries[self.patches[0]].name == name
-                || mesh.boundaries[self.patches[1]].name == name
-        };
-        for p in &mesh.boundaries {
-            if !skip(&p.name) {
-                b.declare_boundary(&p.name);
-            }
-        }
-        let mut origin: Vec<FaceOrigin> = Vec::new();
-        for f in 0..mesh.n_interior_faces() {
-            b.add_interior(mesh.face(f), mesh.owner[f], mesh.neighbour[f]);
-            origin.push(FaceOrigin::Base(f as u32));
-        }
-        for p in &mesh.boundaries {
-            if skip(&p.name) {
-                continue;
-            }
-            for f in p.range() {
-                b.add_boundary(mesh.face(f), mesh.owner[f], &p.name);
-                origin.push(FaceOrigin::Base(f as u32));
-            }
-        }
-        for (k, nodes) in piece_nodes.iter().enumerate() {
-            b.add_interior(nodes, pieces[k].rotor_cell, pieces[k].stator_cell);
-            origin.push(FaceOrigin::Piece(k as u32));
-        }
-        let (assembled, order) = b.finish_with_order()?;
-        let origin: Vec<FaceOrigin> = order.iter().map(|&i| origin[i as usize]).collect();
-        let mut out = Assembled {
-            mesh: assembled,
-            origin,
-            pieces,
-            angle,
-        };
-        // the true areas
-        for (f, o) in out.origin.iter().enumerate() {
-            if let FaceOrigin::Piece(k) = o {
-                let (s, _) = polygon_area_centroid(&out.mesh.points, out.mesh.face(f));
-                out.pieces[*k as usize].area = norm(s);
-            }
-        }
-        Ok(out)
+        assemble_parts(&[self], mesh, &[angle])
     }
 
     /// The geometry of an assembled mesh: faces from their nodes, cells as
     /// the rigid bodies of the base mesh (volumes unchanged, the centroids of
     /// the rotor turned by the angle).
     pub fn geometry(&self, a: &Assembled, base: &Geometry) -> Geometry {
-        let (face_area, face_centroid) = Geometry::faces(&a.mesh);
-        let n = a.mesh.n_cells;
-        let mut cell_volume = vec![0.0; n + a.mesh.n_halo];
-        let mut cell_centroid = vec![[0.0; 3]; n + a.mesh.n_halo];
-        cell_volume[..n].copy_from_slice(&base.cell_volume[..n]);
-        for (c, x) in cell_centroid[..n].iter_mut().enumerate() {
-            *x = if self.rotor_cell[c] {
-                rotate(base.cell_centroid[c], self.origin, self.axis, a.angle)
-            } else {
-                base.cell_centroid[c]
-            };
-        }
-        Geometry {
-            face_area,
-            face_centroid,
-            cell_volume,
-            cell_centroid,
-        }
+        geometry_parts(&[self], a, base)
     }
 
     /// The largest closure defect of a cell of `a`: |Σ S| relative to Σ |S|.
@@ -636,6 +539,188 @@ impl Interface {
                 norm(s) / tot
             })
             .fold(0.0, f64::max)
+    }
+}
+
+/// Several rotors of one base mesh, each with its own interface to the
+/// stator, assembled together (D185): every rotor turns by its own angle
+/// about its own axis, and the stator stands. A rotor that borders another
+/// rotor (a rotor–rotor interface) is refused.
+#[derive(Debug, Clone)]
+pub struct Imprint {
+    parts: Vec<Interface>,
+}
+
+impl Imprint {
+    /// The rotors `parts` of `mesh` (prepared with [`Interface::new`]): their
+    /// cells and their interface boundaries must be distinct, and the stator
+    /// side of every interface must be a cell of the stator.
+    pub fn new(mesh: &Mesh, parts: Vec<Interface>) -> Result<Self, String> {
+        if parts.is_empty() {
+            return Err("no rotor".into());
+        }
+        for (i, p) in parts.iter().enumerate() {
+            for (j, q) in parts.iter().enumerate().skip(i + 1) {
+                if (0..mesh.n_cells).any(|c| p.rotor_cell[c] && q.rotor_cell[c]) {
+                    return Err(format!("the rotors {} and {} share cells", i + 1, j + 1));
+                }
+                if p.patches.iter().any(|b| q.patches.contains(b)) {
+                    return Err(format!(
+                        "the rotors {} and {} name the same interface boundary",
+                        i + 1,
+                        j + 1
+                    ));
+                }
+            }
+            for (j, q) in parts.iter().enumerate() {
+                if i == j {
+                    continue;
+                }
+                if let Some(f) = p.stator.iter().find(|f| q.rotor_cell[f.cell as usize]) {
+                    let b = &mesh.boundaries[p.patches[1]].name;
+                    return Err(format!(
+                        "the face {} of `{b}`, the stator side of the interface of rotor {}, \
+                         belongs to a cell of rotor {}: an interface between two rotors is not \
+                         available yet (each rotor needs its interface with the stator)",
+                        f.face,
+                        i + 1,
+                        j + 1
+                    ));
+                }
+            }
+        }
+        Ok(Self { parts })
+    }
+
+    /// The rotors.
+    pub fn parts(&self) -> &[Interface] {
+        &self.parts
+    }
+
+    /// The conformal mesh with rotor i turned by `angles[i]`.
+    pub fn assemble(&self, mesh: &Mesh, angles: &[f64]) -> Result<Assembled, String> {
+        let p: Vec<&Interface> = self.parts.iter().collect();
+        assemble_parts(&p, mesh, angles)
+    }
+
+    /// The geometry of an assembled mesh (see [`Interface::geometry`]).
+    pub fn geometry(&self, a: &Assembled, base: &Geometry) -> Geometry {
+        let p: Vec<&Interface> = self.parts.iter().collect();
+        geometry_parts(&p, a, base)
+    }
+}
+
+/// The conformal mesh with the rotor of `parts[i]` turned by `angles[i]`.
+fn assemble_parts(parts: &[&Interface], mesh: &Mesh, angles: &[f64]) -> Result<Assembled, String> {
+    assert_eq!(parts.len(), angles.len(), "an angle per rotor");
+    let mut points = mesh.points.clone();
+    for (ifc, &angle) in parts.iter().zip(angles) {
+        if angle != 0.0 {
+            for (p, &turn) in points.iter_mut().zip(&ifc.rotor_node) {
+                if turn {
+                    *p = rotate(*p, ifc.origin, ifc.axis, angle);
+                }
+            }
+        }
+    }
+    // the corners of the polygons are new nodes
+    let mut piece_nodes: Vec<Vec<u32>> = Vec::new();
+    let mut pieces = Vec::new();
+    for (ifc, &angle) in parts.iter().zip(angles) {
+        for (ri, si, poly, _) in &ifc.intersections(angle) {
+            let (r, s) = (&ifc.rotor[*ri as usize], &ifc.stator[*si as usize]);
+            // θ of the polygon is in the frame of the stator
+            let ids: Vec<u32> = poly
+                .iter()
+                .map(|q| {
+                    let id = points.len() as u32;
+                    points.push(ifc.point(q[0], q[1]));
+                    id
+                })
+                .collect();
+            // the orientation of the rotor face: out of the rotor cell
+            let ordered: Vec<u32> = if r.sign > 0.0 {
+                ids
+            } else {
+                ids.into_iter().rev().collect()
+            };
+            piece_nodes.push(ordered);
+            pieces.push(Piece {
+                rotor_face: r.face,
+                stator_face: s.face,
+                rotor_cell: r.cell,
+                stator_cell: s.cell,
+                area: 0.0,
+            });
+        }
+    }
+    let mut b = MeshBuilder::new(points, mesh.n_cells);
+    b.set_zones(mesh.zones.clone(), mesh.cell_zone.clone());
+    let skipped: Vec<usize> = parts.iter().flat_map(|p| p.patches).collect();
+    let skip = |name: &str| skipped.iter().any(|&i| mesh.boundaries[i].name == name);
+    for p in &mesh.boundaries {
+        if !skip(&p.name) {
+            b.declare_boundary(&p.name);
+        }
+    }
+    let mut origin: Vec<FaceOrigin> = Vec::new();
+    for f in 0..mesh.n_interior_faces() {
+        b.add_interior(mesh.face(f), mesh.owner[f], mesh.neighbour[f]);
+        origin.push(FaceOrigin::Base(f as u32));
+    }
+    for p in &mesh.boundaries {
+        if skip(&p.name) {
+            continue;
+        }
+        for f in p.range() {
+            b.add_boundary(mesh.face(f), mesh.owner[f], &p.name);
+            origin.push(FaceOrigin::Base(f as u32));
+        }
+    }
+    for (k, nodes) in piece_nodes.iter().enumerate() {
+        b.add_interior(nodes, pieces[k].rotor_cell, pieces[k].stator_cell);
+        origin.push(FaceOrigin::Piece(k as u32));
+    }
+    let (assembled, order) = b.finish_with_order()?;
+    let origin: Vec<FaceOrigin> = order.iter().map(|&i| origin[i as usize]).collect();
+    let mut out = Assembled {
+        mesh: assembled,
+        origin,
+        pieces,
+        angle: angles[0],
+        angles: angles.to_vec(),
+    };
+    // the true areas
+    for (f, o) in out.origin.iter().enumerate() {
+        if let FaceOrigin::Piece(k) = o {
+            let (s, _) = polygon_area_centroid(&out.mesh.points, out.mesh.face(f));
+            out.pieces[*k as usize].area = norm(s);
+        }
+    }
+    Ok(out)
+}
+
+/// The geometry of a mesh assembled from `parts` (see
+/// [`Interface::geometry`]).
+fn geometry_parts(parts: &[&Interface], a: &Assembled, base: &Geometry) -> Geometry {
+    let (face_area, face_centroid) = Geometry::faces(&a.mesh);
+    let n = a.mesh.n_cells;
+    let mut cell_volume = vec![0.0; n + a.mesh.n_halo];
+    let mut cell_centroid = vec![[0.0; 3]; n + a.mesh.n_halo];
+    cell_volume[..n].copy_from_slice(&base.cell_volume[..n]);
+    cell_centroid[..n].copy_from_slice(&base.cell_centroid[..n]);
+    for (ifc, &angle) in parts.iter().zip(&a.angles) {
+        for (c, x) in cell_centroid[..n].iter_mut().enumerate() {
+            if ifc.rotor_cell[c] {
+                *x = rotate(base.cell_centroid[c], ifc.origin, ifc.axis, angle);
+            }
+        }
+    }
+    Geometry {
+        face_area,
+        face_centroid,
+        cell_volume,
+        cell_centroid,
     }
 }
 
@@ -776,6 +861,61 @@ mod tests {
         let names: Vec<&str> = a.mesh.boundaries.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, ["inner", "outer", "zmin", "zmax"]);
         assert_eq!(a.mesh.n_cells, m.n_cells);
+    }
+
+    #[test]
+    fn two_rotors_turn_at_their_own_angles() {
+        let m = AnnulusSpec {
+            n_theta: 12,
+            n_theta_stator: 18,
+            n_theta_outer: 14,
+            n_r: 6,
+            n_z: 2,
+            rotor_layers: 2,
+            outer_rotor_layers: 2,
+            ..Default::default()
+        }
+        .generate()
+        .unwrap();
+        let inner = Interface::new(&m, &spec()).unwrap();
+        let outer = Interface::new(
+            &m,
+            &InterfaceSpec {
+                zone: "rotor_outer".into(),
+                rotor_patch: "rotor_interface_outer".into(),
+                stator_patch: "stator_interface_outer".into(),
+                ..spec()
+            },
+        )
+        .unwrap();
+        let imp = Imprint::new(&m, vec![inner.clone(), outer.clone()]).unwrap();
+        let base = Geometry::compute(&m);
+        for angles in [[0.0, 0.0], [0.3, -0.7], [1.1, 2.9], [-2.0, 0.05]] {
+            let a = imp.assemble(&m, &angles).unwrap();
+            let geo = imp.geometry(&a, &base);
+            assert!(inner.closure(&a, &geo) < 1e-12, "{angles:?}");
+            // the pieces are those of each interface alone
+            let single = inner.assemble(&m, angles[0]).unwrap().pieces.len()
+                + outer.assemble(&m, angles[1]).unwrap().pieces.len();
+            assert_eq!(a.pieces.len(), single);
+            let names: Vec<&str> = a.mesh.boundaries.iter().map(|p| p.name.as_str()).collect();
+            assert_eq!(names, ["inner", "outer", "zmin", "zmax"]);
+            for c in 0..m.n_cells {
+                let turn = if inner.rotor_cell[c] {
+                    angles[0]
+                } else if outer.rotor_cell[c] {
+                    angles[1]
+                } else {
+                    0.0
+                };
+                let want = rotate(base.cell_centroid[c], [0.0; 3], [0.0, 0.0, 1.0], turn);
+                assert!(norm(sub(geo.cell_centroid[c], want)) < 1e-14);
+                assert_eq!(geo.cell_volume[c], base.cell_volume[c]);
+            }
+        }
+        // the same rotor twice
+        let e = Imprint::new(&m, vec![inner.clone(), inner]).unwrap_err();
+        assert!(e.contains("share cells"), "{e}");
     }
 
     #[test]

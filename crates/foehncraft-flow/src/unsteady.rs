@@ -981,7 +981,7 @@ fn run_one<F: FnMut(&str)>(
                     twd.candidates(),
                     mesh0.n_cells
                 ));
-                let d = twd.at(w.angle, &w.geo.cell_centroid[..w.mesh.n_cells]);
+                let d = twd.at_angles(&w.angles, &w.geo.cell_centroid[..w.mesh.n_cells]);
                 Some((twd, d))
             }
             None => None,
@@ -996,21 +996,23 @@ fn run_one<F: FnMut(&str)>(
         turning_distance.as_mut().map(|(_, d)| std::mem::take(d)),
     )?;
     // the sliding mesh (D182): the rotating zone and the shift of its data
-    let slide = match crate::sliding::attach(&case, mesh, &fl.disc, dt0)? {
-        Some((slide, notes)) => {
-            if let Some(notes) = crate::frame::attach(&mut fl, &case, mesh, geo)? {
-                for l in &notes.lines {
-                    lg.line(l);
-                }
-                warnings.extend(notes.diagnostics);
-            }
-            for l in &notes.lines {
-                lg.line(l);
-            }
-            Some(slide)
+    let slide = crate::sliding::attach(&case, mesh, &fl.disc, dt0)?;
+    // the rotating zones: the frames of `[[mrf]]` (a transient frozen rotor,
+    // D185) and the grid flux of the sliding rotors (D182)
+    if (slide.is_some() || !case.mrf.is_empty())
+        && let Some(notes) = crate::frame::attach(&mut fl, &case, mesh, geo)?
+    {
+        for l in &notes.lines {
+            lg.line(l);
         }
-        None => None,
-    };
+        warnings.extend(notes.diagnostics);
+    }
+    let slide = slide.map(|(slide, notes)| {
+        for l in &notes.lines {
+            lg.line(l);
+        }
+        slide
+    });
     let mut tr = Transient::new(&mut fl, time0.scheme, time0.start_time)?;
     if let Some(sl) = &slide {
         sl.install(&mut fl, &mut tr)?;
@@ -1354,9 +1356,9 @@ fn run_one<F: FnMut(&str)>(
             let next = imp.working(mesh0, geo0, t0 + h)?;
             let prev = work.as_ref().context("the mesh of the rotor angle")?;
             let map = crate::sliding::face_map(prev, &next);
-            let d = turning_distance
-                .as_mut()
-                .map(|(twd, _)| twd.at(next.angle, &next.geo.cell_centroid[..next.mesh.n_cells]));
+            let d = turning_distance.as_mut().map(|(twd, _)| {
+                twd.at_angles(&next.angles, &next.geo.cell_centroid[..next.mesh.n_cells])
+            });
             let (nfl, ntr) = rebuild_flow(
                 &case,
                 &tv,

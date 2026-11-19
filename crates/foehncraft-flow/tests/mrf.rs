@@ -138,13 +138,58 @@ fn zones_are_checked() {
     assert_eq!(c.iter().filter(|c| c.is_some()).count(), 64 * 2);
 }
 
+/// A frame and a sliding mesh do not turn the same cells (MRF001); a
+/// transient case with a frame is accepted (D185).
 #[test]
-fn a_transient_case_is_refused() {
+fn a_transient_frame_is_accepted() {
     let t = text() + "\n[time]\nscheme = \"bdf2\"\ntime_step = 0.01\nsteps = 10\n";
-    let e = FlowCase::from_toml(&t, &cases())
+    FlowCase::from_toml(&t, &cases())
         .and_then(|c| c.validate())
-        .unwrap_err();
-    assert_eq!(foehncraft_flow::diag::of_error(&e).code, "MRF001", "{e:#}");
+        .unwrap();
+}
+
+/// The text of the transient frozen rotor: the spin-up from rest to `steps`
+/// steps of 0.02 s.
+fn transient(steps: usize) -> String {
+    text().replace(
+        "\n[[mrf]]\nzone",
+        &format!(
+            "\n[time]\nscheme = \"bdf2\"\ntime_step = 0.02\nsteps = {steps}\nstart_time = 0.0\n\n[[mrf]]\nzone"
+        ),
+    )
+    .replace("[solver.momentum]\nrelaxation = 0.8\n", "")
+}
+
+/// The spin-up of Taylor–Couette flow from rest (D185): the gap is a body
+/// of revolution, so the spin-up in a rotating frame is the spin-up of the
+/// inertial frame, at every moment. At t = 0.5 s (a tenth of the viscous
+/// time of the gap) the flow is far from the steady state, and its
+/// distance from it agrees in the inertial frame, the frame of the cylinder
+/// and the opposite frame to the discretisation error; at t = 20 s the
+/// transient frame has reached the steady solution of the steady frame.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn the_spin_up_does_not_depend_on_the_frame() {
+    let base = parse(&transient(25));
+    let mut inertial = base.clone();
+    inertial.mrf.clear();
+    let e_inertial = l2(&run_case(&inertial, "spin_inertial"));
+    let mut e = vec![("inertial", e_inertial)];
+    for (name, omega) in [("with_the_cylinder", 10.0), ("opposite", -10.0)] {
+        let mut c = base.clone();
+        c.mrf[0].omega = Some(omega);
+        e.push((name, l2(&run_case(&c, &format!("spin_{name}")))));
+    }
+    eprintln!("spin-up at t = 0.5 s, L2 distance from the steady state: {e:?}");
+    assert!(e_inertial > 0.1, "{e:?}");
+    for (name, v) in &e {
+        assert!((v / e_inertial - 1.0).abs() < 0.01, "{name}: {e:?}");
+    }
+    // the end: the steady solution
+    let steady = l2(&run_case(&parse(&text()), "spin_steady"));
+    let end = l2(&run_case(&parse(&transient(1000)), "spin_end"));
+    eprintln!("steady frame {steady:e}, transient frame at t = 20 s {end:e}");
+    assert!((end / steady - 1.0).abs() < 0.05, "{steady} {end}");
 }
 
 /// The error against the analytic solution does not depend on the angular

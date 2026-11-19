@@ -135,7 +135,7 @@ codes! {
     REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid: solids and porous zones come with the energy equation (L1).";
     REG_ZONE = "REG002", Error, "A region that names a cell zone the mesh does not have, or a zone in two regions.";
     // moving reference frame and sliding mesh (D55, D182)
-    MRF_TRANSIENT = "MRF001", Error, "A rotating zone `[[mrf]]` in a transient case (the moving reference frame of D55 is steady; the transient form is the sliding mesh of D182).";
+    MRF_SLIDING_ZONE = "MRF001", Error, "An `[[mrf]]` table and a `[[sliding]]` table that turn the same cells (one of them without a `zone`, or both with the same one): a zone is turned by a moving reference frame (steady or transient, D185) or by a sliding mesh (D182), not by both.";
     MRF_ENTRY = "MRF002", Error, "An `[[mrf]]` table with no or two angular velocities (`omega`, `rpm`), a zero axis, a cell zone the mesh does not have (with the nearest name as a hint), no `zone` where there are several tables, or a zone that two tables rotate.";
     MRF_INTERFACE = "MRF003", Warning, "The interface or a boundary of a rotating zone is not a surface of revolution about its axis: the relative flux of the cells next to it does not close, and the solution there is not that of a frozen rotor (cell count and worst closure error).";
     SLIDING_STEADY = "SLD001", Error, "A `[[sliding]]` table in a steady case: the sliding mesh moves in time (D182); a steady case with a rotating zone uses `[[mrf]]` (D55).";
