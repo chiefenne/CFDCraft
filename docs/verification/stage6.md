@@ -275,7 +275,8 @@ the band stays as it is. (2) The automatic treatment overpredicts C_f by
 up to 16 % with the first cell in the buffer layer: the blended u_τ of the
 original formulation and the log-layer production meet badly there. The
 check TURB001 warns for y⁺ between 3 and 20; an improved blending is an
-item for the wall-function work of 6c. (3) White's correlation is a fit
+item for the wall-function work of 6c. *(Fixed in 6g, PR #112: see
+[the automatic treatment in the buffer layer](#the-sst-automatic-treatment-in-the-buffer-layer-6g-pr-112).)* (3) White's correlation is a fit
 to experiments that lies 5 to 9 % above the SST result along the whole
 plate, as does the TMR's SST result: the band of the specification for
 this row was set for the model, and SST does not meet it.
@@ -1919,6 +1920,132 @@ restart file give the same numbers.
 Not in this part: the blending weight of the compound and automatic
 treatments as a wall field (the wall kernels do not store it); the
 heat-transfer coefficient and T⁺ of the scalars stay in the wall CSV.
+
+## The SST automatic treatment in the buffer layer (6g, PR #112)
+
+The first version of `automatic` (6b) overpredicted C_f of the TMR plate
+by up to 17 % with the first cell at y⁺ 3 to 20: the first cell took ω_P
+with the weight 1 − u_τ,vis⁴/u_τ⁴, which is still small there, and the
+log-layer production u_τ³/(κ y_P) with the same weight, so the cell's own
+production from U_t/y_P, far too large above the sublayer, set k. The
+sweep `examples/studies/sst_wall_sweep.py` (the plate on 64 × 48 cells,
+the wall grading set for each first-cell y⁺ at x = 0.97) measured each
+change in turn:
+
+| Variant | y⁺ 1.4 | 4 | 8 | 24 | 85 |
+|---|---|---|---|---|---|
+| 6b: ω_P blend n = 2, weight 1 − b, log-layer production | +1.0 % | +13.8 % | +17.0 % | +0.2 % | −1.0 % |
+| equilibrium production (u_τ⁴/ν)(1 − g) g, g = du⁺/dy⁺ of Reichardt | +1.0 % | +11.2 % | +4.6 % | −0.5 % | −2.5 % |
+| `low-re` on the same meshes, for comparison | +1.0 % | +11.8 % | +46.8 % (not converged) | | |
+| ω_P imposed fully, n = 1.2, equilibrium production | −7.2 % | −7.1 % | −1.0 % | +1.3 % | −1.7 % |
+| **6g: as above with the weight tanh((y⁺/5)²) for ω_P and the production** | −0.6 % | −2.0 % | −1.0 % | +1.3 % | −1.7 % |
+
+| Test | Check | Band | Result |
+|---|---|---|---|
+| The plate on 64 × 48 cells, first-cell y⁺ 0.24, 0.82, 1.4, 2.5, 3.9, 5.6, 8.1, 13.4, 24, 45, 84 | C_f(0.97) against the TMR value | ±2 % (9.3) | −0.7, −0.9, −0.5, −1.6, −2.1, −1.8, −1.0, **+2.4**, +1.3, −1.0, −1.7 %: within 2.4 % |
+| The plate on 128 × 96 cells, y⁺ 0.77, 3.7, 24 | the same | ±2 % | −0.7, **−2.6**, +0.3 % |
+| Gallery 68 sweep (y⁺ 1.7 to 92) | the same | ±2 % | −0.3, −2.0, −0.6, +1.0, −1.6 % |
+| Step, SST, 11 040 / 44 160 cells (`backstep_validation.py --models sst`) | x_r/H; C_p RMS | ±10 %; ≤ 0.02 | 6.761 / 6.743 (+7.7 %; before 6.793, 6.747); 0.0191 (before 0.023: now inside the band) |
+| Jet, SST `kato-launder`, `automatic`, 2 600 cells (`impinging_jet.py --models sst --levels 0`) | Nu₀ | unchanged | 151.6 (before 151.9: −0.2 %; the first cells lie in the sublayer) |
+| Kernel tests (`automatic_treatment_tends_to_its_limits`, `automatic_buffer_layer_weights`) | the limits of ω_P, the weight and the production; the production maximum u_τ⁴/(4ν) near y⁺ 11 | 10⁻³ to 2 % | asserted |
+
+Two points of the sweep are 0.4 and 0.6 % outside the ±2 % band; TURB001
+now warns only above y⁺ 300, where the log layer ends. The choices n =
+1.2 and y₀ = 5 are fitted to this plate (n = 1.1 gives −2.8 to +1.2 %);
+the near-wall cell of a separating or impinging flow still takes the
+equilibrium production of a constant-stress layer above y⁺ ≈ 5, as every
+wall function does.
+
+**The wall value of ω in `low-re`.** The sweep of the factor F of
+ω_w = F · 6ν/(β₁ d₁²) (F = 10 by default, Menter 1994) on the plate
+(`tmr_plate_sst.toml`, `low-re`, levels 0, 1, 2, y⁺ ≈ 0.2) and the channel
+(`channel_sst.toml`, levels 0, 1, 2; one build per factor):
+
+| F | plate C_f(0.97) against the TMR value | channel U_b⁺ (DNS 17.55) |
+|---|---|---|
+| 1 | +14.0, +4.6, +2.2 % | 16.940, 17.149, 17.232 |
+| 3 | +5.9, +1.5, +0.9 % | 17.216, 17.279, 17.296 |
+| 10 | +0.1, −0.8, −0.1 % | 17.427, 17.381, 17.346 |
+| 30 | −3.5, −2.4, −0.9 % | 17.575, 17.452, 17.380 |
+| 100 | −6.8, −3.9, −1.5 % | 17.707, 17.515, 17.411 |
+
+Every factor tends to the same values as the mesh is refined (plate about
+−0.1 to −1.5 %, channel 17.23 to 17.41 on the finest mesh). F = 10 has the
+smallest mesh dependence on the plate, within 0.8 % already on the
+coarsest mesh, and the middle of the spread in the channel. **Finding:**
+the default stays F = 10. The −1.2 % of U_b⁺ in the channel does not come
+from the wall value of ω.
+
+
+## GCI of the turbulence models on the plate and the channel (9.3, 9.4, PR #111)
+
+`examples/studies/plate_channel_gci.py` runs the gallery case of every
+model on three meshes (`verification.levels` 0, 1, 2; the built-in mesher
+refines both directions by 2 per level, the channel in y only) with one
+thread each and evaluates the observed order p, the extrapolated value and
+GCI_fine after Celik et al. (2008): C_f(0.97) and C_D of the TMR plate,
+U_b⁺ of the channel at Re_τ = 395 (from the driving force at the DNS mass
+flow). Iteration limits 6 000, 12 000 and 24 000; a run that stops there is
+marked. The finest k-ε plate (49 152 cells) diverged in outer iteration 11
+with the default relaxations (RUN014) and ran with 0.5 for momentum and
+turbulence (the study sets this for that level).
+
+## TMR flat plate, Re_L = 5·10⁶
+
+References: C_f(0.97) White 2.87455e-03, TMR (SST) 2.69070e-03; C_D TMR (SST) 2.84880e-03.
+
+| model | cells | y⁺ (finest) | C_f ·10³ | p | GCI_fine | C_f extrap. ·10³ | finest vs White | finest vs TMR | C_D ·10³ | p | GCI_fine | iterations, converged |
+|---|---|---:|---|---:|---:|---:|---:|---:|---|---:|---:|---|
+| k-ω SST, low-re | 768 / 3072 / 12288 | 0.19 | 2.6937 / 2.6682 / 2.6868 | – (oscillatory) | 0.47 % | – | −6.53 % | −0.14 % | 2.8549 / 2.8259 / 2.8477 | – | 0.51 % | 226, 635, 2292 |
+| k-ε, scalable | 3072 / 12288 / 49152 | 7.31 | 2.8289 / 2.8270 / 2.8156 | 2.61 (divergent) | 0.10 % | 2.8134 | −2.05 % | +4.64 % | 2.7193 / 2.6334 / 2.6768 | – | 1.60 % | 236, 724, 5733 |
+| realizable k-ε, scalable | 3072 / 12288 / 49152 | 7.00 | 2.6781 / 2.6128 / 2.5805 | 1.01 (monotonic) | 1.53 % | 2.5488 | −10.23 % | −4.10 % | 2.5769 / 2.4216 / 2.4042 | 3.15 | 0.12 % | 6000*, 12000*, 24000* |
+| k-ε-ζ-f, compound | 3072 / 12288 / 49152 | 0.25 | 3.0231 / 3.5516 / 3.3467 | – (oscillatory) | 7.90 % | – | +16.42 % | +24.38 % | 2.8271 / 2.0873 / 2.2063 | – | 16.77 % | 6000*, 12000*, 5986* |
+| k-ε-ζ-f₀, compound-2023 | 3072 / 12288 / 49152 | 0.23 | 2.8021 / 2.7923 / 2.7400 | 2.42 (divergent) | 0.55 % | 2.7280 | −4.68 % | +1.83 % | 2.9459 / 2.9340 / 2.8718 | 2.39 | 0.64 % | 628, 2104, 5060* |
+| elliptic-blending k-ε, compound | 3072 / 12288 / 49152 | 0.23 | 2.8893 / 2.8408 / 2.8516 | – (oscillatory) | 0.85 % | – | −0.80 % | +5.98 % | 2.9012 / 2.6880 / 2.6007 | 1.29 | 2.91 % | 6000*, 2605*, 4726* |
+
+## Channel, Re_τ = 395
+
+Reference: U_b⁺ = 17.55 (DNS).
+
+| model | cells | U_b⁺ | p | GCI_fine | extrapolated | finest vs DNS | iterations, converged |
+|---|---|---|---:|---:|---:|---:|---|
+| k-ω SST, low-re | 192 / 768 / 3072 | 17.427 / 17.381 / 17.346 | 0.40 (monotonic) | 0.79 % | 17.236 | −1.16 % | 2350, 5037, 14870 |
+| k-ε, scalable | 24 / 96 / 384 | 18.309 / 18.332 / 18.433 | 2.08 (divergent) | 0.21 % | 18.464 | +5.03 % | 1674, 3692, 7310 |
+| realizable k-ε, scalable | 24 / 96 / 384 | 18.689 / 19.095 / 19.491 | 0.04 (monotonic) | 93.59 % | 34.083 | +11.06 % | 2154, 5058, 10679 |
+| k-ε-ζ-f, compound | 192 / 768 / 3072 | 17.889 / 17.934 / 17.922 | – (oscillatory) | 0.13 % | – | +2.12 % | 3678, 10220, 24000* |
+| k-ε-ζ-f₀, compound-2023 | 96 / 384 / 1536 | 17.790 / 17.840 / 18.106 | 2.39 (divergent) | 0.43 % | 18.169 | +3.17 % | 2062, 4985, 10950 |
+| elliptic-blending k-ε, compound | 192 / 768 / 3072 | 17.640 / 17.675 / 17.866 | 2.45 (divergent) | 0.30 % | 17.909 | +1.80 % | 2896, 6023, 13153 |
+
+\* the run stopped at its iteration limit before the tolerance (`converged` false).
+
+**Findings.**
+
+1. **No model reaches the asymptotic range on all three plate meshes.**
+   C_f is oscillatory for SST, ζ-f and EB, divergent for k-ε and ζ-f₀, and
+   monotonic only for the realizable k-ε (p = 1.0). The spread of SST is
+   small, 2.668 to 2.694 (GCI 0.47 %, within 0.14 % of the TMR value on
+   the finest mesh), so the order test is dominated by differences below
+   1 %. SST, ζ-f₀ and EB meet the 2 % GCI band of 9.3 without an order;
+   ζ-f does not (7.9 %, C_f +16 to +24 % with its runs at the iteration
+   limit: the ζ-f plate does not converge on the finer meshes, a finding
+   that adds to the step's).
+2. **The k-ε family with scalable wall functions** refines its first cell
+   to y⁺ 7 on the finest plate, below the floor y* = 11.06 of the
+   treatment; C_f changes by 0.4 % (k-ε) and 3.6 % (realizable) over the
+   three meshes, the insensitivity the treatment promises. The realizable
+   model stays 10 % below White on the finest mesh (the 3 to 7 % of 6c on
+   one mesh, growing with refinement).
+3. **Channel.** The low-Re models meet the 0.5 % GCI band (SST 0.79 %
+   only just misses it, p = 0.40 as in 6b; ζ-f 0.13 %, ζ-f₀ 0.43 %, EB
+   0.30 %) and the ±3 % band against the DNS on the finest mesh (SST
+   −1.2 %, ζ-f +2.1 %, EB +1.8 %) except ζ-f₀ (+3.2 %). The k-ε family
+   with scalable wall functions on meshes refined towards the wall (24 to
+   384 cells) is outside its ±5 % band for the realizable model (+11 %,
+   p = 0.04: the result moves with every refinement) and just outside
+   for k-ε (+5.03 %).
+4. **What the maintainer's machine can add**: levels 1, 2 and 3 with
+   larger iteration limits decide whether the orders settle (command in
+   the study's docstring; several hours on four cores).
 
 
 ## Statistics of transient runs (D71, PR #110)

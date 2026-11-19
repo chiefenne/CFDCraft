@@ -3438,7 +3438,7 @@ impl Turbulence {
 
     /// Per wall boundary: the area-weighted min, mean and max of y⁺ and
     /// the area fraction outside the claimed band (low-Re: above 2;
-    /// automatic: the buffer layer 3 to 20), for the report and TURB001.
+    /// automatic: above 300), for the report and TURB001.
     pub fn y_plus_summary(&self, dev: &mut dyn FlowDevice, mesh: &Mesh) -> Result<Vec<YPlusRow>> {
         let Some(wd) = self.wd else {
             return Ok(Vec::new());
@@ -3454,15 +3454,14 @@ impl Turbulence {
             e.1 += a * yp[i];
             e.2 = e.2.max(yp[i]);
             e.3 += a;
-            // area outside the claimed band
-            // (automatic: the buffer layer, where the blended wall
-            // values overpredict C_f of the flat plate by up to 16 %)
+            // area outside the claimed band (automatic: above the log
+            // layer, y⁺ > 300; validated on the flat plate from 0.24 to 85)
             let out = match self.treatment {
                 kwall::LOW_RE => yp[i] > 2.0,
                 // ζ-f with the compound treatment: any y⁺ (validated from
                 // 0.5 to 100 on the flat plate)
                 kwall::COMPOUND | kwall::COMPOUND_2023 if self.zf.is_some() => false,
-                kwall::AUTOMATIC => yp[i] > 3.0 && yp[i] < 20.0,
+                kwall::AUTOMATIC => yp[i] > 300.0,
                 kwall::SCALABLE => yp[i] < 30.0,
                 kwall::STANDARD => !(30.0..=300.0).contains(&yp[i]),
                 // compound with the high-Re k-ε: below y⁺ 30 the cells of
@@ -3657,9 +3656,9 @@ pub fn summary(
                 )
             } else {
                 format!(
-                    "wall `{b}`: first-cell y⁺ between 3 and 20 on {:.0} % of the area; the \
-                     automatic treatment overpredicts the wall shear stress there by up to 16 % \
-                     (flat plate, gallery 68): put the first cell at y⁺ ≲ 1 or y⁺ ≳ 25",
+                    "wall `{b}`: first-cell y⁺ above 300 on {:.0} % of the area, above the log \
+                     layer that the automatic treatment assumes (validated for y⁺ 0.24 to 85 on \
+                     the flat plate, gallery 68): refine the wall cells",
                     100.0 * out
                 )
             };

@@ -640,7 +640,7 @@ bitwise reproducible.
 | Treatment | Models | Wall shear | First-cell turbulence values | Claimed y⁺ range |
 |---|---|---|---|---|
 | `low-re` (integration to the wall) | SST, ζ-f, EB | τ_w = μ U_t/y_P | SST: k_w = 0 and the wall-face value ω_w = 10·6ν/(β₁ d₁²) with d₁ = 2 y_P, the wall-cell height (Menter 1994), as Dirichlet values (*6b*: replaces the first-cell value ω_P = 6ν/(β₁ y_P²) of the draft, see the note below); ζ-f, EB: ε_w, f_w or α_w of section 3 | y⁺ ≲ 1 |
-| `automatic` (Menter, Kuntz & Langtry 2003) | SST (default) | u_τ = (u_τ,vis⁴ + u_τ,log⁴)^{1/4}, u_τ,vis = (ν U_t/y_P)^½, u_τ,log = κ U_t/ln(E y⁺) (fixed number of Newton steps, as for Spalding's law) | ω_P = (ω_vis² + ω_log²)^½, ω_vis = 6ν/(β₁ y_P²), ω_log = u_τ/(√β* κ y_P), imposed with the weight 1 − b, b = u_τ,vis⁴/u_τ⁴ (4.4), on top of the wall-face ω_w of `low-re`; the log law takes y⁺ ≥ 11.06 (its lower end with κ = 0.41, E = 9.793), so that u_τ,log has no spurious root in the sublayer and b → 1 there (*6b*) | any; validated 0.5 ≤ y⁺ ≤ 100 |
+| `automatic` (Menter, Kuntz & Langtry 2003) | SST (default) | u_τ = (u_τ,vis⁴ + u_τ,log⁴)^{1/4}, u_τ,vis = (ν U_t/y_P)^½, u_τ,log = κ U_t/ln(E y⁺) (fixed number of Newton steps, as for Spalding's law) | ω_P = (ω_vis² + ω_log²)^½, ω_vis = 6ν/(β₁ y_P²), ω_log = u_τ/(√β* κ y_P), imposed with the weight 1 − b, b = u_τ,vis⁴/u_τ⁴ (4.4) (*6g, PR #112:* ω_P = (ω_vis^1.2 + ω_log^1.2)^{1/1.2}, imposed with the weight tanh((y⁺/5)²), which also weighs the equilibrium production (u_τ⁴/ν)(1 − g) g of the first cell, g = du⁺/dy⁺ of Reichardt's law), on top of the wall-face ω_w of `low-re`; the log law takes y⁺ ≥ 11.06 (its lower end with κ = 0.41, E = 9.793), so that u_τ,log has no spurious root in the sublayer and b → 1 there (*6b*) | any; validated 0.5 ≤ y⁺ ≤ 100 |
 | `compound` (Popovac & Hanjalić 2007) | ζ-f, EB (default), k-ε family (option) | τ_w from the blended profile: u⁺ = e^{−Γ} y⁺ + e^{−1/Γ} u⁺_log, Γ = 0.01 (y⁺)⁴/(1 + 5 y⁺) ◇ | ε_P = e^{−Γ} 2νk_P/y_P² + e^{−1/Γ} C_μ^{3/4} k_P^{3/2}/(κ y_P); P_k,P blended likewise between the integrated and the log-law value τ_w u_τ/(κ y_P); f_w (ζ-f) blended between −2νζ_P/y_P² and 0 | any; validated 0.5 ≤ y⁺ ≤ 100 |
 | `compound-2023` (Popovac 2023) | ζ-f₀ (default), ζ-f (option) | u⁺ = [y*^{−n} + u⁺_log^{−n}]^{−1/n}, n = 10/3, u⁺_log = ln(8.9 y*)/(κψ) with u* = C_μ^{1/4} k_P^{1/2}; ψ = 1 − C_U (y_P − y_v/2)/(U_t κ u*), y_v = 11ν/u*, C_U = t·[(U·∇)U + ∇p/ρ], ψ in [0.5, 2] (the paper gives no bounds) | Γ = du⁺/dy*, from the blend; ε_P = Γ 2νk_P/y_P² + (1 − Γ) u*³/(κ y_P), P_k,P = u*² (τ_w/ρν) Γ, both fixed in the cell; k and ζ: zero flux at the wall; f₀,w = 0 | any; validated 0.3 ≤ y⁺ ≤ 30 (6d2: channel, plate, step) |
 | `scalable` (Grotjans & Menter 1998) | k-ε family (default) | log law evaluated at ỹ* = max(y*, 11.06) | ε_P = C_μ^{3/4} k_P^{3/2}/(κ y_P) (with ỹ*), P_k,P = τ_w u_τ/(κ y_P) | y⁺ ≥ 1 without failure; accuracy claimed for y⁺ ≥ 30 (*6c*: the flat plate stays within 3 % of White's correlation from y⁺ 1 to 100) |
@@ -664,7 +664,10 @@ two cells. The wall-face value 10·6ν/(β₁ d₁²) with d₁ the wall-cell
 height, which the TMR codes and pyaeroflow use, gives −0.8 % already on
 64 × 48 cells; pyaeroflow found the same (d₁ = the centroid distance, four
 times larger ω_w, gives 2 % less). d₁ = 2 y_P is the wall-cell height of
-hexahedra and prisms.
+hexahedra and prisms. *6g, PR #112:* the sweep of the factor (1, 3, 10,
+30, 100) on the plate and the channel on three meshes keeps 10: it has the
+smallest mesh dependence, and all factors meet on the finest mesh
+(verification manual, stage 6).
 
 The exponentials e^{−Γ} and e^{−1/Γ} are evaluated for every face (no
 branch on the regime); Γ is floored at 10⁻³⁰⁰ before 1/Γ, and the in-house
@@ -1008,7 +1011,7 @@ implemented):
 | `BC027` | warning | A wall roughness k_s larger than the first-cell distance on more than 10 % of the wall's area. |
 | `BC028` | warning | A turbulence value that the run does not use: `zeta` with SST or k-ε, `omega` with an ε model, or any turbulence value at an outlet (*6b*: the backflow takes k and ω of the cell until the backflow values are implemented); BC009 stays for laminar cases. |
 | `BC029` | error | Two incompatible turbulence specifications on one inlet (for example `turbulence_length_scale` and `viscosity_ratio`, or `k` with intensity). |
-| `TURB001` | warning | First-cell y⁺ outside the claimed range of the wall treatment (section 4.3) on more than 10 % of a wall's area (reported per boundary with the area-weighted min, mean and max). *6b:* above 2 with `low-re`; between 3 and 20 with `automatic`, where the blending overpredicts the wall shear stress (section 9.3). *6c:* k-ε family: below 30 with `scalable`, outside 30 … 300 with `standard` and `compound`. |
+| `TURB001` | warning | First-cell y⁺ outside the claimed range of the wall treatment (section 4.3) on more than 10 % of a wall's area (reported per boundary with the area-weighted min, mean and max). *6b:* above 2 with `low-re`; between 3 and 20 with `automatic`, where the blending overpredicts the wall shear stress (section 9.3; *6g, PR #112:* the new weights of the automatic treatment hold C_f within 2.6 % for y⁺ 0.24 to 85, and TURB001 warns above y⁺ 300 only). *6c:* k-ε family: below 30 with `scalable`, outside 30 … 300 with `standard` and `compound`. |
 | `TURB002` | warning | A positivity floor or bound acted on more than 0.1 % of the cells in an iteration (equation and cell count). *6b:* reported only for iterations in the final tenth of the solves; the run record counts all of them. |
 | `TURB003` | warning | Inlet turbulence outside the usual range: I > 0.5, or a viscosity ratio below 10⁻² or above 10⁵. |
 | `TURB004` | note | Kato–Launder production in a rotating zone: Ω is the absolute-frame vorticity. |
@@ -1141,7 +1144,12 @@ u⁺ at x = 0.97 follows Spalding's law within 2.3 %. The y⁺ study of
 `automatic` gives +2.3 % (y⁺ 1.7), +15.6 % (4.6), +14.8 % (9.3),
 −0.2 % (27) and −0.7 % (92): the buffer layer misses the ±2 % band
 (finding); TURB001 warns there and the blending is revisited with the
-wall functions of 6c. The temperature rows wait for 6f, the other models
+wall functions of 6c. *6g, PR #112:* the automatic treatment now blends
+ω_P with the exponent 1.2 and imposes it, and the equilibrium production of
+Reichardt's law, with the weight tanh((y⁺/5)²): C_f lies within −2.6 to
++2.4 % of the TMR value for first-cell y⁺ 0.24 to 85 on two meshes (the
+sweep `examples/studies/sst_wall_sweep.py`; the ±2 % band is met for
+y⁺ ≥ 4 on level 2). The temperature rows wait for 6f, the other models
 for 6c–6e.
 
 **Results of 6c (PR #71, k-ε family; details on the
@@ -1221,6 +1229,16 @@ the paper's 100, 98 and 100 % (its Table 6); U_b⁺ +1.1, +0.5, +0.5 %.
 The acceptance target of section 3.4 is met. At Re_τ 180 the start
 (I 0.05, ν_t/ν 100) relaminarizes the channel; I 0.15 and ν_t/ν 20
 keep it turbulent. Flat plate (9.3): C_f(0.97) +0.5 % from White.
+
+**Results of 6g (PR #111, GCI of every model on three meshes; details
+on the [verification page](../verification/stage6.md#gci-of-the-turbulence-models-on-the-plate-and-the-channel-93-94-pr-111)).**
+Plate: no model shows an asymptotic order on levels 0 to 2 (SST, ζ-f and
+EB oscillatory, k-ε and ζ-f₀ divergent, the realizable k-ε p = 1.0); SST
+lies within 0.14 % of the TMR value with GCI 0.47 %; ζ-f does not
+converge on the finer plates (C_f +16 to +24 %, finding). Channel: GCI
+0.13 to 0.79 % for the low-Re models, the realizable k-ε with scalable
+wall functions +11 % on the finest mesh (finding). Levels 1 to 3 belong
+on the maintainer's machine.
 
 ### 9.5 Backward-facing step (Driver & Seegmiller 1985)
 

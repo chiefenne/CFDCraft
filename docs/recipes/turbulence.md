@@ -20,9 +20,9 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 
 Switch the model on and pick the wall treatment by the mesh: `low-re`
 when the first cell lies at y⁺ ≲ 1, `automatic` (the default) for any
-other mesh, best with the first cell at y⁺ ≳ 25 (in the buffer layer,
-3 ≲ y⁺ ≲ 20, it overpredicts the wall shear by up to 16 %, and TURB001
-says so):
+other mesh, with the first cell anywhere from the sublayer to the log
+layer (C_f of the flat plate within 2.6 % for y⁺ 0.24 to 85; TURB001
+warns above y⁺ 300):
 
 ```toml
 [turbulence]

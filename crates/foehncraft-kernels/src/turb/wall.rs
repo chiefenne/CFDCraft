@@ -7,10 +7,19 @@
 //! - **`automatic`** (Menter, Kuntz & Langtry 2003): u_τ = (u_τ,vis⁴ +
 //!   u_τ,log⁴)^¼ with u_τ,vis = (ν U_t/y_P)^½ and u_τ,log from the log law
 //!   U_t = (u_τ/κ) ln(E y_P u_τ/ν) (fixed number of Newton steps), and
-//!   ω_P = (ω_vis² + ω_log²)^½, ω_vis = 6ν/(β₁ y_P²),
-//!   ω_log = u_τ/(√β* κ y_P); the wall shear τ_w = ρ u_τ² enters the
-//!   momentum equation as the effective wall viscosity μ_w = τ_w y_P/U_t,
-//!   k has zero flux through the wall.
+//!   ω_P = (ω_vis^n + ω_log^n)^{1/n}, ω_vis = 6ν/(β₁ y_P²),
+//!   ω_log = u_τ/(√β* κ y_P), n = 1.2 (Menter et al.: n = 2); the wall
+//!   shear τ_w = ρ u_τ² enters the momentum equation as the effective wall
+//!   viscosity μ_w = τ_w y_P/U_t, k has zero flux through the wall. The
+//!   near-wall cell takes ω_P, and the equilibrium production of the
+//!   constant-stress layer P = (u_τ⁴/ν)(1 − g) g with g = du⁺/dy⁺ of
+//!   Reichardt's law in place of its own, with the weight tanh((y⁺/5)²);
+//!   below y⁺ ≈ 2 the ω equation with the wall-face value and the cell's
+//!   production hold (integration to the wall). Stage 6g: the quartic
+//!   weight u_τ,vis⁴/u_τ⁴ of the first version and the log-layer
+//!   production u_τ³/(κ y_P) overpredicted C_f of the flat plate by up to
+//!   17 % in the buffer layer; with these weights C_f lies within 2.6 % of
+//!   the TMR value for first-cell y⁺ from 0.24 to 85 on two meshes.
 //! - **Rough walls** (Aupoix 2015, the set fitted to Colebrook's
 //!   correlation): k_w = u_τ² k_w⁺ and ω_w = (u_τ²/ν) ω_w⁺ as wall values
 //!   with
@@ -169,13 +178,21 @@ pub struct WallFace<T> {
     pub k_wall: T,
     /// Effective kinematic wall viscosity ν_w = τ_w y_P/(ρ U_t) (m²/s).
     pub nu_wall: T,
-    /// The weight of the viscous part, u_τ,vis⁴/u_τ⁴ (1: viscous sublayer).
+    /// The viscous weight of the near-wall ω (1: the ω equation with the
+    /// wall-face value, integration to the wall; automatic treatment
+    /// 1 − tanh((y⁺/5)²), the cell takes ω_P with the weight 1 − `blending`).
     pub blending: T,
-    /// The production of k of the log layer at the near-wall cell,
-    /// u_τ³/(κ y_P) (m²/s³), which the automatic treatment blends in with
-    /// the weight 1 − `blending` (the cell's velocity gradient U_t/y_P is
-    /// far too large once y_P is in the log layer).
+    /// The equilibrium production of k at the near-wall cell (automatic
+    /// treatment), τ_w/ρ · dU/dy of the constant-stress layer with the
+    /// slope g = du⁺/dy⁺ of Reichardt's law: (u_τ⁴/ν)(1 − g) g, which tends
+    /// to 0 in the viscous sublayer and to u_τ³/(κ y_P) in the log layer
+    /// (m²/s³).
     pub pk_wall: T,
+    /// The weight of `pk_wall` in the production of the near-wall cell
+    /// (automatic treatment tanh((y⁺/5)²), the weight of ω_P: above the
+    /// sublayer it replaces the cell's own production, whose velocity
+    /// gradient is too large there; 0 otherwise).
+    pub prod_weight: T,
 }
 
 /// k_w⁺ of Aupoix (2015), Colebrook set.
@@ -225,6 +242,7 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
             nu_wall: nu + k_wall / omega,
             blending: T::ONE,
             pk_wall: T::ZERO,
+            prod_weight: T::ZERO,
         };
     }
     if treatment == LOW_RE {
@@ -238,6 +256,7 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
             nu_wall: nu,
             blending: T::ONE,
             pk_wall: T::ZERO,
+            prod_weight: T::ZERO,
         };
     }
     let u_vis2 = nu * ut / y;
@@ -248,7 +267,14 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
     let u4 = v4 + l4;
     let u_tau = u4.sqrt_of().sqrt_of();
     let w_log = u_tau / (f(c.beta_star).sqrt_of() * kappa * y);
-    let omega = (w_vis * w_vis + w_log * w_log).sqrt_of();
+    // (ω_vis^n + ω_log^n)^{1/n}, n = 1.2 (ω > 0: as exp/ln)
+    let n = f(OMEGA_BLEND_N);
+    let omega =
+        (((w_vis.ln_of() * n).exp_of() + (w_log.ln_of() * n).exp_of()).ln_of() / n).exp_of();
+    let y_plus = u_tau * y / nu;
+    // the weight of the cell values: ω_P and the equilibrium production
+    let q = y_plus / f(OMEGA_FIX_Y_PLUS);
+    let fix = (q * q).tanh_of();
     // ν_w = u_τ² y/U_t (U_t > 0; ν in a fluid at rest)
     let nu_wall = if ut > T::ZERO {
         u4.sqrt_of() * y / ut
@@ -257,14 +283,39 @@ pub fn wall_face<T: Real>(i: &WallInputs<T>, c: &SstConstants, treatment: u32) -
     };
     WallFace {
         u_tau,
-        y_plus: u_tau * y / nu,
+        y_plus,
         omega,
         omega_wall,
         k_wall: T::ZERO,
         nu_wall,
-        blending: v4 / u4.max_of(tiny),
-        pk_wall: u_tau * u_tau * u_tau / (kappa * y),
+        blending: T::ONE - fix,
+        pk_wall: {
+            let g = reichardt_slope(y_plus, kappa);
+            u4 / nu * (T::ONE - g).max_of(T::ZERO) * g
+        },
+        prod_weight: fix,
     }
+}
+
+/// The exponent n of the near-wall ω of the automatic treatment,
+/// (ω_vis^n + ω_log^n)^{1/n} (6g: 2 in Menter et al. 2003; 1.2 brings
+/// C_f of the flat plate within 2.4 % of the TMR value for first-cell y⁺
+/// from 0.8 to 85).
+pub const OMEGA_BLEND_N: f64 = 1.2;
+
+/// The y⁺ scale of the weight tanh((y⁺/y₀)²) with which the near-wall cell
+/// takes ω_P in the automatic treatment (6g; below y⁺ ≈ 2 the ω equation
+/// with the wall-face value, integration to the wall).
+pub const OMEGA_FIX_Y_PLUS: f64 = 5.0;
+
+/// du⁺/dy⁺ of Reichardt's law u⁺ = ln(1 + κy⁺)/κ + 7.8 (1 − e^{−y⁺/11} −
+/// (y⁺/11) e^{−y⁺/3}).
+#[inline(always)]
+pub fn reichardt_slope<T: Real>(yp: T, kappa: T) -> T {
+    let f = T::from_f64;
+    let e11 = (-yp / f(11.0)).exp_of();
+    let e3 = (-yp / f(3.0)).exp_of();
+    T::ONE / (T::ONE + kappa * yp) + f(7.8) * (e11 / f(11.0) - e3 / f(11.0) + yp / f(33.0) * e3)
 }
 
 /// ΔB(k_s⁺) of Cebeci & Bradshaw (1977) with the roughness constant
@@ -538,8 +589,22 @@ mod tests {
         assert!((r.u_tau - 1.0).abs() < 1e-6, "{}", r.u_tau);
         assert!((r.nu_wall - nu).abs() < 1e-5 * nu);
         let w_vis = 6.0 * nu / (0.075 * y * y);
-        assert!((r.omega - w_vis).abs() < 1e-3 * w_vis);
+        // the log part adds (ω_log/ω_vis)^1.2/1.2 relative, ω_log/ω_vis =
+        // 0.075 y⁺/(6 · 0.3 · 0.41) = 0.010 here
+        assert!(
+            (r.omega - w_vis).abs() < 5e-3 * w_vis,
+            "{} {w_vis}",
+            r.omega
+        );
         assert!(r.blending > 0.999);
+        // the equilibrium production vanishes in the sublayer, (1 − g) g
+        // with g = 1 − O(y⁺²)
+        assert!(
+            r.pk_wall < 0.02 * (r.u_tau * r.u_tau * r.u_tau * r.u_tau) / nu,
+            "{}",
+            r.pk_wall
+        );
+        assert!(r.prod_weight < 1e-3);
         // log layer: y⁺ = 300 on the log law
         let y = 300.0 * nu;
         let u = foehncraft_core::math::ln(LOG_LAW_E * 300.0) / 0.41;
@@ -556,11 +621,80 @@ mod tests {
         let blended = foehncraft_core::math::sqrt(foehncraft_core::math::sqrt(1.0 + v * v));
         assert!((r.u_tau - blended).abs() < 1e-12, "{}", r.u_tau);
         let w_log = r.u_tau / (0.3 * 0.41 * y);
-        assert!((r.omega - w_log).abs() < 1e-3 * w_log);
+        let w_vis = 6.0 * nu / (0.075 * y * y);
+        let n = OMEGA_BLEND_N;
+        let w = foehncraft_core::math::pow(
+            foehncraft_core::math::pow(w_vis, n) + foehncraft_core::math::pow(w_log, n),
+            1.0 / n,
+        );
+        assert!((r.omega - w).abs() < 1e-12 * w, "{} {w}", r.omega);
+        // ω_vis/ω_log = 0.033 at y⁺ 300: within 2 % of the log value
+        assert!((r.omega - w_log).abs() < 2e-2 * w_log);
+        // the cell takes ω_P fully, and the production tends to the log
+        // layer's u_τ³/(κ y): g = 1/(κ y⁺) (1 + O(1/(κy⁺))) there
+        assert!(r.blending < 1e-12);
+        let pk_log = (r.u_tau * r.u_tau * r.u_tau) / (0.41 * y);
+        assert!(
+            (r.pk_wall - pk_log).abs() < 2e-2 * pk_log,
+            "{} {pk_log}",
+            r.pk_wall
+        );
         assert!((r.y_plus - 300.0 * r.u_tau).abs() < 1e-9);
         // low-re: the viscous values
         let r = wall_face(&i, &c, LOW_RE);
         assert_eq!(r.nu_wall, nu);
+    }
+
+    /// The near-wall ω of the automatic treatment moves from the ω
+    /// equation (y⁺ ≲ 2) to the cell value (y⁺ ≳ 10) with tanh((y⁺/5)²), and
+    /// the equilibrium production of the constant-stress layer has its
+    /// maximum u_τ⁴/(4ν) where du⁺/dy⁺ = ½, near y⁺ 11 (Reichardt).
+    #[test]
+    fn automatic_buffer_layer_weights() {
+        let c = SstConstants::default();
+        let nu = 1e-5;
+        let (mut best, mut at) = (0.0, 0.0);
+        for j in 1..400 {
+            let yp = 0.1 * j as f64;
+            let g = reichardt_slope(yp, 0.41);
+            let p = (1.0 - g).max(0.0) * g;
+            if p > best {
+                (best, at) = (p, yp);
+            }
+        }
+        assert!((best - 0.25).abs() < 1e-3, "{best}");
+        assert!((9.0..14.0).contains(&at), "{at}");
+        // the slope of Reichardt's law is 1 at the wall, 1/(κ y⁺) far out
+        assert!((reichardt_slope(0.0, 0.41) - 1.0).abs() < 1e-14);
+        let g = reichardt_slope(1000.0, 0.41);
+        assert!((g * 0.41 * 1000.0 - 1.0).abs() < 3e-3, "{g}");
+        // the weight of ω_P against y⁺ of the face
+        for (yp, lo, hi) in [(1.0, 0.95, 1.0), (5.0, 0.2, 0.3), (10.0, 0.0, 1e-3)] {
+            let y = yp * nu; // u_τ ≈ 1 on Reichardt's law
+            let u = (1.0 / 0.41) * foehncraft_core::math::ln(1.0 + 0.41 * yp)
+                + 7.8
+                    * (1.0
+                        - foehncraft_core::math::exp(-yp / 11.0)
+                        - yp / 11.0 * foehncraft_core::math::exp(-yp / 3.0));
+            let r = wall_face(
+                &WallInputs {
+                    ut: u,
+                    y,
+                    nu,
+                    ks: 0.0,
+                    u_tau_old: 0.0,
+                },
+                &c,
+                AUTOMATIC,
+            );
+            let q = r.y_plus / OMEGA_FIX_Y_PLUS;
+            assert!((r.blending - (1.0 - foehncraft_core::math::tanh(q * q))).abs() < 1e-15);
+            assert!(
+                r.blending >= lo && r.blending <= hi,
+                "y+ {yp}: {}",
+                r.blending
+            );
+        }
     }
 
     #[test]
