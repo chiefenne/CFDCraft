@@ -1,0 +1,71 @@
+# A disc impeller in a closed vessel, on a sliding mesh whose interface is a
+# pot around the impeller with two discs through the axis (D186; gallery
+# 103).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/revolved/disc_pot.toml
+#
+# Vessel: radius 0.10 m, height 0.10 m, stationary walls. Impeller: a disc
+# of radius 0.03 m and thickness 0.01 m at mid-height, turning at 20 rad/s
+# (Re = Ω R² / ν = 1 800, laminar). The rotor is the pot r < 0.045 m,
+# 0.03 < z < 0.07 m around the disc ([mesh.revolved], 32 intervals around
+# the axis in the rotor, 48 in the stator); its interface (a disc below, a
+# cylinder, a disc above, both discs through the axis) is imprinted at the
+# rotor angle in every step. The disc drags the fluid around and throws it
+# outwards (the von Kármán pump): two meridional cells, one above and one
+# below the disc, that cross the interface in all three of its pieces.
+# Four revolutions from rest.
+
+case_format = "0.6"
+
+[mesh.revolved]
+r = [0.0, 0.03, 0.045, 0.10]
+z = [0.0, 0.03, 0.045, 0.055, 0.07, 0.10]
+n_r = [6, 3, 8]
+n_z = [6, 4, 2, 4, 6]
+rotor = [[0, 1], [0, 3], [1, 1], [1, 2], [1, 3]]
+solid = [[0, 2]]
+n_theta = 32
+n_theta_stator = 48
+
+[fluid]
+density = 1000.0
+viscosity = 1e-2
+
+[constants]
+spin = 20.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.00625
+steps = 200
+start_time = 0.0
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 20.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[boundary.wall_rotor]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.outer]
+type = "wall"
+[boundary.zmin]
+type = "wall"
+[boundary.zmax]
+type = "wall"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 2000
+extrapolation = false
+outer_iterations = 3
+
+[output]
+vtkhdf = true
+wall_csv = false

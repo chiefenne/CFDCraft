@@ -857,3 +857,46 @@ fn two_rotors_end_in_the_couette_flow_of_their_speeds() {
         k.viscous_dissipation
     );
 }
+
+/// Interfaces of any rotationally symmetric shape (D186): uniform axial flow
+/// between slip walls through a turning rotor whose interface is a disc, a
+/// cylinder and a disc (the stage), the same with cones, and a pot whose two
+/// discs pass through the axis. The uniform flow is exact on every
+/// imprinted mesh: the cells close and the fluxes through the pieces are
+/// conservative.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn uniform_flow_crosses_discs_cones_and_the_axis() {
+    let t = std::fs::read_to_string(cases().join("axial_stage_uniform.toml"))
+        .unwrap()
+        .replace("\r\n", "\n");
+    let stage = parse(&t);
+    let mut cone = stage.clone();
+    cone.mesh.revolved.as_mut().unwrap().cone = 20.0;
+    let pot = parse(
+        &t.replace("r = [0.05, 0.09, 0.10]", "r = [0.0, 0.04, 0.10]")
+            .replace("[boundary.inner]\ntype = \"slip-wall\"\n", "")
+            .replace("[boundary.inner_rotor]\ntype = \"slip-wall\"\n", ""),
+    );
+    for (name, c) in [("stage", stage), ("cone", cone), ("pot", pot)] {
+        let r = run_case(&c, &format!("uniform_{name}"));
+        let e = l2(&r);
+        eprintln!("uniform flow through the {name}: L2 {e:e}");
+        assert!(e < 1e-7, "{name}: {e}");
+    }
+}
+
+/// Solid-body rotation in a closed vessel with a rotor pot whose interface
+/// passes through the axis (D186): every wall turns with the rotor, and the
+/// imprinted meshes keep the exact flow through half a revolution.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn solid_body_rotation_is_kept_by_a_pot_through_the_axis() {
+    let t = std::fs::read_to_string(cases().join("pot_solid_body.toml"))
+        .unwrap()
+        .replace("\r\n", "\n");
+    let r = run_case(&parse(&t), "pot_solid");
+    let e = l2(&r);
+    eprintln!("pot solid body, L2 {e:e}");
+    assert!(e < 0.03, "{e}");
+}
