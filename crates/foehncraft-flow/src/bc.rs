@@ -54,7 +54,7 @@ use foehncraft_kernels::flow::{
     PB_EXTRAPOLATE, PB_FIXED, PB_NO_BACKFLOW, PB_OUTLET, PB_TOTAL, PB_TOTAL_NO_BACKFLOW,
     UB_CONVECTIVE, UB_EXTRAPOLATE, UB_FIXED, UB_FROM_FLUX, UB_NO_BACKFLOW, UB_OUTLET, UB_SYMMETRY,
 };
-use foehncraft_mesh::geometry::{cross, dot, norm, scale, sub};
+use foehncraft_mesh::geometry::{add, cross, dot, norm, scale, sub};
 use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -483,7 +483,9 @@ pub enum BoundaryCondition {
     /// No-slip wall, at rest or moving tangentially.
     Wall {
         /// Wall velocity (m/s): numbers, or expressions of x, y, z and, in
-        /// a transient case, t (D53); only the tangential part is used.
+        /// a transient case, t (D53); only the tangential part is used
+        /// (normal to itself, a wall of a turning zone, `[[mrf]]` or
+        /// `[[sliding]]`, moves with the zone).
         #[serde(default = "zero_vector")]
         velocity: Vector,
         /// Mass flux through the wall into the domain (kg/(m² s), D124 W3):
@@ -1004,8 +1006,41 @@ impl Values {
 /// The compiled values of every condition, by boundary.
 pub type Compiled = BTreeMap<String, Values>;
 
+/// A cell zone that turns about an axis: a moving reference frame (D55) or
+/// the rotor of a sliding mesh (D182). Its walls move with it, also normal
+/// to themselves (a blade pushes the fluid): their normal velocity is that
+/// of the zone, **Ω** × (**x** − **x**₀), whatever the `velocity` of the
+/// wall says.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Turning {
+    /// The cell zone (`None`: every cell).
+    pub zone: Option<String>,
+    /// **Ω** (rad/s, along the axis, right-handed).
+    pub omega: [f64; 3],
+    /// A point on the axis (m).
+    pub origin: [f64; 3],
+}
+
+impl Turning {
+    /// The velocity of the zone of local cell `c` at `x` among `turning`
+    /// (zero outside all of them).
+    pub fn velocity(turning: &[Turning], mesh: &Mesh, c: usize, x: [f64; 3]) -> [f64; 3] {
+        for t in turning {
+            let inside = t.zone.as_ref().is_none_or(|z| {
+                mesh.zones
+                    .get(mesh.cell_zone[c] as usize)
+                    .is_some_and(|n| n == z)
+            });
+            if inside {
+                return cross(t.omega, sub(x, t.origin));
+            }
+        }
+        [0.0; 3]
+    }
+}
+
 /// Where and when the conditions are evaluated: the exact solution, the
-/// compiled expressions and the simulated time.
+/// compiled expressions, the simulated time and the turning zones.
 #[derive(Debug, Clone, Copy)]
 pub struct At<'a> {
     /// The `[analytic]` solution (at the time `t`).
@@ -1014,6 +1049,9 @@ pub struct At<'a> {
     pub values: &'a Compiled,
     /// Simulated time (s).
     pub t: f64,
+    /// The zones that turn (`[[mrf]]`, `[[sliding]]`; see
+    /// [`FlowCase::turning`](crate::case::FlowCase::turning)).
+    pub turning: &'a [Turning],
 }
 
 static NO_VALUES: std::sync::LazyLock<Compiled> = std::sync::LazyLock::new(Compiled::new);
@@ -1025,6 +1063,7 @@ impl<'a> At<'a> {
             analytic,
             values: &NO_VALUES,
             t: 0.0,
+            turning: &[],
         }
     }
 
@@ -1953,9 +1992,13 @@ pub fn check(
                     .range()
                     .map(|f| {
                         let s = geo.face_area[f];
-                        let v = bc.wall_velocity(at.of(&p.name), geo.face_centroid[f], at.t);
+                        let x = geo.face_centroid[f];
+                        let v = bc.wall_velocity(at.of(&p.name), x, at.t);
                         largest = largest.max(norm(v));
-                        dot(v, s).abs() / norm(s)
+                        // the normal velocity of a wall of a turning zone is
+                        // that of the zone
+                        let zone = Turning::velocity(at.turning, mesh, mesh.owner[f] as usize, x);
+                        dot(sub(v, zone), s).abs() / norm(s)
                     })
                     .fold(0.0f64, f64::max);
                 if worst > 1e-9 * largest {
@@ -1965,7 +2008,8 @@ pub fn check(
                         Some(&p.name),
                         format!(
                             "the wall velocity has a component of up to {worst:.3e} m/s normal to \
-                             the wall; only the tangential part is used (a wall lets no mass through)"
+                             the wall; only the tangential part is used (a wall lets no mass through; \
+                             a wall of a turning zone moves normal to itself with the zone)"
                         ),
                     );
                 }
@@ -2477,14 +2521,21 @@ pub fn arrays(
             match bc {
                 BoundaryCondition::Wall { mass_flux, .. } => {
                     let velocity = bc.wall_velocity(vals, xf, at.t);
-                    let tangential = sub(velocity, scale(n, dot(velocity, n)));
+                    // the tangential part of the given velocity; normal to
+                    // the wall it moves with its zone if that turns (a
+                    // blade, D55/D182: absolute flux ρ S·V, relative flux 0)
+                    let zone = Turning::velocity(at.turning, mesh, mesh.owner[f] as usize, xf);
+                    let wall = add(
+                        sub(velocity, scale(n, dot(velocity, n))),
+                        scale(n, dot(zone, n)),
+                    );
                     if mass_flux.is_some() {
                         // the normal velocity that carries the mass flux into
                         // the domain (D124 W3)
                         let un = bc.wall_mass_flux(vals, xf, at.t) / rho;
-                        set_ub(sub(tangential, scale(n, un)));
+                        set_ub(sub(wall, scale(n, un)));
                     } else {
-                        set_ub(tangential);
+                        set_ub(wall);
                     }
                 }
                 BoundaryCondition::VelocityInlet { .. } => {

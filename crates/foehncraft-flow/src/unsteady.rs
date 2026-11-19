@@ -240,6 +240,7 @@ impl TimeValues {
                     analytic: a.as_ref(),
                     values: &self.values,
                     t,
+                    turning: &case.turning(),
                 },
             )?;
             fl.set_boundary_velocity(&arr.ub)?;
@@ -343,6 +344,7 @@ pub fn run(
                 analytic: analytic.as_ref(),
                 values: &values,
                 t: case.time.map_or(0.0, |t| t.start_time),
+                turning: &case.turning(),
             },
             case.check_context(),
         );
@@ -829,6 +831,7 @@ fn rebuild_flow(
             analytic: analytic.as_ref(),
             values: &tv.values,
             t,
+            turning: &case.turning(),
         },
     )?;
     let disc = simplec::discretisation(mesh, geo, &arrays)?;
@@ -923,6 +926,7 @@ fn run_one<F: FnMut(&str)>(
             analytic: analytic0.as_ref(),
             values: &tv.values,
             t: time0.start_time,
+            turning: &case.turning(),
         },
     )?;
     let ub0 = arrays.ub.clone();

@@ -1442,6 +1442,28 @@ impl FlowCase {
         }
     }
 
+    /// The zones that turn: the `[[mrf]]` and `[[sliding]]` entries (their
+    /// walls move normal to themselves with them, [`bc::Turning`]); an entry
+    /// whose speed is not valid is left out (its own check reports it).
+    pub fn turning(&self) -> Vec<bc::Turning> {
+        let mrf = self.mrf.iter().filter_map(|m| {
+            m.omega_vector().ok().map(|omega| bc::Turning {
+                zone: m.zone.clone(),
+                omega,
+                origin: m.origin,
+            })
+        });
+        let sliding = self.sliding.iter().filter_map(|m| {
+            m.omega_vector().ok().map(|omega| bc::Turning {
+                zone: m.zone.clone(),
+                omega,
+                origin: m.origin,
+            })
+        });
+        mrf.chain(sliding).collect()
+    }
+
+
     /// The exact solution at time `t` (transient solutions decay in time).
     pub fn analytic_at(&self, t: f64) -> Option<Analytic> {
         self.analytic().map(|a| a.at_time(t))
@@ -2341,6 +2363,7 @@ pub fn run_steered(
         analytic: analytic.as_ref(),
         values: &values,
         t: 0.0,
+        turning: &case.turning(),
     };
     let reynolds = case.reynolds();
     let mut rep = FlowReport {
@@ -4032,6 +4055,7 @@ pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Re
             analytic: case.analytic().as_ref(),
             values: &case.compiled_boundaries()?,
             t: case.time.map_or(0.0, |t| t.start_time),
+            turning: &case.turning(),
         },
         case.check_context(),
     );

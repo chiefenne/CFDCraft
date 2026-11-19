@@ -241,3 +241,77 @@ fn a_passive_scalar_does_not_depend_on_the_frame() {
         assert!(e < 5e-3, "{e0} {e1} {e2}");
     }
 }
+
+/// A square box that turns as a rigid body with its frame carries its fluid
+/// with it: u = Ω × r everywhere, at rest in the frame. Its walls move
+/// normal to themselves (a blade or a baffle of a rotor does the same), so
+/// their whole velocity counts, not only the tangential part (before the
+/// fix of PR #98 the walls slid along the fluid without pushing it: L2
+/// 1.8e-2 on this mesh, 1.3e-3 after; what is left is the wall pressure,
+/// extrapolated with zero normal gradient where the true one is ρΩ²r·n).
+#[test]
+fn a_turning_box_carries_its_fluid() {
+    let t = r#"
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-0.05, -0.05, 0.0]
+upper = [0.05, 0.05, 0.005]
+cells = [16, 16, 1]
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[[mrf]]
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+
+[boundary.xmin]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.xmax]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.ymin]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.ymax]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 2000
+
+[analytic]
+type = "taylor-couette"
+inner_radius = 0.01
+outer_radius = 1.0
+inner_omega = 10.0
+outer_omega = 10.0
+"#;
+    let case = parse(t);
+    let rep = run_case(&case, "turning_box");
+    // no BC010 warning: the normal velocity of the walls is that of the zone
+    assert!(
+        !rep.findings.iter().any(|f| f.code == "BC010"),
+        "{:?}",
+        rep.findings
+    );
+    let e = l2(&rep);
+    eprintln!("turning box: L2 {e:e}");
+    assert!(e < 3e-3, "{e}");
+}

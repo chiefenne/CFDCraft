@@ -788,6 +788,7 @@ fn with_restart<R>(
             analytic: analytic0.as_ref(),
             values: &values,
             t: t_now,
+            turning: &case.turning(),
         },
     )?;
     let (disc, _) = crate::simplec::discretisation(&mesh, &geo, &arrays)?;

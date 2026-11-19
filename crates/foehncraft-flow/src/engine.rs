@@ -1262,6 +1262,7 @@ pub fn check_case(
                     analytic: case.analytic_at(t0).as_ref(),
                     values: &values,
                     t: t0,
+                    turning: &case.turning(),
                 },
                 case.check_context(),
             );
