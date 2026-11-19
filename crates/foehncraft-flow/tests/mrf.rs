@@ -142,8 +142,7 @@ fn zones_are_checked() {
 /// transient case with a frame is accepted (D185).
 #[test]
 fn a_transient_frame_is_accepted() {
-    let t = text() + "\n[time]\nscheme = \"bdf2\"\ntime_step = 0.01\nsteps = 10\n";
-    FlowCase::from_toml(&t, &cases())
+    FlowCase::from_toml(&transient(10), &cases())
         .and_then(|c| c.validate())
         .unwrap();
 }
