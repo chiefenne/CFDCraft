@@ -82,7 +82,8 @@ fn start_vector(n: usize) -> Vec<f64> {
 
 /// Estimate of λ_max(D⁻¹A) by `iters` power iterations with the Rayleigh
 /// quotient (x, A x) / (x, D x) of the generalised problem A x = λ D x,
-/// capped by the Gershgorin bound max_i Σ_j |a_ij| / a_ii.
+/// capped by the Gershgorin bound max_i Σ_j |a_ij| / a_ii (and the bound
+/// itself when the quotient is not positive).
 pub fn lambda_max(a: &Csr, diag: &[f64], iters: usize) -> f64 {
     let n = a.n_rows;
     let gersh = (0..n)
@@ -103,7 +104,12 @@ pub fn lambda_max(a: &Csr, diag: &[f64], iters: usize) -> f64 {
         y.iter_mut().for_each(|v| *v /= nrm);
         x = y;
     }
-    lam.min(gersh).max(f64::MIN_POSITIVE)
+    let lam = if lam > 0.0 && lam.is_finite() {
+        lam.min(gersh)
+    } else {
+        gersh
+    };
+    lam.max(f64::MIN_POSITIVE)
 }
 
 /// Strong neighbours of every row: j ≠ i with |a_ij| ≥ θ √(|a_ii a_jj|).
@@ -198,13 +204,18 @@ fn tentative(agg: &[u32], n_agg: usize) -> Csr {
 }
 
 /// Filtered matrix A_F: strong off-diagonals kept, weak ones lumped onto the
-/// diagonal (so that A_F keeps the row sums of A).
+/// diagonal (so that A_F keeps the row sums of A). A row whose lumped
+/// diagonal would not be positive keeps its own diagonal instead: on a
+/// coarse level the Galerkin product has positive off-diagonals, and a row
+/// with a zero or negative sum (next to the large diagonal of a reference
+/// cell, say) gave D_F⁻¹ = ∞ in the prolongator smoothing and a hierarchy of
+/// NaN.
 fn filtered(a: &Csr, strong: &[Vec<(u32, f64)>]) -> Csr {
     let rows = (0..a.n_rows)
         .into_par_iter()
         .with_min_len(4096)
         .map(|i| {
-            let mut diag = 0.0;
+            let (mut own, mut lumped) = (0.0, 0.0);
             let mut r = Vec::new();
             let mut s = strong[i].iter().map(|e| e.0 as usize).peekable();
             for (j, v) in a.row(i) {
@@ -212,13 +223,18 @@ fn filtered(a: &Csr, strong: &[Vec<(u32, f64)>]) -> Csr {
                     s.next();
                 }
                 if j == i {
-                    diag += v;
+                    own += v;
                 } else if s.peek() == Some(&j) {
                     r.push((j as u32, v));
                 } else {
-                    diag += v;
+                    lumped += v;
                 }
             }
+            let diag = if own + lumped > 0.0 {
+                own + lumped
+            } else {
+                own
+            };
             r.push((i as u32, diag));
             r
         })
@@ -504,6 +520,32 @@ pub(crate) mod tests {
         let (agg, n) = aggregate(&strength(&a, &d, 0.08));
         assert!(agg.iter().all(|&g| g != NONE));
         assert!(n > 20 && n < 100, "{n} aggregates");
+    }
+
+    /// A row whose weak off-diagonals sum to more than its diagonal (here
+    /// next to two rows with large diagonals) keeps a positive diagonal in
+    /// the filtered matrix, and the smoothed prolongator stays finite.
+    #[test]
+    fn filtered_diagonal_stays_positive() {
+        let a = Csr::from_rows(
+            3,
+            vec![
+                vec![(0, 1.0), (1, -0.9), (2, -0.9)],
+                vec![(0, -0.9), (1, 1e4)],
+                vec![(0, -0.9), (2, 1e4)],
+            ],
+        );
+        let strong = strength(&a, &a.diagonal(), 0.25);
+        assert!(strong.iter().all(Vec::is_empty), "all weak");
+        let af = filtered(&a, &strong);
+        assert!(
+            af.diagonal().iter().all(|&d| d > 0.0),
+            "{:?}",
+            af.diagonal()
+        );
+        let pt = tentative(&[0, 0, 0], 1);
+        let p = smooth_prolongator(&af, &pt, 4.0 / 3.0, 10);
+        assert!(p.val.iter().all(|v| v.is_finite()), "{:?}", p.val);
     }
 
     #[test]

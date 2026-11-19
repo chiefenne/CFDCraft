@@ -12,6 +12,11 @@
 //! different numbers of sectors is imprinted at the rotor angle of every
 //! (free) time step. The same flows, with the refusals of its case file, and
 //! the comparison with variant A on a mesh whose two pitches are equal.
+//!
+//! Turbulence on both variants: the spin-up of turbulent Taylor–Couette
+//! flow (k-ω SST) on the sliding meshes against the same flow on a fixed
+//! mesh, and a patch of turbulence (k-ε-ζ-f) that the fluid carries with
+//! the rotor through half a turn against the same patch at rest.
 
 use foehncraft_flow::case::{FlowCase, FlowReport, run};
 use foehncraft_flow::diag;
@@ -214,8 +219,8 @@ fn the_case_is_checked() {
     assert_eq!(valid(&sweep).unwrap_err(), "SLD003");
 }
 
-/// What the mesh decides: the time step, the end time, the zone, the
-/// boundaries and the physics that the sliding mesh does not do yet.
+/// What the mesh decides: the time step, the end time, the zone and the
+/// boundaries.
 #[test]
 fn the_mesh_and_the_step_are_checked() {
     let base = text();
@@ -235,12 +240,6 @@ fn the_mesh_and_the_step_are_checked() {
     let (c, m) = refused(base.replace("zone = \"rotor\"", "zone = \"rotr\""));
     assert_eq!(c, "SLD002", "{m}");
     assert!(m.contains("did you mean `rotor`"), "{m}");
-    // a turbulence model
-    let (c, _) = refused(base.replace(
-        "[flow]\n",
-        "[turbulence]\nmodel = \"k-omega-sst\"\n\n[flow]\n",
-    ));
-    assert_eq!(c, "SLD004");
     // a pressure boundary on the rotor
     let t = base.replace(
         "[boundary.inner]\ntype = \"wall\"\nvelocity = [\"-spin * y\", \"spin * x\", 0.0]\n",
@@ -402,8 +401,8 @@ fn the_imprint_case_is_checked() {
     assert_eq!(valid(&restart).unwrap_err(), "SLD005");
 }
 
-/// What the mesh decides: the names of the interface, the zone, the shape
-/// of the interface, and the physics that is not available yet.
+/// What the mesh decides: the names of the interface, the zone and the
+/// shape of the interface.
 #[test]
 fn the_imprint_mesh_is_checked() {
     let base = imprint_text();
@@ -434,12 +433,6 @@ fn the_imprint_mesh_is_checked() {
     ));
     assert_eq!(c, "SLD005", "{m}");
     assert!(m.contains("interface boundary"), "{m}");
-    // a turbulence model
-    let (c, _) = refused(base.replace(
-        "[flow]\n",
-        "[turbulence]\nmodel = \"k-omega-sst\"\n\n[flow]\n",
-    ));
-    assert_eq!(c, "SLD004");
 }
 
 /// Taylor–Couette flow from rest with 2n sectors in the rotor and 3n in the
@@ -613,5 +606,172 @@ fn probes_and_fields_follow_the_rotor() {
     assert!((sta_u / -exact(0.09) - 1.0).abs() < 0.05, "{sta_u}");
     if cfg!(feature = "hdf5") {
         assert!(fields, "fields.vtkhdf");
+    }
+}
+
+// ---------------------------------------------------------------------
+// turbulence on the sliding mesh
+// ---------------------------------------------------------------------
+
+/// The rows of a sample line of a finished run (column name → value).
+fn line_rows(
+    case: &FlowCase,
+    name: &str,
+    line: &str,
+) -> Vec<std::collections::HashMap<String, f64>> {
+    let dir = out(name);
+    let rep = run(case, name, &dir, |_| {}).unwrap();
+    assert!(rep.failures.is_empty(), "{name}: {:?}", rep.failures);
+    let text = std::fs::read_to_string(dir.join(format!("line_{line}.csv"))).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut rows = text.lines().filter(|l| !l.starts_with('#'));
+    let head: Vec<String> = rows.next().unwrap().split(',').map(String::from).collect();
+    rows.map(|l| {
+        head.iter()
+            .cloned()
+            .zip(l.split(',').map(|v| v.parse::<f64>().unwrap()))
+            .collect()
+    })
+    .collect()
+}
+
+/// The largest difference of column `q` between two lines, relative to the
+/// largest |q| of the first.
+fn deviation(
+    a: &[std::collections::HashMap<String, f64>],
+    b: &[std::collections::HashMap<String, f64>],
+    q: &str,
+) -> f64 {
+    let scale = a.iter().map(|r| r[q].abs()).fold(0.0, f64::max);
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| (x[q] - y[q]).abs())
+        .fold(0.0, f64::max)
+        / scale
+}
+
+/// Turbulent Taylor–Couette flow (k-ω SST, Re = Ω r₁ (r₂ − r₁)/ν = 12 500)
+/// spun up from rest for 2 s: on the conformal sliding mesh and on the
+/// imprinted one (32 rotor and 48 stator sectors) the profiles of u_θ, k
+/// and ν_t across the gap are those of the fixed mesh with the turning wall,
+/// to the discretisation error (1.6 %, 1.5 % and 4 % of the largest value
+/// on the line here; about 0.5 %, 1 % and 1.5 % on the mesh of half the
+/// width and half the step).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn turbulent_spin_up_agrees_with_a_fixed_mesh() {
+    let t = text()
+        .replace(
+            "n_r = 8\nrotor_layers = 4\n",
+            "n_r = 12\nrotor_layers = 6\nradial_ratio = 4.0\nsymmetric = true\n",
+        )
+        .replace("viscosity = 5e-4", "viscosity = 2e-6")
+        .replace(
+            "[flow]\n",
+            "[turbulence]\nmodel = \"k-omega-sst\"\nwall_treatment = \"automatic\"\n\n\
+             [initial]\nturbulence_intensity = 0.05\nviscosity_ratio = 10.0\n\n[flow]\n",
+        )
+        .replace("steps = 510", "steps = 102")
+        .replace(
+            "[solver]\ntolerance = 1e-10\n",
+            "[solver]\ntolerance = 1e-9\nextrapolation = false\nouter_iterations = 4\n",
+        )
+        .replace("[verification]\nmax_error = 0.02\n", "")
+        .replace(
+            "[output]\n",
+            "[output]\nlines = [{ name = \"gap\", from = [0.0505, 0.0, 0.005], \
+             to = [0.0995, 0.0, 0.005], points = 40 }]\n",
+        );
+    let mut base = parse(&t);
+    base.analytic = None;
+    assert!(!base.turbulence.is_laminar() && base.output.lines.len() == 1);
+    let mut fixed = base.clone();
+    fixed.sliding.clear();
+    let mut imprinted = base.clone();
+    imprinted.mesh.annulus.as_mut().unwrap().n_theta_stator = 24;
+    imprinted.sliding[0].rotor_interface = Some("rotor_interface".into());
+    imprinted.sliding[0].stator_interface = Some("stator_interface".into());
+    let f = line_rows(&fixed, "turb_fixed", "gap");
+    for (name, case) in [("turb_conformal", &base), ("turb_imprinted", &imprinted)] {
+        let s = line_rows(case, name, "gap");
+        let d = [
+            deviation(&f, &s, "v"),
+            deviation(&f, &s, "k"),
+            deviation(&f, &s, "nu_t"),
+        ];
+        eprintln!("{name}: largest deviation from the fixed mesh: u_θ, k, ν_t {d:?}");
+        assert!(d[0] < 0.02 && d[1] < 0.03 && d[2] < 0.08, "{name}: {d:?}");
+    }
+}
+
+/// A patch of turbulence (k-ε-ζ-f) in a fluid in solid-body rotation with
+/// the walls, carried through half a turn: on the conformal sliding mesh
+/// (all cells turn, the old levels of k, ε and ζ move with the cells) and on
+/// the imprinted one (the patch in the rotor) it arrives at the opposite
+/// side as the same patch decays at rest, and leaves its start empty. The
+/// patch lags the turn by the velocity error of the coarse mesh (3 % here).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn turbulence_is_carried_by_the_rotor() {
+    let blob = "1e-6 + 1e-3 * exp(-((x - 0.065)^2 + y^2) / 2.5e-5)";
+    let lines = "[output]\nlines = [\
+        { name = \"start\", from = [0.065, -0.02, 0.005], to = [0.065, 0.02, 0.005], points = 41 }, \
+        { name = \"half\", from = [-0.065, 0.02, 0.005], to = [-0.065, -0.02, 0.005], points = 41 }]\n";
+    let turb = format!(
+        "[turbulence]\nmodel = \"k-epsilon-zeta-f0\"\nwall_treatment = \"compound-2023\"\n\n\
+         [initial]\nfrom_analytic = true\nk = \"{blob}\"\nepsilon = \"0.9 * ({blob})\"\n\n[flow]\n"
+    );
+    let solid =
+        |t: String| -> String {
+            t.replace(
+            "[boundary.outer]\ntype = \"wall\"\n",
+            "[boundary.outer]\ntype = \"wall\"\nvelocity = [\"-spin * y\", \"spin * x\", 0.0]\n",
+        )
+        .replace("inner_omega = 10.0", "inner_omega = 10.0\nouter_omega = 10.0")
+        .replace("[flow]\n", &turb)
+        .replace("[output]\n", lines)
+        .replace("[verification]\nmax_error = 0.02\n", "")
+        .replace("[verification]\nmax_error = 0.03\n", "")
+        };
+    let conformal = parse(
+        &solid(text())
+            .replace("zone = \"rotor\"\n", "")
+            .replace("rotor_layers = 4\n", "")
+            .replace("steps = 510", "steps = 16"),
+    );
+    let imprinted = parse(&solid(imprint_text()).replace(
+        "time_step = 0.02\nsteps = 500",
+        "time_step = 0.019634954084936207\nsteps = 16",
+    ));
+    let mut rest = conformal.clone();
+    rest.sliding.clear();
+    rest.analytic = None;
+    rest.initial.from_analytic = false;
+    for w in ["inner", "outer"] {
+        if let Some(foehncraft_flow::bc::BoundaryCondition::Wall { velocity, .. }) =
+            rest.boundary.get_mut(w)
+        {
+            *velocity = foehncraft_flow::expr::vector([0.0; 3]);
+        }
+    }
+    let peak = |rows: &[std::collections::HashMap<String, f64>]| -> (f64, f64) {
+        rows.iter()
+            .map(|r| (r["s"], r["k"]))
+            .fold((0.0, 0.0), |a, b| if b.1 > a.1 { b } else { a })
+    };
+    let (s0, k0) = peak(&line_rows(&rest, "blob_rest", "start"));
+    for (name, case) in [
+        ("blob_conformal", &conformal),
+        ("blob_imprinted", &imprinted),
+    ] {
+        let (s, k) = peak(&line_rows(case, name, "half"));
+        let (_, left) = peak(&line_rows(case, name, "start"));
+        eprintln!(
+            "{name}: k at rest {k0:.3e} at s = {s0:.4}, turned {k:.3e} at s = {s:.4}, left at the \
+             start {left:.2e}"
+        );
+        assert!((k / k0 - 1.0).abs() < 0.25, "{name}: {k} vs {k0}");
+        assert!((s - s0).abs() < 0.01, "{name}: at {s} instead of {s0}");
+        assert!(left < 0.1 * k0, "{name}: {left} stayed at the start");
     }
 }

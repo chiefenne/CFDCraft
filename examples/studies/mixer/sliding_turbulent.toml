@@ -1,0 +1,70 @@
+# The baffled stirred vessel of mrf_turbulent.toml (water, Reynolds number
+# omega R_tip^2 / nu = 20 000, k-omega SST) with the sliding mesh by
+# imprinting (D182 variant B), transient, from rest: the rotor carries k and
+# omega with it, and the wall distance of the turning rotor is updated in
+# every step.
+#
+#   pip install gmsh
+#   python3 examples/meshes/mixer.py
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/sliding_turbulent.toml
+#
+# Three revolutions in 1 508 steps take about ten minutes on four cores.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/mixer_split.msh"
+renumber = "rcm"
+
+[fluid]
+density = 1000.0
+viscosity = 1e-3          # Pa s: water, nu = 1e-6 m^2/s
+
+[constants]
+spin = 10.0
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.00125
+steps = 1508              # three revolutions (2 pi / 10 rad/s each)
+start_time = 0.0
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[boundary.blades]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 4
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["vorticity", "relative-velocity"]
+fields_times = [0.3, 0.6, 1.2]

@@ -863,9 +863,9 @@ omega = 10.0              # or rpm = ... (nonzero)
 - The count N is found from the mesh (the number of images of the outermost
   rotor cell under the rotation); a mesh that is not a ring of identical
   sectors, or an axis that misses its centre, is refused (`SLD002`).
-- The case is transient (`SLD001` for steady ones, see recipe 94 for those)
-  and laminar, with passive scalars; turbulence models are refused
-  (`SLD004`) as are pressure boundaries on the rotor. The boundaries of the
+- The case is transient (`SLD001` for steady ones, see recipe 94 for those),
+  with passive scalars and any turbulence model (recipe 100); pressure
+  boundaries on the rotor are refused (`SLD004`). The boundaries of the
   rotor must be walls that turn with it (`velocity = ["-spin * y", "spin * x", 0.0]`),
   slip walls, symmetry or wedge planes.
 - The solved velocity is the **absolute** one. There is no Coriolis source;
@@ -937,9 +937,10 @@ outer_iterations = 4      # 3 to 6 is usual
   total area on both sides, rotor and stator cells must not share a face or a
   node, and the mesh must be extruded along the axis so that the cells next to
   the interface close (a faces-do-not-close warning, `SLD006`, otherwise).
-- Laminar flow and passive scalars; boundaries of the rotor are walls turning
-  with it (`velocity = [...]`), slip walls or symmetry planes (`SLD004`); one
-  rotor; no restart (`SLD005`, and no restart file is written).
+- Laminar or turbulent flow (recipe 100) and passive scalars; boundaries of
+  the rotor are walls turning with it (`velocity = [...]`), slip walls or
+  symmetry planes (`SLD004`); one rotor; no restart (`SLD005`, and no
+  restart file is written).
 - Probes find the cell that is at their point at the time of the sample, and
   the fields file (`vtkhdf`) is written on the mesh of the end of the run with
   the cells at the interface as polyhedra.
@@ -1052,3 +1053,56 @@ relative velocity.
 
 [Gallery 99](../gallery/flow.md#rotor-fields); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md#derived-fields-d72) and [keys.md](../keys.md).
+
+<a id="turbulent-rotor"></a>
+## 100. Run a turbulent rotor: the frame or the sliding mesh with a turbulence model
+
+```toml
+[turbulence]
+model = "k-omega-sst"            # any model of [turbulence]
+wall_treatment = "automatic"
+
+[initial]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[[mrf]]                          # steady; or [[sliding]] in a transient case
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+
+[solver]
+algorithm = "coupled"            # steady and from rest at a high Reynolds number
+```
+
+- A turbulence model works with `[[mrf]]` and with both sliding meshes
+  (conformal stepping and imprinting), and with any number of `[[mrf]]`
+  zones, each about its own axis. Nothing else is set: the turbulence
+  variables are convected with the flux relative to each zone and produced
+  by the strain of the absolute velocity, which is the same in every frame.
+- Sliding mesh: the rotor carries k, ε, ω, ζ and f with it, their old levels
+  included, so BDF2 stays second order. The wall distance of the turning
+  rotor is updated in every step; the log line `wall distance (D48) of the
+  turning rotor` says how many cells search the other part (the cells nearer
+  to the edge of their part than to its walls; on the stirred vessel 2 118 of
+  16 326). With `turbulence.wall_distance = "pde"` the imprinted mesh solves
+  the Poisson distance again in every step instead (slower; the exact
+  distance is the default). Conformal stepping turns the rotor by whole
+  sectors, so its distance does not change.
+- From rest at a high Reynolds number, SIMPLEC may diverge in the first
+  iterations of a steady frame run (the stirred vessel at Re 20 000 in
+  iteration 6, with or without the frame); the coupled algorithm converges.
+- Put the first cell of a turning wall at y⁺ ≲ 1 or y⁺ ≳ 25 (`TURB001` warns
+  otherwise): in the buffer layer the k of the first cell of the automatic
+  treatment depends on the mesh along the wall, also without a frame
+  (verification page, section on turbulence on the frame).
+- Limits: one sliding rotor per case, no restart of a sliding run (`SLD005`),
+  no torque or power output yet (next), and the frame is steady (`MRF001`).
+
+`examples/studies/mixer/mrf_turbulent.toml` and `sliding_turbulent.toml` are
+the turbulent stirred vessel of gallery 100; `examples/studies/mixer.py
+--turbulent` runs both and draws the figures with `tools/plot/rotor_fields.py`
+(`--quantities speed,k,viscosity_ratio --nu 1e-6`).
+
+[Gallery 100](../gallery/flow.md#turbulent-rotor); the keys are in
+[cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).

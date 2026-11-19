@@ -1,0 +1,63 @@
+# The baffled stirred vessel of mrf.toml with water and a turbulence model:
+# the rotor (blade tip radius 0.045 m) turns at 10 rad/s, Reynolds number
+# omega R_tip^2 / nu = 20 000, k-omega SST with the automatic wall treatment;
+# steady in the frame of the rotor (D55). The same vessel with the sliding
+# mesh is sliding_turbulent.toml; examples/studies/mixer.py runs both and
+# draws the gallery figures (gallery 100).
+#
+#   pip install gmsh
+#   python3 examples/meshes/mixer.py
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/mixer/mrf_turbulent.toml
+#
+# 16 300 cells, the coupled solver (SIMPLEC diverges from rest at this
+# Reynolds number), about 30 s.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/mixer_conformal.msh"
+renumber = "rcm"
+
+[fluid]
+density = 1000.0
+viscosity = 1e-3          # Pa s: water, nu = 1e-6 m^2/s
+
+[constants]
+spin = 10.0
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[flow]
+convection = true
+
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+
+[boundary.blades]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-5
+max_iterations = 4000
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["vorticity", "relative-velocity", "frame-velocity", "turbomachinery",
+           "relative-total-pressure", "rothalpy"]

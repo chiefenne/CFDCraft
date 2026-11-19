@@ -758,8 +758,7 @@ The spin-up on the case file's mesh (32 × 16): |u| at t = 0.22 s, 1.0 s and
 10 s. The momentum diffuses out from the inner cylinder through the
 interface (dashed) while the rotor turns by one sector per step.
 
-Limits: one rotor per case, a fixed time step, one process (CPU), laminar
-flow and passive scalars (a turbulence model is refused, `SLD004`), rotor
+Limits: one rotor per case, a fixed time step, one process (CPU), rotor
 boundaries that are walls turning with the rotor, slip walls, symmetry or
 wedge planes. A fluid that stands in space, with a CFL number of about one
 relative to the rotor, is smeared by the implicit upwind convection, as in any
@@ -829,8 +828,7 @@ The interface of a rotor with blades ([entry 98](#stirred-vessel)) after three
 revolutions, 64 rotor against 96 stator faces: the vorticity of the blade tip
 crosses it without a seam.
 
-Limits: laminar flow and passive scalars (turbulence is refused, `SLD004`), one
-rotor, a fixed time step (`SLD003` for the adaptive one), no restart (`SLD005`;
+Limits: one rotor, a fixed time step (`SLD003` for the adaptive one), no restart (`SLD005`;
 no restart file is written either), CPU, and the interface must be a surface
 of revolution made of the faces of an extruded mesh (a warning, `SLD006`,
 names cells that do not close). The solver, its multigrid hierarchy
@@ -914,9 +912,8 @@ and entry 96 with `tools/plot/rotor_fields.py`, which draws any 2D run with a
 rotor: `speed` (with streamlines), `relative`, `vorticity` and `pressure`, a
 time series of `fields_<step>.vtkhdf`, a zoom with the cell edges.
 
-Limits: laminar (a turbulence model works with `[[mrf]]` but no case checks it
-yet; the sliding mesh refuses it, `SLD004`), 2D, and no torque or power of the
-blades in the output yet. Checks: `a_turning_box_carries_its_fluid` in
+Limits: 2D, and no torque or power of the blades in the output yet. The
+turbulent vessel, in both methods: [entry 100](#turbulent-rotor). Checks: `a_turning_box_carries_its_fluid` in
 `crates/foehncraft-flow/tests/mrf.rs`. [Recipe 98](../recipes/flow.md#stirred-vessel).
 
 <a id="rotor-fields"></a>
@@ -972,3 +969,64 @@ on the mesh of the start (the rotor cells had moved on); they now use the mesh
 of the end of the run. `tests/mrf.rs` (`relative_and_frame_velocities_of_taylor_couette`),
 `tests/sliding.rs` (`probes_and_fields_follow_the_rotor`), unit test
 `turbomachinery_identities`. [Recipe 99](../recipes/flow.md#rotor-fields).
+
+<a id="turbulent-rotor"></a>
+## 100. A turbulent rotor: the stirred vessel with water, in the frame and on the sliding mesh
+
+The stirred vessel of [entry 98](#stirred-vessel) with water (ν = 10⁻⁶
+m²/s, Reynolds number ΩR_tip²/ν = 20 000) and the k-ω SST model with the
+automatic wall treatment, in both methods: steady in the frame of the rotor
+(`studies/mixer/mrf_turbulent.toml`) and from rest through three
+revolutions on the sliding mesh by imprinting (`sliding_turbulent.toml`).
+Every turbulence model runs with `[[mrf]]` and with both sliding meshes:
+the rotor carries k, ε, ω, ζ and f and their old time levels with it, and
+the wall distance of the turning rotor is updated in every step.
+
+![The turbulent stirred vessel in the moving reference frame: the speed |u| with streamlines, highest at the blade tips and turning nearly as a solid body between the blades; the turbulent kinetic energy k, highest at the blade tips and in a ring around them; and the eddy viscosity ratio ν_t/ν, up to 150 in the swirl of the stator and lower in the blade passages](../figures/gallery/mixer_turbulent_mrf.png)
+
+The frame (16 326 cells, 337 iterations of the coupled solver, 27 s). The
+fluid between the blades turns nearly with them (highest speed 0.45 m/s,
+at the tips); k is highest at the blade tips (7.4·10⁻³ m²/s² at r = 45 mm)
+and in the ring of the tip vortices; ν_t/ν reaches 150 in the swirl of the
+stator, where the shear of the slower swirl against the vessel wall and the
+baffles produces turbulence, and stays near 25 in the blade passages, where
+the fluid turns almost as a solid body. Across the interface (dashed) the
+convecting velocity changes from **w** to **c**, as the steady frame
+assumes, and ν_t changes steeply there.
+
+![The turbulent stirred vessel on the sliding mesh after three revolutions from rest: the speed |u|, the rotor spun up and the stator still nearly at rest with slow eddies between the baffles; k in a ring around the blade tips; ν_t/ν up to 70 in that ring](../figures/gallery/mixer_turbulent_sliding.png)
+
+The sliding mesh after three revolutions (1 508 steps of 1.25 ms, BDF2,
+10 min on four cores; the laminar run of entry 98 takes 7). The rotor has
+spun up (0.46 m/s at the tips), but the stator is still nearly at rest
+(0.001 m/s beyond r = 70 mm): the turbulence lives in the shear layer
+between the rotor and the resting fluid (k up to 6.3·10⁻³ m²/s² at the tips,
+ν_t/ν up to 70 at r = 55 mm). The frame above is the state this run moves
+towards; with ν_t ≈ 10⁻⁴ m²/s the swirl needs about R²/ν_t ≈ 15 s, some
+twenty revolutions, to reach the vessel wall. The wall distance of the
+turning rotor: 2 118 of the 16 326 cells, those nearer to the edge of their
+part than to its walls, search the other part in each step. The colours
+step at the interface also where nothing physical happens: the rotor cells
+next to it are 1.5 times the size of the stator cells (64 against 96
+intervals); a scalar diffusing across the imprinted interface agrees with the
+conformal mesh to 1 to 2 %.
+
+Checks: turbulent Taylor–Couette flow (SST, Re 12 500) in the frame against
+the inertial run (u_θ, k, ν_t within 0.24, 0.43 and 0.34 %), the spin-up on
+both sliding meshes against the fixed mesh (1.6, 1.5 and 4.0 %), a ζ-f
+patch carried half a turn by the rotor, two independent frames turning in
+opposite senses (0.78 % against 0.72 % inertial), the wall distance of
+turning parts against brute force and against the imprinted mesh. Found on
+the way and fixed: with conformal stepping ζ-f blew up within ten steps
+(each step started from the fields at the places of the fixed lattice, not
+from the turned ones), and the turbulent frame run failed in its first
+iteration with a NaN hierarchy of the pressure multigrid (also on main). From
+rest at this Reynolds number SIMPLEC diverges in iteration 6 (with or without
+the frame); the coupled solver converges. Details on the
+[verification page](../verification/stage6.md#turbulence-on-the-frame-and-the-sliding-meshes-part-6g-pr-100);
+`tests/mrf.rs`, `tests/sliding.rs`, `foehncraft-mesh/src/query/turning.rs`.
+
+Limits: 2D, one sliding rotor, no torque or power output yet (next), no
+restart of a sliding run, first cells of the blades in the buffer layer on
+62 % of their area (`TURB001`), no comparison with measured data.
+[Recipe 100](../recipes/flow.md#turbulent-rotor).

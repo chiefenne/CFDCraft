@@ -405,3 +405,118 @@ fn relative_and_frame_velocities_of_taylor_couette() {
     let e = format!("{:#}", c.validate().unwrap_err());
     assert!(e.contains("did you mean \"rotor\""), "{e}");
 }
+
+/// Runs a case and reads the rows of its line `line` (`line_<line>.csv`).
+fn line_rows(
+    case: &FlowCase,
+    name: &str,
+    line: &str,
+) -> Vec<std::collections::HashMap<String, f64>> {
+    let dir = out(name);
+    let rep = run(case, name, &dir, |_| {}).unwrap();
+    assert!(rep.failures.is_empty(), "{name}: {:?}", rep.failures);
+    assert!(rep.solves[0].converged, "{name}: not converged");
+    let text = std::fs::read_to_string(dir.join(format!("line_{line}.csv"))).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut rows = text.lines().filter(|l| !l.starts_with('#'));
+    let head: Vec<String> = rows.next().unwrap().split(',').map(String::from).collect();
+    rows.map(|l| {
+        head.iter()
+            .cloned()
+            .zip(l.split(',').map(|v| v.parse::<f64>().unwrap()))
+            .collect()
+    })
+    .collect()
+}
+
+/// Turbulent Taylor–Couette flow (k-ω SST, Re = Ω r₁ (r₂ − r₁)/ν = 12 500,
+/// steady) with the inner half of the gap in the frame of the cylinder and
+/// in the inertial frame: the turbulence is convected with the relative
+/// flux in the rotor and produced by the strain, which does not depend on
+/// the frame, so the profiles of u_θ, k and ν_t across the gap agree to the
+/// discretisation error (0.2 %, 0.4 % and 0.3 % of the largest value here,
+/// less with more sectors). The first cells are at y⁺ 0.8: with the first
+/// cell in the buffer layer (y⁺ 5.6, TURB001) its k depends on the frame by
+/// 13 %, and in the inertial frame alone by a factor of 3 between 32 and
+/// 256 sectors, a cell that the automatic wall treatment does not resolve.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn turbulent_taylor_couette_does_not_depend_on_the_frame() {
+    let t = text()
+        .replace(
+            "n_r = 8\nrotor_layers = 4\n",
+            "n_r = 16\nrotor_layers = 8\nradial_ratio = 30.0\nsymmetric = true\n",
+        )
+        .replace(
+            "density = 1.0\nviscosity = 5e-4",
+            "density = 1000.0\nviscosity = 2e-3",
+        )
+        .replace(
+            "[flow]\n",
+            "[turbulence]\nmodel = \"k-omega-sst\"\nwall_treatment = \"automatic\"\n\n\
+             [initial]\nturbulence_intensity = 0.05\nviscosity_ratio = 10.0\n\
+             velocity = [0.0, 0.0, 0.0]\n\n[flow]\n",
+        )
+        .replace(
+            "[solver]\ntolerance = 1e-10\nmax_iterations = 3000\n",
+            "[solver]\ntolerance = 1e-7\nmax_iterations = 4000\n",
+        )
+        .replace(
+            "[output]\n",
+            "[output]\nlines = [{ name = \"gap\", from = [0.0505, 0.0, 0.005], \
+             to = [0.0995, 0.0, 0.005], points = 40 }]\n",
+        );
+    let mut frame = parse(&t);
+    frame.analytic = None;
+    frame.verification = Default::default();
+    assert!(!frame.turbulence.is_laminar() && frame.output.lines.len() == 1);
+    let mut inertial = frame.clone();
+    inertial.mrf.clear();
+    let a = line_rows(&inertial, "turb_inertial", "gap");
+    let b = line_rows(&frame, "turb_frame", "gap");
+    let d: Vec<f64> = ["v", "k", "nu_t"]
+        .iter()
+        .map(|q| {
+            let scale = a.iter().map(|r| r[*q].abs()).fold(0.0, f64::max);
+            a.iter()
+                .zip(&b)
+                .map(|(x, y)| (x[*q] - y[*q]).abs())
+                .fold(0.0, f64::max)
+                / scale
+        })
+        .collect();
+    eprintln!("turbulent Taylor–Couette, frame against inertial: u_θ, k, ν_t {d:?}");
+    assert!(d[0] < 0.005 && d[1] < 0.015 && d[2] < 0.015, "{d:?}");
+}
+
+/// Two independent rotating zones: the inner half of the gap turns with
+/// the inner cylinder (10 rad/s), the outer half with the outer one, which
+/// turns the other way (−4 rad/s). Every frame sees its own relative flow,
+/// and the solution is the inertial one, A r + B/r for the two cylinder
+/// speeds, to the discretisation error.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn two_independent_frames() {
+    let t = text()
+        .replace(
+            "[boundary.outer]\ntype = \"wall\"\n",
+            "[boundary.outer]\ntype = \"wall\"\nvelocity = [\"4.0 * y\", \"-4.0 * x\", 0.0]\n",
+        )
+        .replace(
+            "inner_omega = 10.0",
+            "inner_omega = 10.0\nouter_omega = -4.0",
+        )
+        + "\n[[mrf]]\nzone = \"stator\"\naxis = [0.0, 0.0, 1.0]\nomega = -4.0\n";
+    let two = parse(&t);
+    assert_eq!(two.mrf.len(), 2);
+    let mut inertial = two.clone();
+    inertial.mrf.clear();
+    let e_two = l2(&run_case(&two, "two_frames"));
+    let e_inertial = l2(&run_case(&inertial, "two_inertial"));
+    eprintln!("two frames: L2 {e_two:e}, inertial {e_inertial:e}");
+    assert!(e_two < 0.012, "{e_two}");
+    assert!(
+        e_two < 2.0 * e_inertial && e_inertial < 2.0 * e_two,
+        "{e_two} {e_inertial}"
+    );
+}
