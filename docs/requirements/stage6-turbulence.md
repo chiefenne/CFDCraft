@@ -653,7 +653,10 @@ two cells. The wall-face value 10·6ν/(β₁ d₁²) with d₁ the wall-cell
 height, which the TMR codes and pyaeroflow use, gives −0.8 % already on
 64 × 48 cells; pyaeroflow found the same (d₁ = the centroid distance, four
 times larger ω_w, gives 2 % less). d₁ = 2 y_P is the wall-cell height of
-hexahedra and prisms.
+hexahedra and prisms. *6g, PR #112:* the sweep of the factor (1, 3, 10,
+30, 100) on the plate and the channel on three meshes keeps 10: it has the
+smallest mesh dependence, and all factors meet on the finest mesh
+(verification manual, stage 6).
 
 The exponentials e^{−Γ} and e^{−1/Γ} are evaluated for every face (no
 branch on the regime); Γ is floored at 10⁻³⁰⁰ before 1/Γ, and the in-house

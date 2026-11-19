@@ -1956,6 +1956,26 @@ the near-wall cell of a separating or impinging flow still takes the
 equilibrium production of a constant-stress layer above y⁺ ≈ 5, as every
 wall function does.
 
+**The wall value of ω in `low-re`.** The sweep of the factor F of
+ω_w = F · 6ν/(β₁ d₁²) (F = 10 by default, Menter 1994) on the plate
+(`tmr_plate_sst.toml`, `low-re`, levels 0, 1, 2, y⁺ ≈ 0.2) and the channel
+(`channel_sst.toml`, levels 0, 1, 2; one build per factor):
+
+| F | plate C_f(0.97) against the TMR value | channel U_b⁺ (DNS 17.55) |
+|---|---|---|
+| 1 | +14.0, +4.6, +2.2 % | 16.940, 17.149, 17.232 |
+| 3 | +5.9, +1.5, +0.9 % | 17.216, 17.279, 17.296 |
+| 10 | +0.1, −0.8, −0.1 % | 17.427, 17.381, 17.346 |
+| 30 | −3.5, −2.4, −0.9 % | 17.575, 17.452, 17.380 |
+| 100 | −6.8, −3.9, −1.5 % | 17.707, 17.515, 17.411 |
+
+Every factor tends to the same values as the mesh is refined (plate about
+−0.1 to −1.5 %, channel 17.23 to 17.41 on the finest mesh). F = 10 has the
+smallest mesh dependence on the plate, within 0.8 % already on the
+coarsest mesh, and the middle of the spread in the channel. **Finding:**
+the default stays F = 10. The −1.2 % of U_b⁺ in the channel does not come
+from the wall value of ω.
+
 
 ## Statistics of transient runs (D71, PR #110)
 
