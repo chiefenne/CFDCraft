@@ -17,3 +17,9 @@ Foehncraft takes the advice anyway: energy, buoyancy and conjugate heat transfer
 ## Residuals got stuck
 
 *English, from a solver developer.* Said of a run whose residuals stopped falling and stayed flat, as if they were a car in the snow. The words come from someone who knows exactly what is behind it, and still they make the residuals sound like the guilty party. They are only the messenger: a flat line points to the mesh, the boundary conditions, the relaxation or the physics itself, and the residuals of every outer iteration in the log are there to find where it began.
+
+## Better to know what's not happening
+
+*English, from an R&D manager.* "It is better to know what's not happening, than not knowing what's happening." Said about a computation, by a manager who did not trust simulation yet and was sure he could check the CFD code with Excel. A few cells for the mass flow, a few for the pressure drop, and the spreadsheet would show whether the solver told the truth.
+
+The sentence turns on itself twice and still lands. Read it slowly and it is a fair demand on any solver: a run should say plainly what it does not do, and never leave you guessing what it does. That is why Foehncraft writes the balances of every run into the ledger ([gallery 19](gallery/runs.md#health)), checks the boundary conditions before it starts and keeps a [verification manual](verification/manual.md): so that nobody needs a spreadsheet to find out what is happening, and what is not.
