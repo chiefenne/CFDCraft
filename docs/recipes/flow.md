@@ -823,3 +823,60 @@ rpm = 1500                # or omega = ... in rad/s
 
 [Gallery 94](../gallery/flow.md#mrf); the keys are in
 [cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).
+
+<a id="sliding-mesh"></a>
+## 95. Turn a rotor through the mesh in time (sliding mesh, conformal stepping)
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/taylor_couette_sliding.toml
+```
+
+A zone of the mesh that turns, followed in time, is a `[[sliding]]` table
+(D56, D182, variant A). The mesh is a ring of N identical sectors about the
+axis (the zone and the rest of the ring alike), and the rotor moves by whole
+sectors:
+
+```toml
+[time]
+scheme = "bdf2"
+time_step = 0.019634954084936207   # 2 pi / (N * omega), N = 32 sectors
+steps = 510
+
+[[sliding]]
+zone = "rotor"            # a cell zone of the mesh
+axis = [0.0, 0.0, 1.0]
+origin = [0.0, 0.0, 0.0]
+omega = 10.0              # or rpm = ... (nonzero)
+# shift = 1               # sectors per step; the step is shift * 2 pi / (N omega)
+```
+
+- The time step is **set by the geometry**: `shift · 2π/(N |Ω|)`. A different
+  value is refused with the right one (`SLD003`); so are `end_time` that is
+  not a whole number of steps, the adaptive step and the error tolerance.
+  Write `steps`, or an `end_time` that fits.
+- The count N is found from the mesh (the number of images of the outermost
+  rotor cell under the rotation); a mesh that is not a ring of identical
+  sectors, or an axis that misses its centre, is refused (`SLD002`).
+- The case is transient (`SLD001` for steady ones, see recipe 94 for those)
+  and laminar, with passive scalars; turbulence models are refused
+  (`SLD004`) as are pressure boundaries on the rotor. The boundaries of the
+  rotor must be walls that turn with it (`velocity = ["-spin * y", "spin * x", 0.0]`),
+  slip walls, symmetry or wedge planes.
+- The solved velocity is the **absolute** one. There is no Coriolis source;
+  the interface at the middle of the gap should be a surface of revolution so
+  that the mesh flux through it is zero.
+- Output times that do not fall on a step fire at the step that reaches them;
+  `end_time` and the time schedules are in whole steps.
+- A fluid that stands in space is convected relative to the rotor at a CFL
+  number near one by an implicit upwind scheme, which smears scalars. Make
+  the sector small, or use the frame (recipe 94) when the flow is steady in
+  the frame.
+- The case file starts from rest and spins up; `[verification] max_error`
+  makes the run fail above the band (L2 error 1.35 % on 512 cells).
+  `[initial] from_analytic = true` starts a transient run from the
+  `[analytic]` velocity and pressure instead (the solid-body check of
+  `tests/sliding.rs`).
+
+[Gallery 95](../gallery/flow.md#sliding-mesh); the keys are in
+[cases/flow-keys.md](../cases/flow-keys.md) and [keys.md](../keys.md).

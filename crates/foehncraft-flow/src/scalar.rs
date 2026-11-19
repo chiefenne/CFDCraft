@@ -609,6 +609,9 @@ struct Field {
     eps2: Option<Buf>,
     /// φⁿ, φⁿ⁻¹ and the φⁿ⁻¹ of the step before (taking a step back).
     old: Option<(Buf, Buf, Buf)>,
+    /// The sliding mesh (D182): φⁿ and φⁿ⁻¹ with the data of the moved
+    /// cells shifted, which the time term sees instead of `old`.
+    content: Option<(Buf, Buf)>,
     /// The last valid value (D63).
     valid: Option<Buf>,
     bounds: (f64, f64),
@@ -999,6 +1002,7 @@ impl Scalars {
                 su,
                 eps2,
                 old,
+                content: None,
                 valid: None,
                 bounds,
                 rules,
@@ -1208,8 +1212,8 @@ impl Scalars {
                     (Some(st), Some((o1, o2, _))) => Some(ScalarTime {
                         inv_dt: 1.0 / st.dt,
                         a: st.a,
-                        old: o1,
-                        old2: o2,
+                        old: f.content.map_or(o1, |c| c.0),
+                        old2: f.content.map_or(o2, |c| c.1),
                         bounds: f.bounds,
                     }),
                     _ => None,
@@ -1313,6 +1317,38 @@ impl Scalars {
             dev.copy(f.phi, o1)?;
             if has_old && let Some(w) = extrapolate {
                 dev.lincomb(f.phi, 1.0 + w, o1, -w, o2)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The sliding mesh (D182): the time terms see the old levels with the
+    /// data of the cells that move shifted along (entry i of a shifted
+    /// array is entry `perm1[i]` of the Eulerian one for the level n and
+    /// `perm2[i]` for the level n−1); call after
+    /// [`step_start`](Self::step_start).
+    pub fn shift_old(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        perm1: &[usize],
+        perm2: &[usize],
+    ) -> Result<()> {
+        for f in &mut self.fields {
+            let Some((o1, o2, _)) = f.old else {
+                continue;
+            };
+            let (c1, c2) = match f.content {
+                Some(c) => c,
+                None => {
+                    let c = (dev.alloc(self.nc)?, dev.alloc(self.nc)?);
+                    f.content = Some(c);
+                    c
+                }
+            };
+            for (src, dst, perm) in [(o1, c1, perm1), (o2, c2, perm2)] {
+                let v = dev.download(src)?;
+                let m: Vec<f64> = perm.iter().map(|&i| v[i]).collect();
+                dev.upload(dst, &m)?;
             }
         }
         Ok(())

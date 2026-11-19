@@ -138,6 +138,10 @@ codes! {
     MRF_TRANSIENT = "MRF001", Error, "A rotating zone `[[mrf]]` in a transient case (the moving reference frame of D55 is steady; the transient form is the sliding mesh of D182).";
     MRF_ENTRY = "MRF002", Error, "An `[[mrf]]` table with no or two angular velocities (`omega`, `rpm`), a zero axis, a cell zone the mesh does not have (with the nearest name as a hint), no `zone` where there are several tables, or a zone that two tables rotate.";
     MRF_INTERFACE = "MRF003", Warning, "The interface or a boundary of a rotating zone is not a surface of revolution about its axis: the relative flux of the cells next to it does not close, and the solution there is not that of a frozen rotor (cell count and worst closure error).";
+    SLIDING_STEADY = "SLD001", Error, "A `[[sliding]]` table in a steady case: the sliding mesh moves in time (D182); a steady case with a rotating zone uses `[[mrf]]` (D55).";
+    SLIDING_ENTRY = "SLD002", Error, "A `[[sliding]]` table with no or two angular velocities (`omega`, `rpm`), a zero speed or axis, a `shift` of 0 or of a whole turn, a cell zone the mesh does not have (with the nearest name as a hint), or a second table (one rotor per case so far).";
+    SLIDING_STEPPING = "SLD003", Error, "The time stepping does not fit the sliding mesh: the time step is not `shift` × 2π/(sectors × Ω) (the right value is given), the step is adaptive or error controlled, `end_time` is not a whole number of steps, or `[verification]` asks for a sweep over levels or time steps.";
+    SLIDING_ZONE = "SLD004", Error, "The rotor cannot be moved by whole sectors: its cells have no image when it is turned by one sector (it is not a ring of identical sectors about the axis), a boundary of the rotor is not a wall, slip wall, symmetry plane or wedge, or a turbulence model is on (not yet).";
     // the mesh quality (D50)
     MESH_SKEWED = "MESH001", Warning, "Faces whose skewness exceeds `solver.skewness_limit` (poor cells, typically tetrahedra of a mesh that was not optimised).";
     MESH_REMEDIATION = "MESH002", Note, "Cell-quality remediation (D50): the run uses other schemes than set because of poor cells.";
@@ -376,7 +380,7 @@ mod tests {
             assert!(
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
-                    "REG", "MESH", "TURB", "MRF"
+                    "REG", "MESH", "TURB", "MRF", "SLD"
                 ]
                 .contains(&p),
                 "{}",

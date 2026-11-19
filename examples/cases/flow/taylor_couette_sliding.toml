@@ -1,0 +1,83 @@
+# Laminar Taylor-Couette flow with a sliding mesh, conformal stepping
+# (D56, D182; stage 6, part 6 of 6g).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/taylor_couette_sliding.toml
+#
+# The gap between a cylinder of radius 0.05 m turning at 10 rad/s and a
+# fixed outer cylinder of radius 0.10 m, in 2D (one layer of cells in z),
+# started from rest: the flow spins up and ends in the steady state
+# u_theta = A r + B/r (Re = w r1 (r2 - r1) / nu = 50, viscous time
+# (r2 - r1)^2 / nu = 5 s).
+#
+# The inner half of the radial layers is the cell zone `rotor` and turns
+# with the inner cylinder: in every time step the rotor advances by one of its
+# 32 sectors (`[[sliding]]`), so the time step is
+# 2 pi / (32 * 10 rad/s) = 0.019634954 s, the cells of the interface meet new
+# neighbours without any interpolation, and the mesh stays conformal. The
+# solved velocity is the absolute one, the momentum is convected with the
+# flux relative to the moving mesh, and there is no Coriolis source. The
+# interface at the middle of the gap is a surface of revolution about the
+# axis, where the grid flux vanishes. The run fails if the relative L2 error
+# of the velocity at the end exceeds the band.
+
+case_format = "0.6"
+
+[mesh.annulus]
+r_inner = 0.05
+r_outer = 0.10
+depth = 0.01
+n_theta = 16
+n_r = 8
+rotor_layers = 4
+refine = 1
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-4
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.019634954084936207
+steps = 510
+start_time = 0.0
+
+[[sliding]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+
+[boundary.inner]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.outer]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 3000
+
+[analytic]
+type = "taylor-couette"
+inner_radius = 0.05
+outer_radius = 0.10
+inner_omega = 10.0
+
+[verification]
+max_error = 0.02
+
+[output]
+vtkhdf = false
+wall_csv = false

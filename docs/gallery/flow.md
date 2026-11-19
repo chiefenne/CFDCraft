@@ -16,6 +16,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 85 | [Heat transfer in turbulent flow: the heated pipe and the heated flat plate](#thermal-wall-function) | 6 | `scalars.<name>.wall_function`, `turbulent_prandtl`, `turbulent_prandtl_model`, wall file columns of a scalar |
 | 86 | [The heated channel against DNS: Nu at Re_τ = 395](#heated-channel-dns) | 6 | `channel_heated_keps.toml`, `examples/studies/channel_heat_dns.py` |
 | 94 | [Rotating machinery, steady: the moving reference frame on Taylor–Couette flow](#mrf) | 6 | `[[mrf]]`, `[mesh.annulus]`, `analytic.type = "taylor-couette"`, `taylor_couette_mrf.toml` |
+| 95 | [Rotating machinery, transient: the sliding mesh on Taylor–Couette flow](#sliding-mesh) | 6 | `[[sliding]]`, `time_step`, `taylor_couette_sliding.toml` |
 
 ---
 
@@ -701,3 +702,57 @@ only the Coriolis source and the pressure remain).
 Checks: observed order 1.8–2.6; the cases of `crates/foehncraft-flow/tests/mrf.rs`
 (frame independence, solid body, scalar, closure of the frame flux, zones,
 refusal of a transient case). [Recipe 94](../recipes/flow.md#mrf).
+
+<a id="sliding-mesh"></a>
+## 95. Rotating machinery, transient: the sliding mesh on Taylor–Couette flow
+
+The same flow as entry 94 (cylinder of radius 0.05 m turning at 10 rad/s
+inside a fixed one of radius 0.10 m, Re = 50, `taylor_couette_sliding.toml`),
+now started from rest and followed in time until it has spun up. The inner
+half of the radial layers is the cell zone `rotor`, and a `[[sliding]]` table
+turns it with the cylinder, **cell by cell**: the mesh is a ring of 32
+identical sectors, the time step is Δt = 2π/(32 · 10 rad/s) = 0.01963 s, and
+in every step the rotor advances by exactly one sector. The cells of the
+interface meet their new neighbours without any interpolation, the mesh stays
+conformal, and the flux through the interface is the flux of the moving
+mesh (the interface is a circle about the axis, so the mesh flux of its
+faces is zero). The solver does not move anything: the velocity is the
+absolute one, momentum and scalars are convected with the flux relative to
+the mesh, there is no Coriolis source, and only the time term knows that the
+cells have moved: the old time levels of a rotor cell are those of the cell
+that stood at its place one (two) sectors before. The case file names the
+sector count by the time step; a step that is not a whole sector is refused
+with the value that fits (`SLD003`).
+
+| Mesh | Cells | L2 error of the velocity | Observed order |
+|---|---|---|---|
+| 16 × 8 | 128 | 6.76 % | |
+| 32 × 16 | 512 | 1.35 % | 2.3 |
+| 64 × 32 | 2 048 | 0.28 % | 2.3 |
+| 128 × 64 | 8 192 | 0.06 % | 2.2 |
+
+(Errors relative to the speed of the inner wall at the end of the spin-up,
+t = 10 s, two viscous times; the time step is halved with each mesh, so both
+errors fall together, second order in space and time.) The 512-cell case runs
+in about one second. Two further checks: with two sectors per step the
+error is 2.7 % on the 512-cell mesh (the time step is twice as long, the
+error of the second order scheme four times as large); a fluid in solid-body
+rotation, started from the exact solution with the whole mesh turning, keeps
+its error at 1.7 % (0.6 s) and 1.6 % (3 s), without growth (a method that moves the
+gradients and fluxes with the data is unstable here: this is why only the time
+term sees the motion). A passive scalar (θ = 1 inside, 0 outside, exact
+ln(r₂/r)/ln(r₂/r₁)) ends in its exact solution to 0.7 %.
+
+Limits: one rotor per case, a fixed time step, one process (CPU), laminar
+flow and passive scalars (a turbulence model is refused, `SLD004`), rotor
+boundaries that are walls turning with the rotor, slip walls, symmetry or
+wedge planes. A fluid that stands in space, with a CFL number of about one
+relative to the rotor, is smeared by the implicit upwind convection, as in any
+sliding or ALE scheme. A pitch ratio that is not one (different sector counts
+on the two sides) needs the variant by imprinting (D182, variant B), which
+is not implemented yet.
+
+Checks: observed order 1.9–2.7; the cases of
+`crates/foehncraft-flow/tests/sliding.rs` (shift of the cells, refusals,
+convergence, two sectors per step, solid body, scalar, frame and sliding mesh
+do not mix). [Recipe 95](../recipes/flow.md#sliding-mesh).

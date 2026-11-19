@@ -168,6 +168,10 @@ pub struct InitialSection {
     /// the pressure boundaries, from one Laplace solve with the pressure
     /// multigrid.
     pub potential_flow: bool,
+    /// Transient: start from the velocity and pressure of `[analytic]`
+    /// (at `start_time`) instead of `velocity` and `pressure`, to see
+    /// whether a numerical method keeps an exact solution.
+    pub from_analytic: bool,
     /// Start turbulence intensity (stage 6, with `viscosity_ratio`; default:
     /// the values of the first inlet by name, else 0.01).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -762,6 +766,10 @@ pub struct FlowCase {
     /// D55): `[[mrf]]` tables.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub mrf: Vec<crate::frame::MrfSection>,
+    /// A zone of the mesh that turns through the time steps of a transient
+    /// run (the sliding mesh, D56, D182): the `[[sliding]]` table.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sliding: Vec<crate::sliding::SlidingSection>,
     /// The case file (for re-reading it during a run).
     #[serde(skip)]
     pub source: Option<PathBuf>,
@@ -1189,6 +1197,7 @@ impl FlowCase {
     /// file tables are checked by [`load_tables`](Self::load_tables)).
     pub fn validate(&self) -> Result<()> {
         crate::frame::validate(self)?;
+        crate::sliding::validate(self)?;
         if let Some(d) = &self.fluid.density
             && let Some(v) = d.number()
         {

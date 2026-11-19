@@ -207,6 +207,25 @@ pub struct Transient {
     pub outer_log: Vec<Residuals>,
     l: Levels,
     e: Option<ErrorWork>,
+    /// The sliding mesh (D182): how the old levels of the time terms move.
+    content: Option<Content>,
+}
+
+/// The sliding mesh moves the cells of the rotor, so the time term of a
+/// moving cell must see what the cell held at the old times, and not what
+/// the cell of the mesh that is now at its place held: the old levels of the
+/// time terms are the Eulerian levels (the fields at the places of the mesh)
+/// with the data of the rotor cells shifted along the turn, one step for the
+/// level n and two for the level n−1 (D182).
+#[derive(Debug, Clone)]
+struct Content {
+    /// Entry i of the shifted array is entry `perm1[i]` of the old one
+    /// (one step), `perm2` for two steps.
+    perm1: Vec<usize>,
+    perm2: Vec<usize>,
+    /// The shifted velocities of the levels n and n−1.
+    c1: Buf3,
+    c2: Buf3,
 }
 
 /// Host copy of the old levels (for a restart).
@@ -318,7 +337,38 @@ impl Transient {
             outer_log: Vec::new(),
             l,
             e: None,
+            content: None,
         })
+    }
+
+    /// The time terms see the old levels with the data of the cells moved
+    /// as `perm` says (entry i of the moved array is entry `perm[i]` of
+    /// the Eulerian one), once for the level n and twice for the level
+    /// n−1: the sliding mesh of D182 ([`crate::sliding`]).
+    pub fn set_sliding(&mut self, fl: &mut Flow, perm: Vec<usize>) -> Result<()> {
+        ensure!(
+            perm.len() == fl.disc.n_cells,
+            "the shift of the cells has {} entries for {} cells",
+            perm.len(),
+            fl.disc.n_cells
+        );
+        let nc = fl.disc.n_cells;
+        let perm2: Vec<usize> = perm.iter().map(|&i| perm[i]).collect();
+        let mut c3 = || -> Result<Buf3> {
+            Ok(Buf3 {
+                x: fl.dev.alloc(nc)?,
+                y: fl.dev.alloc(nc)?,
+                z: fl.dev.alloc(nc)?,
+            })
+        };
+        let (c1, c2) = (c3()?, c3()?);
+        self.content = Some(Content {
+            perm1: perm,
+            perm2,
+            c1,
+            c2,
+        });
+        Ok(())
     }
 
     /// Boundary values, gradients and Xⁿ of new start fields.
@@ -532,7 +582,10 @@ impl Transient {
 
     /// Largest Courant number of the current fluxes for a step `dt`.
     pub fn courant(&mut self, fl: &mut Flow, dt: f64) -> Result<f64> {
-        fl.dev.courant(fl.f.mass_flux, dt, self.l.cfl)?;
+        // the flux that carries the quantities: the relative one in a
+        // rotating zone (frames, D55, D182)
+        let m = fl.convecting_flux()?;
+        fl.dev.courant(m, dt, self.l.cfl)?;
         Ok(fl.dev.min_max(self.l.cfl)?.1)
     }
 
@@ -655,7 +708,8 @@ impl Transient {
         let ew = 1.0 - theta;
         if ew != 0.0 {
             // R(uⁿ) with the old flux, gradients and boundary values
-            fl.momentum_assembly_faces(f.mass_flux)?;
+            let m = fl.relative_flux(f.mass_flux)?;
+            fl.momentum_assembly_faces(m)?;
             fl.dev.momentum_operator(w.cp, w.cn, w.bf, f.u, l.r_old)?;
         }
         // G* = (1 + ω)Gⁿ − ωGⁿ⁻¹ for the velocity gradients and limiters,
@@ -684,18 +738,42 @@ impl Transient {
         // the convecting flux of the new level (also for Crank–Nicolson: the
         // implicit half is R(uⁿ⁺¹) with ṁⁿ⁺¹, the explicit one R(uⁿ) with ṁⁿ,
         // as in the later outer iterations)
+        // (the relative flux ṁ − ρ S·V of a rotating zone, D182: the frame
+        // flux is the same at every level)
         let conv = if extrapolate {
             fl.dev
                 .lincomb(l.conv, 1.0 + omega, l.m_old, -omega, l.m_old2)?;
+            if let Some(ff) = fl.frame_flux() {
+                fl.dev.lincomb(l.conv, 1.0, l.conv, -1.0, ff)?;
+            }
             l.conv
         } else {
-            f.mass_flux
+            fl.relative_flux(f.mass_flux)?
         };
+        // the old levels of the time term: those of the cells that moved
+        // (the sliding mesh)
+        let (u_old, u_old2) = match &self.content {
+            Some(c) => {
+                for (src, dst, perm) in [(l.u_old, c.c1, &c.perm1), (l.u_old2, c.c2, &c.perm2)] {
+                    for (&s, &d) in src.all().iter().zip(&dst.all()) {
+                        let v = fl.dev.download(s)?;
+                        let m: Vec<f64> = perm.iter().map(|&i| v[i]).collect();
+                        fl.dev.upload(d, &m)?;
+                    }
+                }
+                (c.c1, c.c2)
+            }
+            None => (l.u_old, l.u_old2),
+        };
+        // (level n−1 of the scalars is shifted in the same way)
+        if let (Some(c), Some(sc)) = (&self.content, fl.scalars.as_mut()) {
+            sc.shift_old(fl.dev.as_mut(), &c.perm1, &c.perm2)?;
+        }
         let time = TimeTerms {
             tau: rho * a0 / dt,
             c_old: [rho * (-a1) / dt, rho * (-a2) / dt],
-            u_old: l.u_old,
-            u_old2: l.u_old2,
+            u_old,
+            u_old2,
             explicit: (ew, l.r_old),
         };
         fl.dev.sync()?;
@@ -729,7 +807,7 @@ impl Transient {
             } else {
                 w.zero_face
             };
-            let c = if k == 1 { conv } else { fl.f.mass_flux };
+            let c = if k == 1 { conv } else { fl.convecting_flux()? };
             // the central correction reads cell velocities, not gradients:
             // extrapolate them as well, u* = (1 + ω)uⁿ − ωuⁿ⁻¹, into the
             // corrector scratch (free until the correctors)

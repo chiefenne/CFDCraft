@@ -45,7 +45,9 @@
 //!   (lagged one outer iteration).
 //!
 //! The method is steady only (D55); the transient form is the sliding mesh
-//! of D182.
+//! of D182 ([`crate::sliding`]), which uses the same frame flux as the grid
+//! flux of its moving rotor cells and has no Coriolis source (the mesh
+//! moves instead of the frame).
 
 use crate::case::FlowCase;
 use crate::device::Buf;
@@ -150,6 +152,9 @@ pub(crate) struct FrameZone {
     pub omega: [f64; 3],
     /// ρ V_c in the cells of the zone, 0 elsewhere (a cell field).
     pub weight: Buf,
+    /// The Coriolis source acts in the zone (the moving reference frame);
+    /// not for the cells of a sliding mesh, whose mesh moves (D182).
+    pub coriolis: bool,
 }
 
 /// The device data of the frames of a run.
@@ -206,6 +211,16 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 
 /// Assigns each cell to the `[[mrf]]` entry of its zone.
 pub fn assign_cells(entries: &[MrfSection], mesh: &Mesh) -> Result<Vec<Option<usize>>> {
+    assign_cells_in(entries, mesh, "[[mrf]]")
+}
+
+/// [`assign_cells`] for the entries of another table (`[[sliding]]`), named
+/// `table` in the messages.
+pub fn assign_cells_in(
+    entries: &[MrfSection],
+    mesh: &Mesh,
+    table: &str,
+) -> Result<Vec<Option<usize>>> {
     let nc = mesh.n_cells;
     let mut out: Vec<Option<usize>> = vec![None; nc];
     for (i, m) in entries.iter().enumerate() {
@@ -218,12 +233,12 @@ pub fn assign_cells(entries: &[MrfSection], mesh: &Mesh) -> Result<Vec<Option<us
                     let mut d = Diagnostic::new(
                         diag::MRF_ENTRY,
                         format!(
-                            "[[mrf]] entry {}: the mesh has no cell zone `{name}`{hint}; its zones are {:?}",
+                            "{table} entry {}: the mesh has no cell zone `{name}`{hint}; its zones are {:?}",
                             i + 1,
                             mesh.zones
                         ),
                     );
-                    d.key = Some(format!("mrf[{i}].zone"));
+                    d.key = Some(format!("{}[{i}].zone", table.trim_matches(['[', ']'])));
                     return Err(diag::err(d));
                 };
                 Some(z as u32)
@@ -234,7 +249,7 @@ pub fn assign_cells(entries: &[MrfSection], mesh: &Mesh) -> Result<Vec<Option<us
             if zone.is_none_or(|z| mesh.cell_zone[c] == z) {
                 anyhow::ensure!(
                     slot.is_none(),
-                    "[[mrf]] entries {} and {} both rotate cell {c}",
+                    "{table} entries {} and {} both rotate cell {c}",
                     slot.unwrap_or(0) + 1,
                     i + 1
                 );
@@ -322,21 +337,42 @@ pub fn frame_fluxes(
     })
 }
 
+/// The rotating zones of `case` as frames: the `[[mrf]]` tables (with the
+/// Coriolis source) and the `[[sliding]]` tables (without it, D182).
+fn entries(case: &FlowCase) -> (Vec<MrfSection>, Vec<bool>) {
+    let mut e = case.mrf.clone();
+    let mut coriolis = vec![true; e.len()];
+    for s in &case.sliding {
+        e.push(s.frame());
+        coriolis.push(false);
+    }
+    (e, coriolis)
+}
+
 /// Adds the frames of `case` to the flow solver `fl` (no-op without
-/// `[[mrf]]`); call before loading a restart.
+/// `[[mrf]]` or `[[sliding]]`); call before loading a restart.
 pub fn attach(
     fl: &mut Flow,
     case: &FlowCase,
     mesh: &Mesh,
     _geo: &Geometry,
 ) -> Result<Option<FrameNotes>> {
-    if case.mrf.is_empty() {
+    let (entries, coriolis) = entries(case);
+    if entries.is_empty() {
         return Ok(None);
     }
     validate(case)?;
-    let cell_zone = assign_cells(&case.mrf, mesh)?;
+    let cell_zone = assign_cells_in(
+        &entries,
+        mesh,
+        if case.sliding.is_empty() {
+            "[[mrf]]"
+        } else {
+            "[[sliding]]"
+        },
+    )?;
     let rho = fl.phys.rho;
-    let ff = frame_fluxes(&case.mrf, &cell_zone, &fl.disc, rho)?;
+    let ff = frame_fluxes(&entries, &cell_zone, &fl.disc, rho)?;
     let nf = fl.disc.n_faces;
     let nc = fl.disc.n_cells;
     let flux = fl.dev.alloc(nf)?;
@@ -344,7 +380,7 @@ pub fn attach(
     let conv = fl.dev.alloc(nf)?;
     let mut zones = Vec::new();
     let mut notes = FrameNotes::default();
-    for (i, m) in case.mrf.iter().enumerate() {
+    for (i, m) in entries.iter().enumerate() {
         let omega = m.omega_vector()?;
         let w: Vec<f64> = (0..nc)
             .map(|c| {
@@ -358,7 +394,15 @@ pub fn attach(
         let cells = w.iter().filter(|&&x| x > 0.0).count();
         let weight = fl.dev.alloc(nc)?;
         fl.dev.upload(weight, &w)?;
-        zones.push(FrameZone { omega, weight });
+        zones.push(FrameZone {
+            omega,
+            weight,
+            coriolis: coriolis[i],
+        });
+        if !coriolis[i] {
+            // the sliding mesh reports itself (crate::sliding)
+            continue;
+        }
         let mag = omega.iter().map(|a| a * a).sum::<f64>().sqrt();
         let sign = if m.omega.is_some_and(|w| w < 0.0) || m.rpm.is_some_and(|r| r < 0.0) {
             -1.0
@@ -388,10 +432,15 @@ pub fn attach(
         work,
     });
     if ff.unbalanced_cells > 0 {
+        let what = if case.sliding.is_empty() {
+            "the solution there is not that of a frozen rotor"
+        } else {
+            "the grid flux of the moving mesh does not close there (the geometric conservation law is violated)"
+        };
         let m = format!(
             "the relative flux of {} cells does not close (worst: {:.2e} of ρ|V||S| summed over its faces): \
              the interface of a rotating zone is not a surface of revolution about its axis, or a boundary \
-             face of the zone is not; the solution there is not that of a frozen rotor",
+             face of the zone is not; {what}",
             ff.unbalanced_cells, ff.worst_imbalance
         );
         notes.lines.push(m.clone());
@@ -416,12 +465,23 @@ impl Flow {
     /// The flux that convects momentum, turbulence variables and scalars:
     /// the mass flux, or without frames the relative flux ṁ − ρ **S**·**V**.
     pub(crate) fn convecting_flux(&mut self) -> Result<Buf> {
+        self.relative_flux(self.f.mass_flux)
+    }
+
+    /// The relative flux of the face flux `m` (the work field of the frames
+    /// holds it), or `m` itself without frames.
+    pub(crate) fn relative_flux(&mut self, m: Buf) -> Result<Buf> {
         let Some(fr) = self.frames.as_ref() else {
-            return Ok(self.f.mass_flux);
+            return Ok(m);
         };
         let (conv, flux) = (fr.conv, fr.flux);
-        self.dev.lincomb(conv, 1.0, self.f.mass_flux, -1.0, flux)?;
+        self.dev.lincomb(conv, 1.0, m, -1.0, flux)?;
         Ok(conv)
+    }
+
+    /// The frame flux ρ **S**·**V** per face, if there are frames.
+    pub(crate) fn frame_flux(&self) -> Option<Buf> {
+        self.frames.as_ref().map(|fr| fr.flux)
     }
 
     /// Adds the Coriolis source −ρ V **Ω** × **u** of the rotating cells to
@@ -432,7 +492,12 @@ impl Flow {
             return Ok(());
         };
         let work = fr.work;
-        let zones: Vec<(Buf, [f64; 3])> = fr.zones.iter().map(|z| (z.weight, z.omega)).collect();
+        let zones: Vec<(Buf, [f64; 3])> = fr
+            .zones
+            .iter()
+            .filter(|z| z.coriolis)
+            .map(|z| (z.weight, z.omega))
+            .collect();
         let (u, rhs) = (self.f.u, self.w.rhs);
         for (weight, om) in zones {
             self.dev.scale_vector(weight, u, work)?;
