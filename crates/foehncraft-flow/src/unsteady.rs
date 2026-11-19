@@ -851,7 +851,26 @@ fn run_one<F: FnMut(&str)>(
     }
     crate::scalar::attach(&mut fl, &case, mesh, geo)?;
     crate::turbulence::attach(&mut fl, &case, mesh, geo)?;
+    // the sliding mesh (D182): the rotating zone and the shift of its data
+    let slide = match crate::sliding::attach(&case, mesh, &fl.disc, dt0)? {
+        Some((slide, notes)) => {
+            if let Some(notes) = crate::frame::attach(&mut fl, &case, mesh, geo)? {
+                for l in &notes.lines {
+                    lg.line(l);
+                }
+                warnings.extend(notes.diagnostics);
+            }
+            for l in &notes.lines {
+                lg.line(l);
+            }
+            Some(slide)
+        }
+        None => None,
+    };
     let mut tr = Transient::new(&mut fl, time0.scheme, time0.start_time)?;
+    if let Some(sl) = &slide {
+        sl.install(&mut fl, &mut tr)?;
+    }
     let mut af = AnalyticFaces::new(&case, mesh, &ub0);
     let mut dt = dt0;
     let mut restart_from = None;
@@ -901,7 +920,7 @@ fn run_one<F: FnMut(&str)>(
         ));
         restart_from = Some(path.display().to_string());
     } else {
-        let (u, p) = match analytic0.filter(|a| a.is_transient()) {
+        let (u, p) = match analytic0.filter(|a| a.is_transient() || case.initial.from_analytic) {
             Some(a) => {
                 let mut u = Soa3::zeros(nc);
                 let mut p = vec![0.0; nc];
@@ -1111,13 +1130,16 @@ fn run_one<F: FnMut(&str)>(
         let mut h = dt;
         // D66: land on the next scheduled output time; when it lies within
         // two steps, in two equal steps, so that no step gets shorter than
-        // half the planned one
+        // half the planned one (not with a sliding mesh, whose step is the
+        // time that the rotor needs for its sectors: the outputs of a
+        // schedule in time come with the step that reaches them)
         let t0 = tr.clock.time;
         let tol = 1e-6 * h;
-        if let Some(te) = schedules(&case)
-            .iter()
-            .filter_map(|s| s.next(t0, tol))
-            .reduce(f64::min)
+        if slide.is_none()
+            && let Some(te) = schedules(&case)
+                .iter()
+                .filter_map(|s| s.next(t0, tol))
+                .reduce(f64::min)
         {
             let rest = te - t0;
             if rest <= h + tol {
@@ -1127,7 +1149,9 @@ fn run_one<F: FnMut(&str)>(
             }
         }
         // D128: land on the time of the next scheduled change as well
-        if let Some(te) = sched.next_time(&case, t0, tol) {
+        if slide.is_none()
+            && let Some(te) = sched.next_time(&case, t0, tol)
+        {
             let rest = te - t0;
             if rest <= h + tol {
                 h = rest;
@@ -1137,11 +1161,18 @@ fn run_one<F: FnMut(&str)>(
         }
         if let Some(end) = t.end_time {
             let rest = end - tr.clock.time;
-            if rest <= 1e-9 * dt {
-                break;
-            }
-            if h > rest || rest - h < 1e-6 * h {
-                h = rest;
+            if slide.is_some() {
+                // whole steps (checked when the sliding mesh was set up)
+                if rest < 0.5 * dt {
+                    break;
+                }
+            } else {
+                if rest <= 1e-9 * dt {
+                    break;
+                }
+                if h > rest || rest - h < 1e-6 * h {
+                    h = rest;
+                }
             }
         }
         // D65: the error estimate, with the tolerances of now (re-read)
