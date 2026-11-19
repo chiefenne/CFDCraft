@@ -113,6 +113,16 @@ flow to the cavity on one million polyhedra, and writes
 in Google Colab, choose a T4 runtime, set `BRANCH` if the stage-5 branch
 is not merged yet, and run all cells (about 15 minutes).
 
+**The turbulence models (stage 6, specification 6.6):**
+`python3 -m tools.bench.stage6_cloud` runs every model on the TMR flat
+plate and the channel, the heated channel and pipe and the coupled step,
+300 outer iterations each, on the CPU and on the GPU, and compares each
+pair bitwise (`output/stage6_gpu/report.md`); `--quick` runs the five
+channels only. Without a GPU, `--cpu-only` compares one thread with four
+on the CPU. In Colab:
+[`tools/notebooks/stage6_colab.ipynb`](https://colab.research.google.com/github/chiefenne/Foehncraft/blob/main/tools/notebooks/stage6_colab.ipynb)
+(T4 runtime, run all cells, about 20 minutes).
+
 Keys: `run.backend` (`cpu`, `cuda`), `run.ptx` (the PTX module); the
 command-line options `--backend` and `--ptx` override them. A build
 without the `cuda` feature, or a machine without the NVIDIA driver, stops

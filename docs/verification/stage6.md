@@ -1881,3 +1881,22 @@ unchanged.
    `mrf.rs`, `stage5.rs`): pass. Plain PISO is bitwise unchanged; the
    cases with outer iterations (sliding meshes, the transient frozen rotor)
    change within their tolerances.
+
+## CPU–GPU parity of the turbulence models (6.6, PR #109)
+
+`tools/bench/stage6_cloud.py` (Colab: `tools/notebooks/stage6_colab.ipynb`)
+runs 14 cases, 300 outer iterations each, on the CPU and on the GPU and
+compares every pair bitwise with `tools/check/compare_runs.py`: the five
+channels (SST, k-ε, ζ-f, ζ-f₀, EB), the TMR plate with all six models,
+the heated channel and pipe (passive scalar with the thermal wall function)
+and the coupled algorithm on the backward-facing step (8 200 cells).
+
+| Check | Result |
+|---|---|
+| `--cpu-only --iterations 60` in the cloud (one thread against four; these meshes are below the 20 000 cells under which one thread is used, so this tests the script and the comparison) | all 14 pairs bitwise equal (9 to 11 files each) |
+| Tesla T4, CPU against GPU | pending: run by the maintainer |
+
+`compare_runs.py` now leaves out the hash and size of `case.resolved.toml`
+in `result.json`: the file's lines are compared without the device keys of
+`[run]`, and `--threads` or `--backend` change its hash by design.
+
