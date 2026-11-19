@@ -356,8 +356,32 @@ fn axpy(c: f64, x: &[f64], y: &mut [f64]) {
     }
 }
 
+/// Below this many rows the setup runs on one thread of its own: its
+/// parallel loops are short, and handing each of them to the pool costs
+/// more than the loop (the hierarchy is the same for any number of
+/// threads, D31).
+const SERIAL_ROWS: usize = 20_000;
+
 /// Builds the hierarchy of the symmetric matrix `a`.
 pub fn build(a: Csr, s: &AmgSettings) -> Result<Hierarchy> {
+    thread_local! {
+        // one helper thread per calling thread (parallel callers do not
+        // queue behind each other)
+        static ONE: Option<rayon::ThreadPool> = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .ok();
+    }
+    if a.n_rows < SERIAL_ROWS && rayon::current_num_threads() > 1 {
+        return ONE.with(|one| match one {
+            Some(pool) => pool.install(|| build_on(a, s)),
+            None => build_on(a, s),
+        });
+    }
+    build_on(a, s)
+}
+
+fn build_on(a: Csr, s: &AmgSettings) -> Result<Hierarchy> {
     s.validate()?;
     let t0 = Instant::now();
     ensure!(
