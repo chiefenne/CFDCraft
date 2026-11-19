@@ -193,8 +193,10 @@ time step.
 The case is transient (`SLD001` for a steady one), the time step is fixed
 (`SLD003` for the adaptive step, the error tolerance or several verification
 levels), and the mesh must be a ring of identical sectors about the axis
-(`SLD002`/`SLD004`: the zone, the sector count, the rotor boundaries, no
-turbulence model). The solved velocity is the absolute one; the convecting
+(`SLD002`/`SLD004`: the zone, the sector count, the rotor boundaries).
+Turbulence models run on both sliding variants (the rotor carries k, ε, ω,
+ζ and f with their old time levels; the wall distance of the turning rotor
+is updated in every step). The solved velocity is the absolute one; the convecting
 flux is relative to the moving mesh, and there is no Coriolis source.
 
 The general form, with a pitch ratio that is not one and a free time step

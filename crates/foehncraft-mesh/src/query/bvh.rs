@@ -63,7 +63,8 @@ impl SurfaceFaces {
         s
     }
 
-    fn push_face(&mut self, mesh: &Mesh, geo: &Geometry, f: usize) {
+    /// Appends the mesh face `f` (its triangles, global id and normal).
+    pub fn push_face(&mut self, mesh: &Mesh, geo: &Geometry, f: usize) {
         let id = self.global_id.len() as u32;
         let nodes = mesh.face(f);
         let p = |i: usize| mesh.points[nodes[i] as usize];
@@ -279,11 +280,19 @@ impl Bvh {
     /// surface. Among faces at the same distance the one with the smallest
     /// global id.
     pub fn closest(&self, x: [f64; 3]) -> Option<Closest> {
+        self.closest_within(x, f64::INFINITY)
+    }
+
+    /// The closest point of the surface to `x` at a distance of at most
+    /// `radius`, or `None` when no point is that near (a capped query:
+    /// boxes farther than the radius are never opened). With an infinite
+    /// radius this is [`closest`](Self::closest).
+    pub fn closest_within(&self, x: [f64; 3], radius: f64) -> Option<Closest> {
         if self.nodes.is_empty() {
             return None;
         }
         // best: (d², global id, triangle, point)
-        let mut best_d2 = f64::INFINITY;
+        let mut best_d2 = radius * radius;
         let mut best_id = u64::MAX;
         let mut best_tri = usize::MAX;
         let mut best_p = [0.0; 3];
@@ -322,6 +331,9 @@ impl Bvh {
                     stack.push(r);
                 }
             }
+        }
+        if best_tri == usize::MAX {
+            return None;
         }
         let face = self.faces.tri_face[best_tri] as usize;
         Some(Closest {

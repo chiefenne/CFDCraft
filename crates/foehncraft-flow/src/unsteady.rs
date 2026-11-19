@@ -816,6 +816,7 @@ fn rebuild_flow(
     t: f64,
     fl: &mut Flow,
     tr: &Transient,
+    wall_distance: Option<Vec<f64>>,
 ) -> Result<(Flow, Transient)> {
     let (mesh, geo) = (&next.mesh, &next.geo);
     let phys = crate::case::physics(case)?;
@@ -848,13 +849,18 @@ fn rebuild_flow(
         nfl.set_momentum_source(src)?;
     }
     crate::scalar::attach(&mut nfl, case, mesh, geo)?;
+    crate::turbulence::attach_with(&mut nfl, case, mesh, geo, wall_distance)?;
     crate::frame::attach(&mut nfl, case, mesh, geo)?;
     let scheme = case.time.context("[time]")?.scheme;
     let mut ntr = Transient::new(&mut nfl, scheme, tr.clock.time)?;
     let state = fl.state()?;
     let old = tr.old_levels(fl)?;
-    let (state, old) = crate::sliding::carry(state, old, map, &nfl.disc, rho);
+    let (state, old) = crate::sliding::carry(state, old, map, &nfl.disc, rho, nfl.phys.mu);
     nfl.load(&state)?;
+    // (the floor and cap counts of the turbulence model go on, D69)
+    if let (Some(a), Some(b)) = (fl.turbulence.as_ref(), nfl.turbulence.as_mut()) {
+        b.health = a.health.clone();
+    }
     ntr.restore(&mut nfl, &old, tr.clock)?;
     nfl.iteration = fl.iteration;
     // (the multigrid setups restart with the new matrix: run_one adds up the
@@ -963,7 +969,32 @@ fn run_one<F: FnMut(&str)>(
         fl.set_momentum_source(src)?;
     }
     crate::scalar::attach(&mut fl, &case, mesh, geo)?;
-    crate::turbulence::attach(&mut fl, &case, mesh, geo)?;
+    // the wall distance of the sliding mesh by imprinting: kept per part and
+    // updated for the rotor angle of every step (D182, D48)
+    let mut turning_distance = match (&imprint, &work) {
+        (Some((imp, _)), Some(w)) => match imp.wall_distance(&case, mesh0, geo0) {
+            Some(mut twd) => {
+                lg.line(&format!(
+                    "wall distance (D48) of the turning rotor: kept per part, {} of {} cells \
+                     nearer to the edge of their part than to its walls search the other part \
+                     in every step",
+                    twd.candidates(),
+                    mesh0.n_cells
+                ));
+                let d = twd.at(w.angle, &w.geo.cell_centroid[..w.mesh.n_cells]);
+                Some((twd, d))
+            }
+            None => None,
+        },
+        _ => None,
+    };
+    crate::turbulence::attach_with(
+        &mut fl,
+        &case,
+        mesh,
+        geo,
+        turning_distance.as_mut().map(|(_, d)| std::mem::take(d)),
+    )?;
     // the sliding mesh (D182): the rotating zone and the shift of its data
     let slide = match crate::sliding::attach(&case, mesh, &fl.disc, dt0)? {
         Some((slide, notes)) => {
@@ -1300,6 +1331,9 @@ fn run_one<F: FnMut(&str)>(
             let next = imp.working(mesh0, geo0, t0 + h)?;
             let prev = work.as_ref().context("the mesh of the rotor angle")?;
             let map = crate::sliding::face_map(prev, &next);
+            let d = turning_distance
+                .as_mut()
+                .map(|(twd, _)| twd.at(next.angle, &next.geo.cell_centroid[..next.mesh.n_cells]));
             let (nfl, ntr) = rebuild_flow(
                 &case,
                 &tv,
@@ -1310,6 +1344,7 @@ fn run_one<F: FnMut(&str)>(
                 t0 + h,
                 &mut fl,
                 &tr,
+                d,
             )?;
             setups_past.0 += fl.amg_setups;
             setups_past.1 += fl.sweep_setups;

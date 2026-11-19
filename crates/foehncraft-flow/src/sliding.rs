@@ -72,8 +72,19 @@
 //! - The boundary faces of the rotor must be walls that turn with it, or
 //!   symmetry planes (`SLD004`); a wall with a prescribed velocity expression
 //!   (D53) of the rigid turn does that.
-//! - One rotor per case; laminar flow and passive scalars (a turbulence
-//!   model is refused so far).
+//! - One rotor per case.
+//!
+//! # Turbulence
+//!
+//! The turbulence variables are transported like the passive scalars: with
+//! the relative flux, and in conformal stepping with the old levels of the
+//! time terms of k, ε or ω and ζ moved with the rotor cells. The wall
+//! distance does not change in conformal stepping (the rotor lands on
+//! identical sectors). With imprinting the cells keep their numbers, so the
+//! cell fields and old levels go along with the rebuilt solver ([`carry`]),
+//! and the wall distance of every angle comes from the walls of the two
+//! parts kept apart ([`Imprinting::wall_distance`]: only cells nearer to
+//! the edge of their part than to its walls search the other part).
 //! - On the CPU, on one process (the shifted old levels are made through the
 //!   host).
 
@@ -86,6 +97,7 @@ use anyhow::Result;
 use foehncraft_fv::Discretisation;
 use foehncraft_fv::disc::Soa3;
 use foehncraft_mesh::imprint::{FaceOrigin, Interface, InterfaceSpec};
+use foehncraft_mesh::query::TurningWallDistance;
 use foehncraft_mesh::{Geometry, Mesh};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -510,15 +522,6 @@ pub fn attach(
     if entry.imprinted() {
         return Ok(None);
     }
-    if !case.turbulence.is_laminar() {
-        return Err(err(
-            diag::SLIDING_ZONE,
-            "turbulence.model",
-            "[[sliding]]: the sliding mesh runs laminar flow and passive scalars so far, not a \
-             turbulence model"
-                .into(),
-        ));
-    }
     if let Some(name) = &entry.zone
         && !mesh.zones.contains(name)
     {
@@ -644,15 +647,6 @@ pub fn attach_imprint(case: &FlowCase, mesh: &Mesh) -> Result<Option<(Imprinting
         return Ok(None);
     };
     let fail = |key: &str, msg: String| err(diag::SLIDING_INTERFACE, key, msg);
-    if !case.turbulence.is_laminar() {
-        return Err(err(
-            diag::SLIDING_ZONE,
-            "turbulence.model",
-            "[[sliding]]: the sliding mesh runs laminar flow and passive scalars so far, not a \
-             turbulence model"
-                .into(),
-        ));
-    }
     let (rp, sp) = (
         entry.rotor_interface.clone().unwrap_or_default(),
         entry.stator_interface.clone().unwrap_or_default(),
@@ -743,6 +737,47 @@ impl Imprinting {
     /// t = 0.
     pub fn angle(&self, t: f64) -> f64 {
         self.omega * t
+    }
+
+    /// The exact wall distance of the turbulence model (D48) for every rotor
+    /// angle, kept per part of the base mesh (`mesh`, `geo`;
+    /// [`TurningWallDistance`]); `None` in laminar flow, with the Poisson
+    /// distance (computed again on the mesh of every step) or without walls.
+    pub fn wall_distance(
+        &self,
+        case: &FlowCase,
+        mesh: &Mesh,
+        geo: &Geometry,
+    ) -> Option<TurningWallDistance> {
+        use crate::turbulence::WallDistanceMethod;
+        if case.turbulence.is_laminar()
+            || case.turbulence.wall_distance != WallDistanceMethod::Exact
+        {
+            return None;
+        }
+        let walls: Vec<usize> = mesh
+            .boundaries
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| {
+                matches!(
+                    case.boundary.get(&b.name),
+                    Some(crate::bc::BoundaryCondition::Wall { .. })
+                )
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if walls.is_empty() {
+            return None;
+        }
+        Some(TurningWallDistance::of_mesh(
+            mesh,
+            geo,
+            self.iface.rotor_cells(),
+            &walls,
+            self.iface.origin(),
+            self.iface.axis(),
+        ))
     }
 
     /// The mesh and the geometry of the rotor at time `t`.
@@ -853,17 +888,43 @@ fn remap3(v: &Soa3, m: &[Option<usize>]) -> Soa3 {
 /// The state and the old levels of the previous mesh on the next one: the
 /// cell arrays are the same, the face arrays follow the faces of the base
 /// mesh, and the intersection polygons start from the flux of the linearly
-/// interpolated velocity (its Rhie–Chow differences 0).
+/// interpolated velocity (its Rhie–Chow differences 0). The turbulence
+/// model's cell fields and old levels go along as they are (the cells keep
+/// their numbers); its face values follow the faces, the face viscosity of
+/// an intersection is μ + ρ ν_t of the linearly interpolated ν_t (`mu` is
+/// the molecular viscosity), and the matrices of its multigrid setups are
+/// dropped (the pattern of the matrix changed; the hierarchies are built
+/// again).
 pub fn carry(
     mut st: State,
     mut lv: OldLevels,
     map: &FaceMap,
     disc: &Discretisation,
     rho: f64,
+    mu: f64,
 ) -> (State, OldLevels) {
     st.mass_flux = remap(&st.mass_flux, &map.face);
     st.ub = remap3(&st.ub, &map.boundary);
     st.pb = remap(&st.pb, &map.boundary);
+    if let Some(t) = st.turbulence.as_mut() {
+        let b = &map.boundary;
+        t.mu_eff = remap(&t.mu_eff, &map.face);
+        for &f in &map.pieces {
+            let (o, n) = (disc.owner[f] as usize, disc.neighbour[f] as usize);
+            let w = disc.weight[f];
+            t.mu_eff[f] = mu + rho * (w * t.nu_t[o] + (1.0 - w) * t.nu_t[n]);
+        }
+        t.k_b = remap(&t.k_b, b);
+        t.omega_b = remap(&t.omega_b, b);
+        t.u_tau = remap(&t.u_tau, b);
+        t.y_plus = remap(&t.y_plus, b);
+        t.pb_modified = remap(&t.pb_modified, b);
+        if let Some(z) = t.zeta.as_mut() {
+            z.zeta_b = remap(&z.zeta_b, b);
+            z.f_b = remap(&z.f_b, b);
+        }
+        t.amg.clear();
+    }
     lv.m_old = remap(&lv.m_old, &map.face);
     lv.x_cur = remap(&lv.x_cur, &map.face);
     lv.x_old = remap(&lv.x_old, &map.face);

@@ -1253,6 +1253,9 @@ struct Var {
     b_wall: Buf,
     lsq: Buf3,
     old: Option<(Buf, Buf, Buf)>,
+    /// The sliding mesh (D182): the old levels n and n−1 of the time term
+    /// with the data of the rotor cells moved along the turn.
+    content: Option<(Buf, Buf)>,
     valid: Option<Buf>,
     floor: f64,
 }
@@ -1611,6 +1614,7 @@ impl Turbulence {
         rho: f64,
         mu: f64,
         face_viscosity: Buf,
+        wall_distance: Option<Vec<f64>>,
     ) -> Result<Self> {
         let section = case.turbulence.clone();
         let settings = case.solver.turbulence.clone();
@@ -1707,6 +1711,7 @@ impl Turbulence {
                 } else {
                     None
                 },
+                content: None,
                 valid: None,
                 floor: 0.0,
             })
@@ -1901,9 +1906,17 @@ impl Turbulence {
         if t.settings.viscosity_relaxation < 1.0 {
             t.nu_t_prev = Some(dev.alloc(nc)?);
         }
-        // the wall distance (D48)
+        // the wall distance (D48), unless the caller has it (the sliding
+        // mesh by imprinting keeps it per part, D182)
         let d = if t.walls.is_empty() {
             vec![1e10; nc]
+        } else if let Some(d) = wall_distance {
+            anyhow::ensure!(
+                d.len() == nc,
+                "a wall distance of {} cells for {nc}",
+                d.len()
+            );
+            d
         } else {
             match t.section.wall_distance {
                 WallDistanceMethod::Exact => crate::derived::wall_distance(case, mesh, geo)?,
@@ -2689,8 +2702,8 @@ impl Turbulence {
             (Some(st), Some((o1, o2, _))) => Some(ScalarTime {
                 inv_dt: 1.0 / st.dt,
                 a: st.a,
-                old: o1,
-                old2: o2,
+                old: v.content.map_or(o1, |c| c.0),
+                old2: v.content.map_or(o2, |c| c.1),
                 bounds: (0.0, f64::INFINITY),
             }),
             _ => None,
@@ -2944,6 +2957,63 @@ impl Turbulence {
             dev.copy(o1, v.phi)?;
             dev.copy(o2, o1)?;
             dev.copy(keep, o2)?;
+        }
+        Ok(())
+    }
+
+    /// The old levels of the time terms of k, ε or ω and ζ with the data of
+    /// the cells moved as the sliding mesh says (entry i of the moved array
+    /// is entry `perm1[i]` of the old level n, `perm2[i]` of the level n−1;
+    /// D182, as the passive scalars): the time term of a rotor cell sees
+    /// what that cell held. The start values of the step, which
+    /// [`step_start`](Self::step_start) made from the levels at the places
+    /// of the mesh, are made again from the moved levels in the same way
+    /// (`has_old`, `extrapolate` as there), and f (no time term) starts from
+    /// its moved value: the coefficients of the first outer iteration (T,
+    /// L, ν_t of the sources) belong to the turbulence that the cell
+    /// carries, not to the one that was at its place.
+    pub fn shift_old(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        perm1: &[usize],
+        perm2: &[usize],
+        has_old: bool,
+        extrapolate: Option<f64>,
+    ) -> Result<()> {
+        let nc = self.nc;
+        let work = self.work;
+        let moved = |dev: &mut dyn FlowDevice, src: Buf, dst: Buf, perm: &[usize]| -> Result<()> {
+            let x = dev.download(src)?;
+            let m: Vec<f64> = perm.iter().map(|&i| x[i]).collect();
+            dev.upload(dst, &m)
+        };
+        let shift = |dev: &mut dyn FlowDevice, v: &mut Var| -> Result<()> {
+            let Some((o1, o2, _)) = v.old else {
+                // (f: the iterate itself)
+                return moved(dev, v.phi, v.phi, perm1);
+            };
+            let (c1, c2) = match v.content {
+                Some(c) => c,
+                None => {
+                    let c = (dev.alloc(nc)?, dev.alloc(nc)?);
+                    v.content = Some(c);
+                    c
+                }
+            };
+            moved(dev, o1, c1, perm1)?;
+            moved(dev, o2, c2, perm2)?;
+            dev.copy(c1, v.phi)?;
+            if has_old && let Some(w) = extrapolate {
+                dev.lincomb(v.phi, 1.0 + w, c1, -w, c2)?;
+                dev.floor(v.phi, v.floor, f64::INFINITY, None, work)?;
+            }
+            Ok(())
+        };
+        shift(dev, &mut self.k)?;
+        shift(dev, &mut self.w)?;
+        if let Some(z) = &mut self.zf {
+            shift(dev, &mut z.z)?;
+            shift(dev, &mut z.f)?;
         }
         Ok(())
     }
@@ -3434,6 +3504,18 @@ pub fn attach(
     mesh: &Mesh,
     geo: &Geometry,
 ) -> Result<()> {
+    attach_with(fl, case, mesh, geo, None)
+}
+
+/// [`attach`] with the wall distance per cell given (`None`: the model
+/// computes it as `turbulence.wall_distance` says).
+pub fn attach_with(
+    fl: &mut crate::simplec::Flow,
+    case: &crate::case::FlowCase,
+    mesh: &Mesh,
+    geo: &Geometry,
+    wall_distance: Option<Vec<f64>>,
+) -> Result<()> {
     if case.turbulence.is_laminar() {
         return Ok(());
     }
@@ -3448,6 +3530,7 @@ pub fn attach(
         fl.phys.rho,
         fl.phys.mu,
         fv,
+        wall_distance,
     )?;
     fl.add_turbulence(t)
 }

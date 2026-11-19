@@ -863,9 +863,9 @@ omega = 10.0              # or rpm = ... (nonzero)
 - The count N is found from the mesh (the number of images of the outermost
   rotor cell under the rotation); a mesh that is not a ring of identical
   sectors, or an axis that misses its centre, is refused (`SLD002`).
-- The case is transient (`SLD001` for steady ones, see recipe 94 for those)
-  and laminar, with passive scalars; turbulence models are refused
-  (`SLD004`) as are pressure boundaries on the rotor. The boundaries of the
+- The case is transient (`SLD001` for steady ones, see recipe 94 for those),
+  with passive scalars and any turbulence model (recipe 100); pressure
+  boundaries on the rotor are refused (`SLD004`). The boundaries of the
   rotor must be walls that turn with it (`velocity = ["-spin * y", "spin * x", 0.0]`),
   slip walls, symmetry or wedge planes.
 - The solved velocity is the **absolute** one. There is no Coriolis source;
@@ -937,9 +937,10 @@ outer_iterations = 4      # 3 to 6 is usual
   total area on both sides, rotor and stator cells must not share a face or a
   node, and the mesh must be extruded along the axis so that the cells next to
   the interface close (a faces-do-not-close warning, `SLD006`, otherwise).
-- Laminar flow and passive scalars; boundaries of the rotor are walls turning
-  with it (`velocity = [...]`), slip walls or symmetry planes (`SLD004`); one
-  rotor; no restart (`SLD005`, and no restart file is written).
+- Laminar or turbulent flow (recipe 100) and passive scalars; boundaries of
+  the rotor are walls turning with it (`velocity = [...]`), slip walls or
+  symmetry planes (`SLD004`); one rotor; no restart (`SLD005`, and no
+  restart file is written).
 - Probes find the cell that is at their point at the time of the sample, and
   the fields file (`vtkhdf`) is written on the mesh of the end of the run with
   the cells at the interface as polyhedra.

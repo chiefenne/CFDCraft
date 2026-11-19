@@ -769,6 +769,16 @@ impl Transient {
         if let (Some(c), Some(sc)) = (&self.content, fl.scalars.as_mut()) {
             sc.shift_old(fl.dev.as_mut(), &c.perm1, &c.perm2)?;
         }
+        // (and those of the turbulence variables)
+        if let (Some(c), Some(tu)) = (&self.content, fl.turbulence.as_mut()) {
+            tu.shift_old(
+                fl.dev.as_mut(),
+                &c.perm1,
+                &c.perm2,
+                self.clock.levels >= 1,
+                bdf2.then(|| dt / self.clock.dt_prev),
+            )?;
+        }
         let time = TimeTerms {
             tau: rho * a0 / dt,
             c_old: [rho * (-a1) / dt, rho * (-a2) / dt],
