@@ -915,3 +915,21 @@ fn solid_body_rotation_is_kept_by_a_pot_through_the_axis() {
     eprintln!("pot solid body, L2 {e:e}");
     assert!(e < 0.03, "{e}");
 }
+
+/// The same at ten times the viscosity: the wedge cells at the axis couple
+/// to their neighbours around the axis about 90 times more strongly than
+/// to their old level. With Issa's corrector (D = V/a_P) the pressure grew
+/// in every outer iteration there and the run left the exact solution
+/// within 30 steps (L2 error 2.0); the SIMPLEC-type corrector keeps it
+/// (gallery 103).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn solid_body_rotation_is_kept_at_high_viscosity_on_the_axis_wedges() {
+    let t = std::fs::read_to_string(cases().join("pot_solid_body_viscous.toml"))
+        .unwrap()
+        .replace("\r\n", "\n");
+    let r = run_case(&parse(&t), "pot_solid_viscous");
+    let e = l2(&r);
+    eprintln!("pot solid body at nu = 1e-2, L2 {e:e}");
+    assert!(e < 0.01, "{e}");
+}

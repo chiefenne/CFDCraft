@@ -1157,6 +1157,45 @@ pub unsafe fn neighbour_sum<T: Real>(
     }
 }
 
+/// Σ_N val_PN (x_N − x_P) of cell `c`: [`neighbour_sum`] less the
+/// off-diagonal row sum times x_P (the neighbour correction of PISO after a
+/// SIMPLEC-type corrector, whose D^C already counts Σ_N a_PN x_P).
+///
+/// # Safety
+/// As [`neighbour_sum`].
+#[inline(always)]
+pub unsafe fn neighbour_difference<T: Real>(
+    c: usize,
+    topo: &Topology,
+    layout: &SellLayout,
+    val: &[T],
+    x: &[T],
+) -> T {
+    // SAFETY: guaranteed by the caller.
+    unsafe {
+        let lo = ld(topo.cell_ptr, c) as usize;
+        let hi = ld(topo.cell_ptr, c + 1) as usize;
+        let xp = ld(x, c);
+        let mut s = T::ZERO;
+        let mut j = 1;
+        let mut k = lo;
+        while k < hi {
+            let (f, is_nb) = unpack_face(ld(topo.cell_faces, k));
+            if f < topo.n_interior {
+                let o = if is_nb {
+                    ld(topo.owner, f)
+                } else {
+                    ld(topo.neighbour, f)
+                };
+                s += ld(val, layout.pos(c, j)) * (ld(x, o as usize) - xp);
+                j += 1;
+            }
+            k += 1;
+        }
+        s
+    }
+}
+
 /// Mass flux of a cell velocity increment δ through face `f`:
 /// ρ (w δ_P + (1 − w) δ_N)·S on interior faces, ρ δ_P·S on open pressure
 /// boundaries and 0 where the boundary fixes the flux or a closed face

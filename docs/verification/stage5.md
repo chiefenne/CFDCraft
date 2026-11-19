@@ -134,11 +134,14 @@ St 0.295–0.305, Δp 2.46–2.50 Pa):
    with the time term ρV a₀/Δt on the diagonal and the old levels on the
    right-hand side, convected by the flux of the latest iterate); the
    predicted Rhie–Chow flux with the time-step term; `correctors` pressure
-   corrections Σ c_f (p'_P − p'_N) = −Σ ±ṁ* with c_f from D = V/(a_P/α)
-   (the PISO coefficient), the fluxes corrected to continuity,
-   u' = δ − D∇p', p += p'; between two correctors the neighbour
-   correction δ = H(u')/a_P, which the first corrector neglects, is added
-   to u and its flux to ṁ;
+   corrections Σ c_f (p'_P − p'_N) = −Σ ±ṁ* with c_f from
+   D^C = V/(a_P/α − Σ|a_N|) (the SIMPLEC coefficient), the fluxes
+   corrected to continuity, u' = δ − D^C∇p', p += p'; between two
+   correctors the neighbour correction δ = Σ_N |a_N| (u'_N − u'_P)/a_P,
+   which the corrector neglects, is added to u and its flux to ṁ
+   (*2026-11-19:* until then Issa's D = V/(a_P/α) with δ = H(u')/a_P,
+   which diverged on the thin wedge cells at an axis at high viscosity;
+   see [stage 6](stage6.md#interfaces-of-any-rotationally-symmetric-shape-d186-pr-103));
 3. boundary values and gradients of the new level, the old-level
    difference of the Rhie–Chow time-step term and the largest Courant
    number.

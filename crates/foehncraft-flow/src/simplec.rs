@@ -2003,10 +2003,7 @@ impl Flow {
             }
         }
         self.add_coriolis()?;
-        if matches!(
-            self.settings.algorithm(self.transient),
-            Algorithm::Simple | Algorithm::Piso
-        ) {
+        if matches!(self.settings.algorithm(self.transient), Algorithm::Simple) {
             self.dev.copy(w.d, w.dc)?;
         }
         // residual scale ‖a_P u‖ + ‖b‖ over the three components (unrelaxed
