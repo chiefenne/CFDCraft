@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo/foehncraft.svg" alt="Foehncraft logo: a peregrine falcon" width="180">
+  <img src="assets/logo/foehncraft.svg" alt="Foehncraft logo: a peregrine falcon" width="180" height="180">
 </p>
 
 <h1 align="center">Foehncraft</h1>

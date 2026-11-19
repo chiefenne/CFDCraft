@@ -17,7 +17,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 <a id="sst"></a>
 ## 68. k-ω SST on the TMR flat plate and in a channel
 
-![Left: the skin friction along the TMR flat plate on 256 x 192 cells against White's correlation and the TMR value of SST at x = 0.97. Middle: the velocity at x = 0.97 and in the channel at Re_τ = 395 in wall units against Spalding's law. Right: C_f at x = 0.97 with the automatic wall treatment for first-cell y⁺ from 2 to 100 against the TMR value, with the ±2 % band](../figures/gallery/sst.svg)
+<img src="../figures/gallery/sst.svg" alt="Left: the skin friction along the TMR flat plate on 256 x 192 cells against White's correlation and the TMR value of SST at x = 0.97. Middle: the velocity at x = 0.97 and in the channel at Re_τ = 395 in wall units against Spalding's law. Right: C_f at x = 0.97 with the automatic wall treatment for first-cell y⁺ from 2 to 100 against the TMR value, with the ±2 % band" width="800" height="298">
 
 **The model.** The k-ω SST model of Menter, Kuntz & Langtry (2003): the
 blend F₁ between k-ω near walls and k-ε away from them, the eddy
@@ -126,7 +126,7 @@ python3 -m tools.plot.sst_chart docs/figures/gallery/sst.svg output/plate output
 <a id="k-epsilon"></a>
 ## 71. k-ε family with wall functions: flat plate, channel, Moody chart
 
-![Left: C_f at x = 0.97 on the TMR flat plate with the standard k-ε model against the first-cell y⁺ from 1 to 100, scalable and compound wall treatments, with White's correlation and its ±5 % band. Right: the Darcy friction factor of rough pipes from Re 3·10⁴ to 10⁷ and k_s/D from 0 to 10⁻² against Colebrook's equation](../figures/gallery/keps.svg)
+<img src="../figures/gallery/keps.svg" alt="Left: C_f at x = 0.97 on the TMR flat plate with the standard k-ε model against the first-cell y⁺ from 1 to 100, scalable and compound wall treatments, with White's correlation and its ±5 % band. Right: the Darcy friction factor of rough pipes from Re 3·10⁴ to 10⁷ and k_s/D from 0 to 10⁻² against Colebrook's equation" width="800" height="319">
 
 **The models.** The standard k-ε of Launder & Spalding (1974) and the
 realizable k-ε of Shih et al. (1995), with its variable C_μ and the
@@ -345,14 +345,14 @@ k-ω SST at 6.80 H (+9 %). The streamwise velocity with streamlines, the
 line U = 0 in white, the computed reattachment point in red and the
 experiment's in black:
 
-![The streamwise velocity U/U_ref behind the backward-facing step from x/H = −3 to 14 with streamlines, one panel per model: k-ε with scalable wall functions (x_r/H = 5.36), k-ε-ζ-f₀ (6.35) and k-ω SST (6.80). The white line is U = 0, the red dot the computed reattachment point, the black dot the experiment's 6.26](../figures/gallery/backstep_velocity.png)
+<img src="../figures/gallery/backstep_velocity.png" alt="The streamwise velocity U/U_ref behind the backward-facing step from x/H = −3 to 14 with streamlines, one panel per model: k-ε with scalable wall functions (x_r/H = 5.36), k-ε-ζ-f₀ (6.35) and k-ω SST (6.80). The white line is U = 0, the red dot the computed reattachment point, the black dot the experiment's 6.26" width="800" height="576">
 
 The turbulent kinetic energy on one scale, with the line U = 0 in
 cyan. k-ε and ζ-f₀ reach the same peak, k/U_ref² = 0.039, k-ε at
 x = 4.4 H and ζ-f₀ further downstream at 5.5 H; SST stays lower in the
 shear layer (0.030), mixes less and has the longest bubble:
 
-![The turbulent kinetic energy k/U_ref² behind the backward-facing step, one panel per model on the same colour scale from 0 to 0.039: k-ε with scalable wall functions, k-ε-ζ-f₀ and k-ω SST, with the line U = 0 in cyan and the reattachment points](../figures/gallery/backstep_k.png)
+<img src="../figures/gallery/backstep_k.png" alt="The turbulent kinetic energy k/U_ref² behind the backward-facing step, one panel per model on the same colour scale from 0 to 0.039: k-ε with scalable wall functions, k-ε-ζ-f₀ and k-ω SST, with the line U = 0 in cyan and the reattachment points" width="800" height="576">
 
 | Check | Result |
 |---|---|
@@ -533,12 +533,12 @@ y⁺ 1.5 to 0.3, below the y⁺ ≥ 30 they are claimed for; their order of
 C_p and C_f along the lower wall against the experiment (ζ-f and EB on
 the middle mesh):
 
-![C_p and C_f along the lower wall behind the step for the six models against Driver & Seegmiller (1985): C_p from x/H = −6 to 36, C_f × 10³ with the zero line](../figures/gallery/backstep_validation_wall.svg)
+<img src="../figures/gallery/backstep_validation_wall.svg" alt="C_p and C_f along the lower wall behind the step for the six models against Driver &amp; Seegmiller (1985): C_p from x/H = −6 to 36, C_f × 10³ with the zero line" width="800" height="236">
 
 The velocity and the turbulent shear stress at the four stations of the
 experiment; the models' −u'v' is ν_t ∂u/∂y:
 
-![The velocity u/U_ref and the turbulent shear stress −1000 u'v'/U_ref² at x/H = 1, 4, 6 and 10 for the six models against the experiment](../figures/gallery/backstep_validation_profiles.svg)
+<img src="../figures/gallery/backstep_validation_profiles.svg" alt="The velocity u/U_ref and the turbulent shear stress −1000 u'v'/U_ref² at x/H = 1, 4, 6 and 10 for the six models against the experiment" width="800" height="459">
 
 | Check | Result |
 |---|---|
@@ -630,7 +630,7 @@ others coupled. Nu₀ is the probe `stag` at the axis, with the probe
 | k-ε, Durbin bound (`scalable`) | 155.0, 154.7, 155.0 | 154.7, 155.2, 155.6 | 0.67 %, p 0.52 | 1.55: 143.2 |
 | realizable k-ε (`scalable`) | 208.3, 205.1, 207.2 | 208.6, 205.4, 207.8 | oscillatory (the two coarser meshes stall) | 1.65: 141.1 |
 
-![Nu(r/D) on the plate for the six models on 41 600 cells, and the stagnation-point anomaly on 10 400 cells: k-ε and SST with each production limiter](../figures/gallery/impinging_jet_nusselt.svg)
+<img src="../figures/gallery/impinging_jet_nusselt.svg" alt="Nu(r/D) on the plate for the six models on 41 600 cells, and the stagnation-point anomaly on 10 400 cells: k-ε and SST with each production limiter" width="800" height="249">
 
 **What the runs show.** Nu is flat towards the axis with every model
 except EB, and the stagnation value converges: Nu₀ at the axis has a GCI
@@ -663,7 +663,7 @@ does not fit the MIT licence here), so the charts show the models only; the stud
 
 The radial velocity of the wall jet at the stations of Cooper et al.:
 
-![The radial velocity u_r/U over the distance from the plate at r/D = 0.5, 1, 2, 2.5 and 3 for the six models on 41 600 cells](../figures/gallery/impinging_jet_profiles.svg)
+<img src="../figures/gallery/impinging_jet_profiles.svg" alt="The radial velocity u_r/U over the distance from the plate at r/D = 0.5, 1, 2, 2.5 and 3 for the six models on 41 600 cells" width="800" height="249">
 
 | Check | Result |
 |---|---|

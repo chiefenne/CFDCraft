@@ -14,7 +14,7 @@ Part of the [Example gallery](../gallery.md): gate G1 on CPUs and GPUs, on box, 
 <a id="g1-cpu"></a>
 ## 1. Kernel benchmark G1 on the CPU
 
-![G1 effective bandwidth of the four kernels on 10 million cells](../figures/gallery/g1_cpu_10m.svg)
+<img src="../figures/gallery/g1_cpu_10m.svg" alt="G1 effective bandwidth of the four kernels on 10 million cells" width="720" height="400">
 
 The four kernels that dominate a finite-volume solver — face flux, cell
 gather and the sparse matrix-vector product in CSR and SELL-C-σ form — on a
@@ -40,7 +40,7 @@ target/release/foehn bench g1 examples/cases/bench/g1_cpu_10m.toml
 The same run with a randomly numbered mesh (`bench/g1_cpu_10m_shuffled.toml`)
 shows what a badly ordered mesh costs: three to five times less bandwidth.
 
-![G1 with shuffled cell numbering](../figures/gallery/g1_cpu_10m_shuffled.svg)
+<img src="../figures/gallery/g1_cpu_10m_shuffled.svg" alt="G1 with shuffled cell numbering" width="720" height="400">
 
 [↑ back to top](#kernel-benchmarks-and-gpu-runs)
 
@@ -49,7 +49,7 @@ shows what a badly ordered mesh costs: three to five times less bandwidth.
 <a id="g1-gpu"></a>
 ## 2. Kernel benchmark G1 on a Tesla T4
 
-![G1 effective bandwidth on a Tesla T4, 10 million cells](../figures/gallery/g1_gpu_t4_10m.svg)
+<img src="../figures/gallery/g1_gpu_t4_10m.svg" alt="G1 effective bandwidth on a Tesla T4, 10 million cells" width="720" height="400">
 
 The same four kernels on a Tesla T4 (Google Colab, free tier). Blue: the
 hand-written CUDA C kernels; orange: the single-source Rust kernels compiled
@@ -77,7 +77,7 @@ python3 -m tools.bench.g1_cloud      # on any Linux machine with an NVIDIA GPU o
 <a id="g1-stage1"></a>
 ## 7. G1 on polyhedral and tetrahedral meshes
 
-![G1 on 2 million polyhedra, natural order](../figures/gallery/g1_cpu_poly_2m.svg)
+<img src="../figures/gallery/g1_cpu_poly_2m.svg" alt="G1 on 2 million polyhedra, natural order" width="720" height="400">
 
 The G1 kernels rerun on the stage-1 meshes, as D8 asks: 2 million
 polyhedra (14 faces per interior cell, uneven rows) in the generator's
@@ -90,12 +90,12 @@ box, so it is a small-kernel effect, not a polyhedral one. The verdict
 needs a quiet machine (recipe 10); the numbers are in
 [G1](../benchmarks/g1.md#stage-1-rerun-polyhedral-and-tetrahedral-meshes-2026-11-14).
 
-![G1 on 2 million polyhedra, shuffled order](../figures/gallery/g1_cpu_poly_2m_shuffled.svg)
+<img src="../figures/gallery/g1_cpu_poly_2m_shuffled.svg" alt="G1 on 2 million polyhedra, shuffled order" width="720" height="400">
 
 A shuffled polyhedral mesh costs a factor 3 to 4 in bandwidth: the reason
 the mesh is renumbered by reverse Cuthill-McKee on input (example 6).
 
-![G1 on 2 million tetrahedra](../figures/gallery/g1_cpu_tet_2m.svg)
+<img src="../figures/gallery/g1_cpu_tet_2m.svg" alt="G1 on 2 million tetrahedra" width="720" height="400">
 
 | | |
 |---|---|
@@ -116,7 +116,7 @@ target/release/foehn bench g1 examples/cases/bench/g1_cpu_tet_2m.toml
 <a id="gpu-flow"></a>
 ## 16. The flow loop on a GPU
 
-![Time per cell and iteration (or step) of eight flow cases, CPU against a Tesla T4](../figures/gallery/gpu_flow_times.svg)
+<img src="../figures/gallery/gpu_flow_times.svg" alt="Time per cell and iteration (or step) of eight flow cases, CPU against a Tesla T4" width="760" height="488">
 
 The same flow cases run on the CPU and on an NVIDIA GPU
 (`run.backend = "cuda"`). The operations of the flow loop are written once

@@ -16,7 +16,7 @@ Part of the [Example gallery](../gallery.md): adjoint-ready kernels, runs that a
 <a id="adjoint-ready"></a>
 ## 17. Adjoint-ready kernels: derivatives and checkpointing
 
-![Primal steps per time step of a reverse sweep against the snapshots in memory](../figures/gallery/checkpoint_steps.svg)
+<img src="../figures/gallery/checkpoint_steps.svg" alt="Primal steps per time step of a reverse sweep against the snapshots in memory" width="680" height="420">
 
 Preparation for a discrete adjoint solver (D59, L17). The kernel bodies are
 generic over the floating-point type, so they also run on dual numbers and
@@ -59,7 +59,7 @@ python3 -m tools.plot.checkpoint_chart checkpoint_steps.svg
 <a id="run-contract"></a>
 ## 18. A run that a program can drive
 
-![Memory and file sizes estimated by foehn flow --check against eleven runs](../figures/gallery/estimate.svg)
+<img src="../figures/gallery/estimate.svg" alt="Memory and file sizes estimated by foehn flow --check against eleven runs" width="640" height="460">
 
 A parametric study, a batch job or an agent drives `foehn` without
 reading its log: it sets keys with `--set`, reads one JSON object, acts on
@@ -114,7 +114,7 @@ python3 -m tools.plot.estimate_chart estimate.svg
 <a id="health"></a>
 ## 19. Balances and the divergence report
 
-![Numerical dissipation of kinetic energy over the mesh size, lid-driven cavity and Taylor–Green vortex](../figures/gallery/energy_budget.svg)
+<img src="../figures/gallery/energy_budget.svg" alt="Numerical dissipation of kinetic energy over the mesh size, lid-driven cavity and Taylor–Green vortex" width="640" height="440">
 
 Every run books mass and kinetic energy: what flows and works through
 each boundary, what the body force adds, what viscosity dissipates, and what

@@ -372,7 +372,7 @@ command line: `check(path, sets, out)` (`foehncraft.check`),
 `case_schema()` (D77), `codes()` (D78), `resolved(path, sets)` (the
 resolved case as TOML), `expression(source, env, allowed, points, base)`
 (values of an expression); errors are `FoehncraftError(code, message)`.
-The Python API is in [recipe 33](recipes/python.md#python).
+The Python API is in [recipe 33](recipes/python.md#python-api).
 
 ## C-free core (D87)
 

@@ -29,7 +29,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 <a id="cavity"></a>
 ## 12. Lid-driven cavity against Ghia et al.
 
-![Speed in the lid-driven cavity at Re = 1000 on 128 x 128 hexahedra](../figures/gallery/cavity_re1000_speed.png)
+<img src="../figures/gallery/cavity_re1000_speed.png" alt="Speed in the lid-driven cavity at Re = 1000 on 128 x 128 hexahedra" width="800" height="622">
 
 The first flow of Foehncraft: the unit cavity with the lid sliding at 1 m/s,
 steady and laminar, solved with SIMPLEC and the relaxation-independent
@@ -39,8 +39,8 @@ towards the centre and the two corner vortices at the bottom grow; the
 velocity on the two centre lines matches the tabulated multigrid solution
 of Ghia, Ghia & Shin (1982) to 0.4 % (u) and 1.4 % (v) of the lid speed.
 
-![u on the vertical centre line, Re = 1000](../figures/gallery/cavity_re1000_u.svg)
-![v on the horizontal centre line, Re = 1000](../figures/gallery/cavity_re1000_v.svg)
+<img src="../figures/gallery/cavity_re1000_u.svg" alt="u on the vertical centre line, Re = 1000" width="640" height="460">
+<img src="../figures/gallery/cavity_re1000_v.svg" alt="v on the horizontal centre line, Re = 1000" width="640" height="460">
 
 The same flow on fully three-dimensional cells, a slab with symmetry planes
 front and back: 0.7 % / 1.3 % at Re = 100 on 5 445 polyhedra, 2.0 % / 2.4 %
@@ -48,7 +48,7 @@ at Re = 1000 on 28 227 polyhedra, 2.5 % / 2.2 % at Re = 100 on 24 576
 tetrahedra. Re = 100 on 64 × 64 hexahedra: 0.44 % / 0.95 %
 ([u](../figures/gallery/cavity_re100_u.svg), [v](../figures/gallery/cavity_re100_v.svg)).
 
-![Speed at Re = 100 on polyhedra](../figures/gallery/cavity_re100_poly3d_speed.png)
+<img src="../figures/gallery/cavity_re100_poly3d_speed.png" alt="Speed at Re = 100 on polyhedra" width="800" height="622">
 
 | | |
 |---|---|
@@ -71,7 +71,7 @@ python3 -m tools.mesh.render_mesh output/cavity_re1000/fields.vtkhdf cavity.png 
 <a id="poiseuille"></a>
 ## 13. Poiseuille flow: order of accuracy of the flow solver
 
-![L2 velocity error over the mesh size on perturbed polyhedra](../figures/gallery/poiseuille_poly_convergence.svg)
+<img src="../figures/gallery/poiseuille_poly_convergence.svg" alt="L2 velocity error over the mesh size on perturbed polyhedra" width="640" height="460">
 
 Plane channel flow between walls at rest, the exact parabola at the inlet
 (`profile = "analytic"`), a static-pressure outlet, Re = 10, on three nested
@@ -104,7 +104,7 @@ target/release/foehn flow examples/cases/flow/poiseuille_poly.toml
 <a id="taylor-green"></a>
 ## 14. Taylor–Green vortex: second order in time and space
 
-![Change of the solution over the time step, BDF2](../figures/gallery/taylor_green_bdf2_time.svg)
+<img src="../figures/gallery/taylor_green_bdf2_time.svg" alt="Change of the solution over the time step, BDF2" width="640" height="460">
 
 The decaying vortex on the unit square, Re = 100, the exact velocity on
 the four sides at each time level. Five runs on the same 64 × 64 mesh
@@ -120,7 +120,7 @@ time; without it the lag of these terms makes PISO first order.
 | Crank–Nicolson | 2.40, 2.41, 2.00 |
 | BDF2, Courant 1.3 to 9, outer iterations to 1e-9 | 1.97, 2.00 |
 
-![Velocity error over the mesh size](../figures/gallery/taylor_green_space.svg)
+<img src="../figures/gallery/taylor_green_space.svg" alt="Velocity error over the mesh size" width="640" height="460">
 
 In space, at a fixed small step, the error falls from 2.6e-2 on 16² to
 1.3e-4 on 128² cells, order 2.09 on the finest pair.
@@ -147,7 +147,7 @@ target/release/foehn flow examples/cases/flow/taylor_green_space.toml
 <a id="cylinder"></a>
 ## 15. Cylinder in a channel: the Schäfer & Turek benchmark
 
-![Speed around the cylinder at Re = 20, 98 304 cells](../figures/gallery/cylinder_re20_speed.png)
+<img src="../figures/gallery/cylinder_re20_speed.png" alt="Speed around the cylinder at Re = 20, 98 304 cells" width="800" height="280">
 
 The laminar cylinder benchmark of Schäfer & Turek (1996): a cylinder of
 0.1 m in a 2.2 × 0.41 m channel, slightly off the centre line, with a
@@ -156,14 +156,14 @@ vortices; on 98 304 cells the drag and lift coefficients and the pressure
 difference across the cylinder lie inside the reference ranges
 (C_D 5.5800, C_L 0.01060, Δp 0.11751 Pa).
 
-![Vortex street at Re = 100, 24 576 cells, t = 8 s](../figures/gallery/cylinder_re100_speed.png)
+<img src="../figures/gallery/cylinder_re100_speed.png" alt="Vortex street at Re = 100, 24 576 cells, t = 8 s" width="800" height="187">
 
 At Re = 100 a vortex street forms. The time step follows a Courant number
 of 0.8; from t = 5 s the run evaluates the largest drag and lift, the
 Strouhal number of the lift and the pressure difference half a period
 after the lift maximum.
 
-![Drag and lift coefficients over time, Re = 100](../figures/gallery/cylinder_re100_coefficients.svg)
+<img src="../figures/gallery/cylinder_re100_coefficients.svg" alt="Drag and lift coefficients over time, Re = 100" width="640" height="460">
 
 | Case | Cells | C_D (max) | C_L (max) | St | Δp (Pa) |
 |---|---:|---:|---:|---:|---:|
@@ -174,7 +174,7 @@ after the lift maximum.
 | Re 100 | 6 144 | 3.2319 | 0.9712 | 0.2955 | 2.4819 |
 | Re 100 | 24 576 | 3.2305 | 0.9847 | 0.3008 | 2.4854 |
 
-![The O-grid around the cylinder, refine 0](../figures/gallery/cylinder_mesh.png)
+<img src="../figures/gallery/cylinder_mesh.png" alt="The O-grid around the cylinder, refine 0" width="800" height="480">
 
 | | |
 |---|---|
@@ -197,7 +197,7 @@ python3 -m tools.mesh.render_mesh output/cylinder_re20/fields.vtkhdf cylinder.pn
 <a id="time-control"></a>
 ## 20. Time step from the error, output at exact times, potential-flow start
 
-![Time step over time for three error tolerances and for the Courant number alone, Taylor–Green vortex](../figures/gallery/time_step_error.svg)
+<img src="../figures/gallery/time_step_error.svg" alt="Time step over time for three error tolerances and for the Courant number alone, Taylor–Green vortex" width="680" height="440">
 
 The Taylor–Green vortex with the step chosen by the error of BDF2 (D65):
 from the fourth step on, the local error is estimated from the difference
@@ -214,7 +214,7 @@ with the shorter Δt takes, and a restart continues bitwise. At the end
 every run lands on t = 0.4 s in two equal steps; the same holds for
 field, monitor and restart output in simulated time (D66).
 
-![Potential-flow start around the cylinder, 24 576 cells](../figures/gallery/cylinder_potential_speed.png)
+<img src="../figures/gallery/cylinder_potential_speed.png" alt="Potential-flow start around the cylinder, 24 576 cells" width="800" height="187">
 
 The start field of `initial.potential_flow` (D52) for the cylinder of
 gallery 15: the irrotational flow that carries the parabolic inflow
@@ -256,7 +256,7 @@ python3 -m tools.mesh.render_mesh output/cylinder_potential/fields.vtkhdf potent
 <a id="coupled"></a>
 ## 78. Coupled algorithm and pseudo-time steps: the step case in 65 iterations
 
-![The reattachment length x_r/H of the backward-facing step against the outer iteration on a logarithmic axis, one panel per turbulence model (k-ε-ζ-f₀, k-ε, k-ω SST), each with SIMPLEC and with the coupled algorithm. The grey band is ±1 % of the final value. The coupled runs enter it after 65, 75 and 80 iterations, the SIMPLEC runs after 525, 600 and 675](../figures/gallery/coupled_step.svg)
+<img src="../figures/gallery/coupled_step.svg" alt="The reattachment length x_r/H of the backward-facing step against the outer iteration on a logarithmic axis, one panel per turbulence model (k-ε-ζ-f₀, k-ε, k-ω SST), each with SIMPLEC and with the coupled algorithm. The grey band is ±1 % of the final value. The coupled runs enter it after 65, 75 and 80 iterations, the SIMPLEC runs after 525, 600 and 675" width="800" height="277">
 
 **Why SIMPLEC needs hundreds of iterations.** Under-relaxation is a time
 step in disguise: with the factor α a cell advances by α/(1 − α) of its
@@ -348,7 +348,7 @@ measurements and the method in the
 <a id="momentum-multigrid"></a>
 ## 80. A multigrid for the momentum sweep of the coupled algorithm
 
-![Krylov iterations of the coupled solve in each outer iteration of the backward-facing step with k-ε-ζ-f₀, on 8 200 cells (left, 160 iterations) and on 32 800 cells (right, 300 iterations). With the BiCGStab momentum sweep the count jumps between 3 and the limit of 30 during the whole run, 8.3 and 12.5 per outer iteration on average; with the multigrid sweep it falls smoothly from about 10 to 3 or 4 (4.1 and 4.8 on average) and is at the limit only in the first ten iterations on the fine mesh](../figures/gallery/momentum_multigrid.svg)
+<img src="../figures/gallery/momentum_multigrid.svg" alt="Krylov iterations of the coupled solve in each outer iteration of the backward-facing step with k-ε-ζ-f₀, on 8 200 cells (left, 160 iterations) and on 32 800 cells (right, 300 iterations). With the BiCGStab momentum sweep the count jumps between 3 and the limit of 30 during the whole run, 8.3 and 12.5 per outer iteration on average; with the multigrid sweep it falls smoothly from about 10 to 3 or 4 (4.1 and 4.8 on average) and is at the limit only in the first ten iterations on the fine mesh" width="800" height="348">
 
 **The sweep.** Every Krylov iteration of the coupled solve of
 [gallery 78](#coupled) needs an approximate inverse of the momentum
@@ -445,7 +445,7 @@ the method and the tests in the
 <a id="turbulence-multigrid"></a>
 ## 81. A multigrid for the turbulence equations: the step settles in 40 and 65 iterations
 
-![Reattachment length x_r/H of the backward-facing step with k-ε-ζ-f₀ against the outer iteration of the coupled algorithm, on 8 200 cells (left) and on 32 800 cells (right). With the relaxations 0.98 of part 6f (blue) x_r stays within 1 % of its final value from iteration 65 on the coarse mesh and 150 on the fine one; with the multigrid in the turbulence equations and the relaxations 0.995 (orange) from iteration 40 and 65; the grey band is ±1 % of the final value](../figures/gallery/turbulence_multigrid.svg)
+<img src="../figures/gallery/turbulence_multigrid.svg" alt="Reattachment length x_r/H of the backward-facing step with k-ε-ζ-f₀ against the outer iteration of the coupled algorithm, on 8 200 cells (left) and on 32 800 cells (right). With the relaxations 0.98 of part 6f (blue) x_r stays within 1 % of its final value from iteration 65 on the coarse mesh and 150 on the fine one; with the multigrid in the turbulence equations and the relaxations 0.995 (orange) from iteration 40 and 65; the grey band is ±1 % of the final value" width="714" height="360">
 
 **Why the count grew with the mesh.** With the coupled algorithm of
 [gallery 78](#coupled) and the momentum multigrid of
@@ -705,7 +705,7 @@ reproduced to 1 % in its own frame and in the inertial one (the error of the
 pressure gradient on the polygonal ring; there the relative flux is zero and
 only the Coriolis source and the pressure remain).
 
-![Taylor–Couette flow with the inner half of the gap in a rotating frame, 128 × 32 cells: the speed |u| with streamlines, from 0.5 m/s at the inner cylinder to zero at the outer one, and the pressure, which rises steeply near the inner cylinder; the dashed circle is the interface of the zone rotor](../figures/gallery/taylor_couette_mrf.png)
+<img src="../figures/gallery/taylor_couette_mrf.png" alt="Taylor–Couette flow with the inner half of the gap in a rotating frame, 128 × 32 cells: the speed |u| with streamlines, from 0.5 m/s at the inner cylinder to zero at the outer one, and the pressure, which rises steeply near the inner cylinder; the dashed circle is the interface of the zone rotor" width="800" height="385">
 
 The 128 × 32 mesh: |u| with streamlines and p − p_min; the dashed circle is
 the interface of the zone `rotor`, which the solution does not see. Drawn with
@@ -755,7 +755,7 @@ gradients and fluxes with the data is unstable here: this is why only the time
 term sees the motion). A passive scalar (θ = 1 inside, 0 outside, exact
 ln(r₂/r)/ln(r₂/r₁)) ends in its exact solution to 0.7 %.
 
-![Spin-up of Taylor–Couette flow with the sliding mesh: the speed |u| with streamlines at t = 0.22 s, when only a thin layer at the inner cylinder moves, at 1.0 s, and at 10 s, the steady state](../figures/gallery/taylor_couette_sliding_spinup.png)
+<img src="../figures/gallery/taylor_couette_sliding_spinup.png" alt="Spin-up of Taylor–Couette flow with the sliding mesh: the speed |u| with streamlines at t = 0.22 s, when only a thin layer at the inner cylinder moves, at 1.0 s, and at 10 s, the steady state" width="800" height="256">
 
 The spin-up on the case file's mesh (32 × 16): |u| at t = 0.22 s, 1.0 s and
 10 s. The momentum diffuses out from the inner cylinder through the
@@ -826,7 +826,7 @@ stator cells without growth; a passive scalar ends in its exact solution to
 that is at its point now, the fields are written with the interface cells as
 polyhedra.
 
-![The imprinted interface in the stirred vessel of entry 98 after three revolutions, at the tip of a blade: the vorticity with the cell edges; the rotor mesh has 64 faces on the interface circle, the stator mesh 96, and the cells on both sides of the circle are polyhedra with the nodes of both](../figures/gallery/mixer_sliding_interface.png)
+<img src="../figures/gallery/mixer_sliding_interface.png" alt="The imprinted interface in the stirred vessel of entry 98 after three revolutions, at the tip of a blade: the vorticity with the cell edges; the rotor mesh has 64 faces on the interface circle, the stator mesh 96, and the cells on both sides of the circle are polyhedra with the nodes of both" width="780" height="750">
 
 The interface of a rotor with blades ([entry 98](#stirred-vessel)) after three
 revolutions, 64 rotor against 96 stator faces: the vorticity of the blade tip
@@ -860,7 +860,7 @@ conformal (rotor and stator share the nodes of the interface circle) and once
 split (64 rotor and 96 stator intervals on the circle). Water density, Ω =
 10 rad/s, tip speed 0.45 m/s, and a viscosity that keeps the flow laminar.
 
-![The stirred vessel with the moving reference frame at Re = 100: the speed with streamlines, highest at the blade tips; the relative speed |u − Ω×r| in the rotor, where the fluid between two blades turns in a closed eddy against the rotation; and the vorticity, 2Ω in the core that turns with the blades and negative in the shear layer around it](../figures/gallery/mixer_mrf.png)
+<img src="../figures/gallery/mixer_mrf.png" alt="The stirred vessel with the moving reference frame at Re = 100: the speed with streamlines, highest at the blade tips; the relative speed |u − Ω×r| in the rotor, where the fluid between two blades turns in a closed eddy against the rotation; and the vorticity, 2Ω in the core that turns with the blades and negative in the shear layer around it" width="800" height="256">
 
 **Moving reference frame** (`mrf.toml`, Re = ΩR²_tip/ν = 100, steady, 972
 SIMPLEC iterations, 22 s on four cores). Left the absolute speed with
@@ -875,7 +875,7 @@ the blade tips the fluid lags far behind (u_θ = 0.5 Ωr at the interface), and
 solid body (ω_z ≈ 2Ω = 20 1/s); the shear layer around it and the tip vortices
 are negative.
 
-![The stirred vessel with the sliding mesh at Re = 400 after three revolutions: the speed with four recirculation cells between the baffles, the relative speed in the rotor with its eddies, and the vorticity with the shear layer broken up by the baffles](../figures/gallery/mixer_sliding.png)
+<img src="../figures/gallery/mixer_sliding.png" alt="The stirred vessel with the sliding mesh at Re = 400 after three revolutions: the speed with four recirculation cells between the baffles, the relative speed in the rotor with its eddies, and the vorticity with the shear layer broken up by the baffles" width="800" height="256">
 
 **Sliding mesh by imprinting** (`sliding.toml`, Re = 400, from rest, Δt = 1.25 ms,
 the rotor turning 0.72° per step, an eighth of a rotor face on the interface;
@@ -884,7 +884,7 @@ At the lower viscosity the swirl does not reach the wall: the baffles hold
 four recirculation cells between them; the rotor eddies stay, and the fluid at
 the interface lags more (u_θ = 0.33 Ωr).
 
-![Start-up of the stirred vessel from rest, vorticity at t = 0.15, 0.3 and 0.6 s and after three revolutions: each blade sheds a starting vortex, the vortices roll up around the rotor and merge into a shear layer at the interface radius](../figures/gallery/mixer_sliding_startup.png)
+<img src="../figures/gallery/mixer_sliding_startup.png" alt="Start-up of the stirred vessel from rest, vorticity at t = 0.15, 0.3 and 0.6 s and after three revolutions: each blade sheds a starting vortex, the vortices roll up around the rotor and merge into a shear layer at the interface radius" width="800" height="192">
 
 The start-up: each blade sheds a starting vortex (t = 0.15 s), the four
 vortices are wrapped around the rotor (0.3 s, 0.6 s) and merge into the
@@ -943,7 +943,7 @@ lines get the columns of **w** and of the cylindrical components, the point
 probes of a transient run **w**; on the sliding mesh every value is taken at
 the current position of the cell.
 
-![The stirred vessel of entry 98 with the moving reference frame: the relative speed |w| with the streamlines of w, which in the rotor are the closed eddies of the blade passages and in the stator the absolute flow around the baffles; the relative flow angle β in the rotor, above 90° near the hub where the fluid overtakes the blades and near 0° beyond the tips where it falls behind; and the rothalpy in the rotor, lowest at the blade tips](../figures/gallery/mixer_relative.png)
+<img src="../figures/gallery/mixer_relative.png" alt="The stirred vessel of entry 98 with the moving reference frame: the relative speed |w| with the streamlines of w, which in the rotor are the closed eddies of the blade passages and in the stator the absolute flow around the baffles; the relative flow angle β in the rotor, above 90° near the hub where the fluid overtakes the blades and near 0° beyond the tips where it falls behind; and the rothalpy in the rotor, lowest at the blade tips" width="800" height="256">
 
 The stirred vessel of [entry 98](#stirred-vessel) with the frame (`studies/mixer/mrf.toml`,
 which writes all five fields). Left |w| with the streamlines of **w**: one
@@ -986,7 +986,7 @@ Every turbulence model runs with `[[mrf]]` and with both sliding meshes:
 the rotor carries k, ε, ω, ζ and f and their old time levels with it, and
 the wall distance of the turning rotor is updated in every step.
 
-![The turbulent stirred vessel in the moving reference frame: the speed |u| with streamlines, highest at the blade tips and turning nearly as a solid body between the blades; the turbulent kinetic energy k, highest at the blade tips and in a ring around them; and the eddy viscosity ratio ν_t/ν, up to 150 in the swirl of the stator and lower in the blade passages](../figures/gallery/mixer_turbulent_mrf.png)
+<img src="../figures/gallery/mixer_turbulent_mrf.png" alt="The turbulent stirred vessel in the moving reference frame: the speed |u| with streamlines, highest at the blade tips and turning nearly as a solid body between the blades; the turbulent kinetic energy k, highest at the blade tips and in a ring around them; and the eddy viscosity ratio ν_t/ν, up to 150 in the swirl of the stator and lower in the blade passages" width="800" height="256">
 
 The frame (16 326 cells, 337 iterations of the coupled solver, 27 s). The
 fluid between the blades turns nearly with them (highest speed 0.45 m/s,
@@ -998,7 +998,7 @@ the fluid turns almost as a solid body. Across the interface (dashed) the
 convecting velocity changes from **w** to **c**, as the steady frame
 assumes, and ν_t changes steeply there.
 
-![The turbulent stirred vessel on the sliding mesh after three revolutions from rest: the speed |u|, the rotor spun up and the stator still nearly at rest with slow eddies between the baffles; k in a ring around the blade tips; ν_t/ν up to 70 in that ring](../figures/gallery/mixer_turbulent_sliding.png)
+<img src="../figures/gallery/mixer_turbulent_sliding.png" alt="The turbulent stirred vessel on the sliding mesh after three revolutions from rest: the speed |u|, the rotor spun up and the stator still nearly at rest with slow eddies between the baffles; k in a ring around the blade tips; ν_t/ν up to 70 in that ring" width="800" height="256">
 
 The sliding mesh after three revolutions (1 508 steps of 1.25 ms, BDF2,
 10 min on four cores; the laminar run of entry 98 takes 7). The rotor has
@@ -1060,7 +1060,7 @@ inlet = ["inlet"]
 outlet = ["outlet"]
 ```
 
-![The torque of the rotor of the stirred vessel of entry 98 on the sliding mesh, in its first revolution from rest: the impulsive start, then the passage of the blades by the baffles](../figures/gallery/mixer_torque.png)
+<img src="../figures/gallery/mixer_torque.png" alt="The torque of the rotor of the stirred vessel of entry 98 on the sliding mesh, in its first revolution from rest: the impulsive start, then the passage of the blades by the baffles" width="800" height="360">
 
 The stirred vessel of [entry 98](#stirred-vessel) (laminar, ν = 5·10⁻⁵ m²/s).
 In the moving reference frame the torque of the fluid on the blades is
@@ -1113,7 +1113,7 @@ rotor_interface = "right_rotor_interface"
 stator_interface = "right_stator_interface"
 ```
 
-![A vessel with two stirrers, the left one with three blades at +10 rad/s, the right one with four blades at −15 rad/s: the vorticity at t = 0.2, 0.4, 0.6 and 0.8 s after the start from rest](../figures/gallery/twin_mixer_vorticity.png)
+<img src="../figures/gallery/twin_mixer_vorticity.png" alt="A vessel with two stirrers, the left one with three blades at +10 rad/s, the right one with four blades at −15 rad/s: the vorticity at t = 0.2, 0.4, 0.6 and 0.8 s after the start from rest" width="800" height="192">
 
 `examples/studies/twin_mixer/sliding.toml` on the mesh of
 `examples/meshes/twin_mixer.py` (16 953 cells, ν = 5·10⁻⁵ m²/s): two
@@ -1124,9 +1124,9 @@ at 15 rad/s. The blades shed vortices of their own sense, and the rings
 of opposite vorticity of the two rotors meet in the waist of the vessel.
 800 steps of 1 ms (1.3 and 1.9 revolutions) took 4.4 minutes on four cores.
 
-![The same vessel at t = 0.8 s: the speed with streamlines (two co-rotating cores and the counter-rotating cells between them and the wall) and the vorticity](../figures/gallery/twin_mixer_speed.png)
+<img src="../figures/gallery/twin_mixer_speed.png" alt="The same vessel at t = 0.8 s: the speed with streamlines (two co-rotating cores and the counter-rotating cells between them and the wall) and the vorticity" width="800" height="385">
 
-![The stirred vessel of entry 98 started from rest, as a transient frozen rotor and on the sliding mesh: the vorticity at t = 0.3 and 0.6 s](../figures/gallery/mixer_frozen_vs_sliding.png)
+<img src="../figures/gallery/mixer_frozen_vs_sliding.png" alt="The stirred vessel of entry 98 started from rest, as a transient frozen rotor and on the sliding mesh: the vorticity at t = 0.3 and 0.6 s" width="800" height="192">
 
 The difference between the transient frozen rotor
 (`examples/studies/mixer/mrf_transient.toml`, 480 steps in 33 s) and the
@@ -1139,7 +1139,7 @@ past the baffles and the vortices are shed into the stator. The frozen rotor
 is right for a body of revolution (the spin-up test below) and as a quick
 start for a sliding run. It does not give the rotor–stator interaction.
 
-![The torque of the fluid on the rotor from t = 0.02 s: the stirred vessel as a frozen rotor and on the sliding mesh, and the two rotors of the twin vessel](../figures/gallery/rotor_torque_histories.png)
+<img src="../figures/gallery/rotor_torque_histories.png" alt="The torque of the fluid on the rotor from t = 0.02 s: the stirred vessel as a frozen rotor and on the sliding mesh, and the two rotors of the twin vessel" width="800" height="240">
 
 The torque histories (`tools/plot/rotor_torque.py`; each torque about the
 axis along the rotor's own Ω, so a rotor that drives the fluid has a
@@ -1159,7 +1159,7 @@ is the same within 0.05 mN m up to 0.4 s (−1.85 instead of −1.89 mN m at
 computed flow and is not a discretisation error. Its period, 0.24 s, is not
 the blade-passing period 2π/(4Ω) = 0.16 s; what sets it is still open.
 
-![The rotor torque of the stirred vessel: frozen rotor, and the sliding mesh with the base settings, half the time step, ten outer iterations and a finer mesh; the four sliding curves lie on top of each other](../figures/gallery/mixer_torque_variants.png)
+<img src="../figures/gallery/mixer_torque_variants.png" alt="The rotor torque of the stirred vessel: frozen rotor, and the sliding mesh with the base settings, half the time step, ten outer iterations and a finer mesh; the four sliding curves lie on top of each other" width="800" height="427">
 
 Checks (`tests/sliding.rs`, `tests/mrf.rs`): Couette flow between two
 cylinders that turn at +10 and −5 rad/s, each a sliding rotor by imprinting

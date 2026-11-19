@@ -15,7 +15,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 <a id="mesh-types-3d"></a>
 ## 3. The four test-mesh types in 3D
 
-![Hexahedral, tetrahedral, polyhedral and mixed test meshes of a box, cut open](../figures/gallery/mesh_types_3d.png)
+<img src="../figures/gallery/mesh_types_3d.png" alt="Hexahedral, tetrahedral, polyhedral and mixed test meshes of a box, cut open" width="800" height="620">
 
 The built-in test mesher (D34) makes four mesh types of the same box
 2 × 1 × 1: hexahedra, tetrahedra (six per hexahedron), polyhedra (the dual
@@ -50,7 +50,7 @@ python3 -m tools.mesh.render_mesh output/poly_box/mesh.vtkhdf poly_box.png --cut
 <a id="poly-partition"></a>
 ## 4. A polyhedral mesh in four parts
 
-![Polyhedral unit cube in four METIS parts](../figures/gallery/poly_partition.png)
+<img src="../figures/gallery/poly_partition.png" alt="Polyhedral unit cube in four METIS parts" width="800" height="622">
 
 A polyhedral mesh of the unit cube (2 197 cells, nodes perturbed by 20 %)
 split into four parts with METIS (D32), one colour per rank. Each part is
@@ -80,7 +80,7 @@ python3 -m tools.mesh.render_mesh output/poly_partition/mesh.vtkhdf part.png --c
 <a id="mesh-types-2d"></a>
 ## 5. The four test-mesh types in 2D
 
-![Hexahedral, tetrahedral, polyhedral and mixed 2D meshes](../figures/gallery/mesh_types_2d.png)
+<img src="../figures/gallery/mesh_types_2d.png" alt="Hexahedral, tetrahedral, polyhedral and mixed 2D meshes" width="800" height="460">
 
 2D meshes are one cell thick in z (D3): quadrilaterals become hexahedra,
 triangles become prisms, polygons become prismatic polyhedra. The mixed
@@ -108,9 +108,9 @@ python3 -m tools.mesh.render_mesh output/poly_2d/mesh.vtkhdf poly_2d.png --top
 <a id="tjunction"></a>
 ## 6. T-junction from Gmsh
 
-![T-junction, tetrahedral mesh from Gmsh, cut at the mid plane, four ranks](../figures/gallery/tjunction_tet.png)
+<img src="../figures/gallery/tjunction_tet.png" alt="T-junction, tetrahedral mesh from Gmsh, cut at the mid plane, four ranks" width="800" height="533">
 
-![The same T-junction converted into polyhedra](../figures/gallery/tjunction_poly.png)
+<img src="../figures/gallery/tjunction_poly.png" alt="The same T-junction converted into polyhedra" width="800" height="533">
 
 The T-junction mixer of stage 7 (D45) meshed with Gmsh
 (`examples/meshes/tjunction.geo`, main pipe 100 mm diameter, branch 50 mm)
@@ -144,7 +144,7 @@ python3 -m tools.mesh.render_mesh output/tjunction_poly/mesh.vtkhdf tj.png \
 <a id="skewed-tets"></a>
 ## 26. Flow on raw Gmsh tetrahedra: the cell-quality remediation
 
-![Residuals of the pipe on raw Gmsh tetrahedra with and without the remediation](../figures/gallery/pipe_gmsh_raw_residuals.svg)
+<img src="../figures/gallery/pipe_gmsh_raw_residuals.svg" alt="Residuals of the pipe on raw Gmsh tetrahedra with and without the remediation" width="800" height="364">
 
 Gmsh's tetrahedra without its optimisation pass contain faces of a
 skewness above 0.9: the face centroid lies almost as far from the line
