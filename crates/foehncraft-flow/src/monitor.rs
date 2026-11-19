@@ -43,6 +43,18 @@ impl Probes {
         }
     }
 
+    /// The probes found again in the cells of `mesh` (a sliding mesh by
+    /// imprinting, D182: the cells of the rotor are somewhere else in every
+    /// step).
+    pub fn relocated(&self, mesh: &foehncraft_mesh::Mesh, geo: &Geometry) -> Self {
+        let loc = Locator::new(mesh, geo);
+        Self {
+            names: self.names.clone(),
+            points: self.points.clone(),
+            cells: self.points.iter().map(|&x| locate(&loc, geo, x)).collect(),
+        }
+    }
+
     /// Velocity and pressure at every probe (reconstructed with the cell
     /// gradients).
     pub fn values(&self, sol: &Solution, geo: &Geometry) -> Vec<([f64; 3], f64)> {

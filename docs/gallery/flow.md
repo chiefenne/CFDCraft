@@ -17,6 +17,7 @@ Part of the [Example gallery](../gallery.md): steady and transient laminar verif
 | 86 | [The heated channel against DNS: Nu at Re_τ = 395](#heated-channel-dns) | 6 | `channel_heated_keps.toml`, `examples/studies/channel_heat_dns.py` |
 | 94 | [Rotating machinery, steady: the moving reference frame on Taylor–Couette flow](#mrf) | 6 | `[[mrf]]`, `[mesh.annulus]`, `analytic.type = "taylor-couette"`, `taylor_couette_mrf.toml` |
 | 95 | [Rotating machinery, transient: the sliding mesh on Taylor–Couette flow](#sliding-mesh) | 6 | `[[sliding]]`, `time_step`, `taylor_couette_sliding.toml` |
+| 96 | [The sliding mesh with a pitch ratio that is not one: the interface imprinted in every step](#sliding-mesh-imprint) | 6 | `[[sliding]] rotor_interface`, `[mesh.annulus] n_theta_stator`, `taylor_couette_imprint.toml` |
 
 ---
 
@@ -749,10 +750,72 @@ boundaries that are walls turning with the rotor, slip walls, symmetry or
 wedge planes. A fluid that stands in space, with a CFL number of about one
 relative to the rotor, is smeared by the implicit upwind convection, as in any
 sliding or ALE scheme. A pitch ratio that is not one (different sector counts
-on the two sides) needs the variant by imprinting (D182, variant B), which
-is not implemented yet.
+on the two sides) needs the variant by imprinting (D182, variant B,
+[entry 96](#sliding-mesh-imprint)).
 
 Checks: observed order 1.9–2.7; the cases of
 `crates/foehncraft-flow/tests/sliding.rs` (shift of the cells, refusals,
 convergence, two sectors per step, solid body, scalar, frame and sliding mesh
 do not mix). [Recipe 95](../recipes/flow.md#sliding-mesh).
+
+<a id="sliding-mesh-imprint"></a>
+## 96. The sliding mesh with a pitch ratio that is not one: the interface imprinted in every step
+
+Entry 95 needs a rotor and a stator with the same sector angle, so that the
+rotor can advance by whole sectors. Real machines have 32 rotor blades against
+48 stator vanes, and the time step should follow the physics, not the pitch.
+Variant B (D182) takes both: the same Taylor–Couette flow (`taylor_couette_imprint.toml`,
+Re = 50, from rest to the steady state) with **32 sectors in the rotor and 48 in
+the stator** and a time step of 0.02 s that no sector decides. `[mesh.annulus]`
+with `n_theta_stator = 24` makes two separate rings that meet at r = 0.075 m
+in two boundaries, `rotor_interface` (32 faces) and `stator_interface` (48
+faces), and `[[sliding]]` names them (`rotor_interface`, `stator_interface`).
+
+In every step the rotor nodes are turned rigidly to the angle Ω t. The two
+sides of the interface are then **imprinted**: the faces of the rotor and the
+faces of the stator are unrolled into the (θ, z) plane of the interface
+cylinder, every rotor face is clipped against every stator face (convex
+polygons, Sutherland–Hodgman), and each intersection polygon, about 80 per
+step here, becomes an ordinary internal face between one rotor cell and one
+stator cell. Nothing is interpolated: the pieces of a face sum to its area
+vector, so every cell stays closed, the mass and momentum that leave one
+side enter the other to round-off, and the interface is a surface of revolution
+(w·S = 0) so the geometric conservation law holds exactly. The solver is built
+on the mesh of that angle, the state, the old time levels of the BDF2
+scheme and the face fluxes are carried to it (a face of the base mesh keeps its
+flux, a new piece starts from the flux of the linearly interpolated cell
+velocities, its Rhie–Chow difference zero),
+and the step is taken **fully implicit** with four outer iterations: an
+explicit term made of the vectors of the previous angle would be stale on the
+turned mesh.
+
+| Mesh (rotor + stator sectors) | Cells | Δt (s) | L2 error of the velocity | Observed order |
+|---|---|---|---|---|
+| 16 + 24 | 160 | 0.04 | 6.74 % | |
+| 32 + 48 | 640 | 0.02 | 1.29 % | 2.4 |
+| 64 + 96 | 2 560 | 0.01 | 0.25 % | 2.3 |
+
+(Relative to the speed of the inner wall at t = 10 s; Δt ∝ h.) The 640-cell
+case runs in about 6 seconds. Further checks: with the same number of sectors
+on both sides and the time step of entry 95 the error is 1.350 % against
+1.354 % of conformal stepping on the same 512-cell mesh (the imprint of an
+interface that is at a multiple of the sector angle is the conformal one);
+a fluid in solid-body rotation with both cylinders turning, started from the
+exact solution, keeps its error at 1.02 % (0.6 s) and 0.97 % (3 s): the
+rotor mesh turns through the fixed stator mesh and the fluid flows through the
+stator cells without growth; a passive scalar ends in its exact solution to
+0.49 %; the mass balance closes to 1e-18. A probe in the rotor finds the cell
+that is at its point now, the fields are written with the interface cells as
+polyhedra.
+
+Limits: laminar flow and passive scalars (turbulence is refused, `SLD004`), one
+rotor, a fixed time step (`SLD003` for the adaptive one), no restart (`SLD005`;
+no restart file is written either), CPU, and the interface must be a surface
+of revolution made of the faces of an extruded mesh (a warning, `SLD006`,
+names cells that do not close). The solver, its multigrid hierarchy
+included, is built again in every step, which costs about half of the run time
+here; a rebinding in place would be solver-speed work. [Recipe 96](../recipes/flow.md#sliding-mesh-imprint).
+
+Checks: observed order 1.9–2.8; the cases of `crates/foehncraft-flow/tests/sliding.rs`
+(refusals of the case file and of the mesh, convergence, equal pitch against
+conformal stepping, solid body, scalar, probes and fields).

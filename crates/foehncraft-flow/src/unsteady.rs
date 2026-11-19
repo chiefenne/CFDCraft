@@ -1388,7 +1388,7 @@ fn run_one<F: FnMut(&str)>(
                         )?;
                         files.push("fields_last_valid.vtkhdf");
                     }
-                    if last && restart::AVAILABLE {
+                    if last && restart::AVAILABLE && imprint.is_none() {
                         let rs = restart_of(&mut fl, &tr, mesh, name, h)?;
                         restart::write(&out.join("restart.h5"), &rs)?;
                         files.push("restart.h5");
@@ -1663,7 +1663,11 @@ fn run_one<F: FnMut(&str)>(
                 if let Some(fh) = forces.as_mut() {
                     fh.row(&row);
                 }
-                let vals = probes.values(&sol, geo);
+                let vals = if imprint.is_some() {
+                    probes.relocated(mesh, geo).values(&sol, geo)
+                } else {
+                    probes.values(&sol, geo)
+                };
                 if let Some(pc) = probe_csv.as_mut() {
                     let mut row = format!("{n},{:e}", rp.time);
                     for (u, p) in &vals {
@@ -1727,7 +1731,7 @@ fn run_one<F: FnMut(&str)>(
                 dt = dt.min(m);
             }
         }
-        if restart_now && restart::AVAILABLE {
+        if restart_now && restart::AVAILABLE && imprint.is_none() {
             let rs = restart_of(&mut fl, &tr, mesh, name, dt)?;
             restart::write(&out.join("restart.h5"), &rs)?;
             if restart_numbered {
@@ -1805,7 +1809,7 @@ fn run_one<F: FnMut(&str)>(
         }
         lg.frame(&f);
     }
-    if last && (case.run.restart_final || stopped) && restart::AVAILABLE {
+    if last && (case.run.restart_final || stopped) && restart::AVAILABLE && imprint.is_none() {
         let rs = restart_of(&mut fl, &tr, mesh, name, dt)?;
         restart::write(&out.join("restart.h5"), &rs)?;
     }
@@ -1874,7 +1878,11 @@ fn run_one<F: FnMut(&str)>(
     let benchmark = match bench {
         Some(b @ Benchmark::SchaferTurek2d1) => benchmark_coefficients(&case, &boundaries, mesh)
             .map(|[cd, cl]| {
-                let vals = probes.values(&sol, geo);
+                let vals = if imprint.is_some() {
+                    probes.relocated(mesh, geo).values(&sol, geo)
+                } else {
+                    probes.values(&sol, geo)
+                };
                 let (i, j) = (
                     probes.index("benchmark_front").unwrap_or(0),
                     probes.index("benchmark_back").unwrap_or(0),

@@ -545,3 +545,45 @@ fn a_passive_scalar_ends_in_the_exact_solution_with_imprinting() {
     eprintln!("imprinted theta L2 {e:e}");
     assert!(e < 1.5e-2, "{e}");
 }
+
+/// The outputs of a run on imprinted meshes: a probe in the rotor finds the
+/// cell that is there now (not the cell that was there at the start), a
+/// probe in the stator the stator's, and the fields of a mesh whose
+/// interface cells are polyhedra are written.
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn probes_and_fields_follow_the_rotor() {
+    let t = imprint_text()
+        + "\n[[output.probes]]\nname = \"rot\"\npoint = [0.06, 0.0, 0.005]\n\
+           \n[[output.probes]]\nname = \"sta\"\npoint = [0.0, 0.09, 0.005]\n";
+    let t = t.replace("vtkhdf = false", "vtkhdf = true");
+    let mut c = parse(&t);
+    c.verification.max_error = None;
+    let dir = out("outputs");
+    let rep = run(&c, "outputs", &dir, |_| {}).unwrap();
+    assert!(rep.failures.is_empty(), "{:?}", rep.failures);
+    let csv = std::fs::read_to_string(dir.join("probes.csv")).unwrap();
+    let last: Vec<f64> = csv
+        .lines()
+        .rfind(|l| !l.starts_with('#') && !l.is_empty())
+        .unwrap()
+        .split(',')
+        .map(|x| x.parse().unwrap())
+        .collect();
+    let fields = dir.join("fields.vtkhdf").exists();
+    let _ = std::fs::remove_dir_all(&dir);
+    // u_θ = A r + B / r of Taylor–Couette flow (r₁ = 0.05, r₂ = 0.10, Ω = 10)
+    let exact = |r: f64| -10.0 * 0.0025 / 0.0075 * r + 10.0 * 0.0025 * 0.01 / 0.0075 / r;
+    // columns: step, time, rot u v w p, sta u v w p
+    let (rot_v, sta_u) = (last[3], last[6]);
+    eprintln!(
+        "probes: rotor v {rot_v} (exact {}), stator u {sta_u} (exact {})",
+        exact(0.06),
+        -exact(0.09)
+    );
+    assert!((rot_v / exact(0.06) - 1.0).abs() < 0.05, "{rot_v}");
+    assert!((sta_u / -exact(0.09) - 1.0).abs() < 0.05, "{sta_u}");
+    if cfg!(feature = "hdf5") {
+        assert!(fields, "fields.vtkhdf");
+    }
+}

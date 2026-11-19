@@ -196,6 +196,19 @@ levels), and the mesh must be a ring of identical sectors about the axis
 turbulence model). The solved velocity is the absolute one; the convecting
 flux is relative to the moving mesh, and there is no Coriolis source.
 
+The general form, with a pitch ratio that is not one and a free time step
+(D182 variant B, [recipe 96](../recipes/flow.md#sliding-mesh-imprint)): the
+same table with the two boundaries of the interface, and a mesh in which the
+rotor and the stator are separate meshes (`[mesh.annulus] n_theta_stator`).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `rotor_interface`, `stator_interface` | none | the boundaries of the mesh that hold the faces of the rotor and of the stator on the interface (both or neither; they get no `[boundary]` table); the interface is imprinted at the rotor angle of every time step |
+
+With them `zone` is needed, `shift` is not allowed (the time step is free),
+and the scheme must be fully implicit (`[solver] extrapolation = false`,
+`outer_iterations` ≥ 2, `SLD003`); a restart is not available (`SLD005`).
+
 # Derived fields (D72)
 
 `[output] derived` adds fields computed from the solution to every

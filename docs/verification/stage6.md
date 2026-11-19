@@ -1459,3 +1459,74 @@ Findings:
 3. Not tested yet: restart of a sliding run, a rotor with blades, a
    sliding mesh with the energy equation (stage 7), turbulence models
    (refused, `SLD004`), and the time-dependent speed Ω(t) of D182.
+
+## Sliding mesh by imprinting (part 6g, 9.7)
+
+The same Taylor–Couette flow as above (r₁ = 0.05 m, r₂ = 0.10 m, ω₁ = 10 rad/s,
+ρ = 1 kg/m³, μ = 5·10⁻⁴ Pa s, Re = 50, started from rest, t = 10 s), now with
+a **pitch ratio that is not one and a free time step**: variant B of D182,
+`[[sliding]] rotor_interface / stator_interface` on `[mesh.annulus] n_theta_stator`
+(the rotor with 2n sectors and the radial layers inside r = 0.075 m, the
+stator with 3n sectors, the interface at r = 0.075 m in two boundaries,
+`taylor_couette_imprint.toml`). In every step the rotor nodes are turned to
+the angle Ω t, every rotor face is clipped with every stator face in the
+unrolled interface cylinder, and the intersection polygons are the internal
+faces of the interface (`foehncraft_mesh::imprint`); the solver is built on
+that mesh with the state, the old levels and the fluxes carried over, fully
+implicit (`extrapolation = false`, four outer iterations). BDF2, Δt = 0.04 s
+on the coarsest mesh and halved with the mesh:
+
+| Cells (rotor + stator sectors) | Δt (s) | L2 error | Observed order |
+|---|---|---|---|
+| 160 (16 + 24) | 0.04 | 6.74·10⁻² | |
+| 640 (32 + 48) | 0.02 | 1.29·10⁻² | 2.39 |
+| 2 560 (64 + 96) | 0.01 | 2.53·10⁻³ | 2.35 |
+
+The test (`tests/sliding.rs`) requires orders between 1.9 and 2.8 and errors
+below 2·10⁻² and 4·10⁻³ on the 640 and 2 560 cells. The 640-cell case, 500 steps,
+runs in 6 s (half of it in the multigrid setups that every step repeats), the
+2 560-cell case in 37 s.
+
+**Equal pitch against conformal stepping** (32 + 32 sectors, 512 cells, the time
+step of variant A, 2π/(32 · 10) s): L2 error 1.350·10⁻² against 1.354·10⁻² of
+conformal stepping; the test requires agreement within 10 %. **Outer iterations:**
+two give 1.35·10⁻² on the 640-cell case, four 1.29·10⁻², eight the same.
+**Solid-body rotation** (both cylinders at 10 rad/s, started from the exact
+solution; the rotor mesh turns through the fixed stator mesh, the fluid flows
+through the stator cells): 1.02·10⁻² at 0.6 s and 0.97·10⁻² at 3 s, without
+growth (the test requires below 3·10⁻² and the long run below 1.5 times the
+short one). **Passive scalar** (θ = 1 inside, 0 outside): 4.9·10⁻³ against the
+exact ln(r₂/r)/ln(r₂/r₁) (the test requires below 1.5·10⁻²). The **mass
+balance** closes to 10⁻¹⁸ in every step (the test requires 10⁻¹²). **Outputs:**
+a probe at r = 0.06 m in the rotor gives u_θ = 0.3483 m/s against the exact
+0.3556 m/s, one at r = 0.09 m in the stator 0.0690 against 0.0704 m/s (the
+2 % of the 640-cell mesh); the fields are written with the interface cells as
+polyhedra.
+
+Findings:
+
+1. **The imprint closes the cells.** The pieces of a face of an extruded mesh
+   add up to its area vector, and the slivers at the top and bottom edge of
+   the interface cancel in the sum; the cell volumes and centroids are
+   overridden by the rigid-body values of the base mesh, so the geometric
+   conservation law is exact (w·S = 0 on a surface of revolution) and the
+   closure defect |ΣS|/Σ|S| is round-off (`SLD006` warns above 10⁻⁸).
+2. **Fully implicit in the step.** With the extrapolation of the previous
+   step an explicit term is made of the unrotated vectors of the previous angle,
+   which is stale on the turned mesh and unstable; with `extrapolation = false`
+   and two outer iterations the old time levels of the BDF2 scheme, the cell
+   content of the moved cells, are all the scheme needs of the step before.
+3. **Rebuilding costs.** The solver, its matrices and multigrid hierarchy are
+   built again in every step because the face list changes; 49 % of the run
+   time of the case file is the multigrid setup. A rebinding in place
+   (fixed-capacity face storage in the kernels) would remove most of it and is
+   solver-speed work that waits for the maintainer's go.
+4. **Found on the way:** the VTKHDF writer classified a cell with 6 quadrilateral
+   faces as a hexahedron even when its interface face had corners of its own
+   (it panicked); a cell whose faces do not close on the nodes of its shape is
+   now a polyhedron. Probes in the rotor sampled the cell that had been at
+   their point at the start; they are located again in every step.
+5. Not tested yet: a restart of a sliding run (refused, `SLD005`), turbulence
+   models (refused, `SLD004`), more than one rotor, the time-dependent speed of
+   D182, a rotor with blades (the interface is the surface of revolution of an
+   extruded mesh), and the combination with the energy equation (stage 7).
