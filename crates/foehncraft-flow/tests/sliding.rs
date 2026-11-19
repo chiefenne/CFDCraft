@@ -895,7 +895,7 @@ fn uniform_flow_crosses_discs_cones_and_the_axis() {
             c.verification.max_error = None;
             errors.push(l2(&run_case(&c, &format!("uniform_stage_{f}"))));
         }
-        eprintln!("uniform flow through the stage, cone {cone}: L2 {errors:e?}");
+        eprintln!("uniform flow through the stage, cone {cone}: L2 {errors:?}");
         assert!(errors[0] < 3e-3, "cone {cone}: {errors:?}");
         assert!(errors[0] / errors[1] > 2.8, "cone {cone}: {errors:?}");
     }

@@ -94,6 +94,10 @@ def read(path):
     return shapes, rz, mean
 
 
+def cross2(a, b):
+    return a[0] * b[1] - a[1] * b[0]
+
+
 def hull(q):
     """The convex hull of points in the plane (monotone chain)."""
     p = sorted(map(tuple, q))
@@ -103,8 +107,8 @@ def hull(q):
     def half(seq):
         out = []
         for x in seq:
-            while len(out) >= 2 and np.cross(np.subtract(out[-1], out[-2]),
-                                              np.subtract(x, out[-2])) <= 0:
+            while len(out) >= 2 and cross2(np.subtract(out[-1], out[-2]),
+                                           np.subtract(x, out[-2])) <= 0:
                 out.pop()
             out.append(x)
         return out

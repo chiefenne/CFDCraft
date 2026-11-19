@@ -1764,3 +1764,38 @@ The tests are in `tests/sliding.rs`, `tests/mrf.rs`,
    frame, 0.1296 in the frame of the cylinder and 0.1308 in the opposite
    frame (0.7 %); after 1 000 steps the transient frame ends at the L2 error
    of the steady frame, 6.93966·10⁻³ against 6.93966·10⁻³.
+
+## Interfaces of any rotationally symmetric shape (D186, PR #103)
+
+The tests are in `crates/foehncraft-mesh/src/imprint.rs`,
+`crates/foehncraft-mesh/src/revolved.rs` and `tests/sliding.rs`.
+
+1. **The meshes of revolution** (`revolved.rs`): a stage on the hub, a pot
+   with wedge cells at the axis, a disc impeller as a solid block and the
+   cones of `cone = 20`: every cell closes to 10⁻¹³, the cell count is the
+   estimate, the boundaries are named as documented, crossing breakpoints
+   and a block both rotor and solid are refused.
+2. **Closed cells at every angle**
+   (`surfaces_of_revolution_close_at_every_angle`): a stage (disc, cylinder,
+   disc on the hub), its cones (25°), a pot whose two discs pass through the
+   axis and a rotor row between two separate discs (−15° cones, two parts of
+   the meridian), 12 rotor and 17 stator intervals, assembled at seven
+   angles: every cell closes below 10⁻¹², the shape is recognised ("3
+   straight pieces in 1 part, 2 through the axis", "2 straight pieces in 2
+   parts"), and the pieces of every rotor face add up to its area within
+   the difference between the chords and the surface. The cylinder tests of
+   PR #96 and #102 pass unchanged.
+3. **Uniform axial flow** (`uniform_flow_crosses_discs_cones_and_the_axis`,
+   `axial_stage_uniform.toml`, slip walls, rotor at 40 rad/s, 20 steps):
+   through the pot, away from all walls, the uniform flow is kept to
+   1.5·10⁻⁶ (relative L2; the same mesh with aligned pitches and the rotor
+   at rest: 1.8·10⁻¹²). Through the stage on the hub: 2.30·10⁻³, 7.57·10⁻⁴
+   and 2.22·10⁻⁴ at 24/34, 48/68 and 96/136 intervals (ratios 3.0 and 3.4),
+   with cones 2.36·10⁻³ and 7.87·10⁻⁴: the step between the hub polygons of
+   rotor and stator where the interface meets the hub, second order in the
+   pitch; with aligned pitches and the rotor at rest 4.3·10⁻¹².
+4. **Solid-body rotation in the pot**
+   (`solid_body_rotation_is_kept_by_a_pot_through_the_axis`,
+   `pot_solid_body.toml`, every wall at 10 rad/s, 30 steps, half a
+   revolution): L2 error 0.82 % against u = Ω × r (the cylinder imprint of
+   PR #96 on its ring: below 3 %).

@@ -81,6 +81,11 @@ impl Default for RevolvedSpec {
     }
 }
 
+/// Strictly increasing (and no NaN).
+fn increasing(v: &[f64]) -> bool {
+    v.iter().all(|x| x.is_finite()) && v.windows(2).all(|w| w[1] > w[0])
+}
+
 impl RevolvedSpec {
     /// Intervals around the axis of the rotor and of the stator after
     /// refinement.
@@ -100,10 +105,10 @@ impl RevolvedSpec {
         if self.r.len() < 2 || self.z.len() < 2 {
             return e("need at least two breakpoints in r and in z".into());
         }
-        if self.r.windows(2).any(|w| !(w[1] > w[0])) || !(self.r[0] >= 0.0) {
+        if !increasing(&self.r) || self.r[0].is_nan() || self.r[0] < 0.0 {
             return e(format!("r must increase from r[0] >= 0, got {:?}", self.r));
         }
-        if self.z.windows(2).any(|w| !(w[1] > w[0])) {
+        if !increasing(&self.z) {
             return e(format!("z must increase, got {:?}", self.z));
         }
         if self.n_r.len() != self.r.len() - 1 || self.n_z.len() != self.z.len() - 1 {
@@ -137,7 +142,7 @@ impl RevolvedSpec {
         if self.rotor.len() + self.solid.len() >= nb {
             return e("the stator needs at least one block".into());
         }
-        if !(self.cone.abs() < 80.0) {
+        if self.cone.is_nan() || self.cone.abs() >= 80.0 {
             return e(format!(
                 "cone must lie within ±80 degrees, got {}",
                 self.cone
@@ -146,7 +151,7 @@ impl RevolvedSpec {
         // the tilted breakpoints must stay in order at both ends of r
         for &r in [self.r[0], self.r[self.r.len() - 1]].iter() {
             let z: Vec<f64> = (0..self.z.len()).map(|b| self.z_line(b, r)).collect();
-            if z.windows(2).any(|w| !(w[1] > w[0])) {
+            if !increasing(&z) {
                 return e(format!(
                     "with cone = {} degrees the z breakpoints cross at r = {r} m",
                     self.cone

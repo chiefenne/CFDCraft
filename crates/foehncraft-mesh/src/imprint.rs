@@ -1215,8 +1215,8 @@ fn assemble_parts(parts: &[&Interface], mesh: &Mesh, angles: &[f64]) -> Result<A
         .map(|(ids, hits, reverse)| {
             let k = ids.len();
             let mut out = Vec::with_capacity(k + 2);
-            for j in 0..k {
-                out.push(ids[j]);
+            for (j, &id) in ids.iter().enumerate() {
+                out.push(id);
                 let jn = (j + 1) % k;
                 for &(key, ta, _) in hits.iter().filter(|h| h.2 == j) {
                     let Some(&(_, tb, _)) = hits.iter().find(|h| h.2 == jn && h.0 == key) else {
