@@ -177,6 +177,25 @@ absolute one, its convecting flux, and that of the turbulence variables and
 passive scalars, is relative to the frame. A wall that turns with the frame
 takes its absolute velocity in `velocity` (an expression, D53).
 
+The transient form, the sliding mesh with conformal stepping (D56, D182,
+[recipe 95](../recipes/flow.md#sliding-mesh)): one `[[sliding]]` table, the
+rotor of a ring of identical sectors that advances by whole sectors in every
+time step.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `zone` | all cells | the cell zone of the mesh that turns |
+| `omega` or `rpm` | none | the angular velocity (exactly one, nonzero) |
+| `axis`, `origin` | [0, 0, 1], [0, 0, 0] | direction of the axis and a point on it (m) |
+| `shift` | 1 | sectors the rotor turns per time step; the time step must be `shift` · 2π / (N · \|Ω\|) for the N sectors found in the mesh (`SLD003` gives the value) |
+
+The case is transient (`SLD001` for a steady one), the time step is fixed
+(`SLD003` for the adaptive step, the error tolerance or several verification
+levels), and the mesh must be a ring of identical sectors about the axis
+(`SLD002`/`SLD004`: the zone, the sector count, the rotor boundaries, no
+turbulence model). The solved velocity is the absolute one; the convecting
+flux is relative to the moving mesh, and there is no Coriolis source.
+
 # Derived fields (D72)
 
 `[output] derived` adds fields computed from the solution to every

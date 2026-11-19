@@ -1383,6 +1383,33 @@ cells 0.63 % without a frame, 0.69 % in the frame of the cylinder, 0.57 %
 in the opposite frame and 0.58 % at 2.5 times the speed. Details on the
 [verification page](../verification/stage6.md#moving-reference-frame-part-6g-97).
 
+**Results of 6g part 6 (PR #95): the sliding mesh with conformal stepping
+(D56, variant A of D182).** `[[sliding]]` turns the rotor of a ring of N
+identical sectors by k sectors in every time step, Δt = k · 2π/(N |Ω|)
+(`SLD003` names the value; the adaptive step and the error tolerance are
+refused). The solved velocity is the absolute one, momentum and scalars are
+convected with the flux relative to the moving mesh, ṁ − ρ **S**·**V** as in
+the frame of D55 but without the Coriolis source (the basis does not turn);
+Σ_f ρ **S**·**V** = 0 for every closed cell and the interface at the middle of
+the gap is a surface of revolution, so the grid flux of the interface
+vanishes and the geometric conservation law holds exactly. Implementation:
+the solver stays a fixed-mesh solver, and all fields, gradients, the Rhie–Chow
+velocity and the extrapolations are Eulerian on the lattice; only the time
+term sees the motion: the old levels n and n − 1 of a rotor cell are those of
+the cell that stood at its place one and two steps earlier (the permutation π
+of the cells that an advance by k sectors induces, and π∘π), and the vectors
+of these levels are not rotated (the pressure gradient turns them; BDF2
+leaves an O(Δθ⁴) error per step). Shifting gradients, fluxes or the
+extrapolated pressure gradient with the data was tried first and is unstable.
+Laminar Taylor–Couette flow from rest (same geometry as above, t = 10 s):
+L2 error of the velocity 6.76, 1.35, 0.28 and 0.06 % on 128, 512, 2 048 and
+8 192 cells with the time step halved each time, observed order 2.3, 2.3 and
+2.2; two sectors per step 2.7 % on 512 cells; solid-body rotation of the
+whole mesh kept at 1.7 % (0.6 s) and 1.6 % (3 s); a passive scalar through the
+turning rotor 0.7 %. Laminar flow and passive scalars only (turbulence models
+are refused, `SLD004`), one rotor, a fixed time step, CPU. Details on the
+[verification page](../verification/stage6.md#sliding-mesh-with-conformal-stepping-part-6g-97).
+
 ### 9.8 The SST options of 3.6 (D170)
 
 Bands fixed before the runs, as everywhere in this section; the ◇ bands
@@ -1412,7 +1439,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6d2 | ζ-f₀ of Popovac (2023) with its compound treatment (maintainer decision 2026-11-17: robustness in y⁺ for industrial use) (done, PR #74: no code of the author available, own default of 3.3.1; channel +2.7 to −4.2 % and plate within 2.5 % of White over y⁺ 0.3 to 30, all converged; backward-facing step x_r/H 6.38 (+2 %; ζ-f +25 %, SST −7 %); the built-in mesher removes boxes, `mesh.generate.remove`) | `turb/zeta_f.rs`, `turb/wall.rs` | 9.3 and 9.4 over first-cell y⁺ 0.5 to 100, same or similar results as ζ-f |
 | 6e | EB k-ε (D133) (done, PR #88: channel C_f at 97.8 / 99.0 / 99.1 % of the DNS at Re_τ 180 / 395 / 590, the paper 100 / 98 / 100 %; plate +0.5 % from White; step x_r/H 7.59, +21 %, finding: the variable C*_ε2, 6.24 with it constant; the coupled algorithm does not converge the step; wall normal not yet exported) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars (done, PR #85; the default wall law is `kader` also with `low-re`, equal to `none` there; the channel Nu against DNS is open) | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
-| 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette, then the sliding mesh in both variants (D182); statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports (in several PRs; part 1 done, PR #89: the backward-facing step in the TMR layout, six models on three meshes, the reattachment point as a wall crossing `[[output.wall_crossings]]` with its GCI; part 2 done, PR #90: the impinging jet, the inlet table with turbulence columns, wall probes with scalars, the thermal law in u*, the comparison with the experiment once its data are in, made in part 4; part 3 done, PR #91: the full stress on symmetry and wedge planes, the axis cells of the jet; part 4 done, PR #92: the jet against the ERCOFTAC data of case 025, the comparison with the bands of 9.6, `ercoftac_to_csv.py`; part 5 done, PR #94: the moving reference frame (D55), `[[mrf]]`, `[mesh.annulus]`, laminar Taylor–Couette flow against the analytic solution in any frame, `crates/foehncraft-flow/src/frame.rs`, `tests/mrf.rs`, `taylor_couette_mrf.toml`; part 6: the sliding mesh with conformal stepping (D56, variant A of D182); part 7: the sliding mesh by imprinting (variant B of D182)) | cases, gallery, `tools/notebooks/stage6_colab.ipynb`; `examples/cases/flow/backstep_validation.toml`, `examples/studies/backstep_validation.py`; `examples/cases/flow/{jet_pipe_profile,impinging_jet}.toml`, `examples/studies/impinging_jet.py`, `python/foehncraft/profiles.py`; `foehncraft-kernels/src/flow.rs`, `tests/symmetry_stress.rs` | 9.5, 9.6, 9.7, 6.6 |
+| 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette, then the sliding mesh in both variants (D182); statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports (in several PRs; part 1 done, PR #89: the backward-facing step in the TMR layout, six models on three meshes, the reattachment point as a wall crossing `[[output.wall_crossings]]` with its GCI; part 2 done, PR #90: the impinging jet, the inlet table with turbulence columns, wall probes with scalars, the thermal law in u*, the comparison with the experiment once its data are in, made in part 4; part 3 done, PR #91: the full stress on symmetry and wedge planes, the axis cells of the jet; part 4 done, PR #92: the jet against the ERCOFTAC data of case 025, the comparison with the bands of 9.6, `ercoftac_to_csv.py`; part 5 done, PR #94: the moving reference frame (D55), `[[mrf]]`, `[mesh.annulus]`, laminar Taylor–Couette flow against the analytic solution in any frame, `crates/foehncraft-flow/src/frame.rs`, `tests/mrf.rs`, `taylor_couette_mrf.toml`; part 6 done, PR #95: the sliding mesh with conformal stepping (D56, variant A of D182), `[[sliding]]`, `crates/foehncraft-flow/src/sliding.rs`, `tests/sliding.rs`, `taylor_couette_sliding.toml`; part 7: the sliding mesh by imprinting (variant B of D182)) | cases, gallery, `tools/notebooks/stage6_colab.ipynb`; `examples/cases/flow/backstep_validation.toml`, `examples/studies/backstep_validation.py`; `examples/cases/flow/{jet_pipe_profile,impinging_jet}.toml`, `examples/studies/impinging_jet.py`, `python/foehncraft/profiles.py`; `foehncraft-kernels/src/flow.rs`, `tests/symmetry_stress.rs` | 9.5, 9.6, 9.7, 6.6 |
 | 6h | SST options of D170: curvature and rotation correction (Smirnov & Menter 2009), QCR2000 and QCR2013 with the explicit-stress path in the momentum assembly that D171 reuses | `turb/sst.rs`, `turb/invariants.rs`, `foehncraft-flow/src/turbulence/stress.rs` | 9.8 |
 | release | v0.6: version bump, changelog summary, README, verification manual, Release workflow (dry run first) | | all of section 9 green or findings recorded |
 

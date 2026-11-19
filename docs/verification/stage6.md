@@ -1397,3 +1397,65 @@ Findings:
    by construction but no case checks it), the channel in spanwise rotation of
    9.7 (a periodic case, with 6p), and the combination with the energy
    equation (stage 7).
+
+## Sliding mesh with conformal stepping (part 6g, 9.7)
+
+`[[sliding]]` (D56, variant A of D182): the rotor of a ring mesh turns by
+whole sectors in every time step, Δt = k · 2π/(N |Ω|), so the interface
+cells meet new neighbours without interpolation and the mesh stays
+conformal ([specification 9.7](../requirements/stage6-turbulence.md)). The
+case is the Taylor–Couette flow of the section above (r₁ = 0.05 m,
+r₂ = 0.10 m, ω₁ = 10 rad/s, ρ = 1 kg/m³, μ = 5·10⁻⁴ Pa s, Re = 50), 2D on
+`[mesh.annulus]` with the inner half of the radial layers as the zone
+`rotor`, now **started from rest** and followed for 510 steps on the case
+file's mesh (t = 10 s, two viscous times (r₂ − r₁)²/ν), `taylor_couette_sliding.toml`,
+against the exact steady solution u_θ = A r + B/r. Errors are relative to the
+speed of the inner wall. BDF2, one sector per step, each mesh with the
+sector angle and the time step halved:
+
+| Cells (sectors) | Δt (s) | L2 error | Observed order |
+|---|---|---|---|
+| 128 (16) | 0.0393 | 6.76·10⁻² | |
+| 512 (32) | 0.0196 | 1.35·10⁻² | 2.32 |
+| 2 048 (64) | 0.00982 | 2.77·10⁻³ | 2.28 |
+| 8 192 (128) | 0.00491 | 6.15·10⁻⁴ | 2.17 |
+
+The test (`tests/sliding.rs`, three meshes) requires orders between 1.9 and
+2.7 and the errors below 2·10⁻² and 4·10⁻³ on the 512 and 2 048 cells. The
+512-cell case, 510 steps, runs in 0.7 s.
+
+**Two sectors per step** (Δt twice as long, same mesh): L2 error 2.7·10⁻²,
+four times the error of the 1.35·10⁻² (second order in the time step); the
+test requires below 8·10⁻².
+
+**Solid-body rotation** (both cylinders and the whole mesh at 10 rad/s, the
+fluid started from the exact solution, 512 cells): the L2 error is 1.73·10⁻²
+at 0.6 s and 1.57·10⁻² at 3 s, it does not grow (the test requires below 3·10⁻² and the
+long run below 1.5 times the short one). A sliding mesh in which the old
+time levels are the only thing that moves with the rotor keeps this state;
+the first design moved the fields, gradients and fluxes of the rotor cells
+with the data and diverged within 130 steps.
+
+**Passive scalar** (θ = 1 inside, 0 outside, conduction, diffusivity 10⁻³
+m²/s, rotor turning through it): L2 error 7.3·10⁻³ against the exact
+ln(r₂/r)/ln(r₂/r₁) at the end (the test requires below 1.5·10⁻²): the old
+level of a moved cell is what that cell held.
+
+Findings:
+
+1. **Only the time term sees the motion.** All fields, gradients, the
+   Rhie–Chow velocity and the extrapolations stay Eulerian on the fixed
+   lattice; the old time levels of a rotor cell are gathered from the cell that
+   stood at its place one and two sectors earlier (a permutation and its
+   square), and the convecting flux is the relative one. Shifting
+   gradients or the pressure gradient with the data, or recomputing gradients
+   from shifted unrotated fields, is wrong (28 to 61 % error) or unstable in
+   the solid-body test. The vectors of the gathered levels are not rotated:
+   the pressure gradient turns them, and BDF2 leaves an O(Δθ⁴) error per step
+   (BDF1 loses cos Δθ per step and a first-order error).
+2. A fluid that stands in space and is convected through the rotor at a CFL
+   number of one with the implicit upwind scheme is smeared (scalars); this
+   is the usual behaviour of a sliding or ALE scheme and is accepted.
+3. Not tested yet: restart of a sliding run, a rotor with blades, a
+   sliding mesh with the energy equation (stage 7), turbulence models
+   (refused, `SLD004`), and the time-dependent speed Ω(t) of D182.
