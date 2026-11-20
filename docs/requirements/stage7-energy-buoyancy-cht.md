@@ -1203,7 +1203,9 @@ Read on main at b15a488:
    defaults, both decided by the validation cases.
 
 
-6. **Thin walls and the film (D189, D190), added 2026-11-20**, open points:
+6. **Thin walls and the film (D189, D190), added 2026-11-20**, **decided
+   2026-11-20: TW1–TW5 as recommended, TW6 later when the wall film exists**
+   (O24 closed):
    - TW1 *Baffles from meshes:* split named internal face zones into boundary
      pairs in every mesh reader and the mesher (`mesh.baffles`). Recommended.
    - TW2 *Thin walls in the matrix or beside it:* monolithic (extra rows of
