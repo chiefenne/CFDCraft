@@ -260,13 +260,13 @@ values of Aupoix (2015). The first-cell height y_P is floored at
 | The plate with `automatic`, 3 072 cells, first-cell y⁺ 1.7 / 4.6 / 9.3 / 27 / 92 | C_f(0.97) against the TMR value | ±2 % | +2.3 %, +15.6 %, +14.8 %, −0.2 %, −0.7 %: **finding** in the buffer layer, TURB001 warns there |
 | Channel at Re_τ = 395 (`channel_sst.toml`), periodic module, mass flow of the DNS bulk velocity, `low-re`, 96 cells across, first-cell y⁺ 0.28 | U_b⁺ against the DNS of Moser, Kim & Mansour (17.55) | ±3 % | 17.43 (−0.70 %; Dean's correlation 17.24: +1.1 %), Re_τ = 397.8 |
 | | U_c⁺ against the DNS (about 20.1) | ±4 % | 19.64 (about −2.4 %) |
-| | observed order and GCI_fine of U_b⁺ on the three meshes of 96, 192 and 384 cells across (U_b⁺ 17.427, 17.381, 17.346) | p 1.8 – 2.2, GCI ≤ 0.5 % | p = 0.40, extrapolated 17.237, GCI_fine 0.78 %: **finding** (the fourth mesh, 768 cells across, did not reach its tolerance in 30 000 iterations and is left out) |
+| | observed order and GCI_fine of U_b⁺ on 192, 384 and 768 cells across, converged to 10⁻⁹ (U_b⁺ 17.367, 17.333, 17.317; 96 cells: 17.426) | p 1.8 – 2.2, GCI ≤ 0.5 % | p = 1.01, extrapolated 17.300, GCI_fine 0.12 %: **finding** (first order; PR #128 replaced the values of the 10⁻⁶ runs, 17.427, 17.381, 17.346, p 0.40, whose finest mesh had stopped short, see [the level-3 channel drop](#the-level-3-channel-drop-pr-128)) |
 | Homogeneous decay in a periodic box, k₀ = 1, ω₀ = 10, t = 0.5, 10 / 20 / 40 steps | BDF2 time order of k and ω against the exact solution (F₁ = 0) | 1.8 – 2.2 | k 1.92, 1.96 and ω 2.07, 2.03 (two pairs of meshes) |
 | Steady plate, restart after half the iterations | fields at the end | bit-identical | bit-identical |
 | Plate on 1 and 4 threads | fields after 8 iterations | bit-identical | bit-identical |
 | Poisson wall distance on a plane wall | d against the exact distance | round-off | passed |
 
-**Findings.** (0) U_b⁺ of the channel approaches 17.24 (the extrapolated value, Dean's correlation) at the low order 0.40 with the first-cell y⁺ falling from 0.28 to 0.07, like the plate (0.43): the wall value of ω, which grows as 1/d₁² with the mesh, converges slowly in both; a sweep of the wall value is an item for 6c. (1) The C_f of the plate converges monotonically but at a
+**Findings.** (0) U_b⁺ of the channel approaches 17.30 (the extrapolated value; Dean's correlation 17.24) at first order (p = 1.0 on the converged runs of PR #128; 0.40 on the first, partly unconverged ones) with the first-cell y⁺ falling from 0.28 to 0.03; the plate converges at 0.43: the wall value of ω, which grows as 1/d₁² with the mesh, converges slowly in both; a sweep of the wall value is an item for 6c. (1) The C_f of the plate converges monotonically but at a
 low observed order on these meshes (0.43); the finest value is within
 0.4 % of the TMR, which reports its values after five grids, and the
 differences between the three finest meshes are below 0.7 %. A fifth mesh
@@ -2001,20 +2001,23 @@ Every factor tends to the same values as the mesh is refined (plate about
 −0.1 to −1.5 %, channel 17.23 to 17.41 on the finest mesh). F = 10 has the
 smallest mesh dependence on the plate, within 0.8 % already on the
 coarsest mesh, and the middle of the spread in the channel. **Finding:**
-the default stays F = 10. The −1.2 % of U_b⁺ in the channel does not come
+the default stays F = 10 (the channel runs of this sweep stopped at the
+case tolerance 10⁻⁶; on these three meshes that is within 0.1 % of the
+converged values, PR #128). The −1.2 % of U_b⁺ in the channel does not come
 from the wall value of ω.
 
 
 ## GCI of the turbulence models on the plate and the channel (9.3, 9.4, PR #111)
 
 `examples/studies/plate_channel_gci.py` runs the gallery case of every
-model on three meshes (`verification.levels` 0, 1, 2; the built-in mesher
-refines both directions by 2 per level, the channel in y only) with one
-thread each and evaluates the observed order p, the extrapolated value and
+model on three meshes (the plate with `verification.levels` 0, 1, 2, the
+built-in mesher halving every interval in both directions per level; the
+channel, whose solution does not depend on x, refined in y only to the
+same y nodes, since PR #128) with one thread each and evaluates the observed order p, the extrapolated value and
 GCI_fine after Celik et al. (2008): C_f(0.97) and C_D of the TMR plate,
 U_b⁺ of the channel at Re_τ = 395 (from the driving force at the DNS mass
-flow). Iteration limits 6 000, 12 000 and 24 000; a run that stops there is
-marked. The finest k-ε plate (49 152 cells) diverged in outer iteration 11
+flow). Iteration limits 6 000, 12 000 and 24 000 (the channel: 20 000 to
+160 000, converged to 10⁻⁹); a run that stops there is marked. The finest k-ε plate (49 152 cells) diverged in outer iteration 11
 with the default relaxations (RUN014) and ran with 0.5 for momentum and
 turbulence (the study sets this for that level).
 
@@ -2033,16 +2036,24 @@ References: C_f(0.97) White 2.87455e-03, TMR (SST) 2.69070e-03; C_D TMR (SST) 2.
 
 ## Channel, Re_τ = 395
 
-Reference: U_b⁺ = 17.55 (DNS).
+Reference: U_b⁺ = 17.55 (DNS). Converged to the scaled residual 10⁻⁹
+(PR #128; the table of levels 0 to 2 first given here, from runs stopped
+at 10⁻⁶, was off by up to 0.9 % on level 2; the first level-3 runs by
+up to 5.6 %), levels 0 to 3; p, GCI and
+the extrapolated value from levels 1 to 3:
 
 | model | cells | U_b⁺ | p | GCI_fine | extrapolated | finest vs DNS | iterations, converged |
 |---|---|---|---:|---:|---:|---:|---|
-| k-ω SST, low-re | 192 / 768 / 3072 | 17.427 / 17.381 / 17.346 | 0.40 (monotonic) | 0.79 % | 17.236 | −1.16 % | 2350, 5037, 14870 |
-| k-ε, scalable | 24 / 96 / 384 | 18.309 / 18.332 / 18.433 | 2.08 (divergent) | 0.21 % | 18.464 | +5.03 % | 1674, 3692, 7310 |
-| realizable k-ε, scalable | 24 / 96 / 384 | 18.689 / 19.095 / 19.491 | 0.04 (monotonic) | 93.59 % | 34.083 | +11.06 % | 2154, 5058, 10679 |
-| k-ε-ζ-f, compound | 192 / 768 / 3072 | 17.889 / 17.934 / 17.922 | – (oscillatory) | 0.13 % | – | +2.12 % | 3678, 10220, 24000* |
-| k-ε-ζ-f₀, compound-2023 | 96 / 384 / 1536 | 17.790 / 17.840 / 18.106 | 2.39 (divergent) | 0.43 % | 18.169 | +3.17 % | 2062, 4985, 10950 |
-| elliptic-blending k-ε, compound | 192 / 768 / 3072 | 17.640 / 17.675 / 17.866 | 2.45 (divergent) | 0.30 % | 17.909 | +1.80 % | 2896, 6023, 13153 |
+| k-ω SST, low-re | 192 / 384 / 768 / 1536 | 17.426 / 17.367 / 17.333 / 17.317 | 1.01 (monotonic) | 0.12 % | 17.300 | −1.33 % | 4038, 8061, 20819, 75801 |
+| k-ε, scalable | 24 / 48 / 96 / 192 | 18.307 / 18.330 / 18.446 / 18.542 | 0.28 (monotonic) | 2.98 % | 18.985 | +5.65 % | 3173, 3323, 3839, 5963 |
+| realizable k-ε, scalable | 24 / 48 / 96 / 192 | 18.691 / 19.100 / 19.477 / 19.614 | 1.46 (monotonic) | 0.50 % | 19.692 | +11.76 % | 4082, 5131, 5600, 8078 |
+| k-ε-ζ-f, compound | 192 / 384 / 768 / 1536 | 17.886 / 17.929 / 17.940 / 18.029 | 2.99 (divergent) | 0.09 % | 18.042 | +2.73 % | 7337, 14215, 38636, 160000* |
+| k-ε-ζ-f₀, compound-2023 | 96 / 192 / 384 / 768 | 17.789 / 17.839 / 18.108 / 18.388 | 0.05 (divergent) | 50.94 % | 25.881 | +4.78 % | 3936, 5633, 11335, 34831 |
+| elliptic-blending k-ε, compound | 192 / 384 / 768 / 1536 | 17.639 / 17.695 / 17.710 / 17.713 | 2.05 (monotonic) | < 0.01 % | 17.714 | +0.93 % | 5506, 9215, 24771, 90873 |
+
+On levels 0 to 2: SST p 0.82, GCI 0.32 %; k-ε-ζ-f p 1.95, GCI 0.03 %
+(its level 3, relaxations 0.5, stops unconverged at 160 000 iterations);
+EB p 1.96, GCI 0.04 %; ζ-f₀ divergent (GCI 0.42 %).
 
 \* the run stopped at its iteration limit before the tolerance (`converged` false).
 
@@ -2079,35 +2090,73 @@ level 3 were stopped as too slow on that machine and are missing).
 C_D of SST: 2.8259 / 2.8477 / 2.8606 ·10⁻³, p 0.74, GCI 0.84 %; of k-ε:
 2.6334 / 2.6768 / 2.7459 ·10⁻³, p 0.67, GCI 5.31 %.
 
-| channel | cells | U_b⁺ | p | GCI_fine | finest vs DNS |
-|---|---|---|---:|---:|---:|
-| k-ω SST, low-re | 768 / 3072 / 12288 | 17.381 / 17.346 / 17.009 | 3.27 (divergent) | 0.29 % | −3.08 % |
-| k-ε, scalable | 96 / 384 / 1536 | 18.332 / 18.433 / 18.519 | 0.22 (monotonic) | 3.45 % | +5.52 % |
-| realizable k-ε, scalable | 96 / 384 / 1536 | 19.095 / 19.491 / 19.565 | 2.41 (monotonic) | 0.11 % | +11.48 % |
-| k-ε-ζ-f₀, compound-2023 | 384 / 1536 / 6144 | 17.840 / 18.106 / 18.378 | 0.03 (divergent) | 84.61 % | +4.72 % |
-| elliptic-blending k-ε, compound | 768 / 3072 / 12288 | 17.675 / 17.866 / 16.720 | – (oscillatory) | 3.43 % | −4.73 % |
+The channel values of that run (SST 17.381 / 17.346 / 17.009, EB
+17.675 / 17.866 / 16.720, ζ-f₀ 17.840 / 18.106 / 18.378 on levels 1 to 3,
+reproduced exactly in the cloud) are replaced by the converged table
+above; the cause of their level-3 drop is the next paragraph.
 
-Rerun in the cloud (2026-11-20, one thread each, same executable
-source): SST, ζ-f₀ and EB reproduce the Mac values and iteration counts
-exactly (17.009 in 30 077 iterations with residuals at 10⁻⁶, 18.378 in
-31 771, 16.720 in 25 545), so the level-3 channel values are not an
-artefact of the machine or of an unfinished run. The ζ-f channel on
-level 3 (12 288 cells, relaxations 0.5) reaches the limit of 40 000
-iterations unconverged with U_b⁺ = 21.37 (+21.8 %), which is not a
-usable result.
-
-What these show: the SST plate on the three finest meshes meets the 2 %
-GCI band (1.87 %) and stays within 0.4 % of the TMR value, while it is
+What the plate shows: the SST plate on the three finest meshes meets the
+2 % GCI band (1.87 %) and stays within 0.4 % of the TMR value, while it is
 6 % below White's correlation (outside ±5 %: the correlation, not the
 model, is the outlier, as the TMR value shows). The k-ε plate is just
-outside the band (2.39 %). On the channel the level-3 values of SST
-(−1.9 % against level 2) and EB (−6.4 %) drop, which breaks the
-monotonic or convergent trend of the first three levels; the first cell
-there is at y⁺ near 0.005, and the driving force of these runs was
-still drifting at the iteration limit. ζ-f₀ drifts upward by about 1.5 %
-per level. The channel GCI of level 1 to 3 is therefore not meaningful
-for SST, ζ-f₀ and EB; levels 0 to 2 remain the reference of the table
-above. The cause of the level-3 drop is open (see the rerun above: it is reproducible and converged).
+outside the band (2.39 %). The SST plate converged to 10⁻¹¹ on levels 1
+and 2 gives C_f 2.66823 and 2.68680 ·10⁻³, the values of the study at
+its case tolerance 10⁻⁷ to five digits: the plate results stand.
+
+### The level-3 channel drop (PR #128)
+
+On level 3 of the first run, U_b⁺ of SST fell from 17.346 to 17.009 and
+of EB from 17.866 to 16.720. These runs had not converged: the scaled
+residuals (the largest of momentum, continuity, k, ω or ε and ζ or φ)
+pass 10⁻⁶ while U_b⁺ is still moving. On 768 cells across, SST passes
+17.009 at iteration 28 000 with the momentum residual at 2·10⁻⁷ and k
+near 10⁻⁶, and then rises to 17.316 by iteration 95 000; EB passes its
+first 10⁻⁶ at 17.95 and settles at 17.713. The first-cell y⁺ of level 3
+is 0.034 (the cell centre; not 0.005 as first noted). The
+mesh, the wall treatment and the y⁺ regime are not the cause: converged,
+both models refine monotonically, with SST at first order as on the
+plate and EB at p = 2.
+
+U_b⁺ when the largest scaled residual first falls below each tolerance,
+against the value converged to 10⁻¹² on the same mesh (y-refined meshes,
+two cells in x):
+
+| run (converged U_b⁺) | 10⁻⁶ | 10⁻⁷ | 10⁻⁸ | 10⁻⁹ |
+|---|---:|---:|---:|---:|
+| SST, 384 cells across (17.333) | +0.10 % | −0.01 % | −0.02 % | 0.00 % |
+| SST, 768 (17.316) | −2.94 % | +0.18 % | −0.01 % | 0.00 % |
+| EB, 384 (17.710) | +1.52 % | +0.03 % | −0.01 % | 0.00 % |
+| EB, 768 (17.713) | +1.36 % | −0.24 % | +0.04 % | 0.00 % |
+| ζ-f₀, 384 (18.388) | +0.94 % | +0.04 % | −0.01 % | 0.00 % |
+
+(the U_b⁺ there read at the nearest multiple of 1 000 iterations). The
+ω residual of SST stays between 10⁻¹¹ and 10⁻¹³ throughout: its scale
+‖a_P ω‖ is dominated by the fixed wall-cell values of ω (10⁷ on level
+3), so it never decides the stop. The study now converges the channel to
+10⁻⁹ (iteration limits 20 000 to 160 000; SST needs 76 000 iterations on
+768 cells across, EB 91 000) and refines it in y only: `nested_ratio`
+gives the grading ratio whose nodes on 2^L times the base intervals are
+those of level L, and the two cells in x stay. The x refinement adds only
+cost: the 12 288-cell SST run of level 3 (16 cells in x), continued from
+its stop at 17.009, reaches 17.316 at iteration 94 000 (largest residual
+5·10⁻⁹), the value of the run with two cells in x.
+
+**ζ-f₀ is not grid-convergent below y⁺ 1** (finding). Converged, U_b⁺
+rises with every level (17.79, 17.84, 18.11, 18.39), with the first-cell
+y⁺ from 1 to 0.11. The k of the wall cell does not vanish like y²: k⁺
+is 1.15, 0.39 and 0.09 in the first cell on levels 0, 1 and 3 (the DNS,
+k⁺ ≈ 0.08 y⁺², has about 0.08, 0.02 and 0.001 there), so the wall value ε = 2νk_P/y_P²
+grows like 1/y_P (ε⁺ 14 on level 3, the DNS 0.17). The sink of k of the
+6d2 default, k/T_K with the Kolmogorov bound T_K ≥ C_T (ν/ε)^½, is far
+below ε in the viscous sublayer, and the compound-2023 treatment gives k
+zero flux through the wall, so the sublayer keeps its k. Two checks
+(experimental builds, not merged): the sink ε in the wall cell only
+gives 15.70, 15.90, 16.27, 16.68 (still rising); the paper's sink ε
+everywhere gives 15.686, 15.621, 15.621, 15.623, grid-converged but
+11 % below the DNS (the 6d2 finding). A formulation that is both
+grid-converged and accurate is open (maintainer decision); until then
+ζ-f₀ results hold for first-cell y⁺ near 1, where the model was
+calibrated.
 
 **Findings.**
 
@@ -2126,18 +2175,19 @@ above. The cause of the level-3 drop is open (see the rerun above: it is reprodu
    three meshes, the insensitivity the treatment promises. The realizable
    model stays 10 % below White on the finest mesh (the 3 to 7 % of 6c on
    one mesh, growing with refinement).
-3. **Channel.** The low-Re models meet the 0.5 % GCI band (SST 0.79 %
-   only just misses it, p = 0.40 as in 6b; ζ-f 0.13 %, ζ-f₀ 0.43 %, EB
-   0.30 %) and the ±3 % band against the DNS on the finest mesh (SST
-   −1.2 %, ζ-f +2.1 %, EB +1.8 %) except ζ-f₀ (+3.2 %). The k-ε family
-   with scalable wall functions on meshes refined towards the wall (24 to
-   384 cells) is outside its ±5 % band for the realizable model (+11 %,
-   p = 0.04: the result moves with every refinement) and just outside
-   for k-ε (+5.03 %).
-4. **What the maintainer's machine can add**: levels 1, 2 and 3 with
-   larger iteration limits decide whether the orders settle (command in
-   the study's docstring; several hours on four cores).
-
+3. **Channel** (converged, PR #128). SST (0.12 %, p = 1.0) and EB
+   (below 0.01 %, p = 2.1) meet the 0.5 % GCI band on levels 1 to 3, and
+   ζ-f on levels 0 to 2 (0.03 %; its level 3 does not converge with the
+   relaxations 0.5); all three are within ±3 % of the DNS on the finest
+   mesh (SST −1.3 %, ζ-f +2.2 % on level 2, EB +0.9 %). ζ-f₀ is not
+   grid-convergent below y⁺ 1 (+4.8 % on level 3, see the finding above).
+   The k-ε family with scalable wall functions on meshes refined towards
+   the wall (24 to 192 cells) moves with every refinement: realizable
+   +11.8 %, k-ε +5.7 % on the finest mesh, outside their ±5 % band.
+4. **Still open**: a ζ-f₀ near-wall formulation that converges with the
+   mesh; the order of the plate (the plate's values are converged); a
+   stop test on the monitored quantities (U_b⁺, forces), which would have
+   caught the early stops of the channel without a tolerance per case.
 
 ## Statistics of transient runs (D71, PR #110)
 

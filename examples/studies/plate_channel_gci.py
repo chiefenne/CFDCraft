@@ -45,12 +45,13 @@ Models (key, case files, treatment):
 
 The finest k-ε plate (level 2 and above) and the k-ε-ζ-f plate and channel
 of level 3 run with the relaxations 0.5 for momentum and turbulence: the
-defaults diverge there (RUN014). Results
-of levels 0 to 2 (2026-11-19) are on the stage-6 verification page; the
-next step, levels 1 to 3 on a machine with time to spare:
+defaults diverge there (RUN014). Results are on the stage-6 verification
+page: the plate on levels 0 to 3 (2026-11-19/20), the channel converged on
+levels 0 to 3 (2026-11-20, PR #128, about 15 minutes on four cores):
 
     cargo build --release -p foehncraft-cli
-    python3 examples/studies/plate_channel_gci.py output/gci123 --levels 1,2,3 --jobs 4
+    python3 examples/studies/plate_channel_gci.py output/gci_channel --cases channel --levels 0,1,2,3 --jobs 4
+    python3 examples/studies/plate_channel_gci.py output/gci_channel --cases channel --levels 0,1,2 --report-only
 
 Bands (specification 9.3, 9.4): plate GCI_fine of C_f ≤ 2 %, C_f within
 ±5 % of White, SST C_f within 1 % of the TMR value; channel GCI_fine of
@@ -153,7 +154,7 @@ def runs(models, cases, levels):
                     # finest meshes (RUN014): k-ε in outer iteration 11 on
                     # the 128 × 96 plate (level 2), k-ε-ζ-f in iteration 51
                     # on the 512 × 384 plate and in iteration 1 182 on the
-                    # 6 144-cell channel (level 3)
+                    # level-3 channel
                     sets += ["solver.momentum.relaxation=0.5", "solver.turbulence.relaxation=0.5"]
                 out.append((f"{case}_{key}_{lv}", file, sets))
     return out
