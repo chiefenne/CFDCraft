@@ -26,8 +26,18 @@ Foehncraft alone.
   943–945 (1999).
 - DOI: 10.1063/1.869966 (**verified**)
 - Archive: the DNS data page of the authors' group,
-  https://turbulence.oden.utexas.edu/MKM_1999.html (**verified** as the page
-  of the data; the table layout to be checked when used)
+  https://turbulence.oden.utexas.edu/MKM_1999.html (**verified**: the page
+  names the friction Reynolds numbers 180, 395 and 590, cites Phys. Fluids
+  11(4), page 943, and offers the statistics as a gzipped tar file and a
+  browsable tree)
+- Re_τ = 395 profiles: https://turbulence.oden.utexas.edu/data/MKM/chan395/profiles/
+  (**verified**: the listing has chan395.flat, chan395.means,
+  chan395.reystress, chan395.skew, chan395.velp and chan395.vortvar)
+- Re_τ = 590 profiles: https://turbulence.oden.utexas.edu/data/MKM/chan590/profiles/
+  (**verified**: the listing has chan590.flat, chan590.means, chan590.quad,
+  chan590.reystress, chan590.skew, chan590.velp and chan590.vortvar). The 2015
+  channel set (section 1.3) has no 395 or 590 case, so these values come from
+  this archive
 - Quantities used: mean streamwise velocity U⁺(y⁺); Reynolds stress
   components R₁₁⁺, R₂₂⁺, R₃₃⁺, R₁₂⁺; turbulent kinetic energy k⁺.
 
