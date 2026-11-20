@@ -3,7 +3,9 @@
 Requirements step 19 (2026-11-17), asked for by the maintainer. This page is
 the full specification; `docs/requirements.md` carries the decisions D150 to
 D164 as short rows that point here, the step O18 (stage order and the
-scope of milestone 1) and the changed rows of the stage plan. No code is
+scope of milestone 1) and the changed rows of the stage plan. Thin walls
+(D189) and the heat exchange of the wall film (D190) were added on
+2026-11-20 (§9a, §9b, open step O24). No code is
 written before the maintainer's go (project rule).
 
 The rules of the project hold throughout: requirements before code; every
@@ -26,6 +28,8 @@ Contents
 7. [Buoyancy in the turbulence models (D155)](#7-buoyancy-in-the-turbulence-models-d155)
 8. [Thermal boundary conditions and their check (D156)](#8-thermal-boundary-conditions-and-their-check-d156)
 9. [Fluid–solid interfaces (D157)](#9-fluidsolid-interfaces-d157)
+   - 9a. [Thin walls: wall conduction without meshing the wall (D189)](#9a-thin-walls-wall-conduction-without-meshing-the-wall-d189)
+   - 9b. [Wall film heat exchange with walls, thin walls and solids (D190)](#9b-wall-film-heat-exchange-with-walls-thin-walls-and-solids-d190)
 10. [Coupling strategy, linear solvers and order of solution (D158)](#10-coupling-strategy-linear-solvers-and-order-of-solution-d158)
 11. [Multi-region partitioning and halos (D159)](#11-multi-region-partitioning-and-halos-d159)
 12. [Kernels: GPU, reproducibility, adjoint (D160)](#12-kernels-gpu-reproducibility-adjoint-d160)
@@ -410,7 +414,7 @@ Robin and radiation conditions, T (D53).
 | wall | `convection` | `heat_transfer_coefficient`, `ambient_temperature` | Robin: q = U (T_amb − T_w), U the series of h_ext, the optional thin wall and the near-wall conductance; implicit in T |
 | wall | `radiation` | `emissivity`, `ambient_temperature` | q = εσ(T_amb⁴ − T_w⁴), Newton-linearised about the current T_w: h_rad = 4εσT_w*³, implicit; converges to the quartic exactly |
 | wall | `convection-radiation` | all of the above | the sum of both |
-| wall (any) | optional `thin_wall` | `thickness` and `conductivity` or `material` | a 1D resistance t/k in series, no heat capacity (a resolved thin solid with storage is a region) |
+| wall (any) | optional `thin_wall` | `thickness` and `conductivity` or `material`; or `layers`, `conduction`, `edges` (§9a) | simplest form: a 1D resistance t/k in series, no heat capacity; the full thin wall of §9a (D189) adds layers, heat capacity, sources and in-plane shell conduction |
 | inlets | – | `temperature` (K, default the initial temperature) | Dirichlet h(T_in) on inflow |
 | outlets | – | `backflow_temperature` (K) | used on faces with reverse flow (D29 backflow) |
 | symmetry, slip wall, wedge | – | – | zero normal flux |
@@ -419,7 +423,8 @@ Robin and radiation conditions, T (D53).
 
 Every wall value (temperature, heat flux, h_ext, T_amb) is a per-face array
 (D124 W3) that another module can set each step (radiation L15, film D123,
-external system models D105).
+external system models D105); the same holds on thin-wall faces and
+region-interface faces, with the linearisation of the flux (§9b, D190).
 
 **Check of the thermal set-up (D30 extended, codes `THM`):** run before the
 solver, with the guidance of D30 (what to change):
@@ -529,6 +534,226 @@ Each interface is an exchange pair of the ledger (D119) between the two
 regions' energy balances: one face sum, two entries of opposite sign, which
 cancel to the bit. The entropy produced by a contact resistance,
 q²R″_c/(T_f,a T_f,b) per area, is a part of the second-law check (D90 (1)).
+
+
+## 9a. Thin walls: wall conduction without meshing the wall (D189)
+
+Added 2026-11-20 at the maintainer's request. A thin wall is a simplified
+conjugate heat transfer: a wall, a plate or a sheet whose thickness is not
+meshed. It lives on boundary faces (or on a face pair, below) and carries
+heat through its thickness (1D) and, if asked, along its surface (2D, shell
+conduction). It replaces a solid region where the wall is thin against its
+extent, the usual case for sheet-metal ducts, housings, heat-exchanger
+plates, glass panes, printed circuit boards and tank walls, and where meshing
+the wall would cost more cells than the fluid.
+
+The `thin_wall` of §8 (a series resistance t/k without heat capacity) is the
+simplest case of this model and stays valid with the same meaning.
+
+### 9a.1 Where a thin wall can sit
+
+| Placement | Sides | Typical use |
+|---|---|---|
+| **Wall boundary** | fluid cell on one side, the boundary's `thermal` condition (adiabatic, temperature, heat flux, convection, radiation, §8) on the outer side | a duct or a housing whose outside is ambient |
+| **Baffle** (a pair of coincident boundaries, D116 paired-boundary structure) | a fluid cell on each side | a plate inside the flow: a fin, a separating plate of a plate heat exchanger, a shield |
+| **Region interface** (§9) | fluid and solid, or two solids | a coating, a contact layer, a gasket with heat capacity |
+
+A baffle needs two faces at the same place. Mesh readers and the built-in
+mesher keep internal faces of a named face zone and split them into a pair
+of boundaries on request (`mesh.baffles = ["plate"]`); the two faces of a
+pair are matched by face global id (conformal) or imprinted (D58).
+
+### 9a.2 Through the thickness (1D)
+
+A thin wall is a stack of layers, each with a thickness t_l, a material
+(D94, solid or any material with k and c_p) and a number of nodes n_l
+(default 1). Every wall face carries n = Σ n_l temperature nodes along its
+normal; between nodes the conductance is k A/Δ with k(T) of the material
+(harmonic across layer boundaries, plus an optional contact resistance
+between layers); each node has the storage ρ c_p A Δ in transient runs and a
+volumetric source if the layer has a power (a heater foil, a circuit board).
+The two outer nodes connect to the fluid cell (through the near-wall
+conductance of §9.1, with the wall function h_w of D135 on a turbulent side)
+and to the outer condition or the second fluid cell.
+
+- One layer, one node, steady, constant k: the resistance t/k of §8,
+  bitwise the same face flux.
+- Several nodes: the transient conduction profile inside the wall (a hot
+  gas pulse on a cold wall); the node count per layer is a case key.
+
+### 9a.3 Along the surface (2D, shell conduction)
+
+With `conduction = "shell"` each layer node also conducts along the wall:
+a finite-area discretisation on the surface mesh of the thin-wall faces
+(D124 W1: edges as sorted node-id pairs, edge lengths, in-surface edge
+normals). Across an edge e between faces a and b of the same layer the flux
+is
+
+    Q_e = k_l t_l L_e (T_a − T_b) / d_ab
+
+with d_ab the distance between the face centres measured along the surface
+(the two half-distances to the edge midpoint, so the surface may bend at the
+edge) and the non-orthogonal correction deferred, as for the cells (D24).
+Orthotropic in-plane k (a circuit board, a composite) is a 2×2 tensor in the
+local face frame. The layer's in-plane and through-thickness conductances
+form one system per thin wall.
+
+Edges of a thin-wall face set get an edge condition: `adiabatic` (default),
+`temperature`, or `joined` where two thin-wall sets share an edge (a T-joint
+of plates: all faces meeting at the edge exchange through it). Where a thin
+wall meets a solid region along an edge (a fin root on a meshed base), the
+edge exchanges with the solid cells of the adjacent faces; this is open
+point TW3 (§18) and refused (TWL004) until decided.
+
+The shell model assumes t much smaller than the size of the faces and the
+radius of curvature of the surface; TWL002 warns where t exceeds the local
+face size or a tenth of the radius of curvature.
+
+### 9a.4 Discretisation, coupling, solver
+
+- **Unknowns:** the thin-wall nodes are extra unknowns of the energy domain,
+  appended to the energy matrix after the cell rows, ordered by (face global
+  id, node index) (D93). Conjugate heat transfer stays monolithic (D158):
+  fluid cells, solid cells and thin-wall nodes are one matrix and one
+  AMG-preconditioned solve. Through-thickness rows are tridiagonal per face
+  and strongly coupled; the AMG aggregation keeps each face's stack together.
+- **Conserved variable:** h of each node (D92, D150), temperature by the
+  same Newton inversion; radiation and convection on the outer face use the
+  linearisation of §8.
+- **Ledger (D161):** each thin-wall set is a region of the thermal ledger
+  with storage, sources, the exchange pair fluid–thin wall per side, the
+  outer boundary heat flow and the edge heat flows; the second law gets
+  k|∇T|²/T² of the wall and the contact-resistance term of §9.5.
+- **Kernels (D160):** one series-conductance kernel for the through-thickness
+  links, one edge kernel for shell conduction, both `no_std`, float64,
+  generic for dual numbers, CPU = GPU; edge sums in a fixed edge order.
+- **Partitioning (D159):** shell conduction across ranks needs the layer of
+  wall faces of D124 W2, so W1 and W2 move from L12 into stage 7.
+- **Output:** node temperatures per face and layer in the boundary blocks of
+  the VTKHDF output (D124 W6) and in the restart; log columns
+  `thinwall.<name>.heat_flow`, `thinwall.<name>.max_temperature`,
+  `thinwall.<name>.min_temperature`.
+
+### 9a.5 Keys (planned)
+
+```toml
+[boundary.duct]
+type = "wall"
+thermal = { type = "convection", heat_transfer_coefficient = 8.0,
+            ambient_temperature = 293.15 }
+
+[boundary.duct.thin_wall]
+conduction = "shell"                # "normal" (1D, default) | "shell" (1D + in-plane)
+edges = { default = "adiabatic", inlet_flange = { temperature = 330.0 } }
+
+[[boundary.duct.thin_wall.layers]]
+thickness = 1.5e-3                  # m
+material = "steel"
+nodes = 3                           # through-thickness nodes of this layer
+
+[[boundary.duct.thin_wall.layers]]
+thickness = 20e-3
+material = "mineral-wool"
+contact_resistance = 1e-4           # m²K/W to the layer before
+power_density = 0.0                 # W/m³, or power (W over the set)
+
+[mesh]
+baffles = ["plate"]                 # internal face zones split into boundary pairs
+```
+
+Codes: TWL001 error (a thin wall on a boundary type that cannot carry it, or
+energy off), TWL002 warning (shell assumption, t against face size and
+curvature), TWL003 error (layer without thickness or without k, ρ, c_p in a
+transient run), TWL004 error (a shell edge touching a solid region, until
+TW3 is decided), TWL005 warning (a baffle pair whose faces do not match
+within the D58 tolerance).
+
+
+## 9b. Wall film heat exchange with walls, thin walls and solids (D190)
+
+Added 2026-11-20 at the maintainer's request. The wall film (D123, with the
+sprays L12, after milestone 1) is not in the code yet; stage 7 fixes the
+interface so that the film can exchange heat with every kind of wall the
+energy equation offers, and so that evaporation cools the wall and
+condensation heats it.
+
+### 9b.1 Topology
+
+The film lives on wall faces and, new, on the fluid side of region-interface
+faces and of thin walls. On every film face there are three parties in
+series: the gas cell, the film (one or two enthalpy nodes, D123 F2), and the
+wall side, which is one of
+
+- a plain wall with a prescribed temperature or heat flux (the simple cases
+  of D123 (3));
+- the first node of a thin wall (§9a), on a wall boundary or on one side of
+  a baffle;
+- the solid cell of a region interface (§9, full CHT).
+
+The film's wall-side temperature T_fw is the wall-side face temperature of
+the wall's energy rows. W1 (surface mesh) therefore covers region-interface
+faces and baffle faces as well as boundary faces.
+
+### 9b.2 Heat paths and the sign of the effect
+
+Per film face, positive into the film:
+
+    q_wall = G_fw (T_w − T_fw)                        wall → film (conduction through the film, D123 F2)
+    q_gas  = h_g (T_g − T_fs)                         gas → film surface (wall treatment, W4)
+    ṁ″ (h_v(T_fs) − h_l(T_fs))                       latent heat leaving with the vapour (ṁ″ > 0 evaporation)
+    deposit of impinging parcels: ṁ″_imp h_l(T_d)   (spray cooling)
+
+Evaporation draws the latent heat from the film enthalpy; the film cools,
+T_w − T_fw grows and the wall loses heat: the wall is cooled. Condensation
+(ṁ″ < 0) releases the latent heat into the film, which heats the wall. The
+sign is not prescribed: it follows from the balance per face, so a hot film
+on a cold wall heats the wall even while it evaporates. On hot walls the
+boiling curve of D123 F2 replaces G_fw: nucleate boiling takes the latent
+heat at the wall (q_wall from the boiling correlation), and above the
+Leidenfrost temperature the vapour cushion lowers the wall heat flux to the
+film-boiling level, so the wall cooling drops sharply there. A face that
+dries out keeps its gas-side wall treatment and its ledger entries go to
+zero continuously (no jump in the wall heat flux by more than the dry-wall
+value).
+
+### 9b.3 Coupling
+
+- The film module solves its own equations (height, velocity, enthalpy
+  along the wall); the wall side solves the energy matrix. They exchange
+  per face in every outer iteration (steady) or every outer corrector
+  (transient) through the linearised flux q_wall = q* + (∂q/∂T_w)(T_w − T_w*):
+  the derivative enters the diagonal of the wall's energy row, the film
+  enthalpy equation gets the partner term. This is the coupling of D123 (3),
+  stated for thin walls and solids.
+- With boiling the derivative is large (a steep boiling curve); the
+  implicit wall-side term keeps the exchange stable for any ratio of film
+  to wall conductance (Giles 1997 stability argument for implicit flux
+  coupling). An explicit coupling is not offered.
+- The latent heat is not a separate source term: the ledger books enthalpy
+  flows of the coefficient sets of D92, so mass and energy close to
+  round-off across evaporation and condensation. A derived column
+  `film.<name>.latent_heat_flow` reports ṁ″(h_v − h_l) summed over the faces
+  for readability.
+
+### 9b.4 Ledger (D161, D123 (5))
+
+New exchange pairs: film–thin wall and film–solid region (in addition to
+film–wall, film–gas and spray–film of D123 (5)). Each is one face sum booked
+with opposite signs in the two balances, so the wall's thermal ledger shows
+the heat taken by the film per boundary, per thin wall and per interface.
+The second law gets the entropy of the film–wall heat flow across the
+temperature difference, q_wall (1/T_fw − 1/T_w) ≥ 0 per face, and of the
+phase change at the film surface.
+
+### 9b.5 What stage 7 builds now for the film
+
+Nothing of the film itself. Stage 7 provides: wall-side face temperatures and
+linearised per-face heat-flux slots on wall boundaries, thin-wall faces and
+region-interface faces (an extension of D124 W3 and W4 to interfaces and
+thin walls); the surface mesh W1 and the wall-face halo W2 on those faces;
+the ledger exchange-pair slots. A test module (a prescribed per-face heat
+sink with its derivative, standing in for the film) checks the slots in
+stage 7 (V7.32).
 
 
 ## 10. Coupling strategy, linear solvers and order of solution (D158)
@@ -667,8 +892,12 @@ acceptance is stage 8. The multi-region data layout is built for ranks now:
   positive semi-definite, else a health number); contact resistances as in
   §9.5. The specific entropy s(T, p) comes from the same coefficients (D92
   (2)). The numerical entropy production is reported as in D90 (2).
-- **Reports:** `balance.csv` gets the thermal columns per boundary, interface
-  and region; the end-of-run plot shows the heat flows (D89).
+- **Thin walls and the film (§9a, §9b):** every thin-wall set is a region of
+  the thermal ledger (storage, sources, side exchange pairs, outer and edge
+  heat flows); the exchange pairs film–wall, film–thin wall and film–solid
+  have reserved slots now and are filled with the film (D123, D190).
+- **Reports:** `balance.csv` gets the thermal columns per boundary, interface,
+  thin wall and region; the end-of-run plot shows the heat flows (D89).
 
 
 ### 13.1 Turbomachines: compressors, turbines, turbochargers (D184)
@@ -764,6 +993,25 @@ of each compared quantity before the comparison is made).
 | V7.20 | Backward-facing step with a heated wall at constant heat flux (Vogel & Eaton 1985), Re_H 28 000, expansion ratio 1.25 | Stanton number along the heated wall (peak value and location), C_f, reattachment length | reattachment within ±10 % of the measured value; St peak within ±15 % (ζ-f, elliptic blending with the compound treatment) and ±25 % (wall functions), peak location within ±1 step height |
 | V7.21 | Turbulent heated periodic pipe (D111): Pr 0.71, Re 10⁴ to 10⁶ as a study (D62) | Nu, mean temperature, turbulent heat flux | Gnielinski (1976) ±10 %; DNS of Redjem-Saad, Ould-Rouiss & Lauriat (2007) for profiles at their Re |
 
+### 14.3a Thin walls (D189)
+
+| # | Case | Checks | Pass band |
+|---|---|---|---|
+| V7.26 | Steady multi-layer thin wall (three layers, k ratios 1 to 10³, contact resistance) between a fluid and a convection boundary | wall heat flux, node and outer temperatures | equal to the series-resistance formula to round-off; equal to the resolved solid of V7.4 to its tolerance |
+| V7.27 | Transient slab as a thin wall: sudden change of the ambient temperature on one face, convection on both faces, Bi 0.01 to 10 | node temperatures against the Fourier series of Carslaw & Jaeger (1959, §3.11) | time order 1.8–2.2; space order 1.8–2.2 in the node count; lumped limit at Bi 0.01 |
+| V7.28 | Shell conduction in a straight fin of constant thickness with convection on both faces and an adiabatic tip, on quadrilateral, triangular and polygonal surface meshes, perturbed | T(x) against θ/θ_b = cosh(m(L − x))/cosh(mL), m² = 2h/(k t) (Bejan 2013), fin heat flow | order 1.8–2.2; fin heat flow within 0.1 % on the finest mesh |
+| V7.29 | Thin wall against resolved CHT: the thick-walled periodic channel of V7.10 with t/H = 0.01 and 0.1, and a cylinder shell heated on one side with circumferential conduction (t/R = 0.01) | Nu, outer wall temperature, circumferential T | within 0.5 % of the resolved solid at t/H = 0.01; the deviation at 0.1 reported |
+| V7.30 | Baffle: two laminar channels in counterflow separated by a thin plate (`mesh.baffles`) | outlet temperatures, plate temperature | within 0.5 % of the resolved plate; ledger closes |
+| V7.31 | Closed box with a heater layer in a thin wall, transient, natural convection | ledger per step, entropy production | ledger to the tolerance of D89; entropy production ≥ 0 per cell and per wall node |
+
+Film cases with thin walls and CHT are built with the film (D123 F2, D190):
+Nusselt (1916) film condensation on a cooled vertical plate (film thickness
+and heat transfer coefficient, the wall heated by the condensate), an
+evaporating film on a thin wall heated from outside (wall temperature below
+the dry case, q_wall = latent plus sensible to the ledger tolerance), and the
+closed hot box of D123 with a thin wall and with a solid region (mass and
+energy to round-off).
+
 ### 14.4 Implementation checks
 
 | # | Check | Pass |
@@ -772,6 +1020,7 @@ of each compared quantity before the comparison is made).
 | V7.23 | CPU against GPU (Colab T4) on V7.5, V7.15 at Ra 10⁵ and V7.20; 1 and 4 threads; restart in the middle of V7.6 | bitwise equal; restart bit-identical |
 | V7.24 | Views, halo plans and energy matrix of a fluid–solid mesh decomposed into 1, 2 and 4 parts (§11) | identical in global order |
 | V7.25 | Runs without energy and gravity | bitwise unchanged against main on every flow case of the catalogue |
+| V7.32 | Film interface slots (§9b.5): a test module sets a per-face heat sink q(T_w) with its derivative on a wall, a thin wall and a region interface | ledger pairs cancel to the bit; Newton-like convergence of the coupled wall temperature in ≤ 5 outer iterations for a steep q(T_w) (slope 10⁴ W/m²K) |
 
 Thermal wall functions and turbulent Prandtl numbers are verified in stage 6
 with temperature as a passive scalar (flat plate St, channel Nu, impinging
@@ -887,7 +1136,7 @@ CHT004 error (contact resistance on a face that is not a region interface),
 ENE001 error (temperature recovery failed, D92), ENE002 warning (damped
 temperature update, count), ENE003 warning (temperature outside a property
 range, with D96 clamp), ENE004 warning (Mach number above 0.3), ENE005 info
-(transient buoyancy without outer iterations), MAT006–MAT009 (§8). The
+(transient buoyancy without outer iterations), MAT006–MAT009 (§8), TWL001–TWL005 (§9a.5). The
 registry and `foehn explain <code>` (D78) carry the guidance text.
 
 
@@ -901,13 +1150,16 @@ on a new topic page `energy.md` in `docs/gallery/`, `docs/recipes/` and
 | PR | Content | Crates and files | Cases |
 |---|---|---|---|
 | 7a | Energy core: density, μ, k, c_p as cell fields in the flux kernels (finding F1), thermal property forms and database records (D102), energy module on the fluid domain with the δT form, SGDH, thermal boundary conditions without CHT, THM codes, thermal ledger, D90 parts 1–3 | `foehncraft-kernels::energy` (new), `flow.rs` (ρ field); `foehncraft-flow::energy` (new), `bc.rs` (thermal sub-table), `materials.rs`, `balance.rs`, `diag.rs`, `case.rs`; `data/materials/` | V7.1–V7.3, V7.11, V7.14, V7.25 |
+| 7t | Thin walls (D189, §9a): layers with heat capacity and sources (1D), shell conduction on the surface mesh (D124 W1, W2 moved here), baffles from face zones, edge conditions, TWL codes; the per-face film slots with their linearisation on walls, thin walls and interfaces (D190, §9b.5) | `foehncraft-mesh` (surface mesh, `baffles`), `foehncraft-kernels::energy` (series and edge kernels), `foehncraft-flow::energy`, `thinwall.rs` (new), `balance.rs` | V7.26–V7.32 |
 | 7b | Gravity, Boussinesq, balanced-force interpolation (D154), wall pressure, reduced pressure at boundaries, BUO codes | `foehncraft-kernels::flow` (`face_mass_flux`, momentum cell rows), `foehncraft-flow::buoyancy` (new), `bc.rs`, `derived.rs` | V7.7, V7.8, V7.9, V7.12, V7.13, V7.15, V7.16 |
 | 7c | Low-Mach variable density, p₀(t), pressure work | `foehncraft-flow::simplec`, `transient`, `energy` | V7.7 (b), V7.17 |
 | 7d | Conjugate heat transfer: domain views (D112), region interfaces, one-sided gradients, contact resistance and thin walls, solids with orthotropic k (D116 tensor), energy sources, D58 imprinting, METIS weights and per-view halo plans (D122 (1)), CHT codes | `foehncraft-mesh` (`view.rs`, `imprint.rs` new, `partition.rs`, `decompose.rs`), `foehncraft-fv::amg` (views), `foehncraft-flow::energy`; `foehncraft-parallel` (halo plans per view) | V7.4–V7.6, V7.10, V7.24; D58 cases of the old stage 7 (Poiseuille and T-junction across a non-conformal interface) |
 | 7e | Turbulent heat transfer: GGDH, G_b in k, ε, ω, ζ/φ, C_ε3, Robin and radiation linearisation with wall functions; the `kays-crawford-hp` and `wall-profile` Pr_t closures (D172) and the wall treatment with variable properties, semi-local y⁺_sl and the integrated thermal wall function (D173, step 21; checks H-0 to H-2 of the step 21 page) | `foehncraft-kernels::energy`, stage-6 turbulence modules (hook) | V7.18–V7.21 |
 | 7f | GPU parity of all stage-7 kernels, Jacobian tests, verification manual, release v0.7 | `foehncraft-cuda`, `gpu/ptx-kernels`, `tools/notebooks/stage7_colab.ipynb`, `tools/` | V7.22, V7.23 |
 
-7a can start once stage 6 has merged its field and equation registries (D115,
+7t added 2026-11-20 (D189, D190): its 1D part needs only 7a and can come before
+full CHT (7d); its shell part and the interface slots come after 7d's domain
+views. 7a can start once stage 6 has merged its field and equation registries (D115,
 D116) and the source hook; 7b and 7c can run beside 7d. The Python package
 (D61) gets the new keys with each PR (case round trip bitwise, as in stage 5).
 
@@ -950,6 +1202,30 @@ Read on main at b15a488:
 5. **GGDH constant C_θ = 0.3** and the ω-equation buoyancy source as
    defaults, both decided by the validation cases.
 
+
+6. **Thin walls and the film (D189, D190), added 2026-11-20**, **decided
+   2026-11-20: TW1–TW5 as recommended, TW6 later when the wall film exists**
+   (O24 closed):
+   - TW1 *Baffles from meshes:* split named internal face zones into boundary
+     pairs in every mesh reader and the mesher (`mesh.baffles`). Recommended.
+   - TW2 *Thin walls in the matrix or beside it:* monolithic (extra rows of
+     the energy matrix, recommended, as D158) or a separate solve per thin
+     wall coupled per outer iteration (cheaper per iteration, slower and
+     less robust at high wall conductance).
+   - TW3 *Shell edges on solid regions* (a thin fin on a meshed base): join
+     the edge to the solid cells now, or refuse (TWL004) in the first version.
+     Recommended: refuse first, join in a follow-up.
+   - TW4 *Thin walls with radiation between surfaces* (L15): the thin-wall
+     outer node takes the radiation flux slot like any wall face. Recommended,
+     no extra work now.
+   - TW5 *Film evaporation needs a vapour species in the gas.* Evaporation
+     and condensation move mass into and out of the gas, so even a
+     one-component film needs the vapour mass fraction in the gas (species
+     transport, L2) and variable density (D151). D123 F2 lists L1 only;
+     recommended: F2 needs L1 and the single-vapour part of L2.
+   - TW6 *When the film comes:* it stays with the sprays (L12) after v1.0;
+     stage 7 builds only the interface (§9b.5). Alternative: a film without
+     sprays (wetted walls, falling films, condensation) earlier, with L2.
 
 ## 19. References
 
@@ -1026,6 +1302,8 @@ Read on main at b15a488:
 - J. Mencinger, I. Žun, *On the finite volume discretization of
   discontinuous body force field on collocated grids: application to VOF
   method*, J. Comput. Phys. 221, 524–538 (2007)
+- W. Nusselt, *Die Oberflächenkondensation des Wasserdampfes*, Z. VDI 60,
+  541–546 and 569–575 (1916)
 - S. Ostrach, *An analysis of laminar free-convection flow and heat transfer
   about a flat plate parallel to the direction of the generating body
   force*, NACA Report 1111 (1953)
