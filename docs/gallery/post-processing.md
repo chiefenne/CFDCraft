@@ -102,7 +102,7 @@ python3 -m tools.plot.turbulence_fields turbulence_derived.png \
 | `turbulence-scales` | `dissipation_rate` ε (β* k ω for SST), `specific_dissipation_rate` ω (ε/(C_μ k) for the ε models), `time_scale` T of the model (1/(β* ω), k/ε, or the bounded T of ζ-f and EB), `length_scale` k^{3/2}/ε, `viscosity_ratio` ν_t/ν | m²/s³, 1/s, s, m, - |
 | `reynolds-stress` | `reynolds_stress_xx`, `_yy`, `_zz`, `_xy`, `_yz`, `_xz`: ⅔ k δᵢⱼ − 2 ν_t Sᵢⱼ | m²/s² |
 | `wall-normal` | `wall_normal_x`, `_y`, `_z`: ∇α/\|∇α\| of the elliptic-blending k-ε | - |
-| `turbulence-wall` | on the boundary blocks: `friction_velocity` u_τ of the wall treatment, `y_star` = d C_μ^¼ k_P^½/ν | m/s, - |
+| `turbulence-wall` | on the boundary blocks: `friction_velocity` u_τ of the wall treatment, `y_star` = d C_μ^¼ k_P^½/ν, `blending` the viscous weight of the wall treatment (1 where the wall is resolved, `low-re` and the sublayer of `standard`; 1 − tanh((y⁺/5)²) of `automatic`; e^{−Γ} of `compound`; Γ = dU⁺/dy⁺ of `compound-2023`; 0 in the log layer and for `scalable`) (since PR #130) | m/s, -, - |
 
 **Checked on the channel** of every model family (SST, k-ε, EB;
 `tests/turbulence_derived.rs`): ε = C_μ k ω, T and L from their

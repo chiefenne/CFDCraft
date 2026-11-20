@@ -33,16 +33,26 @@ pub mod zeta_f;
 use foehncraft_core::Real;
 
 /// min(a, b): hard (w = 0, a select) or the smooth form
-/// ½(a + b − √((a − b)² + (w m)²)), m = ½(|a| + |b|) (stage 6
-/// specification 2.6; `foehncraft_core::math::smin`).
+/// ½(a + b − √((a − b)² + (w m)²)), m = |a| |b|/(|a| + |b|) (stage 6
+/// specification 2.6; `foehncraft_core::math::smin`): the width follows
+/// the smaller operand, so a floor stays a floor.
 #[inline(always)]
 pub fn smin<T: Real>(a: T, b: T, w: T) -> T {
     if w > T::ZERO {
         let half = T::from_f64(0.5);
-        let m = half * (a.abs() + b.abs());
-        let d = a - b;
+        let (aa, ab) = (a.abs(), b.abs());
+        let s = aa + ab;
+        let m = if s > T::ZERO { aa * ab / s } else { T::ZERO };
+        let d = (a - b).abs();
         let e = w * m;
-        half * (a + b - (d * d + e * e).sqrt_of())
+        // ½(a + b − √(d² + e²)) = min(a, b) − ½ e²/(√(d² + e²) + d),
+        // free of the cancellation of the first form when |a| ≫ |b|
+        let r = (d * d + e * e).sqrt_of() + d;
+        if r > T::ZERO {
+            a.min_of(b) - half * e * e / r
+        } else {
+            a.min_of(b)
+        }
     } else {
         a.min_of(b)
     }

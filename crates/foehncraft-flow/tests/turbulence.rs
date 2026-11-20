@@ -186,7 +186,7 @@ fn sst_results_are_bitwise_equal_on_1_and_4_threads() {
                 .replace("cells = 8, ratio", "cells = 40, ratio")
                 .replace("cells = 24, ratio", "cells = 120, ratio")
                 .replace("levels = [1]", "levels = [0]")
-                .replace("max_iterations = 10000", "max_iterations = 8")
+                .replace("max_iterations = 2000", "max_iterations = 8")
                 .replace("derived = [\"turbulence-features\"]", "")
                 + &format!("\n[run]\nthreads = {threads}\n")),
         )
@@ -276,7 +276,8 @@ fn bad_turbulence_input_is_refused() {
 }
 
 /// Inlet turbulence: conflicting keys are refused (BC029), a missing set
-/// gives the default note (TURB009), values at an outlet warn (BC028).
+/// gives the default note (TURB009); backflow values at a pressure outlet
+/// are used (no BC028), ζ there with SST is not (BC028).
 #[test]
 fn inlet_turbulence_checks() {
     let base = text("tmr_plate_sst.toml")
@@ -284,7 +285,7 @@ fn inlet_turbulence_checks() {
             "levels = [1]\nrequire_convergence = true",
             "levels = [0]\nrequire_convergence = false",
         )
-        .replace("max_iterations = 10000", "max_iterations = 1");
+        .replace("max_iterations = 2000", "max_iterations = 1");
     let (code, msg) = refused(&base.replace(
         "k = 2.25e-7\nomega = 125.0\n[boundary.xmax]",
         "k = 2.25e-7\nomega = 125.0\nturbulence_intensity = 0.01\n[boundary.xmax]",
@@ -307,11 +308,211 @@ fn inlet_turbulence_checks() {
             "[boundary.ymax]\ntype = \"static-pressure-outlet\"",
             "[boundary.ymax]\ntype = \"static-pressure-outlet\"\nturbulence_intensity = 0.01",
         )),
-        "wall_value",
+        "outlet_values",
+    );
+    assert!(
+        !r.findings.iter().any(|f| f.code == "BC028"),
+        "{:?}",
+        r.findings
+    );
+    let r = run_case(
+        &parse(&base.replace(
+            "[boundary.ymax]\ntype = \"static-pressure-outlet\"",
+            "[boundary.ymax]\ntype = \"static-pressure-outlet\"\nturbulence_intensity = 0.01\nzeta = 0.5",
+        )),
+        "outlet_zeta",
     );
     assert!(
         r.findings.iter().any(|f| f.code == "BC028"),
         "{:?}",
         r.findings
     );
+}
+
+/// The smooth switches of specification 2.6 (`turbulence.smooth_limits`,
+/// for the adjoint) change the converged flat-plate C_f (wall probe at
+/// x = 0.97) and the drag of the plate by less than 0.1 % against the
+/// published hard min and max (level 1 of `tmr_plate_sst.toml`, 64 × 48
+/// cells: 0.090 % for C_f; level 0, 32 × 24 cells, gives 0.1002 %).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn smooth_limits_change_the_plate_friction_below_a_tenth_percent() {
+    let mk = |smooth: bool| {
+        parse(
+            &text("tmr_plate_sst.toml")
+                .replace("derived = [\"turbulence-features\"]", "")
+                .replace(
+                    "wall_treatment = \"low-re\"",
+                    &format!("wall_treatment = \"low-re\"\nsmooth_limits = {smooth}"),
+                ),
+        )
+    };
+    let hard = run_case(&mk(false), "plate_hard");
+    let smooth = run_case(&mk(true), "plate_smooth");
+    let (h, s) = (&hard.solves[0], &smooth.solves[0]);
+    assert!(hard.failures.is_empty(), "{:?}", hard.failures);
+    assert!(smooth.failures.is_empty(), "{:?}", smooth.failures);
+    let (th, ts) = (h.wall_probes[0].magnitude, s.wall_probes[0].magnitude);
+    let d_cf = (ts - th).abs() / th;
+    let drag = |r: &foehncraft_flow::case::Solve| {
+        r.boundaries
+            .iter()
+            .find(|b| b.name == "plate")
+            .map(|b| b.force[0])
+            .unwrap()
+    };
+    let (dh, ds) = (drag(h), drag(s));
+    let d_cd = (ds - dh).abs() / dh.abs();
+    eprintln!("C_f relative change {d_cf:.3e}, drag {d_cd:.3e} (tau hard {th:e})");
+    assert!(d_cf < 1e-3, "C_f changes by {d_cf:e}");
+    assert!(d_cd < 1e-3, "drag changes by {d_cd:e}");
+}
+
+/// A duct between two pressure outlets, the left one at the higher
+/// pressure, so the flow enters through it (BC028, spec 7): with backflow
+/// values the entering faces take them (k_b = k, a = 0), without them the
+/// cell's values; the right outlet, where the flow leaves, stays zero
+/// gradient. A run continued from a restart file of step 5 ends bit for
+/// bit like the run without the interruption: the backflow state is set
+/// again from the stored boundary values, and p̂ = p + ⅔ρk of the pressure
+/// boundaries from the loaded k (before this, from the start fields).
+#[cfg(feature = "hdf5")]
+#[test]
+fn outlet_backflow_takes_the_given_turbulence_values() {
+    use foehncraft_flow::restart;
+    let duct = |values: &str, extra: &str| {
+        let t = format!(
+            r#"case_format = "0.6"
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [4.0, 1.0, 0.1]
+cells = [16, 12, 1]
+[fluid]
+density = 1.0
+viscosity = 1.0e-3
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+[initial]
+velocity = [0.0, 0.0, 0.0]
+k = 1.0e-5
+omega = 1.0
+[boundary.xmin]
+type = "static-pressure-outlet"
+pressure = 0.5
+{values}
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[time]
+scheme = "bdf2"
+time_step = 0.05
+steps = 10
+[verification]
+require_convergence = false
+[output]
+vtkhdf = false
+{extra}
+"#
+        );
+        parse(&t)
+    };
+    let values = "k = 1.0e-2\nomega = 20.0";
+    let ni_nb = |d: &Path| restart::read(&d.join("restart.h5")).unwrap();
+    // with values: the left faces take k = 10⁻², the right ones 0
+    let da = out("backflow_full");
+    let ra = run(
+        &duct(values, "[run]\nrestart_at = [5]"),
+        "full",
+        &da,
+        |_| {},
+    )
+    .unwrap();
+    assert!(ra.failures.is_empty(), "{:?}", ra.failures);
+    assert!(
+        !ra.findings.iter().any(|f| f.code == "BC028"),
+        "{:?}",
+        ra.findings
+    );
+    let a = ni_nb(&da);
+    let (mesh, _, _) =
+        foehncraft_flow::derived::evaluate(&duct(values, ""), &da.join("restart.h5"), &[]).unwrap();
+    let ni = mesh.n_interior_faces();
+    let nc = mesh.n_cells;
+    let local = |r: restart::Restart| {
+        r.to_local(&mesh.cell_id[..nc], &mesh.face_id, ni)
+            .unwrap()
+            .0
+            .state
+            .turbulence
+            .unwrap()
+    };
+    let ta = local(ni_nb(&da));
+    let faces = |name: &str| {
+        mesh.boundaries
+            .iter()
+            .find(|p| p.name == name)
+            .unwrap()
+            .range()
+            .map(|f| f - ni)
+            .collect::<Vec<_>>()
+    };
+    for fb in faces("xmin") {
+        assert_eq!(ta.k_b[fb], 1.0e-2, "k of the backflow");
+        assert_eq!(ta.omega_b[fb], 20.0, "ω of the backflow");
+    }
+    for fb in faces("xmax") {
+        assert_eq!((ta.k_b[fb], ta.omega_b[fb]), (0.0, 0.0), "zero gradient");
+    }
+    // the entering k reaches the first cells (far above the start 10⁻⁵)
+    let k_first: f64 = faces("xmin")
+        .iter()
+        .map(|&fb| ta.k[mesh.owner[ni + fb] as usize])
+        .fold(f64::INFINITY, f64::min);
+    // without values: the cell's k
+    let dn = out("backflow_none");
+    let rn = run(&duct("", ""), "none", &dn, |_| {}).unwrap();
+    assert!(rn.failures.is_empty(), "{:?}", rn.failures);
+    let tn = local(ni_nb(&dn));
+    for fb in faces("xmin") {
+        assert_eq!(tn.k_b[fb], 0.0, "zero gradient without backflow values");
+    }
+    let k_none: f64 = faces("xmin")
+        .iter()
+        .map(|&fb| tn.k[mesh.owner[ni + fb] as usize])
+        .fold(0.0, f64::max);
+    assert!(
+        k_first > 10.0 * k_none,
+        "k of the first cells {k_first:e} with values, {k_none:e} without"
+    );
+    // the continued run
+    let from = da.join("restart_000005.h5");
+    let db = out("backflow_cont");
+    let rb = run(
+        &duct(values, &format!("[run]\nrestart = '{}'", from.display())),
+        "cont",
+        &db,
+        |_| {},
+    )
+    .unwrap();
+    assert!(rb.failures.is_empty(), "{:?}", rb.failures);
+    let b = ni_nb(&db);
+    assert_eq!(
+        a.state.turbulence, b.state.turbulence,
+        "the continued turbulence state differs"
+    );
+    assert_eq!(a.state.u.x, b.state.u.x);
+    assert_eq!(a.state.p, b.state.p);
+    for d in [&da, &dn, &db] {
+        let _ = std::fs::remove_dir_all(d);
+    }
 }

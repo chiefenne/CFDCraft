@@ -41,7 +41,7 @@ type = "symmetry"
 
 [solver]
 tolerance = 1e-8
-max_iterations = 10000
+max_iterations = 2000      # SIMPLEC needs 1 240
 
 [solver.momentum]
 relaxation = 0.9

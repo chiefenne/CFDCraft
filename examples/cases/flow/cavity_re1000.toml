@@ -40,7 +40,7 @@ type = "symmetry"
 
 [solver]
 tolerance = 1e-8
-max_iterations = 10000
+max_iterations = 2000      # SIMPLEC needs 1 397 (cavity_re1000_coupled.toml: about 450)
 
 [solver.momentum]
 relaxation = 0.9

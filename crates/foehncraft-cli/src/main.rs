@@ -226,7 +226,9 @@ enum Bench {
 
 #[derive(clap::Args)]
 struct MeshArgs {
-    /// Mesh case file (TOML) or a mesh file (Gmsh `.msh`, SU2 `.su2`).
+    /// Mesh case file (TOML) or a mesh file (Gmsh or industry `.msh`, SU2
+    /// `.su2`, CGNS `.cgns`, VTK `.vtk`/`.vtu`, OpenFOAM case or polyMesh
+    /// directory).
     input: PathBuf,
     /// Number of parts (overrides `partition.parts`).
     #[arg(long)]
@@ -244,6 +246,9 @@ struct MeshArgs {
     /// Do not write the VTKHDF file.
     #[arg(long)]
     no_vtkhdf: bool,
+    /// Also write the mesh as `mesh.vtu` (VTK XML).
+    #[arg(long)]
+    vtu: bool,
     /// Output directory (overrides `output.directory`).
     #[arg(long)]
     out: Option<PathBuf>,
@@ -844,6 +849,9 @@ fn mesh(a: MeshArgs, out: Out) -> Result<Done> {
     }
     if a.no_vtkhdf {
         case.output.vtkhdf = false;
+    }
+    if a.vtu {
+        case.output.vtu = true;
     }
     if a.out.is_some() {
         case.output.directory = a.out;

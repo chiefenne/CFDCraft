@@ -2515,6 +2515,14 @@ pub struct WallFaceArgs {
     pub omega: Raw<f64>,
     /// Output: the viscous weight of the blending per wall face.
     pub blending: Raw<f64>,
+    /// Output (or [`Raw::EMPTY`]): the viscous weight of the wall treatment
+    /// per wall face, for the output (the wall field `blending` of the
+    /// stage-6 specification, 2.3): 1 for the integration to the wall
+    /// (`low-re`), 1 − tanh((y⁺/5)²) of the automatic treatment of SST,
+    /// e^{−Γ} of the compound treatment, Γ = dU⁺/dy⁺ of `compound-2023`,
+    /// 1 in the sublayer of the standard wall function and 0 above it,
+    /// 0 for the scalable wall function. Not used by the solver.
+    pub viscous_weight: Raw<f64>,
     /// Output: the weighted wall production per wall face (SST automatic:
     /// (1 − b) u_τ³/(κ y_P)).
     pub pk: Raw<f64>,
@@ -2584,6 +2592,9 @@ impl Entry for WallFaces {
                 *a.y_star.out().add(i) = u_star * y / nu;
                 *a.omega.out().add(i) = 0.0;
                 *a.blending.out().add(i) = 1.0;
+                if a.viscous_weight.len > 0 {
+                    *a.viscous_weight.out().add(i) = 1.0;
+                }
                 *a.pk.out().add(i) = 0.0;
                 *a.prod_w.out().add(i) = 0.0;
                 *a.mu_eff.out().add(f) = a.rho * nu;
@@ -2629,6 +2640,9 @@ impl Entry for WallFaces {
                 *a.y_star.out().add(i) = r.y_star;
                 *a.omega.out().add(i) = r.epsilon;
                 *a.blending.out().add(i) = 0.0;
+                if a.viscous_weight.len > 0 {
+                    *a.viscous_weight.out().add(i) = r.viscous;
+                }
                 *a.pk.out().add(i) = r.pk_wall;
                 *a.prod_w.out().add(i) = r.prod_weight;
                 *a.mu_eff.out().add(f) = a.rho * r.nu_wall;
@@ -2664,6 +2678,9 @@ impl Entry for WallFaces {
             *a.y_star.out().add(i) = r.y_plus;
             *a.omega.out().add(i) = r.omega;
             *a.blending.out().add(i) = r.blending;
+            if a.viscous_weight.len > 0 {
+                *a.viscous_weight.out().add(i) = r.blending;
+            }
             *a.pk.out().add(i) = m * r.pk_wall;
             *a.prod_w.out().add(i) = m;
             *a.mu_eff.out().add(f) = a.rho * r.nu_wall;

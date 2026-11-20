@@ -1977,8 +1977,24 @@ restart file give the same numbers.
 | The step, k-ε-ζ-f₀, 8 200 cells (gallery 108) | largest −u'v'/U_ref² in the shear layer | reported | 0.011 at x/H 4 to 7 |
 
 Not in this part: the blending weight of the compound and automatic
-treatments as a wall field (the wall kernels do not store it); the
+treatments as a wall field (added in PR #130, below); the
 heat-transfer coefficient and T⁺ of the scalars stay in the wall CSV.
+
+### The wall blending weight (spec 2.3, PR #130)
+
+The wall kernel writes the viscous weight of each wall treatment to an
+output buffer (not read by the solver), the restart file stores it as
+`turb_wall_blending`, and `turbulence-wall` gains the boundary dataset
+`blending`. A restart file written before has no such dataset; `foehn post
+derive` then refuses `turbulence-wall` with CASE005 and asks for one more
+iteration.
+
+| Check | Quantity | Band | Result |
+|---|---|---|---|
+| Channels of `turbulence_fields_of_every_model`, plus SST with `automatic` | `blending` in [0, 1], zero off walls | exact | asserted |
+| | SST `low-re` 1, k-ε `scalable` 0 | bitwise | asserted |
+| | SST `automatic` against 1 − tanh((y⁺/5)²) with the y⁺ of the same call | 1e-12 | asserted |
+| | EB `compound` against e^{−Γ(y*)}, Γ = 0.01 y*⁴/(1 + 5 y*), with the y* of the final k | 1e-3 relative (k of the last wall call is one iteration older) | asserted |
 
 ## The SST automatic treatment in the buffer layer (6g, PR #112)
 
@@ -2357,3 +2373,20 @@ form is also only a pressure shift here. (2) The secondary velocity is
 small (about 1.5 % of U_b), but the in-plane residuals fall like the
 others: the 72 × 72 duct converges in 2 624 iterations, against 2 664
 for linear SST on the same mesh.
+
+## Smooth limits against the hard form (spec 2.6, PR #136)
+
+`turbulence.smooth_limits = true` replaces every min and max of the models
+with the C¹ form of spec 2.6 (width w = 10⁻³). The first run of the check
+found the SST flat plate with smooth limits not converging (k residual
+cycling at 10⁻³ for 10 000 iterations): the smooth width followed the
+larger operand, m = ½(|a| + |b|), so the floor max(CD_kω, 10⁻¹⁰) sat at
+about w²|CD_kω|/16 where CD_kω < 0. The width now follows the smaller
+operand, m = |a||b|/(|a| + |b|), in a form free of cancellation; the runs
+without smooth limits are unchanged.
+
+| Check | Quantity | Band | Result |
+|---|---|---|---|
+| TMR plate SST, level 1 (64 × 48), hard and smooth (`smooth_limits_change_the_plate_friction_below_a_tenth_percent`) | C_f at x = 0.97; drag of the plate | 0.1 % | 0.090 %; 0.093 % (both converge in 635 iterations) |
+| The same on level 0 (32 × 24) | C_f | 0.1 % | 0.1002 % (reported, not asserted) |
+| `smooth_switches_are_bounded_and_c1` (core) | error of smin, smax against min, max, incl. (±10³, 10⁻¹⁰) | w·m/2, m ≤ min(\|a\|, \|b\|) | asserted |

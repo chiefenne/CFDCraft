@@ -580,6 +580,9 @@ pub struct WallFaceOps {
     pub omega: Buf,
     /// Output viscous weight per wall face.
     pub blending: Buf,
+    /// Output: the viscous weight of the wall treatment per wall face for
+    /// the output (the wall field `blending`; not used by the solver).
+    pub viscous_weight: Buf,
     /// Output: the weighted wall production per wall face.
     pub pk: Buf,
     /// Output: the weight of the wall production per wall face.

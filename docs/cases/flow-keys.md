@@ -260,7 +260,7 @@ least-squares gradient of the solver), S = ½ (G + Gᵀ), Ω = ½ (G − Gᵀ),
 | `turbulence-scales` | `dissipation_rate`, `specific_dissipation_rate`, `time_scale`, `length_scale`, `viscosity_ratio` | ε (β* k ω for SST), ω (ε/(C_μ k) for the ε models), the time scale T of the model (1/(β* ω) for SST, k/ε for the k-ε family, the bounded T of ζ-f and EB), k^{3/2}/ε and ν_t/ν; with a turbulence model only (D72) | m²/s³, 1/s, s, m, - |
 | `reynolds-stress` | `reynolds_stress_xx`, `_yy`, `_zz`, `_xy`, `_yz`, `_xz` | the Boussinesq estimate ⅔ k δᵢⱼ − 2 ν_t Sᵢⱼ of u'ᵢu'ⱼ; with a turbulence model only | m²/s² |
 | `wall-normal` | `wall_normal_x`, `_y`, `_z` | n = ∇α/\|∇α\| of the elliptic-blending k-ε (zero where ∇α vanishes), the wall direction of the GGDH of stage 7; EB only | - |
-| `turbulence-wall` | `friction_velocity`, `y_star`, on the boundary blocks | u_τ of the wall treatment and y* = d C_μ^¼ k_P^½/ν of the wall cell, zero off walls; with a turbulence model only. h_w and T⁺ of the scalars are the columns `<name>_h` and `<name>_t_plus` of `wall_<boundary>.csv` | m/s, - |
+| `turbulence-wall` | `friction_velocity`, `y_star`, `blending`, on the boundary blocks | u_τ of the wall treatment, y* = d C_μ^¼ k_P^½/ν of the wall cell and the viscous weight of the wall treatment (1 where the wall is resolved, `low-re` and the sublayer of `standard`; 1 − tanh((y⁺/5)²) of `automatic`; e^{−Γ} of `compound`; Γ = dU⁺/dy⁺ of `compound-2023`; 0 in the log layer and for `scalable`), zero off walls; with a turbulence model only. h_w and T⁺ of the scalars are the columns `<name>_h` and `<name>_t_plus` of `wall_<boundary>.csv` | m/s, -, - |
 | `curvature-correction` | `rotation_function` | f_r1 of the curvature correction of SST (D170): 1 in pure shear, above 1 where curvature or system rotation amplify the turbulence, below where they damp it, 1.25 where the vorticity vanishes; with `turbulence.curvature_correction` only | - |
 
 The datasets are written in the order of this table, whatever the order of
@@ -390,8 +390,11 @@ check warns above 10° (BC024).
 Inlets also take the turbulence values of the
 [turbulence models](#turbulence-d129d139): `turbulence_intensity` with
 `turbulence_length_scale` or `viscosity_ratio`, or `k` with `omega`
-directly (or `k` with `epsilon` for the k-ε family). Pressure outlets accept them for the backflow, but the backflow
-takes k and ω of the cell for now (BC028 says so); in laminar flow the
+directly (or `k` with `epsilon` for the k-ε family). Pressure outlets take them, and `zeta`, for the backflow:
+on the faces where the flow enters (ṁ < 0) they are fixed values, where
+it leaves zero gradient, decided face by face in every outer iteration
+([gallery 140](../gallery/turbulence.md#outlet-backflow)); without them
+the entering fluid carries the values of the cell. In laminar flow the
 check reports them as unused (BC009). Walls take `roughness`.
 
 # Sensible combinations (D30)

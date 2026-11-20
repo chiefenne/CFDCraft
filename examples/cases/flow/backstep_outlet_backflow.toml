@@ -1,0 +1,82 @@
+# Turbulence values of the backflow at a pressure outlet (stage 6, BC028,
+# gallery and recipe 140): the backward-facing step of gallery 89 with the
+# outlet moved up to x = 4 H, inside the recirculation (SST reattaches at
+# x ≈ 6.8 H), so the flow enters through the lower part of the outlet.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/backstep_outlet_backflow.toml
+#
+# The outlet gives k and ω of the entering fluid (the free stream of the
+# inlet): on the faces where ṁ < 0 they are fixed values, decided anew in
+# every outer iteration; where the flow leaves, zero gradient. Delete the
+# two lines `k`, `omega` of `[boundary.xmax]` to see the default, where the
+# entering fluid carries the k and ω of the cell next to the outlet.
+#
+# Driver & Seegmiller (1985) step, Re_H = 36 000 (U = 1, H = 1, ν =
+# 1/36 000), wall from x = −85 H, slip top at 9 H; mesh as the step of
+# gallery 74 up to x = 4 H.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+lower = [-85.0, 0.0, 0.0]
+upper = [4.0, 9.0, 0.1]
+cells = [80, 80, 1]
+segments = { x = [ { to = 0.0, cells = 50, ratio = 0.0136845 }, { to = 4.0, cells = 30, ratio = 3.0 } ], y = [ { to = 0.5, cells = 18, ratio = 36.8448 }, { to = 1.0, cells = 18, ratio = 0.0271409 }, { to = 9.0, cells = 44, ratio = 367.941 } ] }
+remove = [ { lower = [-85.0, 0.0, 0.0], upper = [0.0, 1.0, 0.1], name = "step" } ]
+
+[fluid]
+density = 1.0
+viscosity = 2.7777777777777777e-5
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+velocity = [1.0, 0.0, 0.0]
+k = 1.5e-4
+omega = 0.6
+
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+k = 1.5e-4
+omega = 0.6
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+k = 1.5e-4
+omega = 0.6
+[boundary.ymax]
+type = "symmetry"
+[boundary.ymin]
+type = "wall"
+[boundary.step]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 3000
+log_every = 500
+
+[solver.momentum]
+relaxation = 0.5
+
+[[schedule]]
+at_iteration = 100
+set = { solver.momentum.relaxation = 0.8 }
+
+[verification]
+require_convergence = false
+
+[output]
+vtkhdf = true
+wall_csv = true
+reference = { velocity = 1.0 }
+lines = [ { name = "outlet", from = [4.0, 0.0, 0.05], to = [4.0, 3.0, 0.05], points = 200 } ]

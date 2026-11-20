@@ -28,7 +28,12 @@ fn text(file: &str) -> String {
 /// The channel `file` on 24 cells across, `n` iterations, with the final
 /// restart file.
 fn channel(file: &str, n: usize) -> FlowCase {
-    let t = text(file)
+    channel_of(&text(file), n)
+}
+
+/// [`channel`] from the text of the case.
+fn channel_of(text: &str, n: usize) -> FlowCase {
+    let t = text
         .replace("cells = [2, 96, 1]", "cells = [2, 24, 1]")
         .replace("ratio = 60.0", "ratio = 8.0")
         .replace("max_iterations = 3000", &format!("max_iterations = {n}"))
@@ -45,18 +50,34 @@ fn get<'a>(f: &'a derived::Fields, name: &str) -> &'a [f64] {
 /// the bounded T of the model (EB), L = k^{3/2}/ε, ν_t/ν; the Reynolds
 /// stress has the trace 2k (the flow is free of divergence) and the shear
 /// component −ν_t du/dy, negative below the centre line and positive above;
-/// on the walls u_τ is that of the wall treatment and y* = y C_μ^¼ k_P^½/ν;
+/// on the walls u_τ is that of the wall treatment and y* = y C_μ^¼ k_P^½/ν,
+/// and the viscous weight `blending` is 1 for `low-re`, 0 for `scalable`,
+/// 1 − tanh((y⁺/5)²) for `automatic` and e^{−Γ(y*)} for `compound`;
 /// EB: n = ∇α/|∇α| is the unit normal pointing away from the nearer wall.
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn turbulence_fields_of_every_model() {
-    for (file, c_mu, eb) in [
-        ("channel_sst.toml", 0.09, false),
-        ("channel_keps.toml", 0.09, false),
-        ("channel_eb.toml", 0.22, true),
+    for (file, c_mu, eb, automatic) in [
+        ("channel_sst.toml", 0.09, false, false),
+        ("channel_sst.toml", 0.09, false, true),
+        ("channel_keps.toml", 0.09, false, false),
+        ("channel_eb.toml", 0.22, true, false),
     ] {
-        let case = channel(file, 1500);
-        let name = file.trim_end_matches(".toml");
+        let case = if automatic {
+            let t = text(file).replace(
+                "wall_treatment = \"low-re\"",
+                "wall_treatment = \"automatic\"",
+            );
+            assert!(t.contains("\"automatic\""));
+            channel_of(&t, 1500)
+        } else {
+            channel(file, 1500)
+        };
+        let name = if automatic {
+            "channel_sst_automatic"
+        } else {
+            file.trim_end_matches(".toml")
+        };
         let dir = out(name);
         let rep = run(&case, name, &dir, |_| {}).unwrap();
         assert!(rep.failures.is_empty(), "{name}: {:?}", rep.failures);
@@ -68,6 +89,7 @@ fn turbulence_fields_of_every_model() {
         if eb {
             list.push(Derived::WallNormal);
         }
+        let sst_low_re = file == "channel_sst.toml";
         let file = dir.join("restart.h5");
         let (mesh, geo, f) = derived::evaluate(&case, &file, &list).unwrap();
         let nc = mesh.n_cells;
@@ -130,13 +152,18 @@ fn turbulence_fields_of_every_model() {
             );
         }
         let (ut, ys) = (get(&f, "friction_velocity"), get(&f, "y_star"));
+        let bl = get(&f, "blending");
         let mut walls = 0;
         for p in &mesh.boundaries {
             let wall = p.name == "ymin" || p.name == "ymax";
             for face in p.range() {
                 let fb = face - ni;
                 if !wall {
-                    assert_eq!((ut[fb], ys[fb]), (0.0, 0.0), "{name}: off the walls");
+                    assert_eq!(
+                        (ut[fb], ys[fb], bl[fb]),
+                        (0.0, 0.0, 0.0),
+                        "{name}: off the walls"
+                    );
                     continue;
                 }
                 walls += 1;
@@ -147,6 +174,26 @@ fn turbulence_fields_of_every_model() {
                     rel(ys[fb], y * c_mu.sqrt().sqrt() * t.k[c].max(0.0).sqrt() / nu),
                     "{name}: y*"
                 );
+                let b = bl[fb];
+                assert!((0.0..=1.0).contains(&b), "{name}: blending {b}");
+                if automatic {
+                    // the weight of the same wall-treatment call as y⁺
+                    let q = t.y_plus[fb] / 5.0;
+                    let want = 1.0 - (q * q).tanh();
+                    assert!((b - want).abs() <= 1e-12, "{name}: blending {b} {want}");
+                } else if sst_low_re {
+                    assert_eq!(b, 1.0, "{name}: low-re");
+                } else if eb {
+                    // k_P of the last wall-treatment call is that of the
+                    // iteration before (not converged after 1500)
+                    let want = (-foehncraft_kernels::turb::wall::compound_gamma(ys[fb])).exp();
+                    assert!(
+                        (b - want).abs() <= 1e-3 * want + 1e-12,
+                        "{name}: blending {b}, e^-Γ(y*) {want}"
+                    );
+                } else {
+                    assert_eq!(b, 0.0, "{name}: scalable");
+                }
             }
         }
         assert!(walls > 0);

@@ -14,6 +14,7 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 | 113 | [Make SST sensitive to curvature and system rotation](#curvature-correction) |
 | 115 | [Get the secondary flow of non-circular ducts with SST](#qcr) |
 | 141 | [Choose the sink of k of the ζ-f models](#k-sink) |
+| 140 | [Say what turbulence enters through an outlet](#outlet-backflow) |
 
 ---
 
@@ -706,3 +707,37 @@ python3 examples/studies/plate_channel_gci.py output/gci --cases channel --model
 
 EB (`elliptic-blending-k-epsilon`) keeps −ε and refuses `k_sink`
 (CASE005).
+<a id="outlet-backflow"></a>
+## 140. Say what turbulence enters through an outlet
+
+When fluid enters through part of a pressure outlet (an outlet close
+behind a body, in a recirculation, at an open side of a domain), give the
+turbulence of the entering fluid with the keys of an inlet:
+
+```toml
+[boundary.outlet]
+type = "static-pressure-outlet"      # or "total-pressure-outlet"
+pressure = 0.0
+turbulence_intensity = 0.01          # or k with omega / epsilon
+viscosity_ratio = 10.0               # or turbulence_length_scale
+# zeta = 0.6667                      # ζ-f, ζ-f₀, EB (default 2/3)
+```
+
+- Only the faces where the flow enters (ṁ < 0) take them, as fixed values;
+  the others stay zero gradient. The split is made anew in every outer
+  iteration.
+- `turbulence_intensity` takes the speed of the face, like at an inlet.
+- Without values the entering fluid carries the turbulence of the cell
+  next to the outlet, which copies a shear layer into the inflow.
+- The momentum treatment of the same faces is the separate key
+  `backflow` ([recipe 29](boundary-conditions.md#boundary-conditions)).
+  `backflow = "suppress"` closes the faces, and then the turbulence values
+  are not used.
+- Better still, move the outlet further downstream; the values only keep
+  an unavoidable inflow plausible.
+
+```
+target/release/foehn flow examples/cases/flow/backstep_outlet_backflow.toml
+```
+
+[↑ back to top](#turbulence-models)
