@@ -55,13 +55,16 @@ pub struct MeshCase {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct MeshSection {
-    /// Mesh file (relative to the case file): Gmsh `.msh` 4.1, SU2 `.su2`, CGNS
-    /// `.cgns` (HDF5) or an OpenFOAM case / `polyMesh` directory
-    /// (docs/cases/meshes.md). The boundaries are the file's physical groups,
-    /// markers or patches; rename them with `boundaries`.
+    /// Mesh file (relative to the case file): Gmsh `.msh` 4.1, SU2 `.su2`, the
+    /// industry face-based `.msh`, CGNS `.cgns` (HDF5), VTK `.vtk` / `.vtu` or
+    /// an OpenFOAM case / `polyMesh` directory (docs/cases/meshes.md). The
+    /// boundaries are the file's physical groups, markers, patches or zones;
+    /// rename them with `boundaries`.
     pub file: Option<PathBuf>,
-    /// Format of `file`: `gmsh`, `su2`, `cgns` or `openfoam` (default: from the
-    /// extension or directory, else from the content).
+    /// Format of `file`: `gmsh`, `su2`, `industry_msh`, `cgns`, `vtk` or
+    /// `openfoam` (default: from the extension or directory, else from the
+    /// content; `.msh` is Gmsh or the industry format, told apart by the
+    /// content).
     pub format: Option<String>,
     /// Cell layer thickness in z when a 2D file (SU2 `NDIME= 2`) is extruded
     /// into one layer, in the units of the file (before `scale`); default the
@@ -158,6 +161,10 @@ pub struct OutputSection {
     pub directory: Option<PathBuf>,
     /// Write `mesh.vtkhdf`.
     pub vtkhdf: bool,
+    /// Also write the mesh as `mesh.vtu` (VTK XML, polyhedra, with the names
+    /// of the zones and boundaries; any tool reads it, and the format layer
+    /// reads it back).
+    pub vtu: bool,
 }
 
 impl Default for OutputSection {
@@ -165,6 +172,7 @@ impl Default for OutputSection {
         Self {
             directory: None,
             vtkhdf: true,
+            vtu: false,
         }
     }
 }
@@ -497,6 +505,11 @@ pub fn run(
     let js = dir.join("mesh_report.json");
     std::fs::write(&js, serde_json::to_string_pretty(&report)?)?;
     files.push(js);
+    if case.output.vtu {
+        let p = dir.join("mesh.vtu");
+        crate::format::vtk::write_vtu(&mesh, &p, true).map_err(anyhow::Error::msg)?;
+        files.push(p);
+    }
     if case.output.vtkhdf {
         #[cfg(feature = "hdf5")]
         {
