@@ -26,6 +26,7 @@ rustc-ice-*.txt
 # Benchmark and run output
 /output/
 examples/meshes/*.msh
+examples/applications/**/*.msh
 examples/meshes/*.su2
 # the PyAero NACA 0012 C-mesh of gallery 127 (D187): mesh and flow case, CI
 !examples/meshes/naca0012.su2
