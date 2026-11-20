@@ -2255,7 +2255,7 @@ in a transient run. Ω_ij is the rotation tensor of the absolute velocity.
 | The same flow in the inertial frame (absolute gradient) and in the turning frame (relative gradient, spin) | f_r1 | 10⁻¹⁴ | met: the sign of the frame term of Ω_ij is the consistent one |
 | Channel in spanwise rotation, Re_b 5 800, Ro = 2Ωh/U_b = 0.15 (`channel_rotating_sst.toml`, 192 cells) | τ_w lower/upper | DNS of Kristoffersen & Andersson (1993) ±15 % | SST 1.000 (no rotation effect, as expected for a linear model), corrected 1.627, unstable side the lower wall. **Open:** the DNS value (the paper's data are not in the repository) |
 | Backward-facing step, 44 160 cells (level 1 of `backstep_validation.toml`) | x_r/H | reported | 6.743 SST, 6.869 corrected (+1.9 %; experiment 6.26): the correction damps the turbulence in the curved shear layer by up to 10 % and the bubble grows |
-| Manufactured solution with the correction | observed order | 1.8–2.2 | **open** (the SST MMS of 6g does not exist yet) |
+| Manufactured solution with the correction | observed order | 1.8–2.2 | **open** (the SST MMS of PR #148 runs without the correction; with it f_r1 needs the material derivative of the strain axes, not yet in the manufactured source) |
 
 **Findings.** (1) In the irrotational free stream r* = S/Ω is large and
 f_r1 sits at its upper limit 1.25. The production there is zero, so the
@@ -2310,3 +2310,62 @@ without smooth limits are unchanged.
 | TMR plate SST, level 1 (64 × 48), hard and smooth (`smooth_limits_change_the_plate_friction_below_a_tenth_percent`) | C_f at x = 0.97; drag of the plate | 0.1 % | 0.090 %; 0.093 % (both converge in 635 iterations) |
 | The same on level 0 (32 × 24) | C_f | 0.1 % | 0.1002 % (reported, not asserted) |
 | `smooth_switches_are_bounded_and_c1` (core) | error of smin, smax against min, max, incl. (±10³, 10⁻¹⁰) | w·m/2, m ≤ min(\|a\|, \|b\|) | asserted |
+
+## Manufactured solutions of every model (spec 9.2, PR #148)
+
+`crates/foehncraft-flow/src/turbulence/mms.rs` solves the turbulence
+equations alone in a frozen cellular flow, u = U₀ (sin πx cos πy,
+−cos πx sin πy) with U₀ = 0.25 m/s in the unit square, ν = 10⁻⁵ m²/s.
+k, ω or ε, ζ (φ), f (α) and the wall distance d are smooth manufactured
+fields (d = 0.06 + 0.6 y + 0.1 x lets F₁ of SST run from 1 to 0.01); the
+sides are velocity inlets with the exact k and ω/ε, ζ uniform there and
+f with the zero gradient of its exact field. The added sources are the
+residuals of the continuous equations written out in the test from the
+published equations, independently of the kernels, with derivatives from
+fourth-order differences. No switch of a model changes branch in the
+domain (`manufactured_fields_stay_on_one_branch`), so every term is
+smooth and active: production, destruction, cross diffusion and the F₁
+blending of SST, the Durbin bound of the standard k-ε (inactive), the
+variable C_μ of the realizable model, the scales T and L and C_ε1(ζ) of
+ζ-f, and E, C*_ε2, the cross diffusion and the α equation of the
+elliptic-blending model. 16 × 16 to 64 × 64 cells, perturbed by 15 %;
+the residuals to 10⁻¹¹ (150 to 660 iterations).
+
+| Model | Mesh | p of k, ω/ε (, ζ/φ, f/α), finest pair | L2 error of k, finest (relative) |
+|---|---|---|---|
+| k-ω SST | hex / poly / tet | 2.06, 2.04 / 2.10, 2.13 / 2.11, 2.17 | 2.7e-5 / 4.4e-5 / 1.5e-5 |
+| standard k-ε | hex / poly / tet | 2.04, 2.07 / 2.10, 2.11 / 2.15, 2.24 | 2.2e-5 / 2.9e-5 / 1.1e-5 |
+| realizable k-ε | hex / poly / tet | 2.05, 2.10 / 2.06, 2.12 / 1.82, 2.02 | 2.2e-5 / 3.3e-5 / 2.6e-5 |
+| k-ε-ζ-f (2004) | hex | 2.03, 2.07, 1.89, 2.00 | 2.3e-5 |
+| | poly | 2.09, 2.11, 2.06, 2.07 | 3.0e-5 |
+| | tet | 2.13, 2.22, 2.29, 2.13 | 1.2e-5 |
+| elliptic-blending k-ε | hex | 2.03, 2.07, 1.94, 1.95 | 2.3e-5 |
+| | poly | 2.09, 2.11, 2.04, 2.04 | 2.9e-5 |
+| | tet | 2.18, 2.25, 2.20, 1.93 | 1.1e-5 |
+
+Bands: 1.8–2.2 on hexahedra, 1.6–2.4 on polyhedra and triangular prisms;
+all met. A change of 2 % in one constant of the written-out model (γ₂ of
+SST, C_ε2 of k-ε) drops the order to 0.2–0.7, so the sources check the
+implemented equations and not only the discretisation. The kernel
+tests with dual numbers (the Jacobians of the cell functions) stay green.
+
+**Findings.** (1) The realizable C_μ took W̃ = S_ij S_jk S_ki/S̃³ from
+the strain with its discrete trace. W̃ and its range ±1/√6 belong to a
+trace-free strain; where S → 0 (the centre lines of the cellular flow)
+the discrete divergence, O(h²), dominated S̃ and W̃ jumped across its
+range, so C_μ jumped in a band of cells: order 1.37 for k on the
+triangular prisms. C_μ now takes the deviatoric strain, which leaves an
+incompressible flow unchanged to the discretisation error and gives
+order 1.82. (2) The f equation of ζ-f is solved in the divergence form
+−∇·(L²∇f) + f; the paper writes L²∇²f. The two differ by ∇L²·∇f; the
+manufactured source takes the solver's form (the EB α equation is
+solved with L² outside the divergence, as its paper writes it). (3) With
+no walls the model sets d = 10¹⁰; the manufactured d is set with
+`Turbulence::set_wall_distance` after attaching. (4) The ζ-f₀ form is
+not covered while its near-wall sink changes (its off-wall terms are
+those of the 2004 form with the f₀ substitution); the curvature
+correction and the QCR are not covered either.
+
+```
+cargo test --release -p foehncraft-flow --lib turbulence::mms -- --nocapture
+```
