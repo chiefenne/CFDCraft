@@ -68,3 +68,24 @@ fn not_hdf5_is_refused() {
     assert!(e.contains("HDF5"), "{e}");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn ngon_nface_equals_openfoam_dual() {
+    // the same polyhedral mesh through two formats
+    let a = format::read(path("dual_ngon.cgns"), None).unwrap();
+    let q = check(&a);
+    assert_eq!(a.mesh.n_cells, 81);
+    assert!(q.shapes.iter().any(|x| x.0 == "polyhedra"), "{:?}", q.shapes);
+    let dir = format!(
+        "{}/tests/data/openfoam/dual_polyhedra",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let b = format::read(dir, None).unwrap();
+    assert_eq!(a.mesh.n_cells, b.mesh.n_cells);
+    let names = |f: &MeshFile| {
+        let mut n: Vec<_> = f.mesh.boundaries.iter().map(|b| (b.name.clone(), b.len)).collect();
+        n.sort();
+        n
+    };
+    assert_eq!(names(&a), names(&b));
+}
