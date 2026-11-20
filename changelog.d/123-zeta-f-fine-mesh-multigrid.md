@@ -4,5 +4,5 @@
   compared with the largest diagonal. Each pivot is now compared with its
   own diagonal. A transport or elliptic equation whose multigrid setup
   fails no longer stops the run: its solve takes the Jacobi preconditioner
-  and the log notes it. The GCI study runs the level-3 ζ-f plate with the
-  relaxations 0.5, since it diverges with the defaults.
+  and the log notes it. The GCI study runs the level-3 ζ-f plate and channel with
+  the relaxations 0.5, since both diverge with the defaults.
