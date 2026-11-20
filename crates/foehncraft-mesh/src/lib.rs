@@ -14,7 +14,8 @@
 //! - [`imprint`]: the sliding interface of a rotor and a stator with different
 //!   pitch, imprinted at the current rotor angle (D58, D182);
 //! - [`wedge`]: axisymmetric wedge meshes revolved from a 2D mesh;
-//! - [`gmsh`]: the Gmsh `.msh` 4.1 reader (D33);
+//! - [`format`]: the mesh file formats behind one reader interface (D33,
+//!   D187): [`gmsh`] (Gmsh `.msh` 4.1) and [`format::su2`] (SU2 `.su2`);
 //! - [`periodic`]: translational periodic boundary pairs (D29, D109);
 //! - [`renumber`]: reverse Cuthill–McKee renumbering of the cells;
 //! - [`locate`]: point location and cell-to-cell particle tracking (D47);
@@ -28,9 +29,9 @@ pub mod case;
 pub mod case_format;
 pub mod cylinder;
 pub mod decompose;
+pub mod format;
 pub mod generate;
 pub mod geometry;
-pub mod gmsh;
 pub mod imprint;
 pub mod locate;
 pub mod mesh;
@@ -42,6 +43,7 @@ pub mod renumber;
 pub mod revolved;
 pub mod wedge;
 
+pub use format::gmsh;
 pub use geometry::Geometry;
 pub use mesh::{Boundary, CellShape, Mesh, Periodic, PeriodicPair};
 #[cfg(feature = "hdf5")]

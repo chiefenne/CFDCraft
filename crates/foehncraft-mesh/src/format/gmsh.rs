@@ -14,8 +14,7 @@
 //! The format is described in the Gmsh reference manual, section "MSH file
 //! format" (<https://gmsh.info/doc/texinfo/gmsh.html#MSH-file-format>).
 
-use crate::builder::CellSoup;
-use crate::generate::{hex_faces, tet_faces};
+use super::{CellKind, ElementMesh, MeshFile, MeshFormat, ReadOptions};
 use crate::mesh::Mesh;
 use std::collections::HashMap;
 use std::path::Path;
@@ -430,29 +429,13 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
             .filter(|&i| i != u32::MAX)
             .ok_or_else(|| format!("element refers to unknown node {t}"))
     };
-
-    // used nodes: those of 3D elements
-    let mut new_index = vec![u32::MAX; node_xyz.len()];
-    let mut points: Vec<[f64; 3]> = Vec::new();
-    let mut n_cells = 0usize;
-    for b in blocks.iter().filter(|b| b.dim == 3) {
-        n_cells += b.nodes.len() / b.nodes_per;
-        for &t in &b.nodes {
-            let i = idx(t)? as usize;
-            if new_index[i] == u32::MAX {
-                new_index[i] = points.len() as u32;
-                points.push(node_xyz[i]);
-            }
-        }
-    }
-    if n_cells == 0 {
+    if !blocks.iter().any(|b| b.dim == 3 && !b.nodes.is_empty()) {
         return Err(
             "the file has no 3D cells. For a 2D case, extrude the surface mesh one \
              layer in z (Extrude {0, 0, dz} { Surface{...}; Layers{1}; Recombine; })"
                 .into(),
         );
     }
-    let node = |t: u64| -> Result<u32, String> { Ok(new_index[idx(t)? as usize]) };
 
     // names
     let phys_name = |dim: i64, tag: i64| -> String {
@@ -469,132 +452,51 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
         }
     };
 
-    // zones
-    let mut zones: Vec<String> = Vec::new();
-    let mut soup = CellSoup::new(points);
-    let mut zone_ids: Vec<u32> = Vec::new();
+    let mut em = ElementMesh {
+        points: node_xyz,
+        face_word: "surface elements",
+        group_word: "surface physical group",
+        ..Default::default()
+    };
+    // cells: volume physical groups are the zones
+    let mut v = Vec::with_capacity(8);
     for b in blocks.iter().filter(|b| b.dim == 3) {
-        let zname = entity_name(3, b.entity);
-        let z = match zones.iter().position(|x| *x == zname) {
-            Some(z) => z,
-            None => {
-                zones.push(zname);
-                zones.len() - 1
-            }
-        } as u32;
+        let z = em.zone(&entity_name(3, b.entity));
+        let kind = match b.nodes_per {
+            4 => CellKind::Tetrahedron,
+            8 => CellKind::Hexahedron,
+            6 => CellKind::Prism,
+            5 => CellKind::Pyramid,
+            _ => unreachable!(),
+        };
         for e in b.nodes.chunks(b.nodes_per) {
-            let mut v = [0u32; 8];
-            for (k, &t) in e.iter().enumerate() {
-                v[k] = node(t)?;
+            v.clear();
+            for &t in e {
+                v.push(idx(t)?);
             }
-            match b.nodes_per {
-                4 => {
-                    let f = tet_faces(&[v[0], v[1], v[2], v[3]]);
-                    soup.add_cell_in_zone(f.iter().map(|x| &x[..]), z);
-                }
-                8 => {
-                    let f = hex_faces(&v);
-                    soup.add_cell_in_zone(f.iter().map(|x| &x[..]), z);
-                }
-                6 => {
-                    let f: [&[u32]; 5] = [
-                        &[v[0], v[2], v[1]],
-                        &[v[3], v[4], v[5]],
-                        &[v[0], v[1], v[4], v[3]],
-                        &[v[1], v[2], v[5], v[4]],
-                        &[v[2], v[0], v[3], v[5]],
-                    ];
-                    soup.add_cell_in_zone(f, z);
-                }
-                5 => {
-                    let f: [&[u32]; 5] = [
-                        &[v[0], v[3], v[2], v[1]],
-                        &[v[0], v[1], v[4]],
-                        &[v[1], v[2], v[4]],
-                        &[v[2], v[3], v[4]],
-                        &[v[3], v[0], v[4]],
-                    ];
-                    soup.add_cell_in_zone(f, z);
-                }
-                _ => unreachable!(),
-            }
-            zone_ids.push(z);
+            em.add_cell(kind, &v, z);
         }
     }
-    soup.set_zone_names(zones);
-
-    // boundary faces named by the 2D elements
-    let mut face_boundary: HashMap<Vec<u32>, String> = HashMap::new();
-    let mut boundary_names: Vec<String> = Vec::new();
-    // boundaries in the order of the physical names, then entity order
+    // boundary faces named by the 2D elements: boundaries in the order of
+    // the physical names, then entity order
     for &(d, t) in &phys_order {
         if d == 2 {
-            boundary_names.push(phys_name(d, t));
+            em.boundaries.push(phys_name(d, t));
         }
     }
-    let mut skipped = 0usize;
     for b in blocks.iter().filter(|b| b.dim == 2) {
-        let name = entity_name(2, b.entity);
-        if !boundary_names.contains(&name) {
-            boundary_names.push(name.clone());
-        }
+        let bi = em.boundary(&entity_name(2, b.entity));
         for e in b.nodes.chunks(b.nodes_per) {
-            let mut k = Vec::with_capacity(4);
-            let mut ok = true;
+            v.clear();
             for &t in e {
-                let n = node(t)?;
-                if n == u32::MAX {
-                    ok = false;
-                }
-                k.push(n);
+                v.push(idx(t)?);
             }
-            if !ok {
-                skipped += 1;
-                continue;
-            }
-            k.sort_unstable();
-            face_boundary.insert(k, name.clone());
+            em.add_face(&v, bi);
         }
     }
-    if skipped > 0 {
-        warnings.push(format!(
-            "{skipped} surface elements are not faces of any cell and are ignored"
-        ));
-    }
-    boundary_names.push("default".into());
-    let unnamed = std::cell::Cell::new(0usize);
-    let n_face_boundary = face_boundary.len();
-    let used = std::cell::Cell::new(0usize);
-    let names: Vec<&str> = boundary_names.iter().map(|s| s.as_str()).collect();
-    let mut mesh = soup.finish(&names, |bf| {
-        let mut k = bf.nodes.to_vec();
-        k.sort_unstable();
-        match face_boundary.get(&k) {
-            Some(n) => {
-                used.set(used.get() + 1);
-                n.clone()
-            }
-            None => {
-                unnamed.set(unnamed.get() + 1);
-                "default".into()
-            }
-        }
-    })?;
-    if unnamed.get() > 0 {
-        warnings.push(format!(
-            "{} boundary faces belong to no surface physical group and are in the boundary \
-             'default'",
-            unnamed.get()
-        ));
-    }
-    if used.get() < n_face_boundary {
-        warnings.push(format!(
-            "{} surface elements lie inside the domain (internal surfaces) and are ignored",
-            n_face_boundary - used.get()
-        ));
-    }
-    // drop empty boundaries
-    mesh.boundaries.retain(|p| p.len > 0);
+    let built = em.into_mesh()?;
+    warnings.extend(built.warnings);
+    let node = |t: u64| -> Result<u32, String> { Ok(built.node_map[idx(t)? as usize]) };
 
     let periodic = periodic
         .into_iter()
@@ -614,9 +516,45 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
         .collect();
 
     Ok(GmshMesh {
-        mesh,
+        mesh: built.mesh,
         periodic,
         format,
         warnings,
     })
+}
+
+/// The Gmsh format in the registry of [`crate::format`].
+#[derive(Debug, Clone, Copy)]
+pub struct Gmsh;
+
+impl MeshFormat for Gmsh {
+    fn name(&self) -> &'static str {
+        "gmsh"
+    }
+
+    fn title(&self) -> &'static str {
+        "Gmsh MSH 4.1, ASCII and binary"
+    }
+
+    fn extensions(&self) -> &'static [&'static str] {
+        &["msh"]
+    }
+
+    fn sniff(&self, head: &[u8]) -> bool {
+        let start = head
+            .iter()
+            .position(|c| !c.is_ascii_whitespace())
+            .unwrap_or(0);
+        head[start..].starts_with(b"$MeshFormat")
+    }
+
+    fn parse(&self, bytes: &[u8], _options: &ReadOptions) -> Result<MeshFile, String> {
+        let g = parse(bytes)?;
+        Ok(MeshFile {
+            mesh: g.mesh,
+            reader: self.name(),
+            format: g.format,
+            warnings: g.warnings,
+        })
+    }
 }

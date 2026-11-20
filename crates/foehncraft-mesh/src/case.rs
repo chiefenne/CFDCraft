@@ -6,7 +6,8 @@
 //!
 //! ```toml
 //! [mesh]
-//! file = "channel.msh"     # a Gmsh 4.1 file, relative to the case file, or:
+//! file = "channel.msh"     # a mesh file (Gmsh .msh 4.1, SU2 .su2; see
+//!                          # crate::format), relative to the case file, or:
 //! [mesh.generate]          # the built-in generator (crate::generate::BoxSpec)
 //! type = "poly"
 //! cells = [16, 16, 16]
@@ -54,8 +55,17 @@ pub struct MeshCase {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct MeshSection {
-    /// Gmsh file (relative to the case file).
+    /// Mesh file (relative to the case file): Gmsh `.msh` 4.1 or SU2 `.su2`
+    /// (docs/meshes.md). The boundaries are the file's physical groups or
+    /// markers; rename them with `boundaries`.
     pub file: Option<PathBuf>,
+    /// Format of `file`: `gmsh` or `su2` (default: from the extension, else
+    /// from the content).
+    pub format: Option<String>,
+    /// Cell layer thickness in z when a 2D file (SU2 `NDIME= 2`) is extruded
+    /// into one layer, in the units of the file (before `scale`); default the
+    /// median edge length of the 2D cells.
+    pub thickness: Option<f64>,
     /// Factor applied to the coordinates of a file (0.001: mm to m).
     pub scale: f64,
     /// Built-in generator.
@@ -83,6 +93,8 @@ impl Default for MeshSection {
     fn default() -> Self {
         Self {
             file: None,
+            format: None,
+            thickness: None,
             scale: 1.0,
             generate: None,
             cylinder: None,
@@ -172,7 +184,8 @@ impl MeshCase {
         Ok(case)
     }
 
-    /// A case that reads a Gmsh file with the default settings.
+    /// A case that reads a mesh file (any format of [`crate::format`]) with
+    /// the default settings.
     pub fn for_file(path: &Path) -> Self {
         let mut c = Self::default();
         c.mesh.file = Some(path.to_path_buf());
@@ -269,7 +282,11 @@ pub fn build_mesh(case: &MeshSection) -> Result<(Mesh, String, Vec<String>)> {
             )
         }
         (Some(f), None) => {
-            let g = crate::gmsh::read(f).map_err(anyhow::Error::msg)?;
+            let options = crate::format::ReadOptions {
+                thickness: case.thickness,
+            };
+            let g = crate::format::read_with(f, case.format.as_deref(), &options)
+                .map_err(anyhow::Error::msg)?;
             let mut mesh = g.mesh;
             if case.scale != 1.0 {
                 for p in &mut mesh.points {
