@@ -35,7 +35,7 @@
 //! |---|---|---|---|
 //! | `wall-shear-stress` | `wall_shear_stress_x`, `_y`, `_z`, `wall_shear_stress_magnitude` | the tangential viscous stress of the fluid on the wall | Pa |
 //! | `y-plus` | `y_plus` | y⁺ = d u_τ / ν with u_τ = √(τ_w / ρ) and d the wall distance of the cell centroid | - |
-//! | `turbulence-wall` | `friction_velocity`, `y_star` | u_τ of the wall treatment, y* = d C_μ^¼ k_P^½ / ν of the wall-adjacent cell (β* for SST); needs a turbulence model | m/s, - |
+//! | `turbulence-wall` | `friction_velocity`, `y_star`, `blending` | u_τ of the wall treatment, y* = d C_μ^¼ k_P^½ / ν of the wall-adjacent cell (β* for SST), and the viscous weight of the wall treatment (spec 2.3): 1 where the wall is resolved (`low-re`, the sublayer of `standard`), 1 − tanh((y⁺/5)²) of `automatic`, e^{−Γ} of `compound`, Γ = dU⁺/dy⁺ of `compound-2023`, 0 in the log layer and for `scalable`; needs a turbulence model | m/s, -, - |
 //!
 //! The fields of rotating machinery (D183) need an `[[mrf]]` or a
 //! `[[sliding]]` table and use the notation of turbomachinery: **c** is
@@ -293,7 +293,11 @@ impl Derived {
                 ("wall_normal_y", "-"),
                 ("wall_normal_z", "-"),
             ],
-            Derived::TurbulenceWall => &[("friction_velocity", "m/s"), ("y_star", "-")],
+            Derived::TurbulenceWall => &[
+                ("friction_velocity", "m/s"),
+                ("y_star", "-"),
+                ("blending", "-"),
+            ],
             Derived::CurvatureCorrection => &[("rotation_function", "-")],
         }
     }
@@ -1024,8 +1028,17 @@ pub fn compute(
                         ys[f - ni] = y * u_star * t.k[c].max(0.0).sqrt() / nu;
                     }
                 }
+                let bl = t.wall_blending.clone().ok_or_else(|| {
+                    crate::diag::err(crate::diag::Diagnostic::new(
+                        crate::diag::CASE_INCONSISTENT,
+                        "derived field `turbulence-wall`: the restart file has no wall blending \
+                         weight (`turb_wall_blending`, written since 0.6); continue the run for \
+                         one iteration to write it",
+                    ))
+                })?;
                 out.faces.push(("friction_velocity", ut));
                 out.faces.push(("y_star", ys));
+                out.faces.push(("blending", bl));
             }
         }
     }

@@ -32,8 +32,9 @@
 //!   `turb_zeta_b`, `turb_f_b`; `turb_amg_matrix_<slot>` the matrices of
 //!   the last multigrid setups of the turbulence equations (slot 1 f,
 //!   2 k, 3 ε or ω, 4 ζ; with their multigrid only); `turb_fr1`, f_r1
-//!   of the curvature correction of SST (output only, recomputed in every
-//!   iteration);
+//!   of the curvature correction of SST, and per boundary face
+//!   `turb_wall_blending`, the viscous weight of the wall treatment (both
+//!   output only, recomputed in every iteration);
 //! - `amg_matrix`: the pressure matrix of the last multigrid setup (the
 //!   hierarchy is rebuilt from it, so the preconditioner is the same);
 //! - the coupled algorithm with the multigrid momentum sweep (D179):
@@ -234,6 +235,9 @@ mod io {
                 ds(&g, "turb_omega_b", &t.omega_b)?;
                 ds(&g, "turb_u_tau", &t.u_tau)?;
                 ds(&g, "turb_y_plus", &t.y_plus)?;
+                if let Some(b) = &t.wall_blending {
+                    ds(&g, "turb_wall_blending", b)?;
+                }
                 ds(&g, "turb_p_modified", &t.p_modified)?;
                 ds(&g, "turb_pb_modified", &t.pb_modified)?;
                 ds(&g, "turb_wall_distance", &t.wall_distance)?;
@@ -370,6 +374,11 @@ mod io {
             omega_b: rd(g, "turb_omega_b")?,
             u_tau: rd(g, "turb_u_tau")?,
             y_plus: rd(g, "turb_y_plus")?,
+            wall_blending: if g.link_exists("turb_wall_blending") {
+                Some(rd(g, "turb_wall_blending")?)
+            } else {
+                None
+            },
             p_modified: rd(g, "turb_p_modified")?,
             pb_modified: rd(g, "turb_pb_modified")?,
             wall_distance: rd(g, "turb_wall_distance")?,
@@ -694,6 +703,7 @@ impl Restart {
                     omega_b: remap(&t.omega_b, &mb),
                     u_tau: remap(&t.u_tau, &mb),
                     y_plus: remap(&t.y_plus, &mb),
+                    wall_blending: t.wall_blending.as_ref().map(|o| remap(o, &mb)),
                     p_modified: remap(&t.p_modified, &mc),
                     pb_modified: remap(&t.pb_modified, &mb),
                     wall_distance: remap(&t.wall_distance, &mc),

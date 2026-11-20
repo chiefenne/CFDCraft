@@ -1946,8 +1946,24 @@ restart file give the same numbers.
 | The step, k-ε-ζ-f₀, 8 200 cells (gallery 108) | largest −u'v'/U_ref² in the shear layer | reported | 0.011 at x/H 4 to 7 |
 
 Not in this part: the blending weight of the compound and automatic
-treatments as a wall field (the wall kernels do not store it); the
+treatments as a wall field (added in PR #130, below); the
 heat-transfer coefficient and T⁺ of the scalars stay in the wall CSV.
+
+### The wall blending weight (spec 2.3, PR #130)
+
+The wall kernel writes the viscous weight of each wall treatment to an
+output buffer (not read by the solver), the restart file stores it as
+`turb_wall_blending`, and `turbulence-wall` gains the boundary dataset
+`blending`. A restart file written before has no such dataset; `foehn post
+derive` then refuses `turbulence-wall` with CASE005 and asks for one more
+iteration.
+
+| Check | Quantity | Band | Result |
+|---|---|---|---|
+| Channels of `turbulence_fields_of_every_model`, plus SST with `automatic` | `blending` in [0, 1], zero off walls | exact | asserted |
+| | SST `low-re` 1, k-ε `scalable` 0 | bitwise | asserted |
+| | SST `automatic` against 1 − tanh((y⁺/5)²) with the y⁺ of the same call | 1e-12 | asserted |
+| | EB `compound` against e^{−Γ(y*)}, Γ = 0.01 y*⁴/(1 + 5 y*), with the y* of the final k | 1e-3 relative (k of the last wall call is one iteration older) | asserted |
 
 ## The SST automatic treatment in the buffer layer (6g, PR #112)
 

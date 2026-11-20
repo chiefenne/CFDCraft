@@ -97,7 +97,13 @@ derived = ["turbulence-scales", "reynolds-stress", "turbulence-wall"]
   models.
 - `turbulence-wall`: u_τ of the wall treatment and y* = d C_μ^¼ k_P^½/ν on
   the boundary blocks (zero off walls). y* is the wall coordinate of the
-  k-ε wall functions and of the compound treatments; y⁺ is `y-plus`. The
+  k-ε wall functions and of the compound treatments; y⁺ is `y-plus`.
+  `blending` is the viscous weight of the wall treatment: 1 where the wall
+  is resolved (`low-re`, the sublayer of `standard`), 0 where the log law
+  holds (the log layer, `scalable`), in between 1 − tanh((y⁺/5)²) of
+  `automatic`, e^{−Γ} of `compound` and Γ = dU⁺/dy⁺ of `compound-2023`. A
+  plot of it shows which walls of a mesh are resolved and which lean on
+  the wall function. The
   heat-transfer coefficient and T⁺ of each scalar are the columns
   `<name>_h` and `<name>_t_plus` of `wall_<boundary>.csv`.
 
