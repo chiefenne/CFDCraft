@@ -11,6 +11,7 @@ Writes channel_mixed_ascii.vtk, channel_mixed_binary.vtk (legacy),
 channel_mixed_ascii.vtu, channel_mixed_binary.vtu (inline base64, no
 compression) and channel_mixed_zlib.vtu (zlib).
 """
+
 import meshio
 
 SRC = "crates/foehncraft-mesh/tests/data/channel_mixed_ascii.msh"

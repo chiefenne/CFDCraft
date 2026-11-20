@@ -11,6 +11,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 26 | [Flow on raw Gmsh tetrahedra: the cell-quality remediation](#skewed-tets) | 6 | skewed faces, Gauss pressure gradient, limiter, divergence report (D50, D63) |
 | 127 | [A PyAero airfoil mesh from an SU2 file](#su2-airfoil) | 6 | SU2 reader, mesh-format layer, 2D files extruded one layer, markers as boundaries (D187) |
 | 129 | [A polyhedral mesh from OpenFOAM and CGNS](#foam-cgns-polyhedra) | 6 | OpenFOAM and CGNS readers, polyhedral cells, one mesh through two formats (D188) |
+| 134 | [One polyhedral mesh through five formats](#five-formats) | 6 | industry .msh and VTK readers, VTU writer, the same mesh as OpenFOAM, CGNS, .msh and VTU (D189, D190) |
 
 ---
 
@@ -286,5 +287,30 @@ target/release/foehn mesh crates/foehncraft-mesh/tests/data/cgns/dual_ngon.cgns
 | Meshes | `crates/foehncraft-mesh/tests/data/openfoam/{channel_ascii,channel_binary,dual_polyhedra}`, `.../cgns/{box_hex,box_tet,box_prism,dual_ngon}.cgns` |
 | Made by | OpenFOAM utilities and Gmsh; `tools/mesh/cgns_test_meshes.py`, `tools/mesh/cgns_ngon_fixture.py`, `tools/mesh/openfoam_test_meshes.md` |
 | Recipe | [recipe 129](../recipes/meshes.md#mesh-cgns-openfoam) |
+
+<a id="five-formats"></a>
+## 134. One polyhedral mesh through five formats
+
+The dual of a tetrahedral unit cube (81 polyhedral cells, 582 faces, made by
+OpenFOAM's `polyDualMesh`) exists in the repository as an OpenFOAM
+`polyMesh` (gallery 129), as a CGNS NGON/NFACE file, as an industry `.msh`
+(`tests/data/industry_msh/dual_polyhedra.msh`) and, written by Foehncraft
+itself, as a VTK XML grid. Every reader gives the same 81 cells, the same
+six boundaries `xmin` to `zmax` of area 1 and the volume 1 (4e-16 closed);
+a `.vtu` written with `output.vtu` reads back with the same names. A mixed
+Gmsh mesh of hexahedra and wedges converted by an independent tool to
+legacy ASCII, legacy binary, XML ASCII, XML base64 and zlib-compressed XML
+reads as the mesh of the Gmsh file in all five encodings.
+
+```
+target/release/foehn mesh crates/foehncraft-mesh/tests/data/industry_msh/dual_polyhedra.msh --vtu
+target/release/foehn mesh output/dual_polyhedra/mesh.vtu
+```
+
+| | |
+|---|---|
+| Meshes | `crates/foehncraft-mesh/tests/data/industry_msh/*.msh`, `.../vtk/channel_mixed_*.{vtk,vtu}` |
+| Made by | `tools/mesh/industry_msh_fixtures.py` (from the OpenFOAM fixtures), `tools/mesh/vtk_test_meshes.py` (meshio, generator only) |
+| Recipe | [recipe 134](../recipes/meshes.md#mesh-msh-vtk) |
 
 [↑ back to top](#meshes)

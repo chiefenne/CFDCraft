@@ -12,6 +12,7 @@ Plain Python, no dependencies. Run from the repository root:
 - dual_polyhedra.msh: the polyhedral dual mesh, mixed faces (the node count
   leads each face), one cell zone.
 """
+
 import os
 import re
 
@@ -26,7 +27,9 @@ def read_foam(d):
     _, rest = foam_numbers(f"{pm}/points")
     pts = [[float(v) for v in p.split()] for p in re.findall(r"\(([^()]+)\)", rest)]
     _, rest = foam_numbers(f"{pm}/faces")
-    faces = [[int(v) for v in f.split()] for f in re.findall(r"\d+\s*\(([^()]+)\)", rest)]
+    faces = [
+        [int(v) for v in f.split()] for f in re.findall(r"\d+\s*\(([^()]+)\)", rest)
+    ]
     owner = [int(v) for v in foam_numbers(f"{pm}/owner")[1].split()]
     neigh = [int(v) for v in foam_numbers(f"{pm}/neighbour")[1].split()]
     patches = []
@@ -66,21 +69,24 @@ def write(path, pts, faces, owner, neigh, patches, zones, mixed, flip=False):
     sections = [("interior-1", "interior", 2, 0, n_inner)]
     for name, kind, nf, start in patches:
         bc = {"wall": 3, "symmetry": 7, "empty": 7}.get(kind, 4)
-        label = {"wall": "wall", "symmetry": "symmetry", "empty": "symmetry"}.get(kind, "pressure-inlet")
+        label = {"wall": "wall", "symmetry": "symmetry", "empty": "symmetry"}.get(
+            kind, "pressure-inlet"
+        )
         sections.append((name, label, bc, start, start + nf))
 
     def f(v):
         return format(v, "x")
 
     with open(path, "w") as o:
-        o.write('(0 "Industry .msh test mesh, tools/mesh/industry_msh_fixtures.py")\n(0 "")\n')
+        o.write(
+            '(0 "Industry .msh test mesh, tools/mesh/industry_msh_fixtures.py")\n(0 "")\n'
+        )
         o.write("(2 3)\n")
         o.write(f"(10 (0 1 {f(len(pts))} 0 3))\n")
         o.write(f"(12 (0 1 {f(n_cells)} 0 0))\n")
         o.write(f"(13 (0 1 {f(len(faces))} 0 0))\n")
         o.write(f"(10 (1 1 {f(len(pts))} 1 3)(\n")
-        for p in pts:
-            o.write("  " + " ".join(f"{v:.16e}" for v in p) + "\n")
+        o.writelines("  " + " ".join(f"{v:.16e}" for v in p) + "\n" for p in pts)
         o.write("))\n")
         for i, (name, a, b) in enumerate(zone_ranges):
             o.write(f"(12 ({f(i + 1)} {f(a)} {f(b)} 1 {'7' if mixed else '4'}))\n")
@@ -98,7 +104,9 @@ def write(path, pts, faces, owner, neigh, patches, zones, mixed, flip=False):
                     if c1:
                         c0, c1 = c1, c0
                 lead = f"{f(len(nodes))} " if ftype == 0 else ""
-                o.write("  " + lead + " ".join(f(n) for n in nodes) + f" {f(c0)} {f(c1)}\n")
+                o.write(
+                    "  " + lead + " ".join(f(n) for n in nodes) + f" {f(c0)} {f(c1)}\n"
+                )
             o.write("))\n")
         for i, (name, a, b) in enumerate(zone_ranges):
             o.write(f"(45 ({f(i + 1)} fluid {name})())\n")
@@ -109,10 +117,31 @@ def write(path, pts, faces, owner, neigh, patches, zones, mixed, flip=False):
 def main():
     os.makedirs(OUT, exist_ok=True)
     pts, faces, owner, neigh, patches, zones = read_foam("channel_ascii")
-    write(f"{OUT}/channel_hex.msh", pts, faces, owner, neigh, patches, zones, mixed=False)
-    write(f"{OUT}/channel_hex_flipped.msh", pts, faces, owner, neigh, patches, zones, mixed=False, flip=True)
+    write(
+        f"{OUT}/channel_hex.msh", pts, faces, owner, neigh, patches, zones, mixed=False
+    )
+    write(
+        f"{OUT}/channel_hex_flipped.msh",
+        pts,
+        faces,
+        owner,
+        neigh,
+        patches,
+        zones,
+        mixed=False,
+        flip=True,
+    )
     pts, faces, owner, neigh, patches, zones = read_foam("dual_polyhedra")
-    write(f"{OUT}/dual_polyhedra.msh", pts, faces, owner, neigh, patches, zones, mixed=True)
+    write(
+        f"{OUT}/dual_polyhedra.msh",
+        pts,
+        faces,
+        owner,
+        neigh,
+        patches,
+        zones,
+        mixed=True,
+    )
 
 
 if __name__ == "__main__":
