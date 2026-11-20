@@ -11,8 +11,8 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 26 | [Flow on raw Gmsh tetrahedra: the cell-quality remediation](#skewed-tets) | 6 | skewed faces, Gauss pressure gradient, limiter, divergence report (D50, D63) |
 | 127 | [A PyAero airfoil mesh from an SU2 file](#su2-airfoil) | 6 | SU2 reader, mesh-format layer, 2D files extruded one layer, markers as boundaries (D187) |
 | 129 | [A polyhedral mesh from OpenFOAM and CGNS](#foam-cgns-polyhedra) | 6 | OpenFOAM and CGNS readers, polyhedral cells, one mesh through two formats (D188) |
-| 134 | [One polyhedral mesh through five formats](#five-formats) | 6 | industry .msh and VTK readers, VTU writer, the same mesh as OpenFOAM, CGNS, .msh and VTU (D191, D192) |
-| 138 | [Taylor–Couette sliding case from a two-zone SU2 file](#su2-zones) | 6 | multi-zone SU2 and CGNS, rotor and stator as cell zones, interface boundaries, `[[sliding]]` (D193) |
+| 134 | [One polyhedral mesh through five formats](#five-formats) | 6 | industry .msh and VTK readers, VTU writer, the same mesh as OpenFOAM, CGNS, .msh and VTU (D195, D196) |
+| 138 | [Taylor–Couette sliding case from a two-zone SU2 file](#su2-zones) | 6 | multi-zone SU2 and CGNS, rotor and stator as cell zones, interface boundaries, `[[sliding]]` (D197) |
 
 ---
 

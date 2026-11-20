@@ -1,5 +1,5 @@
 # Laminar Taylor-Couette flow with an imprinted sliding interface, the mesh
-# from a two-zone SU2 file (D193). Gallery example 138, recipe 138.
+# from a two-zone SU2 file (D197). Gallery example 138, recipe 138.
 #
 #   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/taylor_couette_su2_zones.toml
 #

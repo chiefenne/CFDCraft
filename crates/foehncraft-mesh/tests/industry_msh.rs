@@ -1,4 +1,4 @@
-//! Industry `.msh` reader (D191): hexahedral and polyhedral meshes, zones,
+//! Industry `.msh` reader (D195): hexahedral and polyhedral meshes, zones,
 //! both face orientations, `.msh` shared with Gmsh, and clear errors.
 
 use foehncraft_mesh::Geometry;
