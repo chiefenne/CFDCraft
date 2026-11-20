@@ -13,6 +13,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | 90 | [Impinging jet at H/D = 2: a pipe profile as the inlet, Nusselt number, the stagnation-point anomaly](#impinging-jet) | 6 | `profile = "table"` with `k`, `epsilon`/`omega`, `zeta` columns, `foehncraft.profiles`, wall probes with scalars, `production_limiter`, `examples/studies/impinging_jet.py` |
 | 113 | [Curvature and rotation correction of SST: channel in spanwise rotation, backward-facing step](#curvature-correction) | 6 | `turbulence.curvature_correction`, `flow.frame_rotation`, constants `c_r1` … `c_r3`, derived field `curvature-correction` |
 | 115 | [Quadratic constitutive relation of SST: secondary flow in a square duct](#qcr) | 6 | `turbulence.qcr`, constants `c_cr1`, `c_cr2` |
+| 140 | [Turbulence of the backflow at a pressure outlet: an outlet inside the recirculation](#outlet-backflow) | 6 | `k`, `omega`/`epsilon`, `turbulence_intensity`, `zeta` on `static-pressure-outlet` and `total-pressure-outlet` |
 
 ---
 
@@ -814,6 +815,63 @@ target/release/foehn flow examples/cases/flow/square_duct_qcr.toml --out output/
     --set turbulence.qcr=\"none\"
 python3 -m tools.plot.square_duct_fields docs/figures/gallery/square_duct_qcr.png \
     output/duct_qcr output/duct_sst
+```
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="outlet-backflow"></a>
+## 140. Turbulence of the backflow at a pressure outlet: an outlet inside the recirculation
+
+<img src="../figures/gallery/outlet_backflow.png" alt="Turbulent kinetic energy k behind a backward-facing step whose outlet sits at x/H = 4, inside the recirculation, k-omega SST, white line u = 0. Top: the outlet gives k and omega of the entering fluid, so a thin dark band of low k enters along the lower part of the outlet. Bottom: the default, the entering fluid carries the k of the cell next to the outlet and the high k of the shear layer reaches down to the wall there" width="682" height="550">
+
+A domain that ends too close behind a body, a step or a jet has fluid
+entering through part of its outlet. Without further data that fluid
+carries the turbulence of the cell next to the outlet (bottom: the high k
+of the shear layer is copied into the entering stream). An outlet can now
+say what the entering fluid brings, with the same keys as an inlet:
+
+```toml
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+k = 1.5e-4          # or turbulence_intensity with turbulence_length_scale or viscosity_ratio
+omega = 0.6         # epsilon for the k-ε family; zeta for ζ-f, ζ-f₀ and EB
+```
+
+On every outlet face where the flow enters (ṁ < 0) these values are fixed
+values of k, ω or ε and ζ; where it leaves, the face stays zero gradient.
+The state is set again face by face in every outer iteration from the
+current fluxes, so the inflow part of the outlet can move. Top: the
+entering band near the wall carries the free-stream k.
+
+| Check | Result |
+|---|---|
+| Duct between two pressure outlets, the flow entering through one (`tests/turbulence.rs`, `outlet_backflow_takes_the_given_turbulence_values`) | entering faces hold k = 10⁻², ω = 20 exactly; the leaving outlet stays zero gradient; first-cell k more than 10 times that of the run without values |
+| The same run continued from a restart of step 5 | bit for bit equal to the uninterrupted run (turbulence state, u, p) |
+| The step of the figure, outlet at x/H = 4, 4 600 cells | both runs converge (1 005 and 1 312 iterations); entering band y/H < 0.51, k there 2.9·10⁻⁴ to 0.023 with the values, 4.2·10⁻³ to 0.024 without |
+
+A finding on the way: after a restart, the prescribed modified pressure
+p̂ = p + ⅔ρk of the pressure boundaries came from the start fields until
+the first turbulence solve, so a continued turbulent run with pressure
+boundaries was not bit-identical to the uninterrupted one (10⁻⁷ in u
+in the test duct, 1 % with backflow values). The restart now sets p̂ from
+the loaded k.
+
+| | |
+|---|---|
+| Code | `turbulence::Turbulence::set_backflow`, `apply_backflow`, `turbulence::inlet::has_backflow_values`; `Simplec::load` (p̂ after a restart) |
+| Tests | `tests/turbulence.rs` (`outlet_backflow_takes_the_given_turbulence_values`, `inlet_turbulence_checks`) |
+| Case file | `flow/backstep_outlet_backflow.toml` |
+| Recipe | [140](../recipes/turbulence.md#outlet-backflow) |
+
+```
+target/release/foehn flow examples/cases/flow/backstep_outlet_backflow.toml --out output/bf_values
+# the same case without the lines k and omega of [boundary.xmax]:
+target/release/foehn flow backstep_outlet_backflow_default.toml --out output/bf_default
+python3 -m tools.plot.outlet_backflow docs/figures/gallery/outlet_backflow.png \
+    output/bf_values/fields.vtkhdf output/bf_default/fields.vtkhdf
 ```
 
 [↑ back to top](#turbulence-models)

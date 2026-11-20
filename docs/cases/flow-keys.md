@@ -390,8 +390,11 @@ check warns above 10° (BC024).
 Inlets also take the turbulence values of the
 [turbulence models](#turbulence-d129d139): `turbulence_intensity` with
 `turbulence_length_scale` or `viscosity_ratio`, or `k` with `omega`
-directly (or `k` with `epsilon` for the k-ε family). Pressure outlets accept them for the backflow, but the backflow
-takes k and ω of the cell for now (BC028 says so); in laminar flow the
+directly (or `k` with `epsilon` for the k-ε family). Pressure outlets take them, and `zeta`, for the backflow:
+on the faces where the flow enters (ṁ < 0) they are fixed values, where
+it leaves zero gradient, decided face by face in every outer iteration
+([gallery 140](../gallery/turbulence.md#outlet-backflow)); without them
+the entering fluid carries the values of the cell. In laminar flow the
 check reports them as unused (BC009). Walls take `roughness`.
 
 # Sensible combinations (D30)
