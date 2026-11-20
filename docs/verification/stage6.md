@@ -2051,8 +2051,10 @@ maintainer's Mac, 2026-11-20) failed in two k-ε-ζ-f runs with GEN001 from
 the multigrid setup of the f equation. On the finest channel the
 diagonals of the coarsest level span 10¹⁴, and the check compared each
 pivot with the largest diagonal (a pivot of 2.7·10⁻⁴, 99 % of its own
-diagonal, was refused). Each pivot is now compared with its own diagonal
-(a singular matrix is still refused at any scale), and a transport or
+diagonal, was refused). For the turbulence equations each pivot is now compared with its own
+diagonal (the pressure keeps the strict test, which finds a matrix that
+stops being positive definite early; a singular matrix is refused at any
+scale), and a transport or
 elliptic equation whose multigrid setup fails takes the Jacobi
 preconditioner, with a note in the log, instead of stopping the run. With
 that, both level-3 runs diverge with the default relaxations: the plate in

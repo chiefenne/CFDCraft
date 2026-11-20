@@ -127,6 +127,15 @@ pub struct AmgSettings {
     pub power_iterations: usize,
     /// Precision of the hierarchy.
     pub precision: Precision,
+    /// Tests the pivots of the dense coarsest level against their own
+    /// diagonals instead of the largest one: for the transport and
+    /// elliptic equations of the turbulence models, whose coefficients
+    /// span many decades on a fine mesh. Not a case key; the pressure keeps
+    /// the strict test, which finds a matrix that stops being positive
+    /// definite early.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub scaled_pivots: bool,
 }
 
 impl Default for AmgSettings {
@@ -143,6 +152,7 @@ impl Default for AmgSettings {
             max_levels: 20,
             power_iterations: 20,
             precision: Precision::Mixed,
+            scaled_pivots: false,
         }
     }
 }

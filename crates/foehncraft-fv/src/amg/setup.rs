@@ -295,6 +295,13 @@ fn smoother_steps(s: &AmgSettings, lambda: f64) -> Vec<(f64, f64)> {
 /// most of a setup on a small mesh, and of every per-step setup of a
 /// sliding mesh by imprinting (D182).
 pub fn dense_spd_inverse(a: &Csr) -> Result<Vec<f64>> {
+    dense_spd_inverse_with(a, false)
+}
+
+/// [`dense_spd_inverse`] with the choice of the pivot test: `scaled` tests
+/// each pivot against its own diagonal (independent of the scale of the
+/// other rows), else against the largest diagonal.
+pub fn dense_spd_inverse_with(a: &Csr, scaled: bool) -> Result<Vec<f64>> {
     let n = a.n_rows;
     let mut l = vec![0.0; n * n];
     for i in 0..n {
@@ -304,6 +311,7 @@ pub fn dense_spd_inverse(a: &Csr) -> Result<Vec<f64>> {
             }
         }
     }
+    let scale = (0..n).map(|i| l[i * n + i].abs()).fold(0.0f64, f64::max);
     // lower Cholesky factor in place, row by row: L[i][j] for j < i from
     // the dot product of the rows i and j, then the pivot
     for i in 0..n {
@@ -314,14 +322,15 @@ pub fn dense_spd_inverse(a: &Csr) -> Result<Vec<f64>> {
             let s = row[j] - dot(&row[..j], rj);
             row[j] = s / done[j * n + j];
         }
-        // the pivot against its own diagonal, so that the test does not
-        // depend on the scale of the other rows: the coarsest level of an
-        // equation with a wide range of coefficients (the elliptic
-        // equation of ζ-f on a fine mesh: 10¹⁴ between diagonals) is
-        // positive definite although a pivot is far below the largest
-        // diagonal
+        // `scaled`: the pivot against its own diagonal, so that the test
+        // does not depend on the scale of the other rows. The coarsest
+        // level of an equation with a wide range of coefficients (the
+        // elliptic equation of ζ-f on a fine mesh: 10¹⁴ between diagonals)
+        // is positive definite although a pivot is far below the largest
+        // diagonal.
         let d = row[i] - dot(&row[..i], &row[..i]);
-        if d <= 1e-13 * row[i].abs() || !d.is_finite() {
+        let floor = if scaled { row[i].abs() } else { scale };
+        if d <= 1e-13 * floor || !d.is_finite() {
             bail!(
                 "the coarsest multigrid level ({n} unknowns) is singular or not positive \
                  definite: the pressure level is not fixed (fix it with a fixed-value \
@@ -460,7 +469,7 @@ fn build_on(a: Csr, s: &AmgSettings) -> Result<Hierarchy> {
          lower `strength`",
         cur.n_rows
     );
-    let coarse_inv = dense_spd_inverse(&cur)?;
+    let coarse_inv = dense_spd_inverse_with(&cur, s.scaled_pivots)?;
     let tb = match s.precision {
         Precision::Mixed => 4,
         Precision::Double => 8,
@@ -590,7 +599,8 @@ pub(crate) mod tests {
             .map(|i| (0..3).map(|j| (j as u32, d[i] * b[i][j] * d[j])).collect())
             .collect();
         let a = Csr::from_rows(3, rows);
-        let inv = dense_spd_inverse(&a).unwrap();
+        assert!(dense_spd_inverse(&a).is_err(), "the strict test refuses it");
+        let inv = dense_spd_inverse_with(&a, true).unwrap();
         // A = D B D, so A⁻¹ = D⁻¹ B⁻¹ D⁻¹ with B⁻¹ = ¼ [[3 2 1] [2 4 2] [1 2 3]]
         let b_inv = [[3.0, 2.0, 1.0], [2.0, 4.0, 2.0], [1.0, 2.0, 3.0]];
         for i in 0..3 {

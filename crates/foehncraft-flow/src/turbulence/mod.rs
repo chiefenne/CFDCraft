@@ -2049,7 +2049,10 @@ impl Turbulence {
             curv,
             curv_fresh: CurvFresh::default(),
             qcr,
-            amg: case.solver.pressure.amg.clone(),
+            amg: foehncraft_fv::amg::AmgSettings {
+                scaled_pivots: true,
+                ..case.solver.pressure.amg.clone()
+            },
             elliptic: case.solver.elliptic.clone(),
             amg_rebuild: true,
             pseudo: None,
