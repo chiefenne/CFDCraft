@@ -293,6 +293,10 @@ A code keeps its meaning; a retired code stays in the table.
 | `MAT003` | warning | A property evaluated outside the validity range of its data (clamped to the range). |
 | `MAT004` | error | Materials whose `base` refer to each other in a cycle. |
 | `MAT005` | error | A property value that is not positive and finite. |
+| `MAT006` | error | A solid material without density, specific heat or thermal conductivity. |
+| `MAT007` | error | A fluid without specific heat or thermal conductivity in a run with the energy equation. |
+| `MAT008` | error | An orthotropic thermal conductivity without both axes, or with parallel axes. |
+| `MAT009` | error | A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format. |
 | `REG001` | error | A region that is not a fluid: solids and porous zones come with the energy equation (L1). |
 | `REG002` | error | A region that names a cell zone the mesh does not have, or a zone in two regions. |
 | `MRF001` | error | An `[[mrf]]` table and a `[[sliding]]` table that turn the same cells (one of them without a `zone`, or both with the same one): a zone is turned by a moving reference frame (steady or transient, D185) or by a sliding mesh (D182), not by both. |

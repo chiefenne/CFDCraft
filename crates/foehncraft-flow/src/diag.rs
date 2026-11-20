@@ -133,6 +133,10 @@ codes! {
     MAT_RANGE = "MAT003", Warning, "A property evaluated outside the validity range of its data (clamped to the range).";
     MAT_BASE = "MAT004", Error, "Materials whose `base` refer to each other in a cycle.";
     MAT_VALUE = "MAT005", Error, "A property value that is not positive and finite.";
+    MAT_SOLID = "MAT006", Error, "A solid material without density, specific heat or thermal conductivity.";
+    MAT_THERMAL = "MAT007", Error, "A fluid without specific heat or thermal conductivity in a run with the energy equation.";
+    MAT_AXES = "MAT008", Error, "An orthotropic thermal conductivity without both axes, or with parallel axes.";
+    MAT_FILE = "MAT009", Error, "A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format.";
     REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid: solids and porous zones come with the energy equation (L1).";
     REG_ZONE = "REG002", Error, "A region that names a cell zone the mesh does not have, or a zone in two regions.";
     // moving reference frame and sliding mesh (D55, D182)
