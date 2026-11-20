@@ -2080,7 +2080,11 @@ impl Flow {
             cp: w.cp,
             cn: w.cn,
             bf: w.bf,
-        })
+        })?;
+        match self.turbulence.as_ref() {
+            Some(t) => t.add_explicit_stress(&mut *self.dev, f.grad_u, w.bf),
+            None => Ok(()),
+        }
     }
 
     /// Step 4 (solve): the three momentum components; residuals over

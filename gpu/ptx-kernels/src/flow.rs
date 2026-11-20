@@ -67,6 +67,8 @@ entries! {
     flow_strain_cells => e::StrainCells,
     flow_convective_derivative => e::ConvectiveDerivative,
     flow_curvature_cells => e::CurvatureCells,
+    flow_qcr_cells => e::QcrCells,
+    flow_explicit_stress_faces => e::ExplicitStressFaces,
     flow_keps_cells => e::KepsCells,
     flow_zeta_f_cells => e::ZetaFCells,
     flow_turb_faces => e::TurbFaces,

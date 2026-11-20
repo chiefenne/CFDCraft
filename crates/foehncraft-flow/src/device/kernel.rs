@@ -1301,6 +1301,46 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         self.go::<e::CurvatureCells>(self.nc, &args)
     }
 
+    fn qcr_cells(
+        &mut self,
+        grad_u: [Buf3; 3],
+        nu_t: Buf,
+        rho: f64,
+        c: &foehncraft_kernels::turb::sst::SstConstants,
+        mode: u32,
+        tau: [Buf; 6],
+    ) -> Result<()> {
+        let mut ins: Vec<Buf> = grad_u.iter().flat_map(|g| g.all()).collect();
+        ins.push(nu_t);
+        check(&tau, &ins)?;
+        let args = e::QcrArgs {
+            m: self.m,
+            grad_u: self.rg(&grad_u),
+            nu_t: self.r(nu_t),
+            rho,
+            c: *c,
+            mode,
+            tau: tau.map(|b| self.r(b)),
+            bf: Raw3::default(),
+        };
+        self.go::<e::QcrCells>(self.nc, &args)
+    }
+
+    fn explicit_stress_faces(&mut self, tau: [Buf; 6], bf: Buf3) -> Result<()> {
+        check(&bf.all(), &tau)?;
+        let args = e::QcrArgs {
+            m: self.m,
+            grad_u: RawGrad::default(),
+            nu_t: Raw::EMPTY,
+            rho: 0.0,
+            c: foehncraft_kernels::turb::sst::SstConstants::default(),
+            mode: 0,
+            tau: tau.map(|b| self.r(b)),
+            bf: self.r3(bf),
+        };
+        self.go::<e::ExplicitStressFaces>(self.nf, &args)
+    }
+
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()> {
         let mut ins = vec![a.k, a.e];
         for g in &a.grad_u {

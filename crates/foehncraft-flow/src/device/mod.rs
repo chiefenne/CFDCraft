@@ -875,6 +875,21 @@ pub trait FlowDevice {
     ) -> Result<()>;
     /// f_r1 of the curvature correction of SST per cell (D170).
     fn curvature_cells(&mut self, a: &CurvatureOps) -> Result<()>;
+    /// The non-linear stress of the quadratic constitutive relation of SST
+    /// per cell (D170; `mode` QCR_2000 or QCR_2013, μ_t = ρ ν_t).
+    #[allow(clippy::too_many_arguments)]
+    fn qcr_cells(
+        &mut self,
+        grad_u: [Buf3; 3],
+        nu_t: Buf,
+        rho: f64,
+        c: &foehncraft_kernels::turb::sst::SstConstants,
+        mode: u32,
+        tau: [Buf; 6],
+    ) -> Result<()>;
+    /// b_f −= τ_f·S: an explicit cell stress `tau` (xx, yy, zz, xy, yz, zx)
+    /// in the momentum face parts `bf`.
+    fn explicit_stress_faces(&mut self, tau: [Buf; 6], bf: Buf3) -> Result<()>;
     /// The standard or realizable k-ε model per cell.
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()>;
     /// The k-ε-ζ-f model per cell.

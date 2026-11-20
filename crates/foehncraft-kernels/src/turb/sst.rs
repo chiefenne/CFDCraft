@@ -83,6 +83,10 @@ pub struct SstConstants {
     pub c_r2: f64,
     /// c_r3 = 1.0.
     pub c_r3: f64,
+    /// C_cr1 = 0.3 of the quadratic constitutive relation (Spalart 2000).
+    pub c_cr1: f64,
+    /// C_cr2 = 2.5 of its 2013 form (Mani, Babcock, Winkler & Spalart 2013).
+    pub c_cr2: f64,
 }
 
 impl Default for SstConstants {
@@ -104,6 +108,8 @@ impl Default for SstConstants {
             c_r1: 1.0,
             c_r2: 2.0,
             c_r3: 1.0,
+            c_cr1: 0.3,
+            c_cr2: 2.5,
         }
     }
 }
@@ -398,6 +404,72 @@ pub fn rotation_function<T: Real>(
     smax(smin(fr, f(1.25), w_s), T::ZERO, w_s)
 }
 
+/// The quadratic constitutive relation: QCR2000 (Spalart 2000).
+pub const QCR_2000: u32 = 1;
+/// QCR2013 (Mani, Babcock, Winkler & Spalart 2013): QCR2000 and an
+/// isotropic stress.
+pub const QCR_2013: u32 = 2;
+
+/// The non-linear part of the Reynolds stress of the quadratic
+/// constitutive relation (specification 3.6, D170), per unit volume
+/// (Pa), in the order xx, yy, zz, xy, yz, zx:
+///
+///   τ_ij^QCR − τ_ij = −C_cr1 (O_ik τ_jk + O_jk τ_ik)
+///                     [− C_cr2 μ_t (2 S*_mn S*_mn)^½ δ_ij for QCR2013],
+///
+/// τ_ij = 2 μ_t S*_ij the Boussinesq stress (S* trace-free; the isotropic
+/// ⅔ρk drops out of the commutator), O_ik = 2 W_ik / (∂u_m/∂x_n ∂u_m/∂x_n)^½.
+/// The momentum equations take its divergence as an explicit stress; the
+/// production of k keeps the linear form (as the papers do).
+#[inline(always)]
+pub fn qcr_stress<T: Real>(g: &Tensor<T>, mu_t: T, c: &SstConstants, mode: u32) -> [T; 6] {
+    let f = T::from_f64;
+    let (mut s, w) = super::invariants::strain_rotation(g);
+    let tr = (s[0][0] + s[1][1] + s[2][2]) / f(3.0);
+    s[0][0] -= tr;
+    s[1][1] -= tr;
+    s[2][2] -= tr;
+    let mut gg = T::ZERO;
+    let mut i = 0;
+    while i < 3 {
+        let mut j = 0;
+        while j < 3 {
+            gg += g[i][j] * g[i][j];
+            j += 1;
+        }
+        i += 1;
+    }
+    let norm = gg.sqrt_of().max_of(f(1e-300));
+    let two = f(2.0);
+    // O_ik τ_jk with τ = 2 μ_t S*: 4 μ_t W_ik S*_jk / norm
+    let a = |i: usize, j: usize| {
+        let mut r = T::ZERO;
+        let mut k = 0;
+        while k < 3 {
+            r += w[i][k] * s[j][k];
+            k += 1;
+        }
+        r
+    };
+    let k4 = f(-4.0 * c.c_cr1) * mu_t / norm;
+    let comp = |i: usize, j: usize| k4 * (a(i, j) + a(j, i));
+    let mut out = [
+        comp(0, 0),
+        comp(1, 1),
+        comp(2, 2),
+        comp(0, 1),
+        comp(1, 2),
+        comp(2, 0),
+    ];
+    if mode == QCR_2013 {
+        let iso = f(c.c_cr2) * mu_t * (two * super::invariants::contract(&s, &s)).sqrt_of();
+        out[0] -= iso;
+        out[1] -= iso;
+        out[2] -= iso;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,5 +711,40 @@ mod tests {
         assert!((r2.pk - 0.5 * r1.pk).abs() < 1e-15 * r1.pk.abs().max(1.0));
         assert_eq!(r2.nu_t, r1.nu_t);
         assert!(r2.su_w < r1.su_w);
+    }
+
+    #[test]
+    fn qcr_of_a_shear_flow() {
+        // u = γ y: S*_xy = W_xy = γ/2, |∇u| = |γ|; O_xy = 2 W_xy/|γ| = 1,
+        // O_yx = −1, τ_xy = μ_t γ. Then τ_xx^nl = −2 C (O_xy τ_xy) =
+        // −2 C μ_t γ sign... : −C (O_xk τ_xk + O_xk τ_xk) = −2 C O_xy τ_xy
+        let c = SstConstants::default();
+        let mu_t = 0.7;
+        for gamma in [50.0, -3.0] {
+            let r = qcr_stress(&shear(gamma), mu_t, &c, QCR_2000);
+            let o = gamma.signum();
+            let want_xx = -2.0 * 0.3 * o * mu_t * gamma;
+            // τ_yy^nl = −2 C O_yx τ_yx = +2 C o μ_t γ
+            assert!((r[0] - want_xx).abs() < 1e-12, "{r:?}");
+            assert!((r[1] + want_xx).abs() < 1e-12, "{r:?}");
+            assert!(r[2].abs() < 1e-15 && r[3].abs() < 1e-12, "{r:?}");
+            // u'u' > v'v' as in a real shear layer: the stress −ρu'u' is
+            // the more negative one
+            assert!(r[0] < 0.0);
+        }
+        // QCR2013: the isotropic part −C_cr2 μ_t |S*|√2 on the diagonal
+        let a = qcr_stress(&shear(50.0), mu_t, &c, QCR_2000);
+        let b = qcr_stress(&shear(50.0), mu_t, &c, QCR_2013);
+        let iso = 2.5 * mu_t * 50.0;
+        assert!((a[0] - b[0] - iso).abs() < 1e-9 && (a[2] - b[2] - iso).abs() < 1e-9);
+        // a pure rotation or a pure strain has no QCR stress
+        let mut rot = [[0.0; 3]; 3];
+        rot[0][1] = 1.0;
+        rot[1][0] = -1.0;
+        assert_eq!(qcr_stress(&rot, mu_t, &c, QCR_2000), [0.0; 6]);
+        let mut st = [[0.0; 3]; 3];
+        st[0][0] = 1.0;
+        st[1][1] = -1.0;
+        assert_eq!(qcr_stress(&st, mu_t, &c, QCR_2000), [0.0; 6]);
     }
 }

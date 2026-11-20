@@ -17,7 +17,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
-| [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90, 113 |
+| [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90, 113, 115 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
@@ -86,6 +86,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="turbulence-derived-fields"></a>108 | [Derived fields of the turbulence models: Reynolds stress, scales, wall values](gallery/post-processing.md#turbulence-derived-fields) | [Post-processing](gallery/post-processing.md) |
 | <a id="transient-statistics"></a>110 | [Statistics of a transient run: the mean and the fluctuations of a vortex street](gallery/post-processing.md#transient-statistics) | [Post-processing](gallery/post-processing.md) |
 | <a id="curvature-correction"></a>113 | [Curvature and rotation correction of SST: channel in spanwise rotation, backward-facing step](gallery/turbulence.md#curvature-correction) | [Turbulence models](gallery/turbulence.md) |
+| <a id="qcr"></a>115 | [Quadratic constitutive relation of SST: secondary flow in a square duct](gallery/turbulence.md#qcr) | [Turbulence models](gallery/turbulence.md) |
 
 ## Adding a feature
 

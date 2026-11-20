@@ -70,7 +70,9 @@ Everything below is on `main`, verified by the cases of the
   and the elliptic-blending k-ε; wall treatments `low-re`, `automatic`,
   `scalable`, `standard`, `compound` and `compound-2023`, rough walls; the
   exact wall distance; the curvature and rotation correction of SST
-  (Smirnov & Menter 2009) and a whole domain in a turning frame. Validated
+  (Smirnov & Menter 2009), a whole domain in a turning frame, and the
+  quadratic constitutive relation QCR2000/QCR2013 for the secondary flow
+  of non-circular ducts. Validated
   on the flat plate, the channel against DNS, the backward-facing step and
   the impinging jet.
 - **Heat and mass transfer.** Passive scalars (temperature, concentration)

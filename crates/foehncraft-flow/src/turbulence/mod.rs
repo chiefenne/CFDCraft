@@ -231,6 +231,33 @@ pub enum ProductionLimiter {
     None,
 }
 
+/// `turbulence.qcr` (D170): the quadratic constitutive relation of SST.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum QcrMode {
+    /// The Boussinesq stress only.
+    #[default]
+    None,
+    /// QCR2000 (Spalart 2000): −C_cr1 (O_ik τ_jk + O_jk τ_ik).
+    Qcr2000,
+    /// QCR2013 (Mani, Babcock, Winkler & Spalart 2013): QCR2000 and
+    /// −C_cr2 μ_t √(2 S*_mn S*_mn) δ_ij.
+    Qcr2013,
+}
+
+impl QcrMode {
+    /// The mode of the kernel (0: off).
+    pub fn kernel(self) -> u32 {
+        match self {
+            Self::None => 0,
+            Self::Qcr2000 => foehncraft_kernels::turb::sst::QCR_2000,
+            Self::Qcr2013 => foehncraft_kernels::turb::sst::QCR_2013,
+        }
+    }
+}
+
 /// `turbulence.wall_distance` (D48).
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
@@ -305,10 +332,14 @@ pub struct TurbulenceSection {
     /// (2009) (stage 6 specification 3.6, D170; constants `c_r1`, `c_r2`,
     /// `c_r3`).
     pub curvature_correction: bool,
+    /// SST: the quadratic constitutive relation QCR2000 or QCR2013
+    /// (specification 3.6, D170; constants `c_cr1`, `c_cr2`), an explicit
+    /// non-linear stress in the momentum equations.
+    pub qcr: QcrMode,
     /// Constant overrides by their literature name (SST: `beta_star`, `a1`,
     /// `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`,
     /// `sigma_k2`, `sigma_omega1`, `sigma_omega2`, and `c_r1`, `c_r2`,
-    /// `c_r3` of the curvature correction; k-ε: `c_mu`,
+    /// `c_r3` of the curvature correction, `c_cr1`, `c_cr2` of the QCR; k-ε: `c_mu`,
     /// `c_epsilon1`, `c_epsilon2`, `sigma_k`, `sigma_epsilon`, `a0`,
     /// `kappa`; k-ε-ζ-f and ζ-f₀: `c_mu`, `c_epsilon1`,
     /// `c_epsilon1_zeta`, `c_epsilon2`, `c_1`, `c_2`, `sigma_k`,
@@ -333,6 +364,7 @@ impl Default for TurbulenceSection {
             smooth_limits: false,
             wall_distance: WallDistanceMethod::Exact,
             curvature_correction: false,
+            qcr: QcrMode::None,
             constants: BTreeMap::new(),
         }
     }
@@ -354,6 +386,8 @@ pub const SST_CONSTANTS: &[&str] = &[
     "c_r1",
     "c_r2",
     "c_r3",
+    "c_cr1",
+    "c_cr2",
 ];
 
 /// The names of the k-ε constants that `[turbulence.constants]` takes.
@@ -440,6 +474,8 @@ impl TurbulenceSection {
                 "c_r1" => &mut c.c_r1,
                 "c_r2" => &mut c.c_r2,
                 "c_r3" => &mut c.c_r3,
+                "c_cr1" => &mut c.c_cr1,
+                "c_cr2" => &mut c.c_cr2,
                 _ => {
                     let hint = crate::bc::did_you_mean(name, SST_CONSTANTS.iter().copied())
                         .map(|h| format!(" (did you mean `{h}`?)"))
@@ -685,6 +721,11 @@ impl TurbulenceSection {
             !self.curvature_correction || !(self.model.has_zeta() || self.model.is_epsilon()),
             CASE_INCONSISTENT,
             "turbulence.curvature_correction is an option of k-ω SST (Smirnov & Menter 2009)"
+        );
+        crate::need!(
+            self.qcr == QcrMode::None || !(self.model.has_zeta() || self.model.is_epsilon()),
+            CASE_INCONSISTENT,
+            "turbulence.qcr is an option of k-ω SST (Spalart 2000; Mani et al. 2013)"
         );
         if self.model.is_eb() {
             self.zeta_f_constants()?;
@@ -1527,6 +1568,8 @@ pub struct Turbulence {
     /// The curvature correction of SST.
     curv: Option<CurvDev>,
     curv_fresh: CurvFresh,
+    /// The QCR of SST: the kernel mode and the cell stress.
+    qcr: Option<(u32, [Buf; 6])>,
     /// Multigrid settings of the turbulence and elliptic solves (those of
     /// the pressure).
     amg: foehncraft_fv::amg::AmgSettings,
@@ -1886,6 +1929,15 @@ impl Turbulence {
         } else {
             None
         };
+        let qcr = if section.qcr == QcrMode::None {
+            None
+        } else {
+            let mut t = [face_viscosity; 6];
+            for b in &mut t {
+                *b = dev.alloc(nc)?;
+            }
+            Some((section.qcr.kernel(), t))
+        };
         let ka_host = kinds(mesh, &case.boundary, treatment, VarKind::K, model).1;
         let a3 = |dev: &mut dyn FlowDevice| -> Result<Buf3> {
             Ok(Buf3 {
@@ -1996,6 +2048,7 @@ impl Turbulence {
             eb,
             curv,
             curv_fresh: CurvFresh::default(),
+            qcr,
             amg: case.solver.pressure.amg.clone(),
             elliptic: case.solver.elliptic.clone(),
             amg_rebuild: true,
@@ -2595,6 +2648,22 @@ impl Turbulence {
             smooth: self.o.smooth,
             out: c.fr1,
         })
+    }
+
+    /// The non-linear stress of the QCR (D170) in the momentum face parts
+    /// `bf`, from the current velocity gradient and ν_t of the last
+    /// turbulence update (an explicit stress; nothing without `turbulence.qcr`).
+    pub(crate) fn add_explicit_stress(
+        &self,
+        dev: &mut dyn FlowDevice,
+        grad_u: [Buf3; 3],
+        bf: Buf3,
+    ) -> Result<()> {
+        let Some((mode, tau)) = self.qcr else {
+            return Ok(());
+        };
+        dev.qcr_cells(grad_u, self.nu_t, self.rho, &self.c, mode, tau)?;
+        dev.explicit_stress_faces(tau, bf)
     }
 
     /// The moving reference frames of the curvature correction (D170):
