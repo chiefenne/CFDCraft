@@ -11,6 +11,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | 88 | [Elliptic-blending k-ε: channel at three Re_τ, flat plate, backward-facing step](#elliptic-blending) | 6 | `model = "elliptic-blending-k-epsilon"`, `constants.c_epsilon4`, `zeta` as φ |
 | 89 | [Backward-facing step against the experiment: six models, three meshes](#step-validation) | 6 | `[[output.wall_crossings]]` (`skip`, `kind`, `direction`, `width`), `verification.levels`, the TMR layout of the step, `examples/studies/backstep_validation.py` |
 | 90 | [Impinging jet at H/D = 2: a pipe profile as the inlet, Nusselt number, the stagnation-point anomaly](#impinging-jet) | 6 | `profile = "table"` with `k`, `epsilon`/`omega`, `zeta` columns, `foehncraft.profiles`, wall probes with scalars, `production_limiter`, `examples/studies/impinging_jet.py` |
+| 113 | [Curvature and rotation correction of SST: channel in spanwise rotation, backward-facing step](#curvature-correction) | 6 | `turbulence.curvature_correction`, `flow.frame_rotation`, constants `c_r1` … `c_r3`, derived field `curvature-correction` |
 
 ---
 
@@ -696,5 +697,68 @@ target/release/foehn flow examples/cases/flow/impinging_jet.toml
 python3 examples/studies/impinging_jet.py output/impinging_jet_study --jobs 2 --no-experiment \
     --chart docs/figures/gallery
 ```
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="curvature-correction"></a>
+## 113. Curvature and rotation correction of SST: channel in spanwise rotation, backward-facing step
+
+<img src="../figures/gallery/curvature_correction.png" alt="Three panels behind the backward-facing step with k-ω SST and the curvature correction on 44 160 cells: the rotation function f_r1 (blue below 1 where the curvature of the shear layer damps the turbulence, red above 1 in the corner vortex and the outer part of the shear layer, 1.25 in the irrotational free stream), the eddy-viscosity ratio, and its change against plain SST (up to 10 % less in the shear layer); the reattachment points 6.74 (SST) and 6.87 (corrected) are marked" width="800" height="576">
+
+`turbulence.curvature_correction = true` multiplies the production of k
+and ω of SST by the rotation function f_r1 of Spalart & Shur (1997) in
+the form of Smirnov & Menter (2009), f_r1 = max[0, min(f_rotation,
+1.25)], from the ratio r* = S/Ω of strain rate and vorticity and from r̃,
+the rotation of the principal axes of the strain rate along a streamline
+(the material derivative DS_ij/Dt, from the gradients of the six
+components). In pure shear f_r1 = 1 and the model is SST. Behind the step
+it damps the turbulence where the shear layer curves round the separation
+bubble (the change of ν_t in the lower panel) and the bubble grows by
+1.9 % (x_r/H 6.74 to 6.87, the experiment 6.26). In the free stream,
+where the vorticity vanishes, r* is large and f_r1 sits at its limit 1.25,
+which acts on a production that is zero there.
+
+**System rotation.** `flow.frame_rotation = [0, 0, Ω]` solves the whole
+domain in a frame that turns at Ω (the velocity is the relative one, the
+Coriolis force −2ρ Ω × u acts, the centrifugal force stays in the
+pressure). The channel at Re_b = 5 800 (the DNS of Kristoffersen &
+Andersson 1993) turning about its spanwise axis at Ro = 2Ωh/U_b = 0.15:
+
+<img src="../figures/gallery/rotating_channel.svg" alt="The velocity u/U_b and the turbulence kinetic energy across the rotating channel: plain SST keeps both halves alike (equal wall shear stress), the corrected model has more turbulence on the lower, unstable side and less on the upper, stable side, a velocity profile shifted towards the stable side and a wall shear stress ratio of 1.63" width="800" height="320">
+
+Linear SST does not see the rotation: its production depends on S only,
+so both walls keep the same shear stress (ratio 1.00). With the
+correction the turbulence grows on the unstable (pressure) side, where
+the mean vorticity opposes the rotation, and is damped on the stable
+side; the core takes the slope dU/dy ≈ 2Ω of zero absolute vorticity,
+and the wall shear stresses differ by a factor 1.63. The specification
+compares that ratio with the DNS (band ±15 %, open: the data of the paper
+are not in the repository).
+
+| Check | Result |
+|---|---|
+| Pure shear: channel without rotation, with and without the correction (band 10⁻⁶) | equal driving force to the last digit (`tests/curvature.rs`) |
+| f_r1 by hand in a rotating shear flow; the same flow in the inertial and in the turning frame | 10⁻¹² and 10⁻¹⁴ (kernel tests) |
+| Rotating channel, Ro = 0.15, wall shear stress lower/upper | SST 1.000, corrected 1.627 |
+| Backward-facing step, 44 160 cells, x_r/H | 6.743 (SST), 6.869 (corrected), experiment 6.26 |
+
+| | |
+|---|---|
+| Code | `turb::sst::rotation_function`, `entry::{StrainCells, ConvectiveDerivative, CurvatureCells}`, `turbulence::Turbulence::curvature_inputs`, `frame::attach_rotating_domain`, `derived::Derived::CurvatureCorrection` |
+| Tests | `tests/curvature.rs`, the kernel tests of `turb/sst.rs` |
+| Case files | `flow/channel_rotating_sst.toml`; the step `flow/backstep_validation.toml` with `--set` |
+| Recipe | [113](../recipes/turbulence.md#curvature-correction) |
+
+```
+target/release/foehn flow examples/cases/flow/channel_rotating_sst.toml --out output/rot_on
+target/release/foehn flow examples/cases/flow/channel_rotating_sst.toml --out output/rot_off \
+    --set turbulence.curvature_correction=false
+python3 -m tools.plot.rotating_channel_chart docs/figures/gallery/rotating_channel.svg \
+    output/rot_on output/rot_off
+```
+
+The step figure: the commands in `tools/plot/curvature_fields.py`.
 
 [↑ back to top](#turbulence-models)

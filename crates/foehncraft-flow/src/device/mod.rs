@@ -339,6 +339,8 @@ pub struct SstCellOps {
     /// The weight and the value of the wall production per cell (the
     /// automatic wall treatment), if any.
     pub wall: Option<(Buf, Buf)>,
+    /// f_r1 of the curvature correction per cell (D170), if any.
+    pub fr1: Option<Buf>,
     /// Output ν_t.
     pub nu_t: Buf,
     /// Output F₁.
@@ -353,6 +355,29 @@ pub struct SstCellOps {
     pub dw: Buf,
     /// Output: 1 where the ν_t cap acted.
     pub capped: Buf,
+}
+
+/// Inputs and outputs of [`FlowDevice::curvature_cells`] (D170).
+#[derive(Debug, Clone, Copy)]
+pub struct CurvatureOps {
+    /// Velocity gradient.
+    pub grad_u: [Buf3; 3],
+    /// DS_ij/Dt (xx, yy, zz, xy, yz, zx).
+    pub dsdt: [Buf; 6],
+    /// ω.
+    pub w: Buf,
+    /// Ω^rot per cell (None: `rot` in every cell).
+    pub omega_rot: Option<Buf3>,
+    /// See `omega_rot`.
+    pub rot: [f64; 3],
+    /// Rotation of the frame of a relative velocity.
+    pub spin: [f64; 3],
+    /// Constants.
+    pub c: foehncraft_kernels::turb::sst::SstConstants,
+    /// Width of the smooth limits.
+    pub smooth: f64,
+    /// Output f_r1.
+    pub out: Buf,
 }
 
 /// Inputs and outputs of [`FlowDevice::keps_cells`].
@@ -837,6 +862,19 @@ pub trait FlowDevice {
     fn wall_setup(&mut self, s: &WallStatic) -> Result<()>;
     /// The k-ω SST model per cell.
     fn sst_cells(&mut self, a: &SstCellOps) -> Result<()>;
+    /// S_comp (xx, yy, zz, xy, yz, zx = 0 … 5) of the velocity gradient.
+    fn strain_component(&mut self, grad_u: [Buf3; 3], comp: u32, out: Buf) -> Result<()>;
+    /// out = (u − v_frame)·grad + (s − s_old)/Δt (`old` = (s, s_old, 1/Δt)).
+    fn convective_derivative(
+        &mut self,
+        u: Buf3,
+        v_frame: Option<Buf3>,
+        grad: Buf3,
+        old: Option<(Buf, Buf, f64)>,
+        out: Buf,
+    ) -> Result<()>;
+    /// f_r1 of the curvature correction of SST per cell (D170).
+    fn curvature_cells(&mut self, a: &CurvatureOps) -> Result<()>;
     /// The standard or realizable k-ε model per cell.
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()>;
     /// The k-ε-ζ-f model per cell.

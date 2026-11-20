@@ -63,7 +63,7 @@ use crate::device::{
     Buf, Buf3, Eps2, FlowDevice, Lsq, Mask, ScalarFaceArgs, ScalarRowArgs, ScalarTime, SstCellOps,
     TurbFaceOps, WallCellOps, WallFaceOps,
 };
-use crate::device::{KepsCellOps, ZetaFCellOps};
+use crate::device::{CurvatureOps, KepsCellOps, ZetaFCellOps};
 use crate::diag::{self, Diagnostic};
 use crate::expr::{self, Env, Scalar, Vars};
 use anyhow::Result;
@@ -301,9 +301,14 @@ pub struct TurbulenceSection {
     pub smooth_limits: bool,
     /// Wall distance (D48).
     pub wall_distance: WallDistanceMethod,
+    /// SST: the curvature and rotation correction of Smirnov & Menter
+    /// (2009) (stage 6 specification 3.6, D170; constants `c_r1`, `c_r2`,
+    /// `c_r3`).
+    pub curvature_correction: bool,
     /// Constant overrides by their literature name (SST: `beta_star`, `a1`,
     /// `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`,
-    /// `sigma_k2`, `sigma_omega1`, `sigma_omega2`; k-ε: `c_mu`,
+    /// `sigma_k2`, `sigma_omega1`, `sigma_omega2`, and `c_r1`, `c_r2`,
+    /// `c_r3` of the curvature correction; k-ε: `c_mu`,
     /// `c_epsilon1`, `c_epsilon2`, `sigma_k`, `sigma_epsilon`, `a0`,
     /// `kappa`; k-ε-ζ-f and ζ-f₀: `c_mu`, `c_epsilon1`,
     /// `c_epsilon1_zeta`, `c_epsilon2`, `c_1`, `c_2`, `sigma_k`,
@@ -327,6 +332,7 @@ impl Default for TurbulenceSection {
             max_viscosity_ratio: 1e5,
             smooth_limits: false,
             wall_distance: WallDistanceMethod::Exact,
+            curvature_correction: false,
             constants: BTreeMap::new(),
         }
     }
@@ -345,6 +351,9 @@ pub const SST_CONSTANTS: &[&str] = &[
     "sigma_k2",
     "sigma_omega1",
     "sigma_omega2",
+    "c_r1",
+    "c_r2",
+    "c_r3",
 ];
 
 /// The names of the k-ε constants that `[turbulence.constants]` takes.
@@ -428,6 +437,9 @@ impl TurbulenceSection {
                 "sigma_k2" => &mut c.sigma_k2,
                 "sigma_omega1" => &mut c.sigma_w1,
                 "sigma_omega2" => &mut c.sigma_w2,
+                "c_r1" => &mut c.c_r1,
+                "c_r2" => &mut c.c_r2,
+                "c_r3" => &mut c.c_r3,
                 _ => {
                     let hint = crate::bc::did_you_mean(name, SST_CONSTANTS.iter().copied())
                         .map(|h| format!(" (did you mean `{h}`?)"))
@@ -669,6 +681,11 @@ impl TurbulenceSection {
             return Ok(());
         }
         let t = self.treatment();
+        crate::need!(
+            !self.curvature_correction || !(self.model.has_zeta() || self.model.is_epsilon()),
+            CASE_INCONSISTENT,
+            "turbulence.curvature_correction is an option of k-ω SST (Smirnov & Menter 2009)"
+        );
         if self.model.is_eb() {
             self.zeta_f_constants()?;
             crate::need!(
@@ -1085,6 +1102,15 @@ pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
             message,
         })
     };
+    if t.curvature_correction && t.production_limiter == Some(ProductionLimiter::KatoLaunder) {
+        push(
+            Level::Note,
+            diag::TURB_CURVATURE_KATO,
+            "turbulence.curvature_correction with production_limiter = \"kato-launder\": both act on \
+             stagnation and swirl regions; Smirnov & Menter (2009) use the standard production"
+                .to_string(),
+        );
+    }
     if !t.constants.is_empty() {
         push(
             Level::Warning,
@@ -1217,6 +1243,9 @@ pub struct TurbState {
     /// a multigrid of the turbulence equations; dropped when a restart
     /// file is mapped to another cell order.
     pub amg: Vec<(usize, Vec<f64>)>,
+    /// f_r1 of the curvature correction per cell (output only; not in the
+    /// restart file, recomputed in every iteration).
+    pub fr1: Option<Vec<f64>>,
 }
 
 /// The ζ-f part of a [`TurbState`].
@@ -1319,6 +1348,41 @@ struct EbDev {
     lsq: Buf3,
     ones: Buf,
     zeros: Buf,
+}
+
+/// The device data of the curvature correction of SST (D170): the six
+/// components of S_ij, their values at the last time level, DS_ij/Dt and
+/// f_r1, with the zero-gradient least-squares weights of [`EbDev`].
+#[derive(Debug, Clone, Copy)]
+struct CurvDev {
+    s: [Buf; 6],
+    s_old: [Buf; 6],
+    dsdt: [Buf; 6],
+    fr1: Buf,
+    tmp: Buf3,
+    lsq: Buf3,
+    ones: Buf,
+    zeros: Buf,
+    /// Ω^rot and the frame velocity Ω × (x − x₀) per cell (moving
+    /// reference frames, D55), if any.
+    frame: Option<(Buf3, Buf3)>,
+    /// Ω^rot of every cell and the spin of a relative velocity (the
+    /// rotating frame of the whole domain, `flow.frame_rotation`).
+    rot: [f64; 3],
+    spin: [f64; 3],
+    /// `s_old` holds a time level.
+    has_old: bool,
+}
+
+/// The curvature correction computed S_ij since the start or the last
+/// restart (so that a time level of S_ij can be kept).
+#[derive(Debug, Default)]
+struct CurvFresh(std::cell::Cell<bool>);
+
+impl Clone for CurvFresh {
+    fn clone(&self) -> Self {
+        Self(std::cell::Cell::new(self.0.get()))
+    }
 }
 
 /// The pseudo-time step of the turbulence transport equations in a steady
@@ -1460,6 +1524,9 @@ pub struct Turbulence {
     zf: Option<ZetaFDev>,
     /// The elliptic-blending k-ε (with `zf`).
     eb: Option<EbDev>,
+    /// The curvature correction of SST.
+    curv: Option<CurvDev>,
+    curv_fresh: CurvFresh,
     /// Multigrid settings of the turbulence and elliptic solves (those of
     /// the pressure).
     amg: foehncraft_fv::amg::AmgSettings,
@@ -1773,6 +1840,52 @@ impl Turbulence {
         } else {
             None
         };
+        let curv = if section.curvature_correction {
+            let points = mesh
+                .boundaries
+                .iter()
+                .map(|p| (p.name.clone(), BoundaryKind::ZeroGradient))
+                .collect();
+            let lsq = crate::simplec::disc_with(mesh, geo, &points)?.lsq;
+            let ones = dev.alloc(nb)?;
+            dev.fill(ones, 1.0)?;
+            let six = |dev: &mut dyn FlowDevice| -> Result<[Buf; 6]> {
+                let mut v = [ones; 6];
+                for b in &mut v {
+                    *b = dev.alloc(nc)?;
+                }
+                Ok(v)
+            };
+            let spin = case.flow.frame_rotation;
+            Some(CurvDev {
+                s: six(dev)?,
+                s_old: six(dev)?,
+                dsdt: six(dev)?,
+                fr1: {
+                    let b = dev.alloc(nc)?;
+                    dev.fill(b, 1.0)?;
+                    b
+                },
+                tmp: Buf3 {
+                    x: dev.alloc(nc)?,
+                    y: dev.alloc(nc)?,
+                    z: dev.alloc(nc)?,
+                },
+                lsq: Buf3 {
+                    x: up(dev, &lsq.x)?,
+                    y: up(dev, &lsq.y)?,
+                    z: up(dev, &lsq.z)?,
+                },
+                ones,
+                zeros: dev.alloc(nb)?,
+                frame: None,
+                rot: spin,
+                spin,
+                has_old: false,
+            })
+        } else {
+            None
+        };
         let ka_host = kinds(mesh, &case.boundary, treatment, VarKind::K, model).1;
         let a3 = |dev: &mut dyn FlowDevice| -> Result<Buf3> {
             Ok(Buf3 {
@@ -1881,6 +1994,8 @@ impl Turbulence {
             inlets,
             zf,
             eb,
+            curv,
+            curv_fresh: CurvFresh::default(),
             amg: case.solver.pressure.amg.clone(),
             elliptic: case.solver.elliptic.clone(),
             amg_rebuild: true,
@@ -2345,6 +2460,7 @@ impl Turbulence {
             add: if sources { self.added } else { None },
             wall: (sources && self.treatment == kwall::AUTOMATIC && self.wd.is_some())
                 .then_some((self.prod_mask, self.wall_pk)),
+            fr1: self.curv.map(|c| c.fr1),
             nu_t: self.nu_t,
             f1: self.f1,
             pk: self.pk,
@@ -2449,6 +2565,66 @@ impl Turbulence {
         Ok(())
     }
 
+    /// f_r1 of the curvature correction (D170) from the velocity gradient
+    /// of the last evaluation: S_ij per cell, the gradients of its six
+    /// components (zero normal gradient on every boundary), DS_ij/Dt with
+    /// the velocity `u` less the frame velocity, and in a transient run
+    /// the BDF1 time part from the last time level (`dt`).
+    fn curvature_inputs(&self, dev: &mut dyn FlowDevice, u: Buf3, dt: Option<f64>) -> Result<()> {
+        let Some(c) = self.curv else { return Ok(()) };
+        for (i, &b) in c.s.iter().enumerate() {
+            dev.strain_component(self.gu, i as u32, b)?;
+        }
+        self.curv_fresh.0.set(true);
+        for i in 0..6 {
+            dev.gradient_with(c.lsq, c.s[i], c.ones, c.zeros, None, c.tmp)?;
+            let old = match dt {
+                Some(dt) if c.has_old => Some((c.s[i], c.s_old[i], 1.0 / dt)),
+                _ => None,
+            };
+            dev.convective_derivative(u, c.frame.map(|f| f.1), c.tmp, old, c.dsdt[i])?;
+        }
+        dev.curvature_cells(&CurvatureOps {
+            grad_u: self.gu,
+            dsdt: c.dsdt,
+            w: self.w.phi,
+            omega_rot: c.frame.map(|f| f.0),
+            rot: c.rot,
+            spin: c.spin,
+            c: self.c,
+            smooth: self.o.smooth,
+            out: c.fr1,
+        })
+    }
+
+    /// The moving reference frames of the curvature correction (D170):
+    /// Ω^rot and Ω × (x − x₀) per cell (zero outside the turning zones).
+    pub(crate) fn set_curvature_frames(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        omega: &[[f64; 3]],
+        velocity: &[[f64; 3]],
+    ) -> Result<()> {
+        let Some(c) = self.curv.as_mut() else {
+            return Ok(());
+        };
+        let nc = self.nc;
+        let up3 = |dev: &mut dyn FlowDevice, v: &[[f64; 3]]| -> Result<Buf3> {
+            let b = Buf3 {
+                x: dev.alloc(nc)?,
+                y: dev.alloc(nc)?,
+                z: dev.alloc(nc)?,
+            };
+            for (k, comp) in b.all().into_iter().enumerate() {
+                let x: Vec<f64> = v.iter().map(|a| a[k]).collect();
+                dev.upload(comp, &x)?;
+            }
+            Ok(b)
+        };
+        c.frame = Some((up3(dev, omega)?, up3(dev, velocity)?));
+        Ok(())
+    }
+
     /// The buffers a passive scalar couples to (D135): the laminar and the
     /// effective face viscosity, the wall faces and the y⁺ of the thermal
     /// law (y* = u* y_P/ν, u* = C_μ^¼ k_P^½, for the k-ε family and
@@ -2537,6 +2713,7 @@ impl Turbulence {
         self.boundary_values(dev)?;
         self.gradients(dev)?;
         self.eb_inputs(dev)?;
+        self.curvature_inputs(dev, u, step.map(|s| s.dt))?;
         // 2. the sources and the diffusivities from the fields at the start
         self.cells(dev, true)?;
         self.faces(dev)?;
@@ -2931,6 +3108,16 @@ impl Turbulence {
         has_old: bool,
         extrapolate: Option<f64>,
     ) -> Result<()> {
+        if let Some(c) = self.curv.as_mut() {
+            // a time level of S_ij only from a computed S_ij (not in the
+            // first step of a run or after a restart: no time part there)
+            c.has_old = self.curv_fresh.0.get();
+            if c.has_old {
+                for i in 0..6 {
+                    dev.copy(c.s[i], c.s_old[i])?;
+                }
+            }
+        }
         for v in &self.vars() {
             let Some((o1, o2, keep)) = v.old else {
                 continue;
@@ -3124,6 +3311,10 @@ impl Turbulence {
                 .collect(),
             k,
             omega,
+            fr1: match self.curv {
+                Some(c) => Some(dev.download(c.fr1)?),
+                None => None,
+            },
         })
     }
 
@@ -3137,6 +3328,7 @@ impl Turbulence {
     /// Loads a host state (a restart). A state of the other family (ω for a
     /// k-ε case, or ε for SST) is converted with ε = C_μ k ω.
     pub(crate) fn load(&mut self, dev: &mut dyn FlowDevice, s: &TurbState) -> Result<()> {
+        self.curv_fresh.0.set(false);
         let converted;
         let s = if s.epsilon == self.eps {
             s

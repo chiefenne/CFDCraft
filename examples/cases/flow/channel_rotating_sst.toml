@@ -1,0 +1,72 @@
+# Fully developed channel flow in spanwise system rotation, k-ω SST with
+# the curvature and rotation correction of Smirnov & Menter (2009)
+# (stage 6 part 6h, D170, specification 9.8).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/channel_rotating_sst.toml
+#   (without the correction: --set turbulence.curvature_correction=false)
+#
+# The channel of `channel_sst.toml` at the Reynolds number of the DNS of
+# Kristoffersen & Andersson (1993): Re_b = 2 h U_b/ν = 5 800, Re_τ ≈ 194
+# without rotation (ν = 1/194 m²/s, h = 1 m, U_b = 14.95 m/s, mass flow
+# 2.99 kg/s through the periodic pair of depth 0.1 m). The whole domain
+# turns about z at Ω = 1.121 rad/s (`flow.frame_rotation`): the rotation
+# number Ro = 2 Ω h/U_b = 0.15. The velocity is the one relative to the
+# turning frame, the momentum equations take the Coriolis force
+# −2ρ Ω × u, the centrifugal force stays in the pressure. With Ω_z > 0
+# and the flow along +x the lower wall (y = 0) is the unstable (pressure)
+# side: there the mean vorticity −dU/dy opposes the rotation and the
+# turbulence grows; at the upper wall it is damped. Linear SST does not
+# see the rotation (its production depends on S only), so the two wall
+# shear stresses stay equal; the correction makes them differ. Band of
+# the specification: the ratio of the two wall shear stresses within
+# ±15 % of the DNS.
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [0.1, 2.0, 0.1]
+cells = [2, 96, 1]
+grading = { y = { ratio = 30.0, symmetric = true } }
+
+[fluid]
+density = 1.0
+viscosity = 0.005154639175257732   # 1/194
+
+[flow]
+frame_rotation = [0.0, 0.0, 1.121]
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "low-re"
+curvature_correction = true
+
+[initial]
+velocity = [13.0, 0.0, 0.0]
+turbulence_intensity = 0.05
+viscosity_ratio = 50.0
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 2.99
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-6
+max_iterations = 6000
+
+[output]
+vtkhdf = false
+wall_csv = true
+lines = [ { name = "profile", from = [0.05, 0.0, 0.05], to = [0.05, 2.0, 0.05], points = 200 } ]

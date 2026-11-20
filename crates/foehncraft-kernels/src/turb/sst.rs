@@ -77,6 +77,12 @@ pub struct SstConstants {
     pub limiter_factor: f64,
     /// Floor of CD_kω, 10⁻¹⁰ 1/s² (2003).
     pub cd_floor: f64,
+    /// c_r1 = 1.0 of the curvature correction (Smirnov & Menter 2009).
+    pub c_r1: f64,
+    /// c_r2 = 2.0.
+    pub c_r2: f64,
+    /// c_r3 = 1.0.
+    pub c_r3: f64,
 }
 
 impl Default for SstConstants {
@@ -95,6 +101,9 @@ impl Default for SstConstants {
             sigma_w2: 0.856,
             limiter_factor: 10.0,
             cd_floor: 1e-10,
+            c_r1: 1.0,
+            c_r2: 2.0,
+            c_r3: 1.0,
         }
     }
 }
@@ -150,6 +159,9 @@ pub struct SstCellInputs<T> {
     pub d: T,
     /// ν (m²/s).
     pub nu: T,
+    /// The factor f_r1 of the production of k and ω (the curvature
+    /// correction, [`rotation_function`]; 1 without it).
+    pub fr1: T,
 }
 
 /// Results of [`sst_cell`] for one cell.
@@ -228,6 +240,9 @@ pub fn sst_cell<T: Real>(i: &SstCellInputs<T>, c: &SstConstants, o: &SstOptions)
     } else {
         smin(p_over, f(c.limiter_factor) * bs * w * r, w_s)
     };
+    // the curvature correction multiplies the production of both
+    // equations (Smirnov & Menter 2009)
+    let p_over = p_over * i.fr1;
     let pk = nu_t * p_over;
     let one_f1 = T::ONE - f1;
     let blend = |a: f64, b: f64| f1 * f(a) + one_f1 * f(b);
@@ -264,6 +279,125 @@ pub fn sst_cell<T: Real>(i: &SstCellInputs<T>, c: &SstConstants, o: &SstOptions)
     }
 }
 
+/// ε_ijk.
+#[inline(always)]
+fn levi(i: usize, j: usize, k: usize) -> f64 {
+    if i == j || j == k || i == k {
+        0.0
+    } else if (i + 1) % 3 == j {
+        1.0
+    } else {
+        -1.0
+    }
+}
+
+/// The rotation function f_r1 of the curvature and rotation correction of
+/// Spalart & Shur (1997) in the SST form of Smirnov & Menter (2009)
+/// (specification 3.6, D170):
+///
+///   f_r1 = max[0, min(f_rotation, 1.25)],
+///   f_rotation = (1 + c_r1) 2r*/(1 + r*) [1 − c_r3 atan(c_r2 r̃)] − c_r1,
+///   r* = S/Ω,
+///   r̃ = 2 Ω_ik S_jk [DS_ij/Dt + (ε_imn S_jn + ε_jmn S_in) Ω_m^rot] / (Ω D³),
+///   D² = max(S², 0.09 ω²),
+///
+/// S = (2 S_ij S_ij)^½, Ω = (2 Ω_ij Ω_ij)^½. Ω_ij is the rotation tensor of
+/// the **absolute** velocity: the gradient `g` of the absolute velocity
+/// gives it directly (a moving reference frame, D55), a velocity relative
+/// to a frame turning at `spin` gives Ω_ij = W_ij − ε_ijk spin_k (the
+/// absolute vorticity is the relative one plus 2 spin). With that sign the
+/// side of a channel in spanwise rotation whose mean vorticity opposes the
+/// rotation gets f_r1 > 1 from both r* and r̃ (the unstable side).
+/// `dsdt` holds DS_ij/Dt in the order xx, yy, zz, xy, yz, zx: in the frame
+/// that turns at `omega_rot`, the convective derivative with the velocity
+/// relative to that frame plus the time derivative. `smooth` > 0 takes the
+/// smooth limits of section 2.6 for the clip.
+#[inline(always)]
+#[allow(clippy::too_many_arguments)]
+pub fn rotation_function<T: Real>(
+    g: &Tensor<T>,
+    dsdt: &[T; 6],
+    omega_rot: [T; 3],
+    spin: [T; 3],
+    w: T,
+    c: &SstConstants,
+    smooth: f64,
+) -> T {
+    let f = T::from_f64;
+    let (s, mut wt) = super::invariants::strain_rotation(g);
+    let mut i = 0;
+    while i < 3 {
+        let mut j = 0;
+        while j < 3 {
+            let mut k = 0;
+            while k < 3 {
+                let e = levi(i, j, k);
+                if e != 0.0 {
+                    wt[i][j] -= f(e) * spin[k];
+                }
+                k += 1;
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+    let two = f(2.0);
+    let s2 = two * super::invariants::contract(&s, &s);
+    let o2 = two * super::invariants::contract(&wt, &wt);
+    let tiny = f(1e-300);
+    let sm = s2.sqrt_of();
+    let om = o2.sqrt_of().max_of(tiny);
+    let r_star = sm / om;
+    let d2 = s2.max_of(f(0.09) * w * w);
+    let d3 = (d2 * d2.sqrt_of()).max_of(tiny);
+    let ds = [
+        [dsdt[0], dsdt[3], dsdt[5]],
+        [dsdt[3], dsdt[1], dsdt[4]],
+        [dsdt[5], dsdt[4], dsdt[2]],
+    ];
+    // Σ_ij A_ij T_ij with A_ij = Ω_ik S_jk and T_ij = DS_ij/Dt +
+    // (ε_imn S_jn + ε_jmn S_in) Ω_m^rot
+    let mut num = T::ZERO;
+    let mut i = 0;
+    while i < 3 {
+        let mut j = 0;
+        while j < 3 {
+            let mut a = T::ZERO;
+            let mut k = 0;
+            while k < 3 {
+                a += wt[i][k] * s[j][k];
+                k += 1;
+            }
+            let mut t = ds[i][j];
+            let mut m = 0;
+            while m < 3 {
+                let mut n = 0;
+                while n < 3 {
+                    let e1 = levi(i, m, n);
+                    let e2 = levi(j, m, n);
+                    if e1 != 0.0 {
+                        t += f(e1) * s[j][n] * omega_rot[m];
+                    }
+                    if e2 != 0.0 {
+                        t += f(e2) * s[i][n] * omega_rot[m];
+                    }
+                    n += 1;
+                }
+                m += 1;
+            }
+            num += a * t;
+            j += 1;
+        }
+        i += 1;
+    }
+    let r_t = two * num / (om * d3);
+    let fr = (T::ONE + f(c.c_r1)) * two * r_star / (T::ONE + r_star)
+        * (T::ONE - f(c.c_r3) * (f(c.c_r2) * r_t).atan_of())
+        - f(c.c_r1);
+    let w_s = f(smooth);
+    smax(smin(fr, f(1.25), w_s), T::ZERO, w_s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,6 +414,7 @@ mod tests {
             grad_u: g,
             d: 0.01,
             nu: 1.5e-5,
+            fr1: 1.0,
         }
     }
 
@@ -418,6 +553,7 @@ mod tests {
             grad_u: i.grad_u.map(|r| r.map(lift)),
             d: lift(i.d),
             nu: lift(i.nu),
+            fr1: lift(1.0),
         };
         let r = sst_cell(&di, &c, &o);
         let h = 1e-4;
@@ -434,5 +570,74 @@ mod tests {
         ] {
             assert!((dv - fd).abs() <= 1e-6 * fd.abs().max(1e-8), "{dv} {fd}");
         }
+    }
+
+    fn shear(gamma: f64) -> Tensor<f64> {
+        let mut g = [[0.0; 3]; 3];
+        g[0][1] = gamma;
+        g
+    }
+
+    #[test]
+    fn rotation_function_is_one_in_pure_shear() {
+        // r* = 1 and r̃ = 0: SST exactly (the first check of 9.8)
+        let c = SstConstants::default();
+        let f = rotation_function(&shear(50.0), &[0.0; 6], [0.0; 3], [0.0; 3], 100.0, &c, 0.0);
+        assert!((f - 1.0).abs() < 1e-14, "{f}");
+        let f = rotation_function(&shear(-7.0), &[0.0; 6], [0.0; 3], [0.0; 3], 3.0, &c, 0.0);
+        assert!((f - 1.0).abs() < 1e-14, "{f}");
+    }
+
+    #[test]
+    fn spanwise_rotation_raises_the_unstable_side() {
+        // channel in spanwise rotation Ω_z > 0, relative velocity u(y):
+        // the lower wall (dU/dy > 0, mean vorticity −dU/dy opposes Ω) is
+        // the unstable side, the upper wall the stable one
+        let c = SstConstants::default();
+        let rot = [0.0, 0.0, 2.0];
+        let lower = rotation_function(&shear(50.0), &[0.0; 6], rot, rot, 100.0, &c, 0.0);
+        let upper = rotation_function(&shear(-50.0), &[0.0; 6], rot, rot, 100.0, &c, 0.0);
+        assert!(lower > 1.0 && lower <= 1.25, "{lower}");
+        assert!((0.0..1.0).contains(&upper), "{upper}");
+        // r* by hand: S = 50, Ω = |50 − 4| = 46 on the lower side
+        let rs: f64 = 50.0 / 46.0;
+        // r̃ = −2 (γ/2 − Ω_z) γ² Ω_z/(Ω D³), D = max(S, 0.3 ω) = 50
+        let rt = -2.0 * (25.0 - 2.0) * 2500.0 * 2.0 / (46.0 * 50.0f64.powi(3));
+        let want =
+            2.0 * 2.0 * rs / (1.0 + rs) * (1.0 - foehncraft_core::math::atan(2.0 * rt)) - 1.0;
+        assert!((lower - want.min(1.25)).abs() < 1e-12, "{lower} {want}");
+    }
+
+    #[test]
+    fn absolute_and_relative_frames_agree() {
+        // the same flow seen in the inertial frame (absolute gradient with
+        // the solid-body part, spin 0) and in the turning frame (relative
+        // gradient, spin Ω) gives the same rotation tensor and f_r1
+        let c = SstConstants::default();
+        let om = 3.0;
+        let rel = shear(40.0);
+        let mut abs = rel;
+        // u_abs = u_rel + Ω × r: ∂u_x/∂y −= Ω, ∂u_y/∂x += Ω
+        abs[0][1] -= om;
+        abs[1][0] += om;
+        let ds = [0.3, -0.2, 0.0, 1.5, 0.0, 0.0];
+        let rot = [0.0, 0.0, om];
+        let a = rotation_function(&abs, &ds, rot, [0.0; 3], 80.0, &c, 0.0);
+        let b = rotation_function(&rel, &ds, rot, rot, 80.0, &c, 0.0);
+        assert!((a - b).abs() < 1e-14, "{a} {b}");
+    }
+
+    #[test]
+    fn rotation_function_scales_the_production() {
+        let i = base();
+        let c = SstConstants::default();
+        let o = SstOptions::default();
+        let r1 = sst_cell(&i, &c, &o);
+        let mut j = i;
+        j.fr1 = 0.5;
+        let r2 = sst_cell(&j, &c, &o);
+        assert!((r2.pk - 0.5 * r1.pk).abs() < 1e-15 * r1.pk.abs().max(1.0));
+        assert_eq!(r2.nu_t, r1.nu_t);
+        assert!(r2.su_w < r1.su_w);
     }
 }

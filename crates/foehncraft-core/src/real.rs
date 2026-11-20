@@ -77,6 +77,9 @@ pub trait Real:
 
     /// sin x ([`crate::math::sin`]).
     fn sin_of(self) -> Self;
+
+    /// arctan x ([`crate::math::atan`]).
+    fn atan_of(self) -> Self;
 }
 
 impl Real for f64 {
@@ -125,6 +128,10 @@ impl Real for f64 {
     fn sin_of(self) -> Self {
         crate::math::sin(self)
     }
+    #[inline(always)]
+    fn atan_of(self) -> Self {
+        crate::math::atan(self)
+    }
 }
 
 impl Real for f32 {
@@ -172,6 +179,10 @@ impl Real for f32 {
     #[inline(always)]
     fn sin_of(self) -> Self {
         crate::math::sin(self as f64) as f32
+    }
+    #[inline(always)]
+    fn atan_of(self) -> Self {
+        crate::math::atan(self as f64) as f32
     }
 }
 

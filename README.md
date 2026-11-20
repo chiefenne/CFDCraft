@@ -69,8 +69,10 @@ Everything below is on `main`, verified by the cases of the
   k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004), k-ε-ζ-f₀ (Popovac 2023)
   and the elliptic-blending k-ε; wall treatments `low-re`, `automatic`,
   `scalable`, `standard`, `compound` and `compound-2023`, rough walls; the
-  exact wall distance. Validated on the flat plate, the channel against DNS,
-  the backward-facing step and the impinging jet.
+  exact wall distance; the curvature and rotation correction of SST
+  (Smirnov & Menter 2009) and a whole domain in a turning frame. Validated
+  on the flat plate, the channel against DNS, the backward-facing step and
+  the impinging jet.
 - **Heat and mass transfer.** Passive scalars (temperature, concentration)
   carried by laminar and turbulent flow, with the turbulent Prandtl number
   (constant or Kays–Crawford) and thermal wall functions (Kader,

@@ -529,7 +529,18 @@ convective part u·∇S_ij from the least-squares gradient of the six
 components (one extra gradient of a symmetric tensor per outer iteration),
 its time part from the BDF levels in a transient run. The upper limit 1.25
 and the clip at 0 are those of the paper; the smooth limits of 2.6 replace
-them in `smooth_limits` runs. A note (TURB code) says when the correction
+them in `smooth_limits` runs. *6h, PR #113:* Ω_ij is the rotation tensor of the
+**absolute** velocity (with a velocity relative to a frame turning at Ω,
+Ω_ij = W_ij − ε_ijk Ω_k): with that sign the unstable side of a rotating
+channel gets f_r1 > 1 from both r* and r̃ (sources differ in the sign of
+the frame term; the sign was fixed by this consistency and by the kernel
+test that the inertial and the turning frame give the same f_r1). The
+time part of DS_ij/Dt is BDF1 from the last time level (none in the first
+step of a run or after a restart); the gradients of S_ij take zero normal
+gradient on every boundary. Not with `[[sliding]]` yet (the strain rate
+of the rotor cells would have to move with them). `flow.frame_rotation`
+solves the whole domain in a turning frame for the rotating channel of
+9.8 (the absolute velocity of `[[mrf]]` is not periodic there). A note (TURB code) says when the correction
 is combined with Kato–Launder production, since both act on stagnation
 and swirl regions.
 
@@ -1009,6 +1020,7 @@ implemented):
 | `TURB007` | warning | Model constants changed in `[turbulence.constants]`. |
 | `TURB008` | warning | The ν_t cap `max_viscosity_ratio` acted (cell count). |
 | `TURB009` | note | Inlet turbulence defaulted to I = 0.05, r = 10 (boundary named). |
+| `TURB010` | note | The curvature correction of SST together with Kato–Launder production: both act on stagnation and swirl regions (the paper uses the standard production). | *6h, PR #113.*
 
 The guidance table of D30 gets the recommended wall treatment per model
 and y⁺ band and the inlet settings of the canonical cases.
@@ -1507,7 +1519,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6e | EB k-ε (D133) (done, PR #88: channel C_f at 97.8 / 99.0 / 99.1 % of the DNS at Re_τ 180 / 395 / 590, the paper 100 / 98 / 100 %; plate +0.5 % from White; step x_r/H 7.59, +21 %, finding: the variable C*_ε2, 6.24 with it constant; the coupled algorithm does not converge the step; wall normal not yet exported) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars (done, PR #85; the default wall law is `kader` also with `low-re`, equal to `none` there; the channel Nu against DNS is open) | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
 | 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette, then the sliding mesh in both variants (D182); statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports (in several PRs; part 1 done, PR #89: the backward-facing step in the TMR layout, six models on three meshes, the reattachment point as a wall crossing `[[output.wall_crossings]]` with its GCI; part 2 done, PR #90: the impinging jet, the inlet table with turbulence columns, wall probes with scalars, the thermal law in u*, the comparison with the experiment once its data are in, made in part 4; part 3 done, PR #91: the full stress on symmetry and wedge planes, the axis cells of the jet; part 4 done, PR #92: the jet against the ERCOFTAC data of case 025, the comparison with the bands of 9.6, `ercoftac_to_csv.py`; part 5 done, PR #94: the moving reference frame (D55), `[[mrf]]`, `[mesh.annulus]`, laminar Taylor–Couette flow against the analytic solution in any frame, `crates/foehncraft-flow/src/frame.rs`, `tests/mrf.rs`, `taylor_couette_mrf.toml`; part 6 done, PR #95: the sliding mesh with conformal stepping (D56, variant A of D182), `[[sliding]]`, `crates/foehncraft-flow/src/sliding.rs`, `tests/sliding.rs`, `taylor_couette_sliding.toml`; part 7 done, PR #96: the sliding mesh by imprinting (variant B of D182), `[[sliding]] rotor_interface`, `[mesh.annulus] n_theta_stator`, `crates/foehncraft-mesh/src/imprint.rs`, `taylor_couette_imprint.toml`; PR #97: the rebuild of every step and its multigrid setup made cheaper; PR #98: walls of a turning zone move normal to themselves with it, the stirred vessel with blades and baffles in both methods, field figures, `examples/studies/mixer.py`, `tools/plot/rotor_fields.py`; PR #99: the fields of rotating machinery of D183, relative and frame velocity, cylindrical components, flow angles, relative total pressure, rothalpy; PR #100: turbulence on the frame and both sliding meshes, the wall distance of a turning rotor `crates/foehncraft-mesh/src/query/turning.rs`, the turbulent stirred vessel; PR #108: the derived fields of D72 for the turbulence models, `turbulence-scales`, `reynolds-stress`, `wall-normal`, `turbulence-wall`, spec 2.3 except the blending weight; PR #109: the GPU parity notebook `tools/notebooks/stage6_colab.ipynb` with `tools/bench/stage6_cloud.py`, 14 cases, the T4 run by the maintainer; PR #110: the statistics of D71, `[output.statistics]`, time means, RMS, covariances and phase averages of fields, probes and coefficients, batch means of whole periods with the von Neumann test, `cylinder_re100_statistics.toml`, `tests/statistics.rs`) | cases, gallery, `tools/notebooks/stage6_colab.ipynb`; `examples/cases/flow/backstep_validation.toml`, `examples/studies/backstep_validation.py`; `examples/cases/flow/{jet_pipe_profile,impinging_jet}.toml`, `examples/studies/impinging_jet.py`, `python/foehncraft/profiles.py`; `foehncraft-kernels/src/flow.rs`, `tests/symmetry_stress.rs` | 9.5, 9.6, 9.7, 6.6 |
-| 6h | SST options of D170: curvature and rotation correction (Smirnov & Menter 2009), QCR2000 and QCR2013 with the explicit-stress path in the momentum assembly that D171 reuses | `turb/sst.rs`, `turb/invariants.rs`, `foehncraft-flow/src/turbulence/stress.rs` | 9.8 |
+| 6h | SST options of D170: curvature and rotation correction (Smirnov & Menter 2009), QCR2000 and QCR2013 with the explicit-stress path in the momentum assembly that D171 reuses (part 1 done, PR #113: the curvature correction, `turbulence.curvature_correction`, `flow.frame_rotation` for the whole domain in a turning frame, the derived field `curvature-correction`, `channel_rotating_sst.toml`, `tests/curvature.rs`; pure shear unchanged to the last digit, rotating channel at Ro 0.15 wall shear ratio 1.63 (SST 1.00), step x_r/H +1.9 %; the DNS comparison of 9.8 is open; QCR follows) | `turb/sst.rs`, `turb/invariants.rs`, `foehncraft-flow/src/turbulence/stress.rs` | 9.8 |
 | release | v0.6: version bump, changelog summary, README, verification manual, Release workflow (dry run first) | | all of section 9 green or findings recorded |
 
 Validation cases shared with pyaeroflow, the maintainer's earlier

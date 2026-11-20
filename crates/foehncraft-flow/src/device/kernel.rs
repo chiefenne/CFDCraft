@@ -11,9 +11,9 @@
 //! algorithms (output, restart) reach the host.
 
 use super::{
-    BoundaryArgs, Buf, Buf3, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask, MomentumFaceArgs,
-    MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, ScalarTurbOps, ScalarWallOps, Setup,
-    SstCellOps, TurbFaceOps, WallCellOps, WallFaceOps, WallStatic, ZetaFCellOps,
+    BoundaryArgs, Buf, Buf3, CurvatureOps, Eps2, FlowDevice, FluxArgs, KepsCellOps, Lsq, Mask,
+    MomentumFaceArgs, MomentumRowArgs, ScalarFaceArgs, ScalarRowArgs, ScalarTurbOps, ScalarWallOps,
+    Setup, SstCellOps, TurbFaceOps, WallCellOps, WallFaceOps, WallStatic, ZetaFCellOps,
 };
 use anyhow::{Result, ensure};
 use foehncraft_core::repro::{BLOCK, combine_block_sums};
@@ -257,6 +257,30 @@ impl<E: Exec> KernelFlow<E> {
     fn rg(&self, g: &[Buf3; 3]) -> RawGrad {
         RawGrad {
             g: [self.r3(g[0]), self.r3(g[1]), self.r3(g[2])],
+        }
+    }
+
+    /// [`e::CurvatureArgs`] with the gradient and the output set, the rest
+    /// empty.
+    fn curvature_args(&self, grad_u: [Buf3; 3], out: Buf) -> e::CurvatureArgs {
+        let none = Raw::EMPTY;
+        e::CurvatureArgs {
+            grad_u: self.rg(&grad_u),
+            comp: 0,
+            u: Raw3::default(),
+            v_frame: Raw3::default(),
+            grad: Raw3::default(),
+            s: none,
+            s_old: none,
+            inv_dt: 0.0,
+            dsdt: [none; 6],
+            w: none,
+            omega_rot: Raw3::default(),
+            rot: [0.0; 3],
+            spin: [0.0; 3],
+            c: foehncraft_kernels::turb::sst::SstConstants::default(),
+            smooth: 0.0,
+            out: self.r(out),
         }
     }
 
@@ -1176,6 +1200,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             ins.push(x);
             ins.push(y);
         }
+        if let Some(x) = a.fr1 {
+            ins.push(x);
+        }
         let mut outs = vec![a.nu_t, a.f1, a.pk, a.dk, a.dw, a.capped];
         if let Some(s) = a.sources {
             outs.extend(s);
@@ -1197,6 +1224,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             add_w: a.add.map_or(none, |(_, y)| self.r(y)),
             wall_mask: a.wall.map_or(none, |(x, _)| self.r(x)),
             wall_pk: a.wall.map_or(none, |(_, y)| self.r(y)),
+            fr1: a.fr1.map_or(none, |x| self.r(x)),
             nu_t: self.r(a.nu_t),
             f1: self.r(a.f1),
             pk: self.r(a.pk),
@@ -1209,6 +1237,68 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             capped: self.r(a.capped),
         };
         self.go::<e::SstCells>(self.nc, &args)
+    }
+
+    fn strain_component(&mut self, grad_u: [Buf3; 3], comp: u32, out: Buf) -> Result<()> {
+        let ins: Vec<Buf> = grad_u.iter().flat_map(|g| g.all()).collect();
+        check(&[out], &ins)?;
+        let args = self.curvature_args(grad_u, out);
+        let args = e::CurvatureArgs { comp, ..args };
+        self.go::<e::StrainCells>(self.nc, &args)
+    }
+
+    fn convective_derivative(
+        &mut self,
+        u: Buf3,
+        v_frame: Option<Buf3>,
+        grad: Buf3,
+        old: Option<(Buf, Buf, f64)>,
+        out: Buf,
+    ) -> Result<()> {
+        let mut ins = u.all().to_vec();
+        ins.extend(grad.all());
+        if let Some(v) = v_frame {
+            ins.extend(v.all());
+        }
+        if let Some((a, b, _)) = old {
+            ins.push(a);
+            ins.push(b);
+        }
+        check(&[out], &ins)?;
+        let none = Raw::EMPTY;
+        let base = self.curvature_args([grad, grad, grad], out);
+        let args = e::CurvatureArgs {
+            u: self.r3(u),
+            v_frame: v_frame.map_or(Raw3::default(), |v| self.r3(v)),
+            grad: self.r3(grad),
+            s: old.map_or(none, |(a, _, _)| self.r(a)),
+            s_old: old.map_or(none, |(_, b, _)| self.r(b)),
+            inv_dt: old.map_or(0.0, |(_, _, x)| x),
+            ..base
+        };
+        self.go::<e::ConvectiveDerivative>(self.nc, &args)
+    }
+
+    fn curvature_cells(&mut self, a: &CurvatureOps) -> Result<()> {
+        let mut ins: Vec<Buf> = a.grad_u.iter().flat_map(|g| g.all()).collect();
+        ins.extend(a.dsdt);
+        ins.push(a.w);
+        if let Some(o) = a.omega_rot {
+            ins.extend(o.all());
+        }
+        check(&[a.out], &ins)?;
+        let base = self.curvature_args(a.grad_u, a.out);
+        let args = e::CurvatureArgs {
+            dsdt: a.dsdt.map(|b| self.r(b)),
+            w: self.r(a.w),
+            omega_rot: a.omega_rot.map_or(Raw3::default(), |o| self.r3(o)),
+            rot: a.rot,
+            spin: a.spin,
+            c: a.c,
+            smooth: a.smooth,
+            ..base
+        };
+        self.go::<e::CurvatureCells>(self.nc, &args)
     }
 
     fn keps_cells(&mut self, a: &KepsCellOps) -> Result<()> {

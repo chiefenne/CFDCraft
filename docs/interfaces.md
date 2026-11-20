@@ -282,6 +282,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `TURB007` | warning | Model constants changed in `[turbulence.constants]`. |
 | `TURB008` | warning | The ν_t cap `max_viscosity_ratio` acted (cell count). |
 | `TURB009` | note | Inlet turbulence defaulted to I = 0.05, r = 10 (boundary named). |
+| `TURB010` | note | The curvature correction of SST together with Kato–Launder production: both act on stagnation and swirl regions (the paper uses the standard production). |
 | `EXPR001` | error | An expression that cannot be parsed. |
 | `EXPR002` | error | An unknown or reserved name in an expression, a constant or a table (with the nearest name as a hint). |
 | `EXPR003` | error | An expression that uses a variable its key does not take (`t` in a steady case or in a property, x, y, z in a value for a whole boundary). |
