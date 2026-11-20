@@ -1220,11 +1220,19 @@ Other decisions of 2026-11-20:
   (as for the channel DNS); the maintainer supplies what is not openly
   available.
 - Turbulent bands (V7.18–V7.21): ζ-f₀ and elliptic-blending k-ε with GGDH
-  must pass; SST and k-ε are reported without a band (recommended,
-  explained to the maintainer 2026-11-20).
+  must pass; SST and k-ε are reported without a band (maintainer,
+  2026-11-20).
 - §18 point 3 and 5 defaults (reduced pressure at pressure boundaries, C_θ
-  = 0.3, transformed ω source) as recommended, explained to the maintainer
-  2026-11-20; the validation cases may change C_θ and the ω source.
+  = 0.3, transformed ω source) as recommended (maintainer, 2026-11-20); the
+  validation cases may change C_θ and the ω source.
+- Reduced and static pressure get dedicated 2D examples with recipes in
+  7b1 (maintainer, 2026-11-20): a tall 2D channel with gravity, run once
+  with `pressure_kind = "reduced"` and once with `"static"` at the outlet
+  (same flow, the static pressure field shows the hydrostatic part), a 2D
+  box at rest where a static outlet value of 0 Pa without the hydrostatic
+  part drives a false flow (the reason for the default), and a recipe
+  "which pressure do my boundary values mean" with the field images of p′
+  and p side by side.
 
 ## 17. Findings in the code today
 
