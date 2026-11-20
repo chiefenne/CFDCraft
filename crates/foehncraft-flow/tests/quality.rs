@@ -254,6 +254,7 @@ fn plain_fluxes(
     let zc = vec![0.0; nc];
     let zf = vec![0.0; nf];
     let zb = vec![0.0; nf - ni];
+    let rho_face = vec![1.0; nf];
     let flux_kind = vec![FLUX_FIXED; nf - ni];
     let mom_kind = vec![MOM_FIXED; nf - ni];
     let inp = FluxInputs {
@@ -267,7 +268,7 @@ fn plain_fluxes(
             weight: &d.weight,
             shift: v3(&[], &[], &[]),
         },
-        rho: 1.0,
+        rho_face: &rho_face,
         u: v3(&u[0], &u[1], &u[2]),
         grad: VelocityGradient {
             x: v3(&g[0], &g[1], &g[2]),
