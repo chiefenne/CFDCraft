@@ -13,7 +13,15 @@
 # in result.json. Every mesh is held to the reference ranges of the
 # benchmark with a band of 8 % of the range midpoint (the coarse mesh is
 # 7 % low in C_L); the finest one is the mesh of docs/verification/stage5.md.
-# About 5 minutes on four cores (the `long` set of tools/check/ci_cases.py).
+#
+# The coupled algorithm (D176): 51, 90 and 225 outer iterations, about a
+# minute on four cores (the `long` set of tools/check/ci_cases.py). SIMPLEC
+# needed the momentum relaxation 0.5 on the finest mesh (0.7 diverges) and
+# then 960, 3 007 and 9 876 iterations (12 minutes): a slow steady decay,
+# no stall. C_D and Δp agree to 10⁻⁵; the lift, a force of 2·10⁻⁷ N,
+# depends on the pseudo-time step through the face velocity of the
+# pressure coupling: C_L 0.01037 on the medium mesh with the default
+# relaxation 0.98, 0.01041 with 0.9, 0.01044 with SIMPLEC at 0.5.
 
 case_format = "0.6"
 
@@ -48,12 +56,10 @@ type = "symmetry"
 type = "symmetry"
 
 [solver]
-max_iterations = 12000
+algorithm = "coupled"
+max_iterations = 1000
 tolerance = 1e-7
-log_every = 500
-
-[solver.momentum]
-relaxation = 0.5      # the finest mesh diverges with the default 0.7
+log_every = 50
 
 [verification]
 benchmark = "schafer-turek-2d1"
