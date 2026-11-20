@@ -446,7 +446,8 @@ as ζ-f (`turb::zeta_f`, `FORM_F0`). The author's code is not available
 | C_ε1 with 1/ζ (2004) | +8.5 %, not converged | – | – |
 | k sink k/T with the realizability bound | +30 % (relaminarizes) | – | – |
 | k sink k/T_K, a = 0.6 | +1.3 % | −4.0 % (White) | 7.67 |
-| **Default: k sink k/T_K, a = 0.6 √2** | **+1.4 %** | **−2.5 % (White)** | **6.38** |
+| Default of 6d2 to #140: k sink k/T_K, a = 0.6 √2 | +1.4 % (not grid-convergent, #128) | −2.5 % (White) | 6.38 |
+| **Default since #141: k sink max(k/T_K, 2νk/d²), C_ε1 = 1.4 (1 + 0.009/ζ), a = 0.6 √2** | **−1.2 %; +0.2 % mesh-converged** | **+1.8 % (White)** | **6.44** |
 
 **The wall treatment** (D134, `compound-2023`). u* = C_μ^¼ k_P^½,
 y* = u* y_P/ν; u⁺ = [y*^(−n) + u⁺_log^(−n)]^(−1/n), n = 10/3,
@@ -465,12 +466,13 @@ exposed faces; the step case uses it.
 
 | Test | Check | Band | Result |
 |---|---|---|---|
-| Channel at Re_τ = 395 (`channel_zeta_f0.toml`), 48 cells, first-cell y⁺ 1 | U_b⁺ against the DNS (17.55) | ±3 % | 17.79 (+1.4 %), converged |
-| The channel at y⁺ 0.3 / 10 / 30 | U_b⁺ | – | +2.7 / −4.2 / −1.5 % (ζ-f, 2007 treatment: +1.9 / −7.1 / +4.8 %) |
-| TMR plate (`tmr_plate_zeta_f0.toml`) from the TMR free stream, y⁺ 1 | C_f(0.97) against White, 2.875e-3; convergence | ±3 % | 2.802e-3 (−2.5 %), converged to 10⁻⁷, no floor |
-| The plate at y⁺ 10 / 30 | C_f(0.97) against White | ±3 % | +0.9 / −2.0 %, converged (ζ-f: not converged) |
-| Backward-facing step (`backstep_zeta_f0.toml`), 8 200 cells | x_r/H against 6.26 | ±10 % | 6.38 (+2 %) |
-| The step on 32 800 cells | x_r/H | ±10 % | 6.35 (+1.5 %), within 0.5 % of the coarse mesh |
+| Channel at Re_τ = 395 (`channel_zeta_f0.toml`), 48 cells, first-cell y⁺ 1 | U_b⁺ against the DNS (17.55) | ±3 % | 17.34 (−1.2 %), converged (#141; 6d2: 17.79) |
+| The channel on 96 / 192 / 384 cells (#141) | U_b⁺ | GCI 0.5 % | 17.54 / 17.58 / 17.58 (+0.2 %), GCI 0.02 % |
+| The channel at y⁺ 10 / 30 | U_b⁺ | – | −3.4 / −1.2 % (#141; 6d2: −4.2 / −1.5 %; ζ-f, 2007 treatment: −7.1 / +4.8 %) |
+| TMR plate (`tmr_plate_zeta_f0.toml`) from the TMR free stream, y⁺ 1 | C_f(0.97) against White, 2.875e-3; convergence | ±3 % | 2.926e-3 (+1.8 %), converged to 10⁻⁷, no floor (#141; 6d2: −2.5 %) |
+| The plate at y⁺ 10 / 30 | C_f(0.97) against White | ±3 % | −0.3 / −2.7 %, converged (#141; 6d2: +0.9 / −2.0 %) |
+| Backward-facing step (`backstep_zeta_f0.toml`), 8 200 cells | x_r/H against 6.26 | ±10 % | 6.44 (+3 %; 6d2: 6.38) |
+| The step on 32 800 cells | x_r/H | ±10 % | 6.50 (+3.8 %, coupled, #141), within 1 % of the coarse mesh (6d2: 6.35) |
 | The step with ζ-f (2004, `compound`) | x_r/H | ±10 % | 7.82 (+25 %; 6.80 with `a = 0.849`) |
 | The step with SST (`automatic`) on 8 200 / 32 800 cells | x_r/H | ±10 % | 6.81 / 6.80 (+9 %); the 5.79 reported first came from 4 000 iterations at α_u = 0.5, before the bubble had settled |
 | The step with k-ε (`scalable`), 32 800 cells | x_r/H | – | 5.36 (−14 %) |
@@ -482,7 +484,9 @@ exposed faces; the step case uses it.
 S = (2 S_ij S_ij)^½ is active in the separated shear layer of the step
 and halves ν_t there; the bubble then grows to 7.4 to 7.7 H with both
 ζ-f models. (2) The published k sink −ε has no positive steady k in the
-laminar part of a boundary layer (the 6d finding); k/T_K removes it.
+laminar part of a boundary layer (the 6d finding); k/T_K removes it,
+and since #141 max(k/T_K, 2νk/d²) also converges with the mesh at the
+wall (see the GCI section).
 (3) C_p, C_f and the profiles of the step against the experiment and a
 GCI follow with the stage 6 validation. (4) Iterations of the step
 (measured after 6d2, fields every 50 to 250 iterations): with the
@@ -1079,6 +1083,13 @@ on the middle mesh within six iterations (RUN014, DIV006).
 
 ### Results
 
+*Since PR #141* ζ-f and ζ-f₀ take the wall sink of k (specification
+3.3.2) and ζ-f₀ C_ε1 = 1.4 (1 + 0.009/ζ). The step of ζ-f₀ on 8 200
+cells then gives x_r/H = 6.44 (+3 %) with SIMPLEC and with the coupled
+algorithm (`backstep_zeta_f0_coupled.toml` converged in 165 iterations,
+x_r within 1 % after about 50). The tables below are those of 6g, with
+the sink k/T_K of 6d2 for ζ-f₀ and −ε for ζ-f.
+
 | Test | Check | Band | Result |
 |---|---|---|---|
 | Step (`backstep_validation.toml`), k-ω SST, coupled, 11 040 / 44 160 / 176 640 cells | x_r/H on the finest mesh against 6.26 | ±10 % | 6.747 (+7.8 %; the TMR's SST variant about 6.50) |
@@ -1212,6 +1223,26 @@ and this page quotes a few scalar values with their source.
 
 ### Results
 
+*Since PR #141* (the wall sink of k for both ζ-f models, specification
+3.3.2, and C_ε1 = 1.4 (1 + 0.009/ζ) for ζ-f₀) the jet gives, on 2 600 /
+10 400 / 41 600 cells:
+
+| Model | Nu₀ | p, GCI_fine | Nu(r/D = 0.1) | secondary maximum r/D, Nu | iterations |
+|---|---|---|---|---|---|
+| k-ε-ζ-f₀, coupled | 198.3, 195.9, 195.6 (+38 % from 141.4) | 3.49, 0.01 % | 196.0, 194.0, 194.2 | 2.03, 141.6 | 557, 884, 2 969 |
+| k-ε-ζ-f, SIMPLEC | 176.8, 173.0, 172.5 (+22 %) | 2.86, 0.06 % | 175.9, 172.8, 172.7 | none | 518, 1 607, 3 383 |
+
+ζ-f₀ now converges with the mesh (before 166.1, 156.9, 151.6, GCI
+7.2 %), but Nu₀ rises from +7 % to +38 % of the experiment
+(**finding**). The rise comes with the sink, not with C_ε1: the 6d2 sink
+with the new C_ε1 gives 159 on the middle mesh, and a = 0.6 lowers the
+new default only to 176. How the near-wall sink raises the k of the
+stagnation region is open; a stagnation-point limiter for ζ-f₀ is the
+follow-up. ζ-f
+moves by less than 1 %. The u_r,max/U of ζ-f₀ at r/D 0.5, 1, 2, 2.5, 3:
+0.715, 1.078, 0.742, 0.575, 0.462 (−2, −1, −6, −3, 0 % from the
+experiment, as before). The tables below are those of 6g, before #141.
+
 | Test | Check | Band | Result |
 |---|---|---|---|
 | Jet (`impinging_jet.toml`), k-ε-ζ-f₀, `compound-2023`, coupled, 2 600 / 10 400 / 41 600 cells | Nu₀ (axis face) on the three meshes, GCI_fine | GCI ≤ 3 % | 166.1, 156.9, 151.6: monotonic, p 0.67, GCI 7.2 % (**finding** 4; before the fix of **finding** 2 167.2, 155.4, 141.5, divergent) |
@@ -1247,7 +1278,7 @@ and this page quotes a few scalar values with their source.
 | Wall probe with scalars (`tests/thermal.rs`, heated plate) | θ_w at the probe against the wall faces; flux; GCI quantities | interpolated between the two nearest faces; `wall_probes.<p>.theta_wall`, `_flux` | asserted |
 | Inlet table with turbulence columns (`tests/inlet_table.rs`, the ζ-f₀ plate) | a table of constant columns (`u_x`, `u_y`, `u_z`, `k`, `epsilon`, `zeta`, in any order) against the constant inlet; ten times its k; turbulence values (`turbulence_intensity`, `zeta`) next to such a table; an unknown column | bit for bit; another run; refused | asserted; BC029, BC019 |
 | `foehncraft.profiles` (`python/tests/test_profiles.py`) | one row per cell, the wall row; a laminar line | as specified; refused | asserted |
-| The coarse jet (`tests/impinging_jet.rs`, 2 600 cells) | ζ-f₀ converged, probes against the wall table, Nu₀, secondary maximum; k-ε Nu₀ against Nu(r/D = 0.5) | to 10⁻⁹ and 10⁻³; 150 to 185; r/D 1.5 to 2.5, 3 % above the minimum; > 0.9 | 166.1, maximum 128.2 at 2.01 above 116.8; k-ε 155.4 against 164.2 |
+| The coarse jet (`tests/impinging_jet.rs`, 2 600 cells) | ζ-f₀ converged, probes against the wall table, Nu₀, secondary maximum; k-ε Nu₀ against Nu(r/D = 0.5) | to 10⁻⁹ and 10⁻³; 185 to 205 (150 to 185 before #141); r/D 1.5 to 2.5, 3 % above the minimum; > 0.9 | 198.3, maximum 138.6 at 2.01 above 124.2 (before #141 166.1, 128.2 above 116.8); k-ε 155.4 against 164.2 |
 | The stress on symmetry and wedge planes (`tests/symmetry_stress.rs`) | a linear flow with constant stress, the viscous operator of the momentum rows per cell, without and with the transposed part: a radial flow v = a r, u = −2a x on a 5° wedge of perturbed cells; a stagnation flow onto a symmetry plane | 10⁻¹⁰ of a face flux | 8·10⁻¹⁶ and 1·10⁻¹⁴ (without the fix of finding 2: 3.6 % and 65 %) |
 
 **Findings.** (1) The thermal law of the k-ε family (6f) took u_τ, which
@@ -2016,8 +2047,10 @@ channel, whose solution does not depend on x, refined in y only to the
 same y nodes, since PR #128) with one thread each and evaluates the observed order p, the extrapolated value and
 GCI_fine after Celik et al. (2008): C_f(0.97) and C_D of the TMR plate,
 U_b⁺ of the channel at Re_τ = 395 (from the driving force at the DNS mass
-flow). Iteration limits 6 000, 12 000 and 24 000 (the channel: 20 000 to
-160 000, converged to 10⁻⁹); a run that stops there is marked. The finest k-ε plate (49 152 cells) diverged in outer iteration 11
+flow). Iteration limits 6 000, 12 000 and 24 000 (the channel, converged
+to 10⁻⁹: 3 000 with the coupled algorithm since PR #141, before 20 000
+to 160 000 with SIMPLEC; the plate of ζ-f and ζ-f₀: 3 000, coupled); a
+run that stops there is marked. The finest k-ε plate (49 152 cells) diverged in outer iteration 11
 with the default relaxations (RUN014) and ran with 0.5 for momentum and
 turbulence (the study sets this for that level).
 
@@ -2030,8 +2063,14 @@ References: C_f(0.97) White 2.87455e-03, TMR (SST) 2.69070e-03; C_D TMR (SST) 2.
 | k-ω SST, low-re | 768 / 3072 / 12288 | 0.19 | 2.6937 / 2.6682 / 2.6868 | – (oscillatory) | 0.47 % | – | −6.53 % | −0.14 % | 2.8549 / 2.8259 / 2.8477 | – | 0.51 % | 226, 635, 2292 |
 | k-ε, scalable | 3072 / 12288 / 49152 | 7.31 | 2.8289 / 2.8270 / 2.8156 | 2.61 (divergent) | 0.10 % | 2.8134 | −2.05 % | +4.64 % | 2.7193 / 2.6334 / 2.6768 | – | 1.60 % | 236, 724, 5733 |
 | realizable k-ε, scalable | 3072 / 12288 / 49152 | 7.00 | 2.6781 / 2.6128 / 2.5805 | 1.01 (monotonic) | 1.53 % | 2.5488 | −10.23 % | −4.10 % | 2.5769 / 2.4216 / 2.4042 | 3.15 | 0.12 % | 6000*, 12000*, 24000* |
-| k-ε-ζ-f, compound | 3072 / 12288 / 49152 | 0.25 | 3.0231 / 3.5516 / 3.3467 | – (oscillatory) | 7.90 % | – | +16.42 % | +24.38 % | 2.8271 / 2.0873 / 2.2063 | – | 16.77 % | 6000*, 12000*, 5986* |
-| k-ε-ζ-f₀, compound-2023 | 3072 / 12288 / 49152 | 0.23 | 2.8021 / 2.7923 / 2.7400 | 2.42 (divergent) | 0.55 % | 2.7280 | −4.68 % | +1.83 % | 2.9459 / 2.9340 / 2.8718 | 2.39 | 0.64 % | 628, 2104, 5060* |
+| k-ε-ζ-f, compound | 3072 / 12288 / 49152 | 0.23 | 2.9314 / 2.8756 / 2.8634 | 2.20 (monotonic) | 0.15 % | 2.8600 | −0.39 % | +6.42 % | 3.0509 / 2.9953 / 2.9832 | 2.20 | 0.14 % | 205, 216, 496 |
+| k-ε-ζ-f₀, compound-2023 | 3072 / 12288 / 49152 | 0.23 | 2.9257 / 2.8810 / 2.8689 | 1.88 (monotonic) | 0.20 % | 2.8644 | −0.20 % | +6.62 % | 3.0595 / 3.0100 / 2.9963 | 1.85 | 0.22 % | 204, 279, 178 |
+
+The ζ-f and ζ-f₀ rows are those of PR #141 (the wall sink of k,
+specification 3.3.2; the coupled algorithm). Before, with −ε (ζ-f) and
+k/T_K (ζ-f₀): ζ-f 3.0231 / 3.5516 / 3.3467 (oscillatory, GCI 7.9 %, all
+three at the iteration limit), ζ-f₀ 2.8021 / 2.7923 / 2.7400 (divergent,
+GCI 0.55 %, the finest at the limit).
 | elliptic-blending k-ε, compound | 3072 / 12288 / 49152 | 0.23 | 2.8893 / 2.8408 / 2.8516 | – (oscillatory) | 0.85 % | – | −0.80 % | +5.98 % | 2.9012 / 2.6880 / 2.6007 | 1.29 | 2.91 % | 6000*, 2605*, 4726* |
 
 ## Channel, Re_τ = 395
@@ -2044,16 +2083,24 @@ the extrapolated value from levels 1 to 3:
 
 | model | cells | U_b⁺ | p | GCI_fine | extrapolated | finest vs DNS | iterations, converged |
 |---|---|---|---:|---:|---:|---:|---|
-| k-ω SST, low-re | 192 / 384 / 768 / 1536 | 17.426 / 17.367 / 17.333 / 17.317 | 1.01 (monotonic) | 0.12 % | 17.300 | −1.33 % | 4038, 8061, 20819, 75801 |
-| k-ε, scalable | 24 / 48 / 96 / 192 | 18.307 / 18.330 / 18.446 / 18.542 | 0.28 (monotonic) | 2.98 % | 18.985 | +5.65 % | 3173, 3323, 3839, 5963 |
-| realizable k-ε, scalable | 24 / 48 / 96 / 192 | 18.691 / 19.100 / 19.477 / 19.614 | 1.46 (monotonic) | 0.50 % | 19.692 | +11.76 % | 4082, 5131, 5600, 8078 |
-| k-ε-ζ-f, compound | 192 / 384 / 768 / 1536 | 17.886 / 17.929 / 17.940 / 18.029 | 2.99 (divergent) | 0.09 % | 18.042 | +2.73 % | 7337, 14215, 38636, 160000* |
-| k-ε-ζ-f₀, compound-2023 | 96 / 192 / 384 / 768 | 17.789 / 17.839 / 18.108 / 18.388 | 0.05 (divergent) | 50.94 % | 25.881 | +4.78 % | 3936, 5633, 11335, 34831 |
-| elliptic-blending k-ε, compound | 192 / 384 / 768 / 1536 | 17.639 / 17.695 / 17.710 / 17.713 | 2.05 (monotonic) | < 0.01 % | 17.714 | +0.93 % | 5506, 9215, 24771, 90873 |
+| k-ω SST, low-re | 192 / 384 / 768 / 1536 | 17.426 / 17.367 / 17.333 / 17.317 | 1.01 (monotonic) | 0.12 % | 17.300 | −1.33 % | 4038, 8061, 20819, 75801 (SIMPLEC) |
+| k-ε, scalable | 24 / 48 / 96 / 192 | 18.307 / 18.330 / 18.446 / 18.542 | 0.28 (monotonic) | 2.98 % | 18.985 | +5.65 % | 398, 401, 402, 427 |
+| realizable k-ε, scalable | 24 / 48 / 96 / 192 | 18.691 / 19.100 / 19.477 / 19.614 | 1.46 (monotonic) | 0.50 % | 19.692 | +11.76 % | 602, 676, 691, 692 |
+| k-ε-ζ-f, compound | 192 / 384 / 768 / 1536 | 17.869 / 17.899 / 17.910 / 17.911 | 2.77 (monotonic) | < 0.01 % | 17.912 | +2.06 % | 658, 772, 1203, 2531 |
+| k-ε-ζ-f₀, compound-2023 | 96 / 192 / 384 / 768 | 17.339 / 17.543 / 17.576 / 17.583 | 2.16 (monotonic) | 0.02 % | 17.586 | +0.19 % | 436, 457, 535, 883 |
+| elliptic-blending k-ε, compound | 192 / 384 / 768 / 1536 | 17.639 / 17.695 / 17.710 / 17.713 | 2.05 (monotonic) | < 0.01 % | 17.714 | +0.93 % | 5506, 9215, 24771, 90873 (SIMPLEC) |
 
-On levels 0 to 2: SST p 0.82, GCI 0.32 %; k-ε-ζ-f p 1.95, GCI 0.03 %
-(its level 3, relaxations 0.5, stops unconverged at 160 000 iterations);
-EB p 1.96, GCI 0.04 %; ζ-f₀ divergent (GCI 0.42 %).
+Since PR #141 the study converges the channel with the coupled algorithm
+(D178), within 3 000 iterations; the k-ε rows are those of SIMPLEC to
+the digits shown. SST and EB keep their SIMPLEC values of PR #128: with
+the coupled algorithm SST on 1 536 cells across and EB on 768 and 1 536
+stop at 3 000 iterations with a scaled residual near 10⁻⁷ (U_b⁺ 17.340,
+17.756 and 17.731, within 0.3 % of the converged values; a pseudo-time
+factor c_T of 0.2 instead of 0.5 does not help; finding). The ζ-f and
+ζ-f₀ rows are those of the wall sink of k (specification 3.3.2); with
+the sink of 6d2 to #140 they read 17.886 / 17.929 / 17.940 / 18.029
+(ζ-f, level 3 unconverged at 160 000 iterations) and 17.789 / 17.839 /
+18.108 / 18.388 (ζ-f₀, divergent, GCI 51 %).
 
 \* the run stopped at its iteration limit before the tolerance (`converged` false).
 
@@ -2141,7 +2188,8 @@ cost: the 12 288-cell SST run of level 3 (16 cells in x), continued from
 its stop at 17.009, reaches 17.316 at iteration 94 000 (largest residual
 5·10⁻⁹), the value of the run with two cells in x.
 
-**ζ-f₀ is not grid-convergent below y⁺ 1** (finding). Converged, U_b⁺
+**ζ-f₀ was not grid-convergent below y⁺ 1** (finding of #128, resolved
+by #141, see below). Converged, U_b⁺
 rises with every level (17.79, 17.84, 18.11, 18.39), with the first-cell
 y⁺ from 1 to 0.11. The k of the wall cell does not vanish like y²: k⁺
 is 1.15, 0.39 and 0.09 in the first cell on levels 0, 1 and 3 (the DNS,
@@ -2154,21 +2202,51 @@ zero flux through the wall, so the sublayer keeps its k. Two checks
 gives 15.70, 15.90, 16.27, 16.68 (still rising); the paper's sink ε
 everywhere gives 15.686, 15.621, 15.621, 15.623, grid-converged but
 11 % below the DNS (the 6d2 finding). A formulation that is both
-grid-converged and accurate is open (maintainer decision); until then
-ζ-f₀ results hold for first-cell y⁺ near 1, where the model was
-calibrated.
+grid-converged and accurate was left to the maintainer.
+
+### The wall sink of k for both ζ-f models (PR #141)
+
+Maintainer decision 2026-11-20: the sink of k is max(k/T_K, 2νk/d²), d
+the wall distance (specification 3.3.2), for ζ-f and ζ-f₀, and ζ-f₀
+takes C_ε1 = 1.4 (1 + 0.009/ζ). The sink is ε at the wall, so k falls
+like y² and ε_w converges; away from the wall it is k/T_K, which keeps k
+positive at a laminar leading edge. The candidates, all converged (the
+channel to 10⁻⁹ on levels 0 to 3, the plate on 64 × 48 and 128 × 96,
+the step on 8 200 cells, the jet on the three meshes of 6g):
+
+| sink of k, C_ε1 of ζ-f₀ | channel U_b⁺, levels 0 to 3 | plate C_f vs White | step x_r/H | jet Nu₀ |
+|---|---|---|---|---|
+| k/T_K, 1.4 (1 + 0.012/√ζ) (6d2) | 17.79 / 17.84 / 18.11 / 18.39 | −2.5 / −2.9 % | 6.385 | 166 / 157 / 152 (GCI 7.2 %) |
+| −ε, as printed | 15.69 / 15.62 / 15.62 / 15.62 | floor holds k | – | – |
+| −ε, or a blend of −ε and k/T_K by ζ | – | leading-edge k at the floor, the ζ residual cycles | – | – |
+| max(k/T_K, min(ε, 2νk/d²)), 0.009/ζ | grid-converged | converged | – | limit cycle (period about 80 iterations) at r/D 5.4 to 6 |
+| max(k/T_K, 2νk/d²), 1.4 (1 + 0.038/√ζ) | – | – | 7.18 | – |
+| **max(k/T_K, 2νk/d²), 1.4 (1 + 0.009/ζ)** (default) | **17.34 / 17.54 / 17.58 / 17.58** | **+1.8 / +0.2 %** | **6.44** | **198 / 196 / 196 (GCI 0.01 %)** |
+
+The new default of ζ-f₀: channel +0.2 % from the DNS on the finest
+mesh, p = 2.2; at first-cell y⁺ 10 / 30 −3.4 / −1.2 % (the channel) and
+−0.3 / −2.7 % (the plate, from White); step x_r/H 6.44 (+3 %, coupled
+and SIMPLEC alike). The impinging jet converges with the mesh but at
+Nu₀ = 196, +38 % from the experiment's 141 (finding): the k of the
+stagnation point. It comes from the sink (the 6d2 sink with the new
+C_ε1 gives 159); a = 0.6 lowers it to 176 only. ζ-f₀ has no production
+limiter at stagnation points; one is a follow-up. ζ-f (2004) with the
+new sink converges on the plate (C_f +2.0 / +0.03 % from White on
+64 × 48 / 128 × 96; before, the k floor of the leading edge stopped it
+at the iteration limit, +16 to +24 %) and in the channel on all four
+levels (+2.1 % on the finest).
 
 **Findings.**
 
-1. **No model reaches the asymptotic range on all three plate meshes.**
-   C_f is oscillatory for SST, ζ-f and EB, divergent for k-ε and ζ-f₀, and
-   monotonic only for the realizable k-ε (p = 1.0). The spread of SST is
+1. **Few models reach the asymptotic range on all three plate meshes.**
+   C_f is oscillatory for SST and EB, divergent for k-ε, and monotonic for
+   the realizable k-ε (p = 1.0) and, since PR #141, ζ-f and ζ-f₀. The spread of SST is
    small, 2.668 to 2.694 (GCI 0.47 %, within 0.14 % of the TMR value on
    the finest mesh), so the order test is dominated by differences below
-   1 %. SST, ζ-f₀ and EB meet the 2 % GCI band of 9.3 without an order;
-   ζ-f does not (7.9 %, C_f +16 to +24 % with its runs at the iteration
-   limit: the ζ-f plate does not converge on the finer meshes, a finding
-   that adds to the step's).
+   1 %. SST and EB meet the 2 % GCI band of 9.3 without an order. Since
+   PR #141 ζ-f and ζ-f₀ refine monotonically (p 2.2 and 1.9, GCI 0.15 and
+   0.20 %, within 0.4 % of White on the finest mesh); before, the k floor
+   of the leading edge kept the ζ-f plate from converging (+16 to +24 %).
 2. **The k-ε family with scalable wall functions** refines its first cell
    to y⁺ 7 on the finest plate, below the floor y* = 11.06 of the
    treatment; C_f changes by 0.4 % (k-ε) and 3.6 % (realizable) over the
@@ -2179,13 +2257,15 @@ calibrated.
    (below 0.01 %, p = 2.1) meet the 0.5 % GCI band on levels 1 to 3, and
    ζ-f on levels 0 to 2 (0.03 %; its level 3 does not converge with the
    relaxations 0.5); all three are within ±3 % of the DNS on the finest
-   mesh (SST −1.3 %, ζ-f +2.2 % on level 2, EB +0.9 %). ζ-f₀ is not
-   grid-convergent below y⁺ 1 (+4.8 % on level 3, see the finding above).
+   mesh (SST −1.3 %, EB +0.9 %). Since PR #141 ζ-f (p = 2.8, GCI below
+   0.01 %, +2.1 %) and ζ-f₀ (p = 2.2, GCI 0.02 %, +0.2 %) converge with
+   the mesh on levels 1 to 3 as well.
    The k-ε family with scalable wall functions on meshes refined towards
    the wall (24 to 192 cells) moves with every refinement: realizable
    +11.8 %, k-ε +5.7 % on the finest mesh, outside their ±5 % band.
-4. **Still open**: a ζ-f₀ near-wall formulation that converges with the
-   mesh; the order of the plate (the plate's values are converged); a
+4. **Still open**: the coupled algorithm for SST and EB on the finest
+   channel meshes (residual stalls near 10⁻⁷); a stagnation-point
+   limiter for ζ-f₀ (the jet's Nu₀ +38 %); the order of the plate (the plate's values are converged); a
    stop test on the monitored quantities (U_b⁺, forces), which would have
    caught the early stops of the channel without a tolerance per case.
 

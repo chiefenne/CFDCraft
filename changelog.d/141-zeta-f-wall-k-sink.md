@@ -9,7 +9,7 @@
   17.34, 17.54, 17.58, 17.58 (+0.2 % from the DNS on 768 cells across).
   ζ-f₀ takes C_ε1 = 1.4 (1 + 0.009/ζ) in place of the printed
   1.4 (1 + 0.012/√ζ), which gives U_b⁺ −11 % with a consistent sink. The
-  flat plate (C_f +1.8, +0.15, −0.3 % from White on three meshes) and the
+  flat plate (C_f +1.8, +0.2, −0.2 % from White on three meshes, GCI 0.2 %) and the
   step (x_r/H 6.42) stay in their bands. The impinging jet converges with
   the mesh, but at Nu₀ = 196, +38 % from the experiment (the
   stagnation-point excess of k; finding). The ζ-f plate now converges
@@ -22,6 +22,20 @@
 - **Fix:** the ambient (sustaining) source of k in ζ-f and ζ-f₀ is the
   sink at the ambient state, so the free stream holds its k for every sink
   form.
-- **The channel runs of the GCI study use the coupled algorithm.** They
-  converge to 10⁻⁹ in a few hundred iterations instead of up to 91 000
-  with SIMPLE, with the same U_b⁺ to five digits.
+- **The channel runs of the GCI study use the coupled algorithm**, at
+  most 3 000 iterations each: ζ-f₀ converges to 10⁻⁹ in 436 to 883
+  iterations instead of up to 35 000 with SIMPLEC, the k-ε models in
+  under 700, ζ-f in under 2 600, with the same U_b⁺. SST on the finest
+  mesh and EB on the two finest stop at the limit with a residual near
+  10⁻⁷, within 0.3 % of their converged values (finding; the docs keep
+  the SIMPLEC values of #128). The plate runs of ζ-f and ζ-f₀ use it too
+  (178 to 496 iterations).
+- **The channel case files of ζ-f and ζ-f₀ use the coupled algorithm**
+  (about 230 and 370 iterations instead of 2 100 and 3 700).
+- **The ζ-f plate converges** (`require_convergence = true`): C_f +2.0 %
+  from White on 64 × 48 cells, +0.03 % on 128 × 96 (before +5.1 % with
+  the k floor of the leading edge).
+- **The inlet table of the impinging jet** (`impinging_jet_profile.csv`)
+  is made again from the pipe flow with the new sink.
+- **Gallery 141 and recipe 141**: the sink of k with two field images
+  (the ζ-f plate near its leading edge, the wall layer of the jet).

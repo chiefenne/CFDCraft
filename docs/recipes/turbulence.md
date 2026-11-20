@@ -13,6 +13,7 @@ Part of the [Recipes](../recipes.md): run a case with a RANS turbulence model, c
 | 90 | [Feed a jet with a developed pipe profile and compute the Nusselt number](#impinging-jet) |
 | 113 | [Make SST sensitive to curvature and system rotation](#curvature-correction) |
 | 115 | [Get the secondary flow of non-circular ducts with SST](#qcr) |
+| 141 | [Choose the sink of k of the ζ-f models](#k-sink) |
 
 ---
 
@@ -247,7 +248,8 @@ are also accepted, and ζ-f takes `compound-2023` too:
 [turbulence]
 model = "k-epsilon-zeta-f0"
 wall_treatment = "compound-2023"   # default; "compound", "low-re"
-# constants = { n_zeta = 2.0, c_epsilon1_zeta = 0.012 }   # the defaults
+# k_sink = "wall"   # the default (recipe 141)
+# constants = { n_zeta = 2.0, c_epsilon1_zeta = 0.009, c_epsilon1_power = 1.0 }   # the defaults
 ```
 
 Inlets and `[initial]` take k, ε (or ω) and ζ as for ζ-f (recipe 73).
@@ -663,3 +665,44 @@ target/release/foehn flow examples/cases/flow/square_duct_qcr.toml
 ```
 
 [↑ back to top](#turbulence-models)
+
+---
+
+<a id="k-sink"></a>
+## 141. Choose the sink of k of the ζ-f models
+
+k-ε-ζ-f and k-ε-ζ-f₀ take the sink max(k/T_K, 2νk/d²) of k by default
+(`"wall"`, d the wall distance): it is ε at the wall, so the results
+converge as the first cell moves towards the wall, and k/T_K away from
+it, so k stays positive in a laminar boundary layer. Nothing needs to be
+set. The other forms are there to compare with the literature and with
+older results:
+
+```toml
+[turbulence]
+model = "k-epsilon-zeta-f0"
+k_sink = "epsilon"       # −ε as printed (Hanjalić et al. 2004, Popovac 2023)
+# k_sink = "kolmogorov"  # k/T_K, the ζ-f₀ default before #141
+```
+
+The papers' −ε holds k at its floor at a laminar leading edge (the k
+residual stalls, TURB002 counts the floors in the log); `"kolmogorov"`
+lets k fall only like y at the wall, so U_b⁺ of the channel drifts with
+the mesh below a first-cell y⁺ of 1. ζ-f₀ before #141 is
+
+```toml
+[turbulence]
+model = "k-epsilon-zeta-f0"
+k_sink = "kolmogorov"
+constants = { c_epsilon1_zeta = 0.012, c_epsilon1_power = 0.5 }   # 1.4 (1 + 0.012/√ζ)
+```
+
+Check that a result converges with the mesh with the study of gallery
+141 (the channel refined in y on four levels, the coupled algorithm):
+
+```
+python3 examples/studies/plate_channel_gci.py output/gci --cases channel --models zf0,zf --levels 0,1,2,3
+```
+
+EB (`elliptic-blending-k-epsilon`) keeps −ε and refuses `k_sink`
+(CASE005).

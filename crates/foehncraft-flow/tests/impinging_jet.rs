@@ -65,7 +65,7 @@ fn at(nu: &[(f64, f64)], r: f64) -> f64 {
 /// k-ε-ζ-f₀: converged, the wall probe `stag` at the axis gives the Nu₀ of
 /// the face next to it and `r01` the Nu at r/D = 0.1, and Nu(r/D) falls to
 /// a minimum and rises again to a secondary maximum near r/D = 2. With
-/// the wall-consistent k sink (PR #141) Nu₀ is 194 on this mesh (198,
+/// the wall-consistent k sink (PR #141) Nu₀ is 198 on this mesh (198,
 /// 196, 196 on the three meshes of the study, grid-converged; the
 /// experiment's 141 is the stagnation-point excess of k, a finding).
 #[test]

@@ -57,7 +57,8 @@
 //!
 //!   L²∇²f₀ − f₀ = (1/T)[(C_f1 + C_f2 P_k/ε)(ζ − 2/3) − (N_ζ − 1) ζ]
 //!
-//! with C_ε1 = 1.4 (1 + 0.012/√ζ) and the other constants of the 2004
+//! with C_ε1 = 1.4 (1 + 0.012/√ζ) (our default: 1 + 0.009/ζ, below) and
+//! the other constants of the 2004
 //! model (the paper's table 1: C_f1 = C₁ − 1 = 0.4, C_f2 = C₂′ = 0.65,
 //! C_T = 0.6 = a, C_τ = 6 = C_T here, C_L = 0.36, C_η = 85). The sign of
 //! the (N_ζ − 1) ζ term is the one that follows from substituting f₀
@@ -68,28 +69,38 @@
 //! c_μ/ζ_eq = 0.2195 (the 0.22 of 2004), for which they are derived;
 //! eq. (9) writes c_μ.
 //!
-//! Three choices of ours (6d2) make the form the default `k-epsilon-zeta-f0`:
+//! Choices of ours (6d2, #141) make the form the default `k-epsilon-zeta-f0`:
 //!
 //! - The (N_ζ − 1) terms take ε/k instead of 1/T. Off the wall the two
 //!   agree (T = k/ε); at the wall ε/k = 2ν/y², which is what makes
 //!   f₀_w = (N_ζ − 2) 2νζ/y² = 0 (eq. (21)) consistent, whereas the
 //!   Kolmogorov-bounded 1/T vanishes there.
-//! - The sink of k is k/T_K, T_K = max(k/ε, C_T (ν/ε)^½), instead of ε
-//!   (eq. (5)): the same off the wall, smaller where the Kolmogorov bound
-//!   acts. With −ε the laminar part of a boundary layer has no positive
-//!   steady k, the positivity floor holds it and the k residual stalls
-//!   (the 6d finding on the flat plate); with k/T_K the plate converges to
-//!   round-off. The realizability bound of T is left out of T_K: it would
-//!   raise the sink in shear layers and relaminarise them (U_b⁺ +30 % in
-//!   the channel). With this sink the published C_ε1 = 1.4 (1 + 0.012/√ζ)
-//!   gives U_b⁺ +1.3 % in the channel at y⁺ 1 and C_f +2.6 % against the
-//!   TMR value on the flat plate; with −ε it gave −11 % and +21 %.
+//! - The sink of k ([`k_sink_rate`], both ζ-f models, #141) is
+//!   max(k/T_K, 2νk/d²), T_K = max(k/ε, C_T (ν/ε)^½), d the wall
+//!   distance, instead of ε (eq. (5)). With −ε the laminar part of a
+//!   boundary layer has no positive steady k, the positivity floor holds
+//!   it and the k residual stalls (the 6d finding on the flat plate).
+//!   k/T_K alone (6d2 to #140) removes that, but its rate stays finite at
+//!   the wall, so k falls like y instead of y² and ε_w = 2νk_P/y_P² grows
+//!   with every refinement (the channel's U_b⁺ drifted from 17.79 to 18.39
+//!   over four meshes). 2νk/d² is ε at the wall and negligible away from
+//!   it, and it has no feedback from ε (blends with ε drove a limit cycle
+//!   in the wall jet of the impinging jet). The realizability bound of T
+//!   is left out of T_K: it would raise the sink in shear layers and
+//!   relaminarise them (U_b⁺ +30 % in the channel). `k_sink` keeps −ε
+//!   ([`K_SINK_EPSILON`]) and k/T_K ([`K_SINK_KOLMOGOROV`]) as options.
+//! - C_ε1 = 1.4 (1 + 0.009/ζ) instead of the printed 1.4 (1 + 0.012/√ζ)
+//!   (`c_e1_power` 1 instead of ½): with a sink that is ε at the wall the
+//!   printed form gives U_b⁺ −11 % in the channel, and a larger √ζ
+//!   coefficient spoils the step (√ζ is not small in its shear layer);
+//!   with 0.009/ζ the channel is mesh-converged at +0.2 % from the DNS.
 //! - The realizability bound of T takes a = 0.6 √2 = 0.849 instead
 //!   of 0.6, which with S = (2 S_ij S_ij)^½ is the bound of Durbin (1996)
 //!   written with (S_ij S_ij)^½. In the separated shear layer of the
 //!   backward-facing step the bound with 0.6 is active and halves ν_t:
 //!   the reattachment length came out at 7.4 to 7.7 step heights against
-//!   6.26 measured; with 0.849 it is 6.38 (the bound no longer acts there:
+//!   6.26 measured; with 0.849 it was 6.38 in 6d2, 6.44 since #141 (the
+//!   bound no longer acts there:
 //!   a = 1.2 gives the same). The channel moves by 0.1 %, C_f of the flat
 //!   plate by +1.5 % (within 3 % of White's correlation from y⁺ 1 to 30).
 //!

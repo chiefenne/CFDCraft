@@ -419,8 +419,8 @@ of 2004 with 0.012 gave +8.5 % and did not converge with the sink
 k/T_K). Results of the default since #141 (sections 9.3 to 9.6): channel
 U_b⁺ 17.34 / 17.54 / 17.58 / 17.58 on 48 / 96 / 192 / 384 cells across
 (first-cell y⁺ 1 to 0.1; +0.2 % from the DNS, observed order 2.2), −3.4
-/ −1.2 % at first-cell y⁺ 10 / 30; flat plate C_f(0.97) +1.8 / +0.15 /
-−0.3 % from White's correlation on 64 × 48 / 128 × 96 / 256 × 192 cells,
+/ −1.2 % at first-cell y⁺ 10 / 30; flat plate C_f(0.97) +1.8 / +0.2 /
+−0.2 % from White's correlation on 64 × 48 / 128 × 96 / 256 × 192 cells,
 −0.3 / −2.7 % at y⁺ 10 / 30, all converged without a floor, and the
 boundary layer turns turbulent from the TMR free stream on its own (ζ-f
 stays laminar); backward-facing step x_r/H = 6.42 (+3 %); impinging jet

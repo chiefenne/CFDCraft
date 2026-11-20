@@ -377,9 +377,9 @@ pub struct TurbulenceSection {
     /// `c_r3` of the curvature correction, `c_cr1`, `c_cr2` of the QCR; k-ε: `c_mu`,
     /// `c_epsilon1`, `c_epsilon2`, `sigma_k`, `sigma_epsilon`, `a0`,
     /// `kappa`; k-ε-ζ-f and ζ-f₀: `c_mu`, `c_epsilon1`,
-    /// `c_epsilon1_zeta`, `c_epsilon2`, `c_1`, `c_2`, `sigma_k`,
-    /// `sigma_epsilon`, `sigma_zeta`, `a`, `c_t`, `c_l`, `c_eta`, `kappa`,
-    /// `n_zeta` (ζ-f₀ only); the elliptic-blending k-ε: `c_mu`, `c_epsilon1` …
+    /// `c_epsilon1_zeta`, `c_epsilon1_power` (1 or ½), `c_epsilon2`, `c_1`,
+    /// `c_2`, `sigma_k`, `sigma_epsilon`, `sigma_zeta`, `a`, `c_t`, `c_l`,
+    /// `c_eta`, `kappa`, `n_zeta` (ζ-f₀ only); the elliptic-blending k-ε: `c_mu`, `c_epsilon1` …
     /// `c_epsilon4`, `c_1`, `c_2`, `sigma_k`, `sigma_epsilon`, `sigma_phi`,
     /// `a`, `c_t`, `c_l`, `c_eta`, `kappa`, where `c_epsilon4 = 1.83`
     /// makes C*_ε2 constant); TURB007.

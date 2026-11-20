@@ -14,12 +14,12 @@
 # about 1.5 on the lower wall).
 #
 # The reattachment length is where the wall shear of `ymin`
-# (wall_ymin.csv) changes from negative to positive: x_r/H = 6.38, +2 %
-# from the experiment's 6.26 (band ±10 %). On 32 800 cells (each
-# interval halved): 6.38 as well. The realizability bound of the time
-# scale decides it: with the coefficient 0.6 instead of the default
-# 0.6 √2 it halves ν_t in the separated shear layer and x_r/H comes out
-# at 7.4. The momentum under-relaxation is 0.5 while the bubble forms
+# (wall_ymin.csv) changes from negative to positive: x_r/H = 6.44, +3 %
+# from the experiment's 6.26 (band ±10 %; 6.38 with the k sink k/T_K of
+# 6d2). On 32 800 cells (each interval halved): 6.50. The
+# realizability bound of the time scale decides it: with the coefficient
+# 0.6 instead of the default 0.6 √2 it halves ν_t in the separated shear
+# layer and x_r/H comes out at 7.4 (6d2). The momentum under-relaxation is 0.5 while the bubble forms
 # and 0.8 from iteration 100 (`[[schedule]]`): x_r settles to 1 % in
 # about 550 iterations, against 950 with 0.5 throughout; 0.9 stalls the
 # residual at 10⁻⁴.
