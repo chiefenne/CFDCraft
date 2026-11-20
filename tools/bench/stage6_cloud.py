@@ -56,6 +56,9 @@ OTHERS = [
     (F + "channel_heated_keps.toml", []),
     (F + "pipe_heated_keps.toml", []),
     (F + "backstep_zeta_f0_coupled.toml", []),
+    # the SST options of D170: curvature correction in a turning frame, QCR
+    (F + "channel_rotating_sst.toml", []),
+    (F + "square_duct_qcr.toml", []),
 ]
 
 
