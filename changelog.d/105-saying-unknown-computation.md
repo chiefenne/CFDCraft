@@ -1,1 +1,0 @@
-- **Sayings**: new entry *Better to know what's not happening* in `docs/sayings.md`.

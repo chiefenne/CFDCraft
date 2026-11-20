@@ -1,0 +1,72 @@
+# The skewed-tetrahedra test tank of the cell-quality remediation (D50):
+# turbulent water in a baffled tank (T = 1 m) with a three-blade hydrofoil
+# impeller at 90 rpm in a moving reference frame, k-omega SST, on about 36k
+# raw Gmsh tetrahedra whose blade-hub and sparger corners keep faces with a
+# skewness above 0.9.
+#
+#   pip install gmsh
+#   python3 examples/studies/skewed_tets/mesh.py
+#   cargo run --release -p foehncraft-cli -- flow examples/studies/skewed_tets/case.toml
+#
+# With the default remediation the run settles (torque on the impeller
+# about -1.1 N m, residuals below 5e-4 by iteration 300). With the face
+# velocity of the mass flux interpolated as before (the rest of the
+# remediation kept) the velocity in the blade-hub corners grows from
+# iteration 150 on and the torque runs away by iteration 300:
+#
+#   python3 examples/studies/skewed_tets.py      # both, and the comparison
+
+case_format = "0.6"
+
+[mesh]
+file = "stirred_tank_raw.msh"
+renumber = "rcm"
+
+[fluid]
+material = "water"
+
+[constants]
+spin = 9.42477796076938   # rad/s = 90 rpm
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[flow]
+convection = true
+
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+rpm = 90.0
+walls = ["impeller", "shaft"]
+
+[boundary.impeller]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.shaft]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.baffles]
+type = "wall"
+[boundary.sparger]
+type = "wall"
+[boundary.feed_pipe]
+type = "wall"
+[boundary.surface]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-5
+max_iterations = 400     # a test of stability, not a converged result
+
+[output]
+vtkhdf = true
+wall_csv = false

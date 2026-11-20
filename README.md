@@ -10,8 +10,8 @@
 
 ---
 
-> **Status: stage 6 nearly done (RANS turbulence, heat transfer in forced
-> convection, rotating machinery); the last release is 0.5.** The stage
+> **Status: stage 6 done (RANS turbulence, heat transfer in forced
+> convection, rotating machinery), release 0.6.** The stage
 > plan and every decision are in [docs/requirements.md](docs/requirements.md);
 > [What works today](#what-works-today) lists what is on `main` now. Next is
 > stage 7: the energy equation with buoyancy, variable density and conjugate
@@ -51,7 +51,8 @@ Everything below is on `main`, verified by the cases of the
   mesh-format interface (2D SU2 files extruded one layer), a VTU writer;
   a built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra; graded
   segments, the cylinder O-grid, annuli for rotors); a quality report with
-  automatic remediation of skewed cells; partitioning with METIS and halos;
+  automatic remediation of skewed cells (Gauss pressure gradient, limiter,
+  bounded Rhie–Chow face velocity); partitioning with METIS and halos;
   VTKHDF output for ParaView.
 - **Numerics.** Cell-centred finite volumes with weighted least-squares
   gradients, Venkatakrishnan(-Wang) limiters, linear upwind and bounded
