@@ -36,7 +36,8 @@ Foehncraft alone.
 - Citation: R. Manceau, *Recent progress in the development of the Elliptic
   Blending Reynolds-stress model*, International Journal of Heat and Fluid
   Flow 51, 195–220 (2015).
-- DOI: to verify (the DOI in the draft could not be confirmed in a search)
+- DOI: 10.1016/j.ijheatfluidflow.2014.09.002 (**verified**: the DOI resolves to
+  the Elsevier article; two library records give vol. 51, pp. 195–220, February 2015)
 - Quantities used: the model's own channel results at Re_τ = 395 and 590
   (mean velocity and stress profiles), read from the paper's tables or
   figures. Digitised values are recorded with the figure they come from.
@@ -48,7 +49,9 @@ Foehncraft alone.
 - Citation: A. Pinelli, M. Uhlmann, A. Sekimoto, G. Kawahara, *Reynolds
   number dependence of mean flow structure in square duct turbulence*,
   Journal of Fluid Mechanics 644, 107–122 (2010).
-- DOI: to verify (not confirmed in the search)
+- DOI: 10.1017/S0022112009992242 (**verified**: the DOI resolves to the
+  Cambridge article page; publisher and university records give vol. 644,
+  pp. 107–122, February 2010)
 - Quantities used: mean streamwise velocity and the secondary velocity along
   the wall bisector and the corner diagonal, at the Reynolds numbers that
   the paper tabulates; the Re_b values to be taken from the paper.
@@ -60,7 +63,8 @@ Foehncraft alone.
 - Citation: S. Gavrilakis, *Numerical simulation of low-Reynolds-number
   turbulent flow through a straight square duct*, Journal of Fluid Mechanics
   244, 101–129 (1992).
-- DOI: to verify (publisher page found, DOI not read from it)
+- DOI: 10.1017/S0022112092002982 (**verified**: the publisher page carries this
+  DOI with vol. 244, pp. 101–129, November 1992)
 - Quantities used: secondary flow profiles and the wall shear distribution
   near the corners, as printed in the paper. The Re_b and Re_τ of the case are
   to be taken from the paper, not from this page.
