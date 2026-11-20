@@ -184,7 +184,7 @@ impl MeshCase {
         Ok(case)
     }
 
-    /// A case that reads a mesh file (any format of [`crate::format`]) with
+    /// A case that reads a mesh file (any format of [`crate::format`](mod@crate::format)) with
     /// the default settings.
     pub fn for_file(path: &Path) -> Self {
         let mut c = Self::default();

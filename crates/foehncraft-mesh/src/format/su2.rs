@@ -36,7 +36,7 @@
 
 use super::{CellKind, ElementMesh, MeshFile, MeshFormat, ReadOptions};
 
-/// The SU2 format in the registry of [`crate::format`].
+/// The SU2 format in the registry of [`crate::format`](mod@crate::format).
 #[derive(Debug, Clone, Copy)]
 pub struct Su2;
 

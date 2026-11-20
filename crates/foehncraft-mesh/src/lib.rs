@@ -14,7 +14,7 @@
 //! - [`imprint`]: the sliding interface of a rotor and a stator with different
 //!   pitch, imprinted at the current rotor angle (D58, D182);
 //! - [`wedge`]: axisymmetric wedge meshes revolved from a 2D mesh;
-//! - [`format`]: the mesh file formats behind one reader interface (D33,
+//! - [`format`](mod@format): the mesh file formats behind one reader interface (D33,
 //!   D187): [`gmsh`] (Gmsh `.msh` 4.1) and [`format::su2`] (SU2 `.su2`);
 //! - [`periodic`]: translational periodic boundary pairs (D29, D109);
 //! - [`renumber`]: reverse Cuthill–McKee renumbering of the cells;

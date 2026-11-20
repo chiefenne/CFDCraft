@@ -523,7 +523,7 @@ pub fn parse(bytes: &[u8]) -> Result<GmshMesh, String> {
     })
 }
 
-/// The Gmsh format in the registry of [`crate::format`].
+/// The Gmsh format in the registry of [`crate::format`](mod@crate::format).
 #[derive(Debug, Clone, Copy)]
 pub struct Gmsh;
 
