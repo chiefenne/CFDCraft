@@ -43,8 +43,15 @@ order 2.03 to 0.01071 (GCI 0.77 %) inside 0.0104–0.0110; the pressure
 difference Δp extrapolates to 0.11754 Pa (range 0.1172–0.1176). The mean
 pressure on the cylinder changes by more from the medium to the fine
 mesh than from the coarse to the medium one and is reported as
-divergent, without an order. The case runs about 16 minutes on
-four cores, most of it on the finest mesh (in the `long` set).
+divergent, without an order. These are the SIMPLEC numbers (12 minutes
+on four cores, 9 876 iterations on the finest mesh). Since PR 142 the
+case runs the coupled algorithm, in 51, 90 and 225 outer iterations and
+about a minute (in the `long` set): C_D 5.5800 extrapolates to 5.5796 ±
+0.0004 (order 1.78) and Δp to 0.11754 Pa as before; C_L converges at
+order 1.65 to 0.01073 (GCI 1.35 %). The lift is a force of 2·10⁻⁷ N and
+depends on the pseudo-time step through the face velocity of the
+pressure coupling (0.01037 on the medium mesh with the default
+relaxation, 0.01041 with 0.9, 0.01044 with SIMPLEC).
 
 ```
 target/release/foehn flow examples/cases/flow/cylinder_re20_gci.toml
