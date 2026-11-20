@@ -1436,6 +1436,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             add_k: add.map_or(none, |s| s[0]),
             add_e: add.map_or(none, |s| s[1]),
             add_z: add.map_or(none, |s| s[2]),
+            add_f: add.map_or(none, |s| s[3]),
             wall_mask: a.wall.map_or(none, |(x, _)| self.r(x)),
             wall_pk: a.wall.map_or(none, |(_, y)| self.r(y)),
             nu_t: self.r(a.nu_t),

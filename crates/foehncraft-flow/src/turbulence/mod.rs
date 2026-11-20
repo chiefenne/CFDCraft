@@ -56,6 +56,8 @@
 //! pressure p = p̂ − ⅔ρk ([`crate::simplec::Flow::state`]).
 
 pub mod inlet;
+#[cfg(test)]
+mod mms;
 pub mod wall;
 
 use crate::bc::{BoundaryArrays, BoundaryCondition};
@@ -1685,8 +1687,8 @@ pub struct Turbulence {
     pressure_faces: Vec<u32>,
     pressure_owners: Vec<u32>,
     added: Option<(Buf, Buf)>,
-    /// The added source of ζ (k-ε-ζ-f), if any.
-    added_z: Option<Buf>,
+    /// The added sources of ζ and f (k-ε-ζ-f; φ and α of EB), if any.
+    added_z: Option<(Buf, Buf)>,
     /// Zeros per cell.
     zero_cell: Buf,
     t_set: f64,
@@ -2475,6 +2477,41 @@ impl Turbulence {
         dev.upload(self.w.phi, w)
     }
 
+    /// Adds a source of ζ (φ of EB, 1/s) and a right-hand side of the
+    /// elliptic equation of f (α) (a manufactured solution); with
+    /// [`Self::set_added_sources`], which they need.
+    pub fn set_added_zeta_sources(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        sz: &[f64],
+        sf: &[f64],
+    ) -> Result<()> {
+        anyhow::ensure!(self.zf.is_some(), "added ζ sources: the model has no ζ");
+        let (a, b) = match self.added_z {
+            Some(x) => x,
+            None => (dev.alloc(self.nc)?, dev.alloc(self.nc)?),
+        };
+        dev.upload(a, sz)?;
+        dev.upload(b, sf)?;
+        self.added_z = Some((a, b));
+        Ok(())
+    }
+
+    /// Sets ζ and f (φ and α of EB; verification and tests).
+    pub fn set_zeta_fields(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        z: &[f64],
+        f: &[f64],
+    ) -> Result<()> {
+        let Some(zf) = self.zf.as_ref() else {
+            anyhow::bail!("ζ fields: the model has no ζ");
+        };
+        let (zp, fp) = (zf.z.phi, zf.f.phi);
+        dev.upload(zp, z)?;
+        dev.upload(fp, f)
+    }
+
     /// The inlet values of k and ω for the boundary velocity `ub` at time
     /// `t` (only when they depend on the speed or on t, unless `all`).
     fn set_inlets(&mut self, dev: &mut dyn FlowDevice, ub: Buf3, t: f64, all: bool) -> Result<()> {
@@ -2656,8 +2693,10 @@ impl Turbulence {
                 c: z.c,
                 o: z.o,
                 add: if sources {
-                    self.added
-                        .map(|(a, b)| [a, b, self.added_z.unwrap_or(self.zero_cell)])
+                    self.added.map(|(a, b)| {
+                        let (z, f) = self.added_z.unwrap_or((self.zero_cell, self.zero_cell));
+                        [a, b, z, f]
+                    })
                 } else {
                     None
                 },
