@@ -183,7 +183,22 @@ impl InletSpec {
 }
 
 /// True for the conditions that take turbulence values at their faces
-/// (inlets); outlets take their backflow from the cell (zero gradient).
+/// (inlets); outlets take the values of their backflow where the flow
+/// enters, if given ([`has_backflow_values`]), else the cell's (zero
+/// gradient).
+/// True for a pressure outlet that gives turbulence values for its
+/// backflow (k with ω or ε, or the scales).
+pub(crate) fn has_backflow_values(bc: &BoundaryCondition) -> bool {
+    let t = bc.turbulence();
+    bc.is_pressure_outlet()
+        && (t.k.is_some()
+            || t.omega.is_some()
+            || t.epsilon.is_some()
+            || t.turbulence_intensity.is_some()
+            || t.turbulence_length_scale.is_some()
+            || t.viscosity_ratio.is_some())
+}
+
 pub(crate) fn is_inlet(bc: &BoundaryCondition) -> bool {
     use BoundaryCondition as B;
     matches!(

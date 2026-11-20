@@ -41,9 +41,13 @@
 //!
 //! Static and total pressure conditions combine freely, for example a static
 //! pressure inlet with a total pressure outlet. Turbulence values at inlets
-//! and, for the backflow, at pressure outlets (`turbulence_intensity`,
-//! `turbulence_length_scale`, `viscosity_ratio`) are accepted for the
-//! turbulence models of stage 6 and reported as unused in laminar flow.
+//! and, for the backflow, at pressure outlets (`k` with `omega` or
+//! `epsilon`, `turbulence_intensity`, `turbulence_length_scale`,
+//! `viscosity_ratio`, `zeta`) are accepted for the turbulence models of
+//! stage 6 and reported as unused in laminar flow. At a pressure outlet
+//! they act where the flow enters, face by face and outer iteration by
+//! outer iteration (fixed value there, zero gradient where it leaves);
+//! without them the backflow takes the values of the cell.
 
 use crate::analytic::Analytic;
 use crate::diag;
@@ -1908,19 +1912,22 @@ pub fn check(
                 ),
             );
         } else if !laminar {
-            if !t.is_empty() && !crate::turbulence::inlet::is_inlet(bc) {
+            if !t.is_empty() && !crate::turbulence::inlet::is_inlet(bc) && !bc.is_pressure_outlet()
+            {
                 push(
                     Level::Warning,
                     diag::BC_TURBULENCE_UNUSED_VALUE,
                     Some(name),
                     format!(
-                        "{} unused: backflow at an outlet takes k and ω of the cell \
-                         (backflow values at outlets are not implemented yet)",
+                        "{} unused: only inlets and the backflow of pressure outlets take \
+                         turbulence values",
                         t.join(", ")
                     ),
                 );
             }
-            if !ctx.zeta && bc.turbulence().zeta.is_some() && crate::turbulence::inlet::is_inlet(bc)
+            if !ctx.zeta
+                && bc.turbulence().zeta.is_some()
+                && (crate::turbulence::inlet::is_inlet(bc) || bc.is_pressure_outlet())
             {
                 push(
                     Level::Warning,

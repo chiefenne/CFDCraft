@@ -1610,6 +1610,20 @@ pub struct Turbulence {
     /// boundaries).
     ka_host: Vec<f64>,
     kin_host: Vec<f64>,
+    /// Host copies of a and of the inlet b of ω or ε and of ζ (the
+    /// backflow faces of the outlets change them).
+    wa_host: Vec<f64>,
+    win_host: Vec<f64>,
+    za_host: Vec<f64>,
+    zin_host: Vec<f64>,
+    /// The faces of the outlets with backflow values (BC028): where the
+    /// flow enters, k, ω or ε and ζ take the given values (fixed value),
+    /// elsewhere zero gradient.
+    backflow: Inlets,
+    /// The state of the backflow faces of the last [`Self::set_backflow`]
+    /// (boundary face, entering values or `None`), applied again after the
+    /// inlet values are rebuilt.
+    bf_state: Vec<(usize, Option<(f64, f64, f64)>)>,
     /// The pressure faces (boundary face index) and their owners.
     pressure_faces: Vec<u32>,
     pressure_owners: Vec<u32>,
@@ -1798,6 +1812,36 @@ impl Turbulence {
             zeta: zetas,
             faces,
         };
+        // the outlets with backflow values
+        let mut specs = Vec::new();
+        let mut zetas = Vec::new();
+        let mut faces = Vec::new();
+        for p in &mesh.boundaries {
+            let Some(bc) = case.boundary.get(&p.name) else {
+                continue;
+            };
+            if !inlet::has_backflow_values(bc) {
+                continue;
+            }
+            let s = InletSpec::of(
+                &bc.turbulence(),
+                &env,
+                transient,
+                &format!("boundary.{}", p.name),
+            )?;
+            specs.push(s);
+            zetas.push(bc.turbulence().zeta.unwrap_or(2.0 / 3.0));
+            for f in p.range() {
+                faces.push(((f - ni) as u32, specs.len() - 1, geo.face_centroid[f]));
+            }
+        }
+        let backflow = Inlets {
+            speed: specs.iter().any(InletSpec::speed_dependent),
+            time: specs.iter().any(InletSpec::time_dependent),
+            specs,
+            zeta: zetas,
+            faces,
+        };
         // the walls
         let walls = Walls::new(mesh, geo, &case.boundary, eps);
         let var = |dev: &mut dyn FlowDevice, vk: VarKind| -> Result<Var> {
@@ -1947,6 +1991,8 @@ impl Turbulence {
             Some((section.qcr.kernel(), t))
         };
         let ka_host = kinds(mesh, &case.boundary, treatment, VarKind::K, model).1;
+        let wa_host = kinds(mesh, &case.boundary, treatment, VarKind::Second, model).1;
+        let za_host = kinds(mesh, &case.boundary, treatment, VarKind::Zeta, model).1;
         let a3 = |dev: &mut dyn FlowDevice| -> Result<Buf3> {
             Ok(Buf3 {
                 x: dev.alloc(nc)?,
@@ -2074,6 +2120,12 @@ impl Turbulence {
             note: std::cell::RefCell::new(None),
             ka_host,
             kin_host: vec![0.0; nb],
+            wa_host,
+            win_host: vec![0.0; nb],
+            za_host,
+            zin_host: vec![0.0; nb],
+            backflow,
+            bf_state: Vec::new(),
             pressure_faces: pressure,
             pressure_owners,
             added: None,
@@ -2404,9 +2456,96 @@ impl Turbulence {
                     .unwrap_or(self.inlets.zeta[s]);
             }
             dev.upload(z.z.b_in, &zb)?;
+            self.zin_host = zb;
         }
         self.kin_host = kb;
+        self.win_host = wb;
         self.t_set = t;
+        if !self.bf_state.is_empty() {
+            let st = std::mem::take(&mut self.bf_state);
+            self.apply_backflow(dev, &st)?;
+        }
+        Ok(())
+    }
+
+    /// The backflow faces of the outlets (BC028) for the fluxes
+    /// `mass_flux`: a face where the flow enters (ṁ < 0) takes the given
+    /// k, ω or ε and ζ as fixed values (a = 0, b the value), a face where
+    /// it leaves zero gradient (a = 1, b = 0). Called at the start of every
+    /// turbulence solve, so a continued run sets the same state from the
+    /// same fluxes.
+    fn set_backflow(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        ub: Buf3,
+        mass_flux: Buf,
+        t: f64,
+    ) -> Result<()> {
+        if self.backflow.faces.is_empty() {
+            return Ok(());
+        }
+        let ni = self.ni as u32;
+        let fidx: Vec<u32> = self.backflow.faces.iter().map(|f| f.0 + ni).collect();
+        let m = dev.gather(mass_flux, &fidx)?;
+        let bidx: Vec<u32> = self.backflow.faces.iter().map(|f| f.0).collect();
+        let (ux, uy, uz) = if self.backflow.speed {
+            (
+                dev.gather(ub.x, &bidx)?,
+                dev.gather(ub.y, &bidx)?,
+                dev.gather(ub.z, &bidx)?,
+            )
+        } else {
+            let z = vec![0.0; bidx.len()];
+            (z.clone(), z.clone(), z)
+        };
+        let mut st = Vec::with_capacity(bidx.len());
+        for (i, &(fb, s, x)) in self.backflow.faces.iter().enumerate() {
+            let v = if m[i] < 0.0 {
+                let sp = (ux[i] * ux[i] + uy[i] * uy[i] + uz[i] * uz[i]).sqrt();
+                let (k, w) = self.backflow.specs[s].at(sp, x, t, self.nu, self.c_mu, self.eps);
+                let z = self.backflow.specs[s]
+                    .zeta_at(x)
+                    .unwrap_or(self.backflow.zeta[s]);
+                Some((k.max(self.k.floor), w.max(self.w.floor), z))
+            } else {
+                None
+            };
+            st.push((fb as usize, v));
+        }
+        if st == self.bf_state {
+            return Ok(());
+        }
+        self.apply_backflow(dev, &st)
+    }
+
+    /// Writes the backflow state `st` (boundary face, entering values or
+    /// `None`) into a and b of k, ω or ε and ζ and uploads them.
+    fn apply_backflow(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        st: &[(usize, Option<(f64, f64, f64)>)],
+    ) -> Result<()> {
+        self.bf_state = st.to_vec();
+        for &(fb, v) in st {
+            let (a, (k, w, z)) = match v {
+                Some(v) => (0.0, v),
+                None => (1.0, (0.0, 0.0, 0.0)),
+            };
+            self.ka_host[fb] = a;
+            self.wa_host[fb] = a;
+            self.za_host[fb] = a;
+            self.kin_host[fb] = k;
+            self.win_host[fb] = w;
+            self.zin_host[fb] = z;
+        }
+        dev.upload(self.k.bc_a, &self.ka_host)?;
+        dev.upload(self.w.bc_a, &self.wa_host)?;
+        dev.upload(self.k.b_in, &self.kin_host)?;
+        dev.upload(self.w.b_in, &self.win_host)?;
+        if let Some(z) = self.zf {
+            dev.upload(z.z.bc_a, &self.za_host)?;
+            dev.upload(z.z.b_in, &self.zin_host)?;
+        }
         Ok(())
     }
 
@@ -2753,8 +2892,14 @@ impl Turbulence {
         self.modified_pressure(dev, bc)
     }
 
-    /// The pressure boundaries take p̂ = p + ⅔ρk with k of the face.
-    fn modified_pressure(&self, dev: &mut dyn FlowDevice, bc: &BoundaryArrays) -> Result<()> {
+    /// The pressure boundaries take p̂ = p + ⅔ρk with k of the face (also
+    /// after a restart: the values of [`Self::start`] came from the start
+    /// fields).
+    pub(crate) fn modified_pressure(
+        &self,
+        dev: &mut dyn FlowDevice,
+        bc: &BoundaryArrays,
+    ) -> Result<()> {
         if self.pressure_faces.is_empty() {
             return Ok(());
         }
@@ -2784,6 +2929,7 @@ impl Turbulence {
         let tr = step.is_some();
         let t = step.map_or(0.0, |s| s.time);
         self.set_inlets(dev, ub, t, false)?;
+        self.set_backflow(dev, ub, mass_flux, t)?;
         // ν_t of the last iteration (relaxation of ν_t)
         if let Some(prev) = self.nu_t_prev {
             dev.copy(self.nu_t, prev)?;
@@ -3496,6 +3642,7 @@ impl Turbulence {
         dev.upload(self.k.b_wall, &kw)?;
         dev.upload(self.w.b_wall, &ww)?;
         self.kin_host = kin;
+        self.win_host = win;
         if let Some(z) = self.zf {
             match &s.zeta {
                 Some(zs) => {
@@ -3513,6 +3660,7 @@ impl Turbulence {
                         .collect();
                     dev.upload(z.z.b_in, &zin)?;
                     dev.upload(z.f.b_wall, &fw)?;
+                    self.zin_host = zin;
                 }
                 None => {
                     // a restart of a two-equation model: ζ = 2/3, f = 0
@@ -3524,6 +3672,24 @@ impl Turbulence {
                     }
                 }
             }
+        }
+        // the backflow faces of the outlets: the stored boundary values
+        // tell which faces took entering fluid (k_b > 0 there, 0 where the
+        // flow left)
+        if !self.backflow.faces.is_empty() {
+            let zb = s.zeta.as_ref().map(|z| &z.zeta_b);
+            let st: Vec<_> = self
+                .backflow
+                .faces
+                .iter()
+                .map(|&(fb, _, _)| {
+                    let fb = fb as usize;
+                    let v = (s.k_b[fb] > 0.0)
+                        .then(|| (s.k_b[fb], s.omega_b[fb], zb.map_or(2.0 / 3.0, |z| z[fb])));
+                    (fb, v)
+                })
+                .collect();
+            self.apply_backflow(dev, &st)?;
         }
         self.amg_restore(dev, &s.amg)?;
         self.boundary_values(dev)?;
