@@ -122,10 +122,10 @@ Runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07): 90 of 90 cases pa
 |  |  |  | every steady solve converged | converged | yes | passed |
 |  |  |  | net mass flow out of the domain | ≤ 1e-06 | 1.016e-16 relative | passed |
 | `cylinder_re20_gci` | Flow around a cylinder in a channel at Re = 20 on three meshes | 6 144 … 98 304 | C_D (Schäfer & Turek (1996) 2D-1, Re = 20) | 5.57 – 5.59 | 5.58 | passed |
-|  |  |  | C_L (Schäfer & Turek (1996) 2D-1, Re = 20) | 0.0104 – 0.011 | 0.01064 | passed |
+|  |  |  | C_L (Schäfer & Turek (1996) 2D-1, Re = 20) | 0.0104 – 0.011 | 0.01061 | passed |
 |  |  |  | Δp (Pa) (Schäfer & Turek (1996) 2D-1, Re = 20) | 0.1172 – 0.1176 | 0.1175 | passed |
 |  |  |  | every steady solve converged | converged | yes | passed |
-|  |  |  | net mass flow out of the domain | ≤ 1e-06 | 1.060e-12 relative | passed |
+|  |  |  | net mass flow out of the domain | ≤ 1e-06 | 1.928e-13 relative | passed |
 | `impinging_jet` | Round jet from a pipe impinging on a heated plate at H/D = 2, Re = 23 750, k-ε-ζ-f₀ with the coupled algorithm on an axisymmetric wedge (stage 6 part 6g, specification 9.6 | 10 400 | net mass flow out of the domain | ≤ 1e-06 | 7.874e-16 relative | passed |
 | `jet_pipe_profile` | Developed pipe flow at Re = 23 750 for the inlet of the impinging jet (impinging_jet.toml), k-ε-ζ-f₀ with the coupled algorithm | 96 | net mass flow out of the domain | ≤ 1e-06 | 1.388e-35 relative | passed |
 | `naca0012_su2_re1000` | Laminar flow around a NACA 0012 at Re = 1000 and 4 degrees angle of attack, on the PyAero C-mesh read from an SU2 file (D187) | 6 420 | every steady solve converged | converged | yes | passed |
@@ -299,24 +299,24 @@ Three finest solutions, Celik et al. (2008) (D67): observed order p, the extrapo
 | Quantity | φ1 (finest) | p | Extrapolated | ± U | GCI | Verdict |
 |---|---|---|---|---|---|---|
 | boundaries.inlet.mass_flow | -8.200250e-04 | 2.000 | -8.200000e-04 | 3.13e-08 | 0.004 % | monotonic |
-| boundaries.inlet.mean_pressure | 6.945348e-02 | 1.203 | 6.946200e-02 | 1.06e-05 | 0.015 % | monotonic |
-| boundaries.inlet.force_x | -2.847593e-04 | 1.203 | -2.847942e-04 | 4.37e-08 | 0.015 % | monotonic |
+| boundaries.inlet.mean_pressure | 6.945146e-02 | 1.205 | 6.945964e-02 | 1.02e-05 | 0.015 % | monotonic |
+| boundaries.inlet.force_x | -2.847510e-04 | 1.205 | -2.847845e-04 | 4.19e-08 | 0.015 % | monotonic |
 | boundaries.outlet.mass_flow | 8.200250e-04 | 2.000 | 8.200000e-04 | 3.13e-08 | 0.004 % | monotonic |
-| boundaries.walls.mean_pressure | 2.011667e-02 | 1.084 | 2.012391e-02 | 9.05e-06 | 0.045 % | monotonic |
-| boundaries.walls.force_x | 1.737492e-04 | 1.852 | 1.737874e-04 | 4.77e-08 | 0.027 % | monotonic |
-| boundaries.walls.force_y | -1.357950e-07 | 1.904 | -1.380336e-07 | 2.80e-09 | 2.061 % | monotonic |
-| boundaries.cylinder.mean_pressure | 2.891126e-02 | - | - | - | - | divergent |
-| boundaries.cylinder.force_x | 1.116002e-04 | 1.807 | 1.115939e-04 | 7.83e-09 | 0.007 % | monotonic |
-| boundaries.cylinder.force_y | 2.128787e-07 | 2.028 | 2.141842e-07 | 1.63e-09 | 0.767 % | monotonic |
-| boundaries.zmin.mean_pressure | 1.987620e-02 | 1.166 | 1.988277e-02 | 8.21e-06 | 0.041 % | monotonic |
-| boundaries.zmin.force_z | -1.777223e-02 | 1.164 | -1.777811e-02 | 7.35e-06 | 0.041 % | monotonic |
-| boundaries.zmax.mean_pressure | 1.987620e-02 | 1.166 | 1.988277e-02 | 8.21e-06 | 0.041 % | monotonic |
-| boundaries.zmax.force_z | 1.777223e-02 | 1.164 | 1.777811e-02 | 7.35e-06 | 0.041 % | monotonic |
-| benchmark.C_D | 5.580010e+00 | 1.807 | 5.579697e+00 | 3.92e-04 | 0.007 % | monotonic |
-| benchmark.C_L | 1.064393e-02 | 2.028 | 1.070921e-02 | 8.16e-05 | 0.767 % | monotonic |
-| benchmark.Δp (Pa) | 1.175155e-01 | 0.556 | 1.175413e-01 | 3.22e-05 | 0.027 % | monotonic |
-| balance.viscous_dissipation | 5.902860e-05 | 1.942 | 5.904470e-05 | 2.01e-08 | 0.034 % | monotonic |
-| balance.numerical_dissipation | 2.768876e-08 | 2.092 | 1.190465e-08 | 1.97e-08 | 71.257 % | monotonic |
+| boundaries.walls.mean_pressure | 2.011647e-02 | 1.029 | 2.012447e-02 | 1.00e-05 | 0.050 % | monotonic |
+| boundaries.walls.force_x | 1.737468e-04 | 1.836 | 1.737858e-04 | 4.88e-08 | 0.028 % | monotonic |
+| boundaries.walls.force_y | -1.349699e-07 | 1.376 | -1.399567e-07 | 6.23e-09 | 4.618 % | monotonic |
+| boundaries.cylinder.mean_pressure | 2.890956e-02 | - | - | - | - | divergent |
+| boundaries.cylinder.force_x | 1.115995e-04 | 1.781 | 1.115929e-04 | 8.21e-09 | 0.007 % | monotonic |
+| boundaries.cylinder.force_y | 2.122150e-07 | 1.645 | 2.145072e-07 | 2.87e-09 | 1.350 % | monotonic |
+| boundaries.zmin.mean_pressure | 1.987605e-02 | 1.114 | 1.988327e-02 | 9.03e-06 | 0.045 % | monotonic |
+| boundaries.zmin.force_z | -1.777210e-02 | 1.112 | -1.777856e-02 | 8.08e-06 | 0.045 % | monotonic |
+| boundaries.zmax.mean_pressure | 1.987605e-02 | 1.114 | 1.988327e-02 | 9.03e-06 | 0.045 % | monotonic |
+| boundaries.zmax.force_z | 1.777210e-02 | 1.112 | 1.777856e-02 | 8.08e-06 | 0.045 % | monotonic |
+| benchmark.C_D | 5.579976e+00 | 1.781 | 5.579647e+00 | 4.11e-04 | 0.007 % | monotonic |
+| benchmark.C_L | 1.061075e-02 | 1.645 | 1.072536e-02 | 1.43e-04 | 1.350 % | monotonic |
+| benchmark.Δp (Pa) | 1.175134e-01 | 0.593 | 1.175355e-01 | 2.76e-05 | 0.024 % | monotonic |
+| balance.viscous_dissipation | 5.902735e-05 | 1.944 | 5.904336e-05 | 2.00e-08 | 0.034 % | monotonic |
+| balance.numerical_dissipation | 2.754370e-08 | 2.089 | 1.167600e-08 | 1.98e-08 | 72.011 % | monotonic |
 
 ### Discretisation uncertainty of `pipe_heated_periodic`
 
