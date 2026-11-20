@@ -17,7 +17,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
-| [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90, 113, 115 |
+| [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90, 113, 115, 140 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
 | [Python](gallery/python.md) | cases built, run and studied from Python: expressions with Python operators, callbacks, study tables | 24 |
@@ -90,6 +90,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="su2-airfoil"></a>127 | [A PyAero airfoil mesh from an SU2 file](gallery/meshes.md#su2-airfoil) | [Meshes](gallery/meshes.md) |
 | <a id="foam-cgns-polyhedra"></a>129 | [A polyhedral mesh from OpenFOAM and CGNS](gallery/meshes.md#foam-cgns-polyhedra) | [Meshes](gallery/meshes.md) |
 | <a id="five-formats"></a>134 | [One polyhedral mesh through five formats](gallery/meshes.md#five-formats) | [Meshes](gallery/meshes.md) |
+| <a id="outlet-backflow"></a>140 | [Turbulence of the backflow at a pressure outlet: an outlet inside the recirculation](gallery/turbulence.md#outlet-backflow) | [Turbulence models](gallery/turbulence.md) |
 
 ## Adding a feature
 
