@@ -495,6 +495,17 @@ T_f,b = T̃_N + q_f R_N/|S| (equal when R″_c = 0). With orthotropic k the
 normal conductivity n̂·k·n̂ is used in R and the cross terms are deferred
 (D116).
 
+**Orientation of an orthotropic k (L48).** The material gives k₁, k₂, k₃ and,
+as the default, the axes `axis_1`, `axis_2` (the second one is made normal to
+the first, the third is their cross product); a region (D112) may give its own
+axes, so one winding material can be oriented differently in every slot. The
+tensor K = R diag(kᵢ) Rᵀ is a symmetric six-number cell field. Stage 7 takes
+fixed axes; cylindrical frames (laminated stacks and windings of e-motors),
+frames from expressions and from per-cell fields, and the rotation of a frame
+with a rotating zone follow with L30 (L48, `requirements.md`). A test of
+stage 7: the linear-field patch test with a rotated K on a skewed mesh, exact to
+round-off (V7.4 variant).
+
 The flux is one number per face, computed once and added to P and
 subtracted from N (D117 (1)), so heat flux continuity
 −k_a∇T_a·n = −k_b∇T_b·n holds to round-off, at every iteration, not only at
