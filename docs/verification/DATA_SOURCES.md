@@ -43,6 +43,23 @@ Foehncraft alone.
   (mean velocity and stress profiles), read from the paper's tables or
   figures. Digitised values are recorded with the figure they come from.
 
+### 1.3 Newer channel DNS set (Lee & Moser 2015)
+
+- Citation: M. Lee, R. D. Moser, *Direct numerical simulation of turbulent
+  channel flow up to Re_τ = 5200*, Journal of Fluid Mechanics 774, 395–415
+  (2015).
+- DOI: 10.1017/S0022112015002682 (**verified**: doi.org resolves to the
+  publisher page for this article)
+- Archive: the channel data page of the authors' group,
+  https://turbulence.oden.utexas.edu/channel2015/ (the README asks that the
+  data source be cited as above). The set has Re_τ = 180, 550, 1000, 2000 and
+  5200. **It has no case at Re_τ = 395 or 590**, so the entries in section 1
+  above keep their citation to Moser, Kim & Mansour (1999).
+- Raw velocity fields are provided on request by the authors; statistics are
+  published as text files on the archive. Nothing from the archive is copied
+  into the repository. Only numbers quoted by a test or validation page, with
+  this citation, may enter the repository.
+
 ## 2. Square duct (secondary flow, corner vortices)
 
 ### 2.1 Pinelli, Uhlmann, Sekimoto & Kawahara (2010)
