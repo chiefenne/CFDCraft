@@ -1,4 +1,4 @@
-- **Requirements: heat exchangers with several fluids and materials (D191).**
+- **Requirements: heat exchangers with several fluids and materials (D194).**
   Any number of fluid and solid regions with their own materials; fluid
   parts joined only through solids or thin walls get their own pressure
   reference and ledger; heat-exchanger outputs (duty, effectiveness, NTU,
