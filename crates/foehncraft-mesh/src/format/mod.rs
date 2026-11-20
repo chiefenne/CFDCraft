@@ -1,14 +1,16 @@
 //! Mesh file formats (D33, D187): one reader interface for every format.
 //!
-//! A format is a [`MeshFormat`]: a name (`gmsh`, `su2`), the file
-//! extensions it owns, a test of the first bytes of a file, and a reader.
+//! A format is a [`MeshFormat`]: a name (`gmsh`, `su2`, `cgns`, `openfoam`),
+//! the file extensions it owns (an OpenFOAM mesh is a directory), a test of
+//! the first bytes of a file, and a reader.
 //! The readers are listed in [`FORMATS`]; [`read`] picks the reader from
 //! the `mesh.format` key, else from the file extension, else from the
 //! content, and returns a [`MeshFile`] with the same [`Mesh`] type for every
 //! format.
 //!
 //! Most readers only parse: they hand their cells (tetrahedra, hexahedra,
-//! prisms, pyramids) and their named boundary faces to an [`ElementMesh`],
+//! prisms, pyramids, polyhedra) and their named boundary faces to an
+//! [`ElementMesh`],
 //! and [`ElementMesh::into_mesh`] builds the face-based mesh the same way
 //! for every format (unused nodes dropped, faces matched, boundary faces
 //! named, faces without a name in the boundary `default`). A new format is
@@ -19,7 +21,10 @@
 //! the case maps them to the names of its boundary conditions with
 //! `[mesh.boundaries]` (`old = "new"`), whatever the format.
 
+#[cfg(feature = "hdf5")]
+pub mod cgns;
 pub mod gmsh;
+pub mod openfoam;
 pub mod su2;
 
 use crate::builder::CellSoup;
@@ -51,7 +56,10 @@ pub struct ReadOptions {
     pub thickness: Option<f64>,
 }
 
-/// A mesh file format.
+/// A mesh file format. A format that is a file implements [`Self::parse`]
+/// (the default [`Self::read_path`] reads the file and calls it); one that
+/// is a directory (OpenFOAM) or must be opened by a library (CGNS, HDF5)
+/// implements [`Self::read_path`].
 pub trait MeshFormat: Sync {
     /// Name, as given in `mesh.format`.
     fn name(&self) -> &'static str;
@@ -62,11 +70,28 @@ pub trait MeshFormat: Sync {
     /// Whether the first bytes of a file look like this format.
     fn sniff(&self, head: &[u8]) -> bool;
     /// Reads a file from its bytes.
-    fn parse(&self, bytes: &[u8], options: &ReadOptions) -> Result<MeshFile, String>;
+    fn parse(&self, _bytes: &[u8], _options: &ReadOptions) -> Result<MeshFile, String> {
+        Err(format!("{} is not read from memory", self.name()))
+    }
+    /// Whether a directory holds a mesh of this format.
+    fn accepts_dir(&self, _dir: &Path) -> bool {
+        false
+    }
+    /// Reads the file or directory `path`.
+    fn read_path(&self, path: &Path, options: &ReadOptions) -> Result<MeshFile, String> {
+        let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        self.parse(&bytes, options)
+    }
 }
 
 /// The formats Foehncraft reads.
-pub static FORMATS: &[&dyn MeshFormat] = &[&gmsh::Gmsh, &su2::Su2];
+pub static FORMATS: &[&dyn MeshFormat] = &[
+    &gmsh::Gmsh,
+    &su2::Su2,
+    #[cfg(feature = "hdf5")]
+    &cgns::Cgns,
+    &openfoam::OpenFoam,
+];
 
 /// The format of a name.
 pub fn by_name(name: &str) -> Result<&'static dyn MeshFormat, String> {
@@ -86,8 +111,12 @@ pub fn by_extension(path: &Path) -> Option<&'static dyn MeshFormat> {
         .find(|f| f.extensions().contains(&ext.as_str()))
 }
 
-/// Whether `path` has the extension of a mesh format.
+/// Whether `path` is a mesh of a known format: a file with the extension of
+/// a format, or a directory that holds a mesh (OpenFOAM).
 pub fn is_mesh_file(path: &Path) -> bool {
+    if path.is_dir() {
+        return FORMATS.iter().any(|f| f.accepts_dir(path));
+    }
     by_extension(path).is_some()
 }
 
@@ -112,7 +141,17 @@ pub fn detect(
     if let Some(f) = by_extension(path) {
         return Ok(f);
     }
+    if !cfg!(feature = "hdf5")
+        && path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("cgns"))
+    {
+        return Err("CGNS files are read through HDF5: build with the feature `hdf5`".into());
+    }
     let head = &bytes[..bytes.len().min(4096)];
+    if bytes.is_empty() {
+        return Err("cannot tell the mesh format from the name; set `mesh.format`".into());
+    }
     FORMATS
         .iter()
         .copied()
@@ -138,10 +177,36 @@ pub fn read_with(
     options: &ReadOptions,
 ) -> Result<MeshFile, String> {
     let path = path.as_ref();
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let f = detect(path, &bytes, format).map_err(|e| format!("{}: {e}", path.display()))?;
-    f.parse(&bytes, options)
-        .map_err(|e| format!("{}: {e}", path.display()))
+    let err = |e: String| format!("{}: {e}", path.display());
+    if path.is_dir() {
+        let f = match format {
+            Some(name) => by_name(name),
+            None => FORMATS
+                .iter()
+                .copied()
+                .find(|f| f.accepts_dir(path))
+                .ok_or_else(|| {
+                    "a directory that holds no mesh (an OpenFOAM mesh is a case directory with \
+                     constant/polyMesh, or the polyMesh directory itself)"
+                        .to_string()
+                }),
+        }
+        .map_err(err)?;
+        return f.read_path(path, options).map_err(err);
+    }
+    // sniff the first bytes only when the name does not decide
+    let head = if format.is_some() || by_extension(path).is_some() {
+        Vec::new()
+    } else {
+        use std::io::Read;
+        let mut v = Vec::new();
+        std::fs::File::open(path)
+            .and_then(|f| f.take(4096).read_to_end(&mut v))
+            .map_err(|e| err(e.to_string()))?;
+        v
+    };
+    let f = detect(path, &head, format).map_err(err)?;
+    f.read_path(path, options).map_err(err)
 }
 
 /// A linear 3D cell.
@@ -157,6 +222,8 @@ pub enum CellKind {
     Prism,
     /// 5 nodes: the quadrilateral base (0-3), then the apex.
     Pyramid,
+    /// Any closed set of polygons: the next entry of [`ElementMesh::poly`].
+    Polyhedron,
 }
 
 impl CellKind {
@@ -167,6 +234,7 @@ impl CellKind {
             Self::Hexahedron => 8,
             Self::Prism => 6,
             Self::Pyramid => 5,
+            Self::Polyhedron => 0,
         }
     }
 }
@@ -180,8 +248,11 @@ pub struct ElementMesh {
     pub points: Vec<[f64; 3]>,
     /// Kind of each cell.
     pub cell_kind: Vec<CellKind>,
-    /// Nodes of the cells, concatenated.
+    /// Nodes of the cells, concatenated (none for a polyhedron).
     pub cell_nodes: Vec<u32>,
+    /// The faces (node lists) of the polyhedra, one entry per
+    /// [`CellKind::Polyhedron`] cell in cell order.
+    pub poly: Vec<Vec<Vec<u32>>>,
     /// Zone of each cell (index into `zones`).
     pub cell_zone: Vec<u32>,
     /// Zone names (`fluid` if empty).
@@ -224,6 +295,15 @@ impl ElementMesh {
         self.cell_zone.push(zone);
     }
 
+    /// Adds a polyhedral cell from its faces (the orientation of the faces
+    /// need not be consistent with the cell: it is made outward from the
+    /// volume, but all faces of one cell must agree).
+    pub fn add_polyhedron(&mut self, faces: Vec<Vec<u32>>, zone: u32) {
+        self.cell_kind.push(CellKind::Polyhedron);
+        self.poly.push(faces);
+        self.cell_zone.push(zone);
+    }
+
     /// Adds a boundary face.
     pub fn add_face(&mut self, nodes: &[u32], boundary: u32) {
         if self.face_ptr.is_empty() {
@@ -255,7 +335,7 @@ impl ElementMesh {
         let np = self.points.len();
         let mut new_index = vec![u32::MAX; np];
         let mut points: Vec<[f64; 3]> = Vec::new();
-        for &n in &self.cell_nodes {
+        let mut use_node = |n: u32| -> Result<(), String> {
             let i = n as usize;
             if i >= np {
                 return Err(format!("a cell refers to node {n}, beyond the {np} nodes"));
@@ -264,11 +344,37 @@ impl ElementMesh {
                 new_index[i] = points.len() as u32;
                 points.push(self.points[i]);
             }
+            Ok(())
+        };
+        {
+            let (mut at, mut ip) = (0usize, 0usize);
+            for &kind in &self.cell_kind {
+                if kind == CellKind::Polyhedron {
+                    for &n in self.poly[ip].iter().flatten() {
+                        use_node(n)?;
+                    }
+                    ip += 1;
+                } else {
+                    for &n in &self.cell_nodes[at..at + kind.nodes()] {
+                        use_node(n)?;
+                    }
+                    at += kind.nodes();
+                }
+            }
         }
 
         let mut soup = CellSoup::new(points);
-        let mut at = 0usize;
+        let (mut at, mut ip) = (0usize, 0usize);
         for (c, &kind) in self.cell_kind.iter().enumerate() {
+            if kind == CellKind::Polyhedron {
+                let faces: Vec<Vec<u32>> = self.poly[ip]
+                    .iter()
+                    .map(|f| f.iter().map(|&n| new_index[n as usize]).collect())
+                    .collect();
+                ip += 1;
+                soup.add_cell_in_zone(faces.iter().map(|f| &f[..]), self.cell_zone[c]);
+                continue;
+            }
             let e = &self.cell_nodes[at..at + kind.nodes()];
             at += kind.nodes();
             let mut v = [0u32; 8];
@@ -305,6 +411,7 @@ impl ElementMesh {
                     ];
                     soup.add_cell_in_zone(f, z);
                 }
+                CellKind::Polyhedron => unreachable!(),
             }
         }
         let zones = if self.zones.is_empty() {

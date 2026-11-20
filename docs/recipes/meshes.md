@@ -1,6 +1,6 @@
 # Meshes
 
-Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2), convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes.
+Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM), convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes.
 
 | # | Recipe |
 |---|---|
@@ -10,6 +10,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2), convert and pa
 | 11 | [Update the golden values of the mesher](#golden) |
 | 36 | [Run a flow on raw Gmsh tetrahedra (skewed faces)](#skewed-tets) |
 | 127 | [Read an SU2 mesh and map its markers to boundary conditions](#mesh-su2) |
+| NNN | [Read a CGNS or OpenFOAM mesh](#mesh-cgns-openfoam) |
 
 ---
 
@@ -187,7 +188,7 @@ target/release/foehn flow examples/cases/flow/naca0012_su2_re1000.toml
 ```toml
 [mesh]
 file = "wing.su2"          # the format follows from the extension, or:
-format = "su2"             # gmsh | su2, for a file with another extension
+format = "su2"             # gmsh | su2 | cgns | openfoam, for a file with another extension
 thickness = 0.01           # 2D files: layer thickness, in the file's units
 scale = 0.001              # millimetres to metres (after the extrusion)
 
@@ -207,5 +208,44 @@ plane of that name: rename it with `[mesh.boundaries]`. Multi-zone files
 picks the reader from `mesh.format`, else the extension (`.msh`, `.su2`),
 else the first lines of the file; a new format is one reader in
 `crates/foehncraft-mesh/src/format/` (module docs of `format`).
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="mesh-cgns-openfoam"></a>
+## NNN. Read a CGNS or OpenFOAM mesh
+
+Two more readers sit behind the same interface (D188).
+
+- **OpenFOAM.** Give the case directory, its `constant` directory or the
+  `polyMesh` directory itself: `file = "channel"`. The files `points`,
+  `faces`, `owner`, `neighbour` and, if present, `cellZones` are read, ASCII
+  or binary (32 or 64 bit labels, either byte order), with polyhedral cells
+  kept as they are. Patches become boundaries by name, `cellZones` become
+  cell zones. `empty` patches stay ordinary boundaries (the reader says so;
+  use a `symmetry` boundary for 2D work). Decomposed cases (`processor`
+  patches) and `.gz` files are refused: reconstruct and `gunzip` first.
+- **CGNS.** HDF5 files (CGNS 3 or 4 as written by Gmsh and others), one
+  base, one unstructured zone, 3D cells TETRA_4, PYRA_5, PENTA_6, HEXA_8
+  and polyhedra as NGON_n/NFACE_n. The BCs of `ZoneBC`, given on faces,
+  become boundaries; for Gmsh files the physical-group name is taken from
+  the family. Old ADF files are refused: convert them with `adf2hdf`.
+
+```
+target/release/foehn mesh crates/foehncraft-mesh/tests/data/openfoam/dual_polyhedra
+target/release/foehn mesh crates/foehncraft-mesh/tests/data/cgns/box_tet.cgns
+```
+
+```toml
+[mesh]
+file = "channel"            # an OpenFOAM case, or "wing.cgns"
+
+[mesh.boundaries]           # patch or BC names to the names of the conditions
+walls = "wall"
+```
+
+Faces that no patch or BC names go to `default` with a warning. Multi-zone
+and 2D CGNS files and structured zones are refused.
 
 [↑ back to top](#meshes)

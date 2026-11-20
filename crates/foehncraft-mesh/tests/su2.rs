@@ -108,9 +108,9 @@ fn case_reads_su2_with_renamed_markers_and_scale() {
     assert_eq!(format::read(&copy, None).unwrap().reader, "su2");
     // by name
     assert_eq!(format::read(&copy, Some("su2")).unwrap().reader, "su2");
-    let e = format::read(&copy, Some("cgns")).unwrap_err();
+    let e = format::read(&copy, Some("xyz")).unwrap_err();
     assert!(
-        e.contains("unknown mesh format 'cgns'") && e.contains("gmsh, su2"),
+        e.contains("unknown mesh format 'xyz'") && e.contains("gmsh, su2, cgns, openfoam"),
         "{e}"
     );
     let e = format::read(&copy, Some("gmsh")).unwrap_err();
