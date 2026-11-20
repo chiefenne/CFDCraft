@@ -186,7 +186,7 @@ fn sst_results_are_bitwise_equal_on_1_and_4_threads() {
                 .replace("cells = 8, ratio", "cells = 40, ratio")
                 .replace("cells = 24, ratio", "cells = 120, ratio")
                 .replace("levels = [1]", "levels = [0]")
-                .replace("max_iterations = 10000", "max_iterations = 8")
+                .replace("max_iterations = 2000", "max_iterations = 8")
                 .replace("derived = [\"turbulence-features\"]", "")
                 + &format!("\n[run]\nthreads = {threads}\n")),
         )
@@ -285,7 +285,7 @@ fn inlet_turbulence_checks() {
             "levels = [1]\nrequire_convergence = true",
             "levels = [0]\nrequire_convergence = false",
         )
-        .replace("max_iterations = 10000", "max_iterations = 1");
+        .replace("max_iterations = 2000", "max_iterations = 1");
     let (code, msg) = refused(&base.replace(
         "k = 2.25e-7\nomega = 125.0\n[boundary.xmax]",
         "k = 2.25e-7\nomega = 125.0\nturbulence_intensity = 0.01\n[boundary.xmax]",
