@@ -37,6 +37,8 @@
 //! sink is being changed (2026-11-20); its terms off the wall are those of
 //! the 2004 form with the f₀ substitution.
 
+#![allow(clippy::needless_range_loop)]
+
 use crate::case::FlowCase;
 use std::path::Path;
 
