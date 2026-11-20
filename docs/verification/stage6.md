@@ -2058,8 +2058,11 @@ preconditioner, with a note in the log, instead of stopping the run. With
 that, both level-3 runs diverge with the default relaxations: the plate in
 outer iteration 51 and the channel in iteration 1 182 (after its residuals
 had stalled near 3·10⁻⁸ for U and 3.5·10⁻⁴ for ε). With the relaxations 0.5
-for momentum and turbulence neither diverges; the study sets them for these
-two runs, as it does for the k-ε plate from level 2.
+for momentum and turbulence neither run diverged in the checks made in the
+cloud (the plate to iteration 800, the channel past iteration 5 000, where
+its residuals stand near 10⁻⁵ for U and 7·10⁻⁴ for ε, unconverged as on
+level 2); the study sets them for these two runs, as it does for the k-ε
+plate from level 2.
 
 **Findings.**
 
