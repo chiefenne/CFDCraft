@@ -1501,6 +1501,10 @@ pub fn reduction_defaults(case: &crate::case::FlowCase) -> bool {
 /// steps change the fields by small factors.
 pub const ZETA_F_DROP: f64 = 0.1;
 
+/// A backflow face of an outlet: boundary face index and, where the flow
+/// enters, the entering k, ω or ε and ζ.
+type BackflowFace = (usize, Option<(f64, f64, f64)>);
+
 /// The inlet faces.
 #[derive(Debug, Clone)]
 struct Inlets {
@@ -1623,7 +1627,7 @@ pub struct Turbulence {
     /// The state of the backflow faces of the last [`Self::set_backflow`]
     /// (boundary face, entering values or `None`), applied again after the
     /// inlet values are rebuilt.
-    bf_state: Vec<(usize, Option<(f64, f64, f64)>)>,
+    bf_state: Vec<BackflowFace>,
     /// The pressure faces (boundary face index) and their owners.
     pressure_faces: Vec<u32>,
     pressure_owners: Vec<u32>,
@@ -2520,11 +2524,7 @@ impl Turbulence {
 
     /// Writes the backflow state `st` (boundary face, entering values or
     /// `None`) into a and b of k, ω or ε and ζ and uploads them.
-    fn apply_backflow(
-        &mut self,
-        dev: &mut dyn FlowDevice,
-        st: &[(usize, Option<(f64, f64, f64)>)],
-    ) -> Result<()> {
+    fn apply_backflow(&mut self, dev: &mut dyn FlowDevice, st: &[BackflowFace]) -> Result<()> {
         self.bf_state = st.to_vec();
         for &(fb, v) in st {
             let (a, (k, w, z)) = match v {

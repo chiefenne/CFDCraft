@@ -366,6 +366,7 @@ fn smooth_limits_change_the_plate_friction_below_a_tenth_percent() {
     eprintln!("C_f relative change {d_cf:.3e}, drag {d_cd:.3e} (tau hard {th:e})");
     assert!(d_cf < 1e-3, "C_f changes by {d_cf:e}");
     assert!(d_cd < 1e-3, "drag changes by {d_cd:e}");
+}
 
 /// A duct between two pressure outlets, the left one at the higher
 /// pressure, so the flow enters through it (BC028, spec 7): with backflow
