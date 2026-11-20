@@ -2066,6 +2066,40 @@ its residuals stand near 10⁻⁵ for U and 7·10⁻⁴ for ε, unconverged as o
 level 2); the study sets them for these two runs, as it does for the k-ε
 plate from level 2.
 
+**Levels 1 to 3 on the maintainer's Mac (2026-11-20).** The study ran
+with `--levels 1,2,3`; the runs that finished are below (the ζ-f plate
+and channel, the ζ-f₀ and EB plates and the realizable k-ε plate on
+level 3 were stopped as too slow on that machine and are missing).
+
+| plate | cells | y⁺ (finest) | C_f ·10³ | p | GCI_fine | extrap. ·10³ | finest vs White | finest vs TMR |
+|---|---|---:|---|---:|---:|---:|---:|---:|
+| k-ω SST, low-re | 3072 / 12288 / 49152 | 0.09 | 2.6682 / 2.6868 / 2.7007 | 0.43 (monotonic) | 1.87 % | 2.7410 | −6.05 % | +0.37 % |
+| k-ε, scalable | 12288 / 49152 / 196608 | 3.62 | 2.8270 / 2.8156 / 2.8059 | 0.24 (monotonic) | 2.39 % | 2.7524 | −2.39 % | +4.28 % |
+
+C_D of SST: 2.8259 / 2.8477 / 2.8606 ·10⁻³, p 0.74, GCI 0.84 %; of k-ε:
+2.6334 / 2.6768 / 2.7459 ·10⁻³, p 0.67, GCI 5.31 %.
+
+| channel | cells | U_b⁺ | p | GCI_fine | finest vs DNS |
+|---|---|---|---:|---:|---:|
+| k-ω SST, low-re | 768 / 3072 / 12288 | 17.381 / 17.346 / 17.009 | 3.27 (divergent) | 0.29 % | −3.08 % |
+| k-ε, scalable | 96 / 384 / 1536 | 18.332 / 18.433 / 18.519 | 0.22 (monotonic) | 3.45 % | +5.52 % |
+| realizable k-ε, scalable | 96 / 384 / 1536 | 19.095 / 19.491 / 19.565 | 2.41 (monotonic) | 0.11 % | +11.48 % |
+| k-ε-ζ-f₀, compound-2023 | 384 / 1536 / 6144 | 17.840 / 18.106 / 18.378 | 0.03 (divergent) | 84.61 % | +4.72 % |
+| elliptic-blending k-ε, compound | 768 / 3072 / 12288 | 17.675 / 17.866 / 16.720 | – (oscillatory) | 3.43 % | −4.73 % |
+
+What these show: the SST plate on the three finest meshes meets the 2 %
+GCI band (1.87 %) and stays within 0.4 % of the TMR value, while it is
+6 % below White's correlation (outside ±5 %: the correlation, not the
+model, is the outlier, as the TMR value shows). The k-ε plate is just
+outside the band (2.39 %). On the channel the level-3 values of SST
+(−1.9 % against level 2) and EB (−6.4 %) drop, which breaks the
+monotonic or convergent trend of the first three levels; the first cell
+there is at y⁺ near 0.005, and the driving force of these runs was
+still drifting at the iteration limit. ζ-f₀ drifts upward by about 1.5 %
+per level. The channel GCI of level 1 to 3 is therefore not meaningful
+for SST, ζ-f₀ and EB; levels 0 to 2 remain the reference of the table
+above. The cause of the level-3 drop is open.
+
 **Findings.**
 
 1. **No model reaches the asymptotic range on all three plate meshes.**
