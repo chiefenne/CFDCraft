@@ -30,7 +30,7 @@ Contents
 9. [Fluid–solid interfaces (D157)](#9-fluidsolid-interfaces-d157)
    - 9a. [Thin walls: wall conduction without meshing the wall (D189)](#9a-thin-walls-wall-conduction-without-meshing-the-wall-d189)
    - 9b. [Wall film heat exchange with walls, thin walls and solids (D190)](#9b-wall-film-heat-exchange-with-walls-thin-walls-and-solids-d190)
-   - 9c. [Several fluids and materials: heat exchangers (D191)](#9c-several-fluids-and-materials-heat-exchangers-d191)
+   - 9c. [Several fluids and materials: heat exchangers (D194)](#9c-several-fluids-and-materials-heat-exchangers-d194)
 10. [Coupling strategy, linear solvers and order of solution (D158)](#10-coupling-strategy-linear-solvers-and-order-of-solution-d158)
 11. [Multi-region partitioning and halos (D159)](#11-multi-region-partitioning-and-halos-d159)
 12. [Kernels: GPU, reproducibility, adjoint (D160)](#12-kernels-gpu-reproducibility-adjoint-d160)
@@ -766,7 +766,7 @@ sink with its derivative, standing in for the film) checks the slots in
 stage 7 (V7.32).
 
 
-## 9c. Several fluids and materials: heat exchangers (D191)
+## 9c. Several fluids and materials: heat exchangers (D194)
 
 Added 2026-11-20 at the maintainer's request: conjugate heat transfer must
 model tube-and-fin and other heat exchangers, with several fluid regions of
@@ -1082,7 +1082,7 @@ the dry case, q_wall = latent plus sensible to the ledger tolerance), and the
 closed hot box of D123 with a thin wall and with a solid region (mass and
 energy to round-off).
 
-### 14.3b Several fluids and materials (D191)
+### 14.3b Several fluids and materials (D194)
 
 | # | Case | Checks | Pass band |
 |---|---|---|---|
@@ -1363,7 +1363,7 @@ Read on main at b15a488:
    - TW3 *Shell edges on solid regions* (a thin fin on a meshed base): join
      the edge to the solid cells now, or refuse (TWL004) in the first version.
      Recommended: refuse first, join in a follow-up. **Changed 2026-11-20 by
-     D191:** fins of a tube-and-fin exchanger are shell thin walls whose
+     D194:** fins of a tube-and-fin exchanger are shell thin walls whose
      edges sit on the tube walls (meshed or thin), so the edge joint is part
      of 7t2 and TWL004 is dropped.
    - TW4 *Thin walls with radiation between surfaces* (L15): the thin-wall
@@ -1378,7 +1378,7 @@ Read on main at b15a488:
      stage 7 builds only the interface (§9b.5). Alternative: a film without
      sprays (wetted walls, falling films, condensation) earlier, with L2.
 
-7. **Several fluids and materials (D191), added 2026-11-20**, open point:
+7. **Several fluids and materials (D194), added 2026-11-20**, open point:
    - MF1 *Models per fluid region:* turbulence model, buoyancy model and
      Pr_t set per fluid region (recommended), or one set for the whole case.
 
