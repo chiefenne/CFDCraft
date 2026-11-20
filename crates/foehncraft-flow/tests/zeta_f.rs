@@ -53,7 +53,8 @@ fn small_channel(extra: &str) -> String {
     text("channel_zeta_f.toml")
         .replace("cells = [2, 96, 1]", "cells = [2, 24, 1]")
         .replace("ratio = 60.0", "ratio = 8.0")
-        .replace("max_iterations = 5000", "max_iterations = 30")
+        .replace("algorithm = \"coupled\"\n", "")
+        .replace("max_iterations = 1000", "max_iterations = 30")
         + "\n[verification]\nrequire_convergence = false\n"
         + extra
 }

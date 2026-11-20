@@ -95,15 +95,27 @@ MODELS = {
 
 # the first level that runs with the relaxations 0.5 (momentum and
 # turbulence), per model and case
-RELAXED_FROM = {("keps", "plate"): 2, ("zf", "plate"): 3, ("zf", "channel"): 3}
+RELAXED_FROM = {("keps", "plate"): 2}
 
 # iterations per level (fine meshes converge more slowly)
 ITERATIONS = {0: 6000, 1: 12000, 2: 24000, 3: 40000}
 
-# the channel: converged to this scaled residual, with these limits (SST
-# needs 76 000 iterations for 10^-9 on 768 cells across, EB about 90 000)
+# the plate runs of these models use the coupled algorithm (D178), within
+# 3 000 iterations: ζ-f₀ converges on the 128 × 96 plate in 178 instead
+# of 7 400 SIMPLE iterations, with C_f the same to 0.1 %
+PLATE_COUPLED = {"zf", "zf0"}
+
+# the channel: converged to this scaled residual with the coupled
+# algorithm (D178), within these limits; the segregated SIMPLE of the case
+# files needed up to 39 000 (ζ-f₀) and 91 000 (EB) iterations on 768
+# cells across, the coupled algorithm 883 for ζ-f₀ (same U_b+ to five
+# digits)
 CHANNEL_TOLERANCE = 1e-9
-CHANNEL_ITERATIONS = {0: 20000, 1: 40000, 2: 80000, 3: 160000}
+CHANNEL_ITERATIONS = {0: 3000, 1: 3000, 2: 3000, 3: 3000}
+# SST (1 536 cells) and EB (768 and 1 536) stop at this limit with a
+# scaled residual near 10⁻⁷ (also with c_T 0.2), within 0.2 % of the U_b+
+# of the converged SIMPLE runs of #128 (finding; the follow-up is the
+# coupled algorithm, not longer runs)
 
 
 def nested_ratio(ratio: float, n0: int, symmetric: bool, level: int) -> float:
@@ -145,10 +157,15 @@ def runs(models, cases, levels):
             for lv in levels:
                 sets = ["verification.require_convergence=false", "output.vtkhdf=false"] + extra
                 if case == "plate":
-                    sets += [f"solver.max_iterations={ITERATIONS[lv]}", f"verification.levels=[{lv}]"]
+                    if key in PLATE_COUPLED:
+                        sets += ["solver.max_iterations=3000", 'solver.algorithm="coupled"']
+                    else:
+                        sets += [f"solver.max_iterations={ITERATIONS[lv]}"]
+                    sets += [f"verification.levels=[{lv}]"]
                 else:
                     sets += [f"solver.max_iterations={CHANNEL_ITERATIONS[lv]}",
-                             f"solver.tolerance={CHANNEL_TOLERANCE}"] + channel_mesh(file, lv)
+                             f"solver.tolerance={CHANNEL_TOLERANCE}",
+                             'solver.algorithm="coupled"'] + channel_mesh(file, lv)
                 if lv >= RELAXED_FROM.get((key, case), 99):
                     # the default relaxations (0.7, 0.8) diverge on the
                     # finest meshes (RUN014): k-ε in outer iteration 11 on

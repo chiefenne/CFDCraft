@@ -16,9 +16,10 @@
 # the viscous sublayer). The profile line gives U, k, ε, ν_t, ζ = v²/k
 # and f across the channel.
 #
-# Result: U_b⁺ = 17.89, +1.9 % from the DNS (band ±3 %, specification
-# 9.4), in 3 700 iterations; `wall_treatment = "low-re"` (Dirichlet
-# values at the wall) gives 17.79, +1.4 %. Near the wall U⁺ follows the
+# Result: U_b⁺ = 17.87, +1.8 % from the DNS (band ±3 %, specification
+# 9.4), in about 370 iterations of the coupled algorithm (D178; 3 700
+# with SIMPLEC, same U_b⁺); `wall_treatment = "low-re"` (Dirichlet
+# values at the wall) gives 17.77, +1.2 %. Near the wall U⁺ follows the
 # DNS to y⁺ ≈ 25; the log layer lies slightly above it.
 
 case_format = "0.6"
@@ -59,8 +60,9 @@ type = "symmetry"
 type = "symmetry"
 
 [solver]
+algorithm = "coupled"
 tolerance = 1e-6
-max_iterations = 5000
+max_iterations = 1000
 
 [output]
 vtkhdf = false

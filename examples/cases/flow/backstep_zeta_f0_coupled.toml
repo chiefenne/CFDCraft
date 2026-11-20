@@ -18,10 +18,10 @@
 # and the relaxation 0.98).
 #
 # Result: the reattachment length is within 1 % of its final value after
-# about 40 outer iterations (65 before D180), against about 525 with
-# SIMPLEC and its relaxation ramp, and ends at the same x_r/H = 6.385
-# (+2 % from the experiment's 6.26). The run reaches the tolerance after
-# about 115 iterations (budget 150). With `model = "k-epsilon"` (and
+# about 50 outer iterations, against about 525 with SIMPLEC and its
+# relaxation ramp, and ends at x_r/H = 6.44 (+3 % from the experiment's
+# 6.26). The run reaches the tolerance after about 165 iterations (budget
+# 200; 115 with the k sink k/T_K of 6d2, x_r/H 6.385). With `model = "k-epsilon"` (and
 # `wall_treatment = "scalable"`) x_r settles after about 45 iterations,
 # with `"k-omega-sst"` (Jacobi and 0.98, D180) after 80 to 85 (recipe 78
 # shows how to see that x_r has settled).
@@ -73,7 +73,7 @@ type = "symmetry"
 [solver]
 algorithm = "coupled"
 tolerance = 1e-6
-max_iterations = 150
+max_iterations = 200
 log_every = 10
 
 [verification]
