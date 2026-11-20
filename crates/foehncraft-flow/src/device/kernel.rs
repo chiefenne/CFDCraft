@@ -853,6 +853,9 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             ins.extend(g.all());
         }
         ins.extend(a.d);
+        if let Some(psi) = a.bounded {
+            ins.extend(psi.all());
+        }
         if let Some((ds, y, _)) = a.time {
             ins.push(ds);
             ins.push(y);
@@ -877,6 +880,15 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             ds,
             time,
             alpha,
+            psi: a.bounded.map_or(
+                Raw3 {
+                    x: Raw::EMPTY,
+                    y: Raw::EMPTY,
+                    z: Raw::EMPTY,
+                },
+                |b| self.r3(b),
+            ),
+            bounded: u32::from(a.bounded.is_some()),
             out: self.r(out),
         };
         self.go::<e::MassFlux>(self.nf, &args)
@@ -907,6 +919,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             nonorth: a.nonorth,
             convection: a.convection,
             transposed: a.transposed,
+            trace_free: a.trace_free,
             cp: self.r(a.cp),
             cn: self.r(a.cn),
             bf: self.r3(a.bf),

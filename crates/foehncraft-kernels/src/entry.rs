@@ -782,6 +782,10 @@ pub struct MassFluxArgs {
     pub time: Raw<f64>,
     /// α_u.
     pub alpha: f64,
+    /// Velocity limiter per cell (read when `bounded` is 1).
+    pub psi: Raw3,
+    /// 1 for the bounded face velocity (D50).
+    pub bounded: u32,
     /// Output per face.
     pub out: Raw<f64>,
 }
@@ -814,6 +818,8 @@ impl Entry for MassFlux {
                 ds: a.ds.get(),
                 time: a.time.get(),
                 alpha: a.alpha,
+                psi: a.psi.v(),
+                bounded: a.bounded != 0,
             };
             *a.out.out().add(f) = k::face_mass_flux(f, &inp);
         }
@@ -850,6 +856,8 @@ pub struct MomentumFaceArgs {
     pub convection: f64,
     /// 1 with the transposed viscous stress (turbulent flow).
     pub transposed: f64,
+    /// 1 for its trace-free form (D50).
+    pub trace_free: f64,
     /// Output c_P.
     pub cp: Raw<f64>,
     /// Output c_N.
@@ -884,6 +892,7 @@ impl Entry for MomentumFaces {
                 nonorth: a.nonorth,
                 convection: a.convection,
                 transposed: a.transposed,
+                trace_free: a.trace_free,
             };
             let (cp, cn, b) = k::momentum_face(f, &inp);
             *a.cp.out().add(f) = cp;

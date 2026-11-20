@@ -138,7 +138,9 @@ grep "skewness above 0.9" output/tjunction_netgen/mesh_report.md
 
 When the mesh has such faces, the flow solver treats them itself
 (`solver.remediation = "auto"`, the default): it switches to the Gauss
-pressure gradient and the Venkatakrishnan limiter for the whole run and
+pressure gradient, the Venkatakrishnan limiter and the bounded face
+velocity of the mass flux (`solver.face_velocity = "bounded"`) for the
+whole run and
 says so at the start of `flow.log` and in `flow.md`, `flow.json`
 (`remediation` of each solve) and the diagnostics (`MESH001`, `MESH002`):
 
@@ -151,8 +153,13 @@ Keys (`[solver]`): `remediation = "auto"` or `"off"` (keep the schemes as
 set; the run on `pipe_gmsh_raw` then diverges and `divergence.md` names the
 skewed faces), `skewness_limit = 0.9` (a smaller value treats milder
 faces), `pressure_gradient = "least-squares"` or `"gauss"` (set by hand,
-also on a good mesh). A limiter set in the case stays, and first-order
-`upwind` needs none. Least squares is more accurate on good meshes (the
+also on a good mesh), `face_velocity = "interpolated"` or `"bounded"`.
+A limiter set in the case stays, and first-order `upwind` needs none (the
+bounded face velocity then takes the Venkatakrishnan limiter for itself).
+A turbulent run that still grows k in a few cells of a poor mesh can also
+take `transposed_stress = "trace-free"` (not switched automatically).
+The test case of the bounded face velocity is a coarse stirred tank on raw
+tetrahedra (`pip install gmsh`, then `python3 examples/studies/skewed_tets.py`). Least squares is more accurate on good meshes (the
 cylinder lift at Re = 20 is 3.5 % lower with the Gauss gradient), so treat
 the remediation as a remedy and fix the mesh for production runs.
 
