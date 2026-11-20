@@ -227,6 +227,8 @@ seed = 59
         x.insert(format!("convc.{c}"), rand(nb, 0.2, 1.0, true));
     }
     x.insert("beta".into(), rand(nb, 0.1, 2.0, false));
+    // the face density (D150): a field, so its derivative is checked too
+    x.insert("rho_face".into(), rand(nf, 1.0, 1.4, false));
     // closed (suppressed backflow) is 0 or 1, a switch
     x.insert("closed".into(), (0..nb).map(|i| (i % 2) as f64).collect());
     // random directions, scaled by the size of each array (geometry
@@ -450,7 +452,7 @@ fn flux_inputs<'a, T: Real>(
     FluxInputs {
         topo: fx.topo(),
         geo: l.geo(),
-        rho: T::from_f64(1.2),
+        rho_face: l.s("rho_face"),
         u: l.v3("u"),
         grad: l.grad("gu"),
         p: l.s("p"),
@@ -488,7 +490,7 @@ fn pressure_face<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
             &fx.topo(),
             &geo,
             &fx.flux_kind,
-            T::from_f64(1.2),
+            l.s("rho_face"),
             l.s("dc"),
             l.s("closed"),
         )]
@@ -517,7 +519,7 @@ fn delta_flux<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize) -> Vec<T> {
             &fx.topo(),
             &geo,
             &fx.flux_kind,
-            T::from_f64(1.2),
+            l.s("rho_face"),
             &l.v3("delta"),
             l.s("closed"),
         )]
@@ -528,7 +530,7 @@ fn boundary_inputs<'a, T: Real>(fx: &'a Fixture, l: &'a Lifted<T>) -> BoundaryIn
     BoundaryInputs {
         topo: fx.topo(),
         geo: l.geo(),
-        rho: T::from_f64(1.2),
+        rho_face: l.s("rho_face"),
         mass_flux: l.s("m"),
     }
 }

@@ -2814,7 +2814,7 @@ impl Turbulence {
         let Some((mode, tau)) = self.qcr else {
             return Ok(());
         };
-        dev.qcr_cells(grad_u, self.nu_t, self.rho, &self.c, mode, tau)?;
+        dev.qcr_cells(grad_u, self.nu_t, &self.c, mode, tau)?;
         dev.explicit_stress_faces(tau, bf)
     }
 

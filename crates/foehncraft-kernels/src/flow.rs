@@ -420,13 +420,15 @@ pub struct MomentumRowInputs<'a, T> {
     /// True in a time step: the time-derivative and old-time terms below
     /// enter; false (steady) skips them and their arrays may be empty.
     pub transient: bool,
-    /// Time-derivative coefficient ρ a₀ / Δt; the diagonal gets
-    /// τ_P = ρ a₀ V_P / Δt.
-    pub tau: T,
-    /// Coefficients ρ (−a₁) / Δt and ρ (−a₂) / Δt of the old levels uⁿ and
-    /// uⁿ⁻¹ on the right-hand side (backward differences
-    /// du/dt ≈ (a₀ uⁿ⁺¹ + a₁ uⁿ + a₂ uⁿ⁻¹) / Δt).
-    pub c_old: [T; 2],
+    /// Cell density ρ_P, one entry per cell (read in a time step).
+    pub rho: &'a [T],
+    /// Coefficients a₀, −a₁, −a₂ of the backward differences
+    /// du/dt ≈ (a₀ uⁿ⁺¹ + a₁ uⁿ + a₂ uⁿ⁻¹) / Δt: the diagonal gets
+    /// τ_P = ρ_P a₀ / Δt V_P, the right-hand side the old levels uⁿ and
+    /// uⁿ⁻¹ with ρ_P (−a₁) / Δt and ρ_P (−a₂) / Δt.
+    pub time_a: [T; 3],
+    /// Δt (or the pseudo-time step).
+    pub dt: T,
     /// Velocity at the old time level n.
     pub u_old: Vec3<'a, T>,
     /// Velocity at the old time level n − 1 (read only when `c_old[1]` is
@@ -523,18 +525,23 @@ pub unsafe fn momentum_row<T: Real>(c: usize, inp: &MomentumRowInputs<T>, out: &
         let ds = vol / (diag / inp.alpha) * inp.theta;
         let mut src = [T::ZERO; 3];
         if inp.transient {
-            diag += inp.tau * vol;
+            // ρ_P a₀ / Δt in this order: a constant density gives the
+            // former single coefficient bit for bit
+            let r = ld(inp.rho, c);
+            diag += r * inp.time_a[0] / inp.dt * vol;
             let uo = inp.u_old.at(c);
+            let c1 = r * inp.time_a[1] / inp.dt;
             let mut i = 0;
             while i < 3 {
-                src[i] = inp.c_old[0] * vol * uo[i];
+                src[i] = c1 * vol * uo[i];
                 i += 1;
             }
-            if inp.c_old[1] != T::ZERO {
+            if inp.time_a[2] != T::ZERO {
+                let c2 = r * inp.time_a[2] / inp.dt;
                 let uo2 = inp.u_old2.at(c);
                 i = 0;
                 while i < 3 {
-                    src[i] += inp.c_old[1] * vol * uo2[i];
+                    src[i] += c2 * vol * uo2[i];
                     i += 1;
                 }
             }
@@ -572,8 +579,8 @@ pub struct FluxInputs<'a, T> {
     pub topo: Topology<'a>,
     /// Geometry.
     pub geo: FaceGeometry<'a, T>,
-    /// Density ρ (kg/m³).
-    pub rho: T,
+    /// Face density ρ_f (kg/m³), one entry per face.
+    pub rho_face: &'a [T],
     /// Cell velocity.
     pub u: Vec3<'a, T>,
     /// Gradient of the velocity used for the skewness correction of the
@@ -695,7 +702,7 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
             let d = sub(xn, xp);
             let df = w * ld(inp.d, p) + wn * ld(inp.d, n);
             let jump = (ld(inp.p, n) - ld(inp.p, p)) - dot(gpf, d);
-            let m = inp.rho * (dot(uf, s) - df * dgeo * jump) + ld(inp.relax, f);
+            let m = ld(inp.rho_face, f) * (dot(uf, s) - df * dgeo * jump) + ld(inp.relax, f);
             if inp.transient {
                 let dsf = w * ld(inp.ds, p) + wn * ld(inp.ds, n);
                 m + inp.alpha * (T::ONE - df / dsf) * ld(inp.time, f)
@@ -722,14 +729,14 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
                 };
                 let jump = (pb - ld(inp.p, p)) - dot(gpp, rp);
                 let dp = ld(inp.d, p);
-                let m = inp.rho * (dot(uf, s) - dp * dgeo * jump) + ld(inp.relax, f);
+                let m = ld(inp.rho_face, f) * (dot(uf, s) - dp * dgeo * jump) + ld(inp.relax, f);
                 if inp.transient {
                     m + inp.alpha * (T::ONE - dp / ld(inp.ds, p)) * ld(inp.time, f)
                 } else {
                     m
                 }
             } else {
-                inp.rho * dot(inp.ub.at(fb), s)
+                ld(inp.rho_face, f) * dot(inp.ub.at(fb), s)
             }
         }
     }
@@ -751,7 +758,7 @@ pub unsafe fn pressure_face<T: Real>(
     topo: &Topology,
     geo: &FaceGeometry<T>,
     flux_kind: &[u32],
-    rho: T,
+    rho_face: &[T],
     dc: &[T],
     closed: &[T],
 ) -> T {
@@ -762,14 +769,14 @@ pub unsafe fn pressure_face<T: Real>(
         if f < topo.n_interior {
             let n = ld(topo.neighbour, f) as usize;
             let w = ld(geo.weight, f);
-            rho * (w * ld(dc, p) + (T::ONE - w) * ld(dc, n)) * dgeo
+            ld(rho_face, f) * (w * ld(dc, p) + (T::ONE - w) * ld(dc, n)) * dgeo
         } else {
             let fb = f - topo.n_interior;
             let kind = ld(flux_kind, fb);
             if kind == FLUX_PRESSURE
                 || (kind == FLUX_PRESSURE_NO_BACKFLOW && ld(closed, fb) == T::ZERO)
             {
-                rho * ld(dc, p) * dgeo
+                ld(rho_face, f) * ld(dc, p) * dgeo
             } else {
                 T::ZERO
             }
@@ -918,8 +925,8 @@ pub struct BoundaryInputs<'a, T> {
     pub topo: Topology<'a>,
     /// Geometry.
     pub geo: FaceGeometry<'a, T>,
-    /// Density.
-    pub rho: T,
+    /// Face density ρ_f, one entry per face.
+    pub rho_face: &'a [T],
     /// Face mass flux.
     pub mass_flux: &'a [T],
 }
@@ -990,7 +997,7 @@ pub unsafe fn boundary_velocity<T: Real>(
             }
         } else if rule == UB_FROM_FLUX {
             let ss = dot(s, s);
-            let q = ld(inp.mass_flux, f) / (inp.rho * ss);
+            let q = ld(inp.mass_flux, f) / (ld(inp.rho_face, f) * ss);
             [q * s[0], q * s[1], q * s[2]]
         } else {
             ub
@@ -1031,8 +1038,9 @@ pub unsafe fn boundary_pressure<T: Real>(
             || (rule == PB_OUTLET && m < T::ZERO)
         {
             let s = inp.geo.area.at(f);
-            let un = ld(inp.mass_flux, f) / inp.rho;
-            pset - T::from_f64(0.5) * inp.rho * un * un / dot(s, s)
+            let rho = ld(inp.rho_face, f);
+            let un = ld(inp.mass_flux, f) / rho;
+            pset - T::from_f64(0.5) * rho * un * un / dot(s, s)
         } else {
             pset
         }
@@ -1211,7 +1219,7 @@ pub unsafe fn delta_flux<T: Real>(
     topo: &Topology,
     geo: &FaceGeometry<T>,
     flux_kind: &[u32],
-    rho: T,
+    rho_face: &[T],
     delta: &Vec3<T>,
     closed: &[T],
 ) -> T {
@@ -1230,14 +1238,14 @@ pub unsafe fn delta_flux<T: Real>(
                 w * dp[1] + wn * dn[1],
                 w * dp[2] + wn * dn[2],
             ];
-            rho * dot(df, s)
+            ld(rho_face, f) * dot(df, s)
         } else {
             let fb = f - topo.n_interior;
             let kind = ld(flux_kind, fb);
             if kind == FLUX_PRESSURE
                 || (kind == FLUX_PRESSURE_NO_BACKFLOW && ld(closed, fb) == T::ZERO)
             {
-                rho * dot(dp, s)
+                ld(rho_face, f) * dot(dp, s)
             } else {
                 T::ZERO
             }
