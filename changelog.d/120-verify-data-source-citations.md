@@ -1,0 +1,1 @@
+- **Validation data sources: citations verified.** The DOIs of Manceau 2015 (IJHFF 51), Pinelli et al. 2010 (JFM 644) and Gavrilakis 1992 (JFM 244) are confirmed in `docs/verification/DATA_SOURCES.md`; no entry is left as "to verify".
