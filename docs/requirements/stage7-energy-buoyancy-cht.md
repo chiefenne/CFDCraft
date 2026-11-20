@@ -1185,7 +1185,7 @@ Read on main at b15a488:
 - **F5:** METIS gets one constraint and no weights (finding F6 of the
   multi-physics plan, D122 (1)); PR 7d.
 - **F6:** `balance.rs` has fixed mass and kinetic-energy structs; the ledger
-  as data (D119) is planned for stage 6 and is a prerequisite of 7a.
+  as data (D119) is planned for stage 6 and is a prerequisite of 7a. **Done 2026-11-20 in PR 7.0a.**
 
 
 ## 18. Points for the maintainer

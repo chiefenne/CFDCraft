@@ -103,8 +103,8 @@ Everything below is on `main`, verified by the cases of the
   `.read_toml_N`), settings that change on a schedule, probes, forces,
   derived fields (vorticity, Q, λ₂, wall shear stress, y⁺, and the Reynolds stress, scales and wall values of the turbulence models),
   statistics of transient runs (time mean, RMS, covariance, phase averages,
-  a confidence interval that says whether the window is long enough), mass, kinetic
-  energy and energy ledgers, a divergence report, a log that can be
+  a confidence interval that says whether the window is long enough), mass and
+  kinetic-energy ledgers (named terms per quantity, ready for further quantities), a divergence report, a log that can be
   circulated, JSON records for scripts and agents.
 - **GPU and Python.** The flow loop on NVIDIA GPUs with results bitwise
   equal to the CPU; the Python package `foehncraft` that builds, runs and
