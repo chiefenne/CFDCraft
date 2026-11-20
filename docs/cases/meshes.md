@@ -9,7 +9,7 @@ On this page:
 Stage 1: build or read a mesh, check it, renumber and partition it, write
 the quality report (`mesh_report.md`, `mesh_report.json`) and `mesh.vtkhdf`
 for ParaView. Run with `foehn mesh FILE`; a mesh file (Gmsh `.msh`, SU2
-`.su2`) can be given directly instead of a case file (`foehn mesh pipe.msh`), command-line
+`.su2`, CGNS `.cgns`, or an OpenFOAM case or `polyMesh` directory) can be given directly instead of a case file (`foehn mesh pipe.msh`), command-line
 options override the file (`foehn mesh --help`).
 
 | Case file | Mesh | Shows | Where |
@@ -31,8 +31,8 @@ Every key is optional; a case needs either `mesh.file` or a
 
 | Key | Default | Meaning |
 |---|---|---|
-| `mesh.file` | – | mesh file: Gmsh MSH 4.1, ASCII or binary (D33), or SU2 `.su2`, ASCII, 2D or 3D (D187) |
-| `mesh.format` | from the extension | `gmsh` or `su2`; without it the extension decides, else the first lines of the file |
+| `mesh.file` | – | mesh file: Gmsh MSH 4.1, ASCII or binary (D33), SU2 `.su2`, ASCII, 2D or 3D (D187), CGNS `.cgns`, HDF5, one unstructured zone (D188), or an OpenFOAM case, `constant` or `polyMesh` directory, ASCII or binary (D188) |
+| `mesh.format` | from the extension | `gmsh`, `su2`, `cgns` or `openfoam`; without it the extension or directory decides, else the first bytes of the file |
 | `mesh.thickness` | median edge length | layer thickness in z of a 2D file (SU2 `NDIME= 2`) extruded into one layer, in the units of the file |
 | `mesh.scale` | 1.0 | factor on the coordinates of the file (0.001: millimetres to metres) |
 | `mesh.polyhedral` | false | convert a tetrahedral mesh into polyhedra (dual mesh, one cell per node) |
@@ -62,5 +62,8 @@ The generator names the six sides `xmin`, `xmax`, `ymin`, `ymax`, `zmin`,
 `surface_<tag>` for surfaces without one) and its volume physical groups as
 cell zones. An SU2 file gives its markers (`MARKER_TAG`) as boundaries and
 one cell zone `fluid`; a 2D SU2 file adds the extruded planes `zmin` and
-`zmax`. `[mesh.boundaries]` renames boundaries of any format to the names
+`zmax`. A CGNS file gives its BCs as boundaries (Gmsh physical names through
+the family) and one cell zone `fluid`; an OpenFOAM mesh gives its patches
+(`empty` patches too) as boundaries and its `cellZones` as cell zones.
+`[mesh.boundaries]` renames boundaries of any format to the names
 the boundary conditions use.
