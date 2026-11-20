@@ -171,8 +171,23 @@ so (`MESH002`, `flow.log`, `flow.md`) and converges in 105 iterations:
 
 ```
 mesh quality: 28 faces with skewness above 0.9 (largest 1.233) in 44 cells; an optimised mesh avoids them (Gmsh: Mesh.OptimizeNetgen = 1)
-cell-quality remediation (D50, solver.remediation = "auto"): solver.pressure_gradient: "least-squares" -> "gauss", solver.momentum.limiter: "none" -> "venkatakrishnan"
+cell-quality remediation (D50, solver.remediation = "auto"): solver.pressure_gradient: "least-squares" -> "gauss", solver.momentum.limiter: "none" -> "venkatakrishnan", solver.face_velocity: "interpolated" -> "bounded"
 ```
+
+**Bounded face velocity (2026-11-20).** Turbulent MRF runs on raw Gmsh
+tetrahedra (the stirred tank of the Engineering Gallery) still diverged
+with the Gauss gradient and the limiter: the velocity in a few cells at
+the blade–hub corner grew about twofold every 50 iterations until the
+torque ran away. The growing term is the face velocity of the Rhie–Chow
+flux, w u_P + (1 − w) u_N + ∇ū_f·(x_f − x_w): on a skewed face the shift
+x_f − x_w is as long as the centroid distance, and the unlimited
+gradients feed a velocity mode back into continuity with a gain above
+one. The remediation now takes the mean of the two limited
+extrapolations, w (u_P + ψ_P ∇u_P·r_P) + (1 − w)(u_N + ψ_N ∇u_N·r_N),
+which is just as exact for a linear field and stays between the values
+the two cells see (`solver.face_velocity = "bounded"`). On the ungraded
+58k-cell tank this removes the blow-up (stable past iteration 500, torque
+−1.03 N·m; before: runaway from iteration 330).
 
 The switch is global, not per cell: treating only the cells at the
 skewed faces (first-order convection, a Gauss gradient or a damped
@@ -197,7 +212,7 @@ runs unchanged.
 |---|---|
 | Mesh | `examples/meshes/pipe_gmsh_raw.msh`, 1 572 tetrahedra (in the repository) |
 | Case file | `flow/pipe_gmsh_raw.toml` |
-| Keys | `solver.remediation`, `solver.skewness_limit`, `solver.pressure_gradient` |
+| Keys | `solver.remediation`, `solver.skewness_limit`, `solver.pressure_gradient`, `solver.face_velocity`, `solver.transposed_stress` |
 
 ```
 cargo build --release -p foehncraft-cli

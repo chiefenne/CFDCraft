@@ -103,6 +103,66 @@ impl PressureGradient {
     }
 }
 
+/// Face velocity of the Rhie–Chow mass flux (D50).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum FaceVelocity {
+    /// Linear interpolation to the point of the line P–N nearest the face
+    /// plane, moved to the face centroid with the interpolated cell
+    /// gradient: w u_P + (1 − w) u_N + ∇ū_f·(x_f − x_w).
+    #[default]
+    Interpolated,
+    /// The mean of the two limited extrapolations to the face centroid,
+    /// w (u_P + ψ_P ∇u_P·r_P) + (1 − w)(u_N + ψ_N ∇u_N·r_N), with the
+    /// limiter ψ of the velocity (Venkatakrishnan when none is set). Exact
+    /// for a linear velocity like the interpolated form, but the face value
+    /// stays between the values the two cells see: on a skewed face
+    /// (‖x_f − x_w‖ as long as the centroid distance) the shift with the
+    /// unlimited gradient feeds a velocity mode back into continuity with a
+    /// gain above one.
+    Bounded,
+}
+
+impl FaceVelocity {
+    /// Name used in case files.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Interpolated => "interpolated",
+            Self::Bounded => "bounded",
+        }
+    }
+}
+
+/// The transposed part ∇·[μ_eff (∇u)ᵀ] of the viscous stress in turbulent
+/// flow (stage 6 specification 2.4), explicit (D50).
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransposedStress {
+    /// −Σ_f μ_f (∇u)ᵀ_f·S_f with the interpolated cell gradients.
+    #[default]
+    Full,
+    /// Without the trace: −Σ_f μ_f ((∇u)ᵀ_f − (∇·u)_f I)·S_f. The same term
+    /// where ∇·u = 0; discretely it drops the grad-div part μ ∇(∇·u),
+    /// which the cell gradients of tetrahedra do not make zero and which,
+    /// explicit and as large as the implicit Laplacian where the eddy
+    /// viscosity is large, amplifies a velocity mode and with it k.
+    TraceFree,
+}
+
+impl TransposedStress {
+    /// Name used in case files.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::TraceFree => "trace-free",
+        }
+    }
+}
+
 /// Cell-quality remediation (D50).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, schemars::JsonSchema,
@@ -110,8 +170,9 @@ impl PressureGradient {
 #[serde(rename_all = "kebab-case")]
 pub enum Remediation {
     /// On a mesh with faces whose skewness exceeds `skewness_limit`: the
-    /// Gauss pressure gradient and, for a second-order convection scheme
-    /// without a limiter, the Venkatakrishnan limiter; reported in the log,
+    /// Gauss pressure gradient, for a second-order convection scheme
+    /// without a limiter the Venkatakrishnan limiter, and the bounded face
+    /// velocity of the mass flux; reported in the log,
     /// `flow.md` and `result.json`. A mesh without such faces runs the
     /// schemes as set.
     #[default]
@@ -259,10 +320,19 @@ pub struct Settings {
     /// the face sum of the face pressures (robust on tetrahedra with skewed
     /// faces).
     pub pressure_gradient: PressureGradient,
+    /// Face velocity of the Rhie–Chow mass flux (D50): `interpolated`, or
+    /// `bounded`, the mean of the two limited extrapolations to the face
+    /// centroid (robust on skewed faces).
+    pub face_velocity: FaceVelocity,
+    /// Transposed part of the viscous stress in turbulent flow (D50):
+    /// `full`, or `trace-free` (the same term where ∇·u = 0, without the
+    /// grad-div part that cell gradients on tetrahedra leave in it; a
+    /// further safety net, not switched by the remediation).
+    pub transposed_stress: TransposedStress,
     /// Cell-quality remediation (D50): `auto` switches to the Gauss pressure
-    /// gradient and the Venkatakrishnan limiter on a mesh with faces whose
-    /// skewness exceeds `skewness_limit`, and reports it; `off` keeps the
-    /// schemes as set.
+    /// gradient, the Venkatakrishnan limiter and the bounded face velocity
+    /// on a mesh with faces whose skewness exceeds `skewness_limit`, and
+    /// reports it; `off` keeps the schemes as set.
     pub remediation: Remediation,
     /// Faces with a larger skewness (distance of the face centroid from the
     /// line through the two cell centroids, over the centroid distance) are
@@ -390,6 +460,8 @@ impl Default for Settings {
             turbulence: crate::turbulence::TurbulenceSettings::default(),
             elliptic: crate::turbulence::EllipticSettings::default(),
             pressure_gradient: PressureGradient::LeastSquares,
+            face_velocity: FaceVelocity::Interpolated,
+            transposed_stress: TransposedStress::Full,
             remediation: Remediation::Auto,
             skewness_limit: 0.9,
             nonorth_correction: true,
@@ -487,6 +559,10 @@ impl Settings {
         if s.momentum.scheme != Scheme::Upwind && s.momentum.limiter == LimiterKind::None {
             s.momentum.limiter = LimiterKind::Venkatakrishnan;
             changes.push("solver.momentum.limiter: \"none\" -> \"venkatakrishnan\"".into());
+        }
+        if s.face_velocity == FaceVelocity::Interpolated {
+            s.face_velocity = FaceVelocity::Bounded;
+            changes.push("solver.face_velocity: \"interpolated\" -> \"bounded\"".into());
         }
         (s, changes)
     }
@@ -1929,6 +2005,7 @@ impl Flow {
             d,
             relax,
             time,
+            bounded: (self.settings.face_velocity == FaceVelocity::Bounded).then_some(f.psi),
         }
     }
 
@@ -1977,10 +2054,19 @@ impl Flow {
         self.dev
             .gradient(Lsq::Pressure, f.p, Mask::Pressure, f.pb, f.grad_p)?;
         let s = &self.settings;
-        if s.momentum.scheme == Scheme::Upwind || s.momentum.limiter == LimiterKind::None {
+        let bounded = s.face_velocity == FaceVelocity::Bounded;
+        if !bounded
+            && (s.momentum.scheme == Scheme::Upwind || s.momentum.limiter == LimiterKind::None)
+        {
             return Ok(());
         }
-        let (lim, kk) = (s.momentum.limiter, s.momentum.limiter_k);
+        // the bounded face velocity (D50) takes the limiter also where the
+        // convection scheme has none
+        let lim = match s.momentum.limiter {
+            LimiterKind::None => LimiterKind::Venkatakrishnan,
+            l => l,
+        };
+        let kk = s.momentum.limiter_k;
         for i in 0..3 {
             let (u, ub, psi) = (f.u.all()[i], f.ub.all()[i], f.psi.all()[i]);
             let eps2 = match lim {
@@ -2077,6 +2163,11 @@ impl Flow {
             nonorth: if s.nonorth_correction { 1.0 } else { 0.0 },
             convection: if self.phys.convection { 1.0 } else { 0.0 },
             transposed: if self.turbulence.is_some() { 1.0 } else { 0.0 },
+            trace_free: if s.transposed_stress == TransposedStress::TraceFree {
+                1.0
+            } else {
+                0.0
+            },
             cp: w.cp,
             cn: w.cn,
             bf: w.bf,

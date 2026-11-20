@@ -98,6 +98,7 @@ fn residual(mesh_toml: &str, symmetry: &[&str], g: [[f64; 3]; 3], transposed: f6
         nonorth: 1.0,
         convection: 0.0,
         transposed,
+        trace_free: 0.0,
     };
     let (mut cp, mut cn) = (vec![0.0; nf], vec![0.0; nf]);
     let (mut fx, mut fy, mut fz) = (vec![0.0; nf], vec![0.0; nf], vec![0.0; nf]);
