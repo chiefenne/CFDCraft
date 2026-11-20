@@ -557,16 +557,29 @@ pub fn pabs(a: f64) -> f64 {
 
 /// The smooth minimum of the linearisation and the adjoint (D59 (3)):
 ///
-/// smin(a, b; w) = ½ (a + b − √((a − b)² + (w m)²)),  m = ½ (|a| + |b|),
+/// smin(a, b; w) = ½ (a + b − √((a − b)² + (w m)²)),  m = |a| |b| / (|a| + |b|),
 ///
-/// C¹ in a and b, below min(a, b) by at most w m / 2, and equal to it for
-/// w = 0. `w` is the relative width ([`SMOOTH_WIDTH`] by default).
+/// C¹ in a and b away from a = 0 and b = 0, below min(a, b) by at most
+/// w m / 2 ≤ w min(|a|, |b|) / 2, and equal to it for w = 0. `w` is the
+/// relative width ([`SMOOTH_WIDTH`] by default). The scale m is half the
+/// harmonic mean, so the width follows the smaller operand: a floor such
+/// as max(x, 10⁻¹⁰) stays within w·10⁻¹⁰ of the floor for any large x
+/// (with the arithmetic mean ½ (|a| + |b|) it grew like w² |x|/16, which
+/// stalled the SST flat plate, stage 6 specification 2.6).
 #[inline(always)]
 pub fn smin(a: f64, b: f64, w: f64) -> f64 {
-    let m = 0.5 * (abs(a) + abs(b));
-    let d = a - b;
+    let s = abs(a) + abs(b);
+    let m = if s > 0.0 { abs(a) * abs(b) / s } else { 0.0 };
+    let d = abs(a - b);
     let e = w * m;
-    0.5 * (a + b - sqrt(d * d + e * e))
+    // ½(a + b − √(d² + e²)) = min(a, b) − ½ e²/(√(d² + e²) + d), without
+    // the cancellation of the first form when |a| ≫ |b|
+    let r = sqrt(d * d + e * e) + d;
+    if r > 0.0 {
+        a.min(b) - 0.5 * e * e / r
+    } else {
+        a.min(b)
+    }
 }
 
 /// The smooth maximum, smax(a, b; w) = −smin(−a, −b; w): above
@@ -764,11 +777,16 @@ mod tests {
             (1e-3, 1.1e-3),
             (5.0, -5.0),
             (0.0, 0.0),
+            (-1e3, 1e-10),
+            (1e3, 1e-10),
         ] {
-            let m = 0.5 * (a.abs() + b.abs());
+            let s = a.abs() + b.abs();
+            let m = if s > 0.0 { a.abs() * b.abs() / s } else { 0.0 };
             let lo = smin(a, b, w);
             let hi = smax(a, b, w);
-            // error bound w m / 2 (the spec), and on the safe side
+            // error bound w m / 2 ≤ w min(|a|, |b|)/2 (the spec), and on
+            // the safe side
+            assert!(m <= a.abs().min(b.abs()));
             assert!(
                 lo <= a.min(b) && a.min(b) - lo <= 0.5 * w * m + 1e-15,
                 "smin({a}, {b}) = {lo}"
