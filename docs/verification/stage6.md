@@ -2046,6 +2046,26 @@ Reference: U_b⁺ = 17.55 (DNS).
 
 \* the run stopped at its iteration limit before the tolerance (`converged` false).
 
+**Levels 1 to 3 (PR #123).** The first run of the study on level 3 (the
+maintainer's Mac, 2026-11-20) failed in two k-ε-ζ-f runs with GEN001 from
+the multigrid setup of the f equation. On the finest channel the
+diagonals of the coarsest level span 10¹⁴, and the check compared each
+pivot with the largest diagonal (a pivot of 2.7·10⁻⁴, 99 % of its own
+diagonal, was refused). For the turbulence equations each pivot is now compared with its own
+diagonal (the pressure keeps the strict test, which finds a matrix that
+stops being positive definite early; a singular matrix is refused at any
+scale), and a transport or
+elliptic equation whose multigrid setup fails takes the Jacobi
+preconditioner, with a note in the log, instead of stopping the run. With
+that, both level-3 runs diverge with the default relaxations: the plate in
+outer iteration 51 and the channel in iteration 1 182 (after its residuals
+had stalled near 3·10⁻⁸ for U and 3.5·10⁻⁴ for ε). With the relaxations 0.5
+for momentum and turbulence neither run diverged in the checks made in the
+cloud (the plate to iteration 800, the channel past iteration 5 000, where
+its residuals stand near 10⁻⁵ for U and 7·10⁻⁴ for ε, unconverged as on
+level 2); the study sets them for these two runs, as it does for the k-ε
+plate from level 2.
+
 **Findings.**
 
 1. **No model reaches the asymptotic range on all three plate meshes.**

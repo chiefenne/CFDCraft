@@ -2049,7 +2049,10 @@ impl Turbulence {
             curv,
             curv_fresh: CurvFresh::default(),
             qcr,
-            amg: case.solver.pressure.amg.clone(),
+            amg: foehncraft_fv::amg::AmgSettings {
+                scaled_pivots: true,
+                ..case.solver.pressure.amg.clone()
+            },
             elliptic: case.solver.elliptic.clone(),
             amg_rebuild: true,
             pseudo: None,
@@ -2985,8 +2988,11 @@ impl Turbulence {
         let (pc, kept) = match self.transport_pc {
             TransportPreconditioner::Jacobi => (Preconditioner::Jacobi, false),
             TransportPreconditioner::Amg => {
-                self.amg_prepare(dev, slot, true)?;
-                (Preconditioner::Amg, false)
+                if self.amg_prepare(dev, slot, true)? {
+                    (Preconditioner::Amg, false)
+                } else {
+                    (Preconditioner::Jacobi, false)
+                }
             }
             TransportPreconditioner::Reduction => match self.reduction_prepare(dev, slot)? {
                 Some(kept) => (Preconditioner::Amg, kept),
@@ -3017,23 +3023,43 @@ impl Turbulence {
     /// earlier matrix of the same equation preconditions the solve (a
     /// fixed preconditioner within each solve: the Krylov method stays
     /// valid, only its rate changes).
+    ///
+    /// Returns false when the setup failed (the matrix is not positive
+    /// definite to the precision of the setup): the solve then takes the
+    /// Jacobi preconditioner, the first failure is noted for the log, and
+    /// the next solve tries a new setup.
     fn amg_prepare(
         &self,
         dev: &mut dyn FlowDevice,
         slot: usize,
         symmetric_part: bool,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let mut built = self.amg_built.borrow_mut();
         if built.len() <= slot {
             built.resize(slot + 1, None);
         }
         if self.amg_rebuild || built[slot].is_none() {
-            dev.amg_setup_slot(slot, self.val, &self.amg, symmetric_part)?;
-            built[slot] = Some(dev.download(self.val)?);
+            match dev.amg_setup_slot(slot, self.val, &self.amg, symmetric_part) {
+                Ok(()) => built[slot] = Some(dev.download(self.val)?),
+                Err(e) => {
+                    built[slot] = None;
+                    dev.amg_select(0)?;
+                    let n = self.reduction_fallbacks.get() + 1;
+                    self.reduction_fallbacks.set(n);
+                    if n == 1 {
+                        *self.note.borrow_mut() = Some(format!(
+                            "the multigrid setup of a turbulence equation (slot {slot}) failed \
+                             ({e:#}); its solves take the Jacobi preconditioner until a setup \
+                             succeeds"
+                        ));
+                    }
+                    return Ok(false);
+                }
+            }
         } else {
             dev.amg_select(slot)?;
         }
-        Ok(())
+        Ok(true)
     }
 
     /// The reduction multigrid (D180) of an equation in slot `slot`: the
@@ -3157,9 +3183,9 @@ impl Turbulence {
         })?;
         let scale = dev.scalar_scale(v.phi, self.rhs, self.diag, 1.0, None)?;
         let e = &self.elliptic;
-        let pc = e.preconditioner;
-        if pc == Preconditioner::Amg {
-            self.amg_prepare(dev, 1, false)?;
+        let mut pc = e.preconditioner;
+        if pc == Preconditioner::Amg && !self.amg_prepare(dev, 1, false)? {
+            pc = Preconditioner::Jacobi;
         }
         let solved = dev.solve(self.val, self.rhs, v.phi, pc, true, e.tol(tr), e.max_iter);
         if pc == Preconditioner::Amg {

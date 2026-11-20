@@ -295,6 +295,13 @@ fn smoother_steps(s: &AmgSettings, lambda: f64) -> Vec<(f64, f64)> {
 /// most of a setup on a small mesh, and of every per-step setup of a
 /// sliding mesh by imprinting (D182).
 pub fn dense_spd_inverse(a: &Csr) -> Result<Vec<f64>> {
+    dense_spd_inverse_with(a, false)
+}
+
+/// [`dense_spd_inverse`] with the choice of the pivot test: `scaled` tests
+/// each pivot against its own diagonal (independent of the scale of the
+/// other rows), else against the largest diagonal.
+pub fn dense_spd_inverse_with(a: &Csr, scaled: bool) -> Result<Vec<f64>> {
     let n = a.n_rows;
     let mut l = vec![0.0; n * n];
     for i in 0..n {
@@ -315,8 +322,15 @@ pub fn dense_spd_inverse(a: &Csr) -> Result<Vec<f64>> {
             let s = row[j] - dot(&row[..j], rj);
             row[j] = s / done[j * n + j];
         }
+        // `scaled`: the pivot against its own diagonal, so that the test
+        // does not depend on the scale of the other rows. The coarsest
+        // level of an equation with a wide range of coefficients (the
+        // elliptic equation of ζ-f on a fine mesh: 10¹⁴ between diagonals)
+        // is positive definite although a pivot is far below the largest
+        // diagonal.
         let d = row[i] - dot(&row[..i], &row[..i]);
-        if d <= 1e-13 * scale || !d.is_finite() {
+        let floor = if scaled { row[i].abs() } else { scale };
+        if d <= 1e-13 * floor || !d.is_finite() {
             bail!(
                 "the coarsest multigrid level ({n} unknowns) is singular or not positive \
                  definite: the pressure level is not fixed (fix it with a fixed-value \
@@ -455,7 +469,7 @@ fn build_on(a: Csr, s: &AmgSettings) -> Result<Hierarchy> {
          lower `strength`",
         cur.n_rows
     );
-    let coarse_inv = dense_spd_inverse(&cur)?;
+    let coarse_inv = dense_spd_inverse_with(&cur, s.scaled_pivots)?;
     let tb = match s.precision {
         Precision::Mixed => 4,
         Precision::Double => 8,
@@ -571,6 +585,40 @@ pub(crate) mod tests {
                     assert_eq!(inv[i * n + c], inv[c * n + i]);
                 }
             }
+        }
+    }
+
+    /// A positive definite matrix whose diagonals span 10¹⁴ (the elliptic
+    /// equation of ζ-f on a fine mesh) has its inverse; a singular one
+    /// (a pure Neumann Laplacian) is refused at any scale.
+    #[test]
+    fn dense_inverse_is_scale_independent() {
+        let d = [1e-7, 1.0, 1e7];
+        let b = [[2.0, -1.0, 0.0], [-1.0, 2.0, -1.0], [0.0, -1.0, 2.0]];
+        let rows = (0..3)
+            .map(|i| (0..3).map(|j| (j as u32, d[i] * b[i][j] * d[j])).collect())
+            .collect();
+        let a = Csr::from_rows(3, rows);
+        assert!(dense_spd_inverse(&a).is_err(), "the strict test refuses it");
+        let inv = dense_spd_inverse_with(&a, true).unwrap();
+        // A = D B D, so A⁻¹ = D⁻¹ B⁻¹ D⁻¹ with B⁻¹ = ¼ [[3 2 1] [2 4 2] [1 2 3]]
+        let b_inv = [[3.0, 2.0, 1.0], [2.0, 4.0, 2.0], [1.0, 2.0, 3.0]];
+        for i in 0..3 {
+            for j in 0..3 {
+                let got = inv[i * 3 + j] * d[i] * d[j];
+                let want = b_inv[i][j] / 4.0;
+                assert!((got - want).abs() < 1e-12, "[{i}][{j}]: {got} {want}");
+            }
+        }
+        for scale in [1e-8, 1.0, 1e8] {
+            let n = [[1.0, -1.0, 0.0], [-1.0, 2.0, -1.0], [0.0, -1.0, 1.0]];
+            let rows = (0..3)
+                .map(|i| (0..3).map(|j| (j as u32, scale * n[i][j])).collect())
+                .collect();
+            assert!(
+                dense_spd_inverse(&Csr::from_rows(3, rows)).is_err(),
+                "{scale}"
+            );
         }
     }
 
