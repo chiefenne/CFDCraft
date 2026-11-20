@@ -89,6 +89,7 @@ fn turbulence_fields_of_every_model() {
         if eb {
             list.push(Derived::WallNormal);
         }
+        let sst_low_re = file == "channel_sst.toml";
         let file = dir.join("restart.h5");
         let (mesh, geo, f) = derived::evaluate(&case, &file, &list).unwrap();
         let nc = mesh.n_cells;
@@ -180,7 +181,7 @@ fn turbulence_fields_of_every_model() {
                     let q = t.y_plus[fb] / 5.0;
                     let want = 1.0 - (q * q).tanh();
                     assert!((b - want).abs() <= 1e-12, "{name}: blending {b} {want}");
-                } else if file == "channel_sst.toml" {
+                } else if sst_low_re {
                     assert_eq!(b, 1.0, "{name}: low-re");
                 } else if eb {
                     // k_P of the last wall-treatment call is that of the
