@@ -30,8 +30,9 @@ Models (key, case files, treatment):
     zf0   tmr_plate_zeta_f0 / channel_zeta_f0      compound-2023
     eb    tmr_plate_eb / channel_eb                compound
 
-The finest k-ε plate (level 2 and above) runs with the relaxations 0.5
-for momentum and turbulence: the defaults diverge there (RUN014). Results
+The finest k-ε plate (level 2 and above) and the k-ε-ζ-f plate of level 3
+run with the relaxations 0.5 for momentum and turbulence: the defaults
+diverge there (RUN014). Results
 of levels 0 to 2 (2026-11-19) are on the stage-6 verification page; the
 next step, levels 1 to 3 on a machine with time to spare:
 
@@ -77,6 +78,10 @@ MODELS = {
     "eb": ("elliptic-blending k-ε, compound", "tmr_plate_eb.toml", "channel_eb.toml", []),
 }
 
+# the first plate level that runs with the relaxations 0.5 (momentum and
+# turbulence), per model
+RELAXED_FROM = {"keps": 2, "zf": 3}
+
 # iterations per level (fine meshes converge more slowly)
 ITERATIONS = {0: 6000, 1: 12000, 2: 24000, 3: 40000}
 
@@ -94,9 +99,11 @@ def runs(models, cases, levels):
                 sets = [f"solver.max_iterations={ITERATIONS[lv]}", "verification.require_convergence=false",
                         "output.vtkhdf=false"] + extra
                 sets.append(f"verification.levels=[{lv}]")
-                if key == "keps" and case == "plate" and lv >= 2:
-                    # the default relaxations (0.7, 0.8) diverge in outer
-                    # iteration 11 on the 128 × 96 plate (RUN014)
+                if case == "plate" and lv >= RELAXED_FROM.get(key, 99):
+                    # the default relaxations (0.7, 0.8) diverge on the
+                    # finest plates (RUN014): k-ε in outer iteration 11 on
+                    # the 128 × 96 plate (level 2), k-ε-ζ-f in iteration 51
+                    # on the 512 × 384 plate (level 3)
                     sets += ["solver.momentum.relaxation=0.5", "solver.turbulence.relaxation=0.5"]
                 out.append((f"{case}_{key}_{lv}", file, sets))
     return out
