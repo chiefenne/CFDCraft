@@ -11,7 +11,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 |---|---|---|
 | [Kernel benchmark G1](recipes/benchmarks.md) | build and run gate G1 on a CPU, on Windows and on an NVIDIA GPU, and rerun it on unstructured meshes | 1, 2, 3, 10 |
 | [Development: tests, CI and releases](recipes/development.md) | MPI tests, checking a change the way CI does, releases, derivative checks of the kernels | 4, 5, 6, 25 |
-| [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes | 7, 8, 9, 11, 36, 127 |
+| [Meshes](recipes/meshes.md) | generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes | 7, 8, 9, 11, 36, 127, 129 |
 | [Scalar transport and the pressure solver](recipes/scalar-pressure.md) | order of accuracy of the scalar operators, convection schemes, pressure-solver studies, hypre | 12, 13, 15, 17 |
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103 |
@@ -97,6 +97,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="curvature-correction"></a>113 | [Make SST sensitive to curvature and system rotation](recipes/turbulence.md#curvature-correction) | [Turbulence models](recipes/turbulence.md) |
 | <a id="qcr"></a>115 | [Get the secondary flow of non-circular ducts with SST](recipes/turbulence.md#qcr) | [Turbulence models](recipes/turbulence.md) |
 | <a id="mesh-su2"></a>127 | [Read an SU2 mesh and map its markers to boundary conditions](recipes/meshes.md#mesh-su2) | [Meshes](recipes/meshes.md) |
+| <a id="mesh-cgns-openfoam"></a>129 | [Read a CGNS or OpenFOAM mesh](recipes/meshes.md#mesh-cgns-openfoam) | [Meshes](recipes/meshes.md) |
 
 ## Adding a feature
 
