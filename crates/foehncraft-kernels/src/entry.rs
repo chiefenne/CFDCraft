@@ -2130,6 +2130,8 @@ pub struct ZetaFCellArgs {
     pub add_e: Raw<f64>,
     /// See `add_k`.
     pub add_z: Raw<f64>,
+    /// Added to the right-hand side of the f (α) equation (with `add_k`).
+    pub add_f: Raw<f64>,
     /// Weight m_p of the wall production per cell (0 off the near-wall
     /// cells); empty: none.
     pub wall_mask: Raw<f64>,
@@ -2228,14 +2230,15 @@ impl Entry for ZetaFCells {
             *a.dz.out().add(c) = r.dz;
             *a.capped.out().add(c) = r.capped;
             if a.su_k.len > 0 {
-                let (ak, ae, az) = if a.add_k.len > 0 {
+                let (ak, ae, az, af) = if a.add_k.len > 0 {
                     (
                         ld(a.add_k.get(), c),
                         ld(a.add_e.get(), c),
                         ld(a.add_z.get(), c),
+                        ld(a.add_f.get(), c),
                     )
                 } else {
-                    (0.0, 0.0, 0.0)
+                    (0.0, 0.0, 0.0, 0.0)
                 };
                 let lo = crate::turb::zeta_f::ZETA_MIN;
                 *a.su_k.out().add(c) = r.su_k + ak.max(0.0);
@@ -2244,7 +2247,7 @@ impl Entry for ZetaFCells {
                 *a.sp_e.out().add(c) = r.sp_e + ae.min(0.0) / inp.e.max(1e-300);
                 *a.su_z.out().add(c) = r.su_z + az.max(0.0);
                 *a.sp_z.out().add(c) = r.sp_z + az.min(0.0) / inp.zeta.max(lo);
-                *a.rhs_f.out().add(c) = r.rhs_f;
+                *a.rhs_f.out().add(c) = r.rhs_f + af;
                 *a.sp_f.out().add(c) = r.sp_f;
             }
         }

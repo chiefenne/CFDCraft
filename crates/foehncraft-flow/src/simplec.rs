@@ -2421,6 +2421,16 @@ impl Flow {
         }
     }
 
+    /// One steady outer iteration of the turbulence equations alone, with
+    /// the velocity and the fluxes as they are (verification: manufactured
+    /// solutions with a prescribed velocity, stage 6 specification 9.2).
+    pub fn turbulence_iteration(&mut self) -> Result<crate::turbulence::TurbResiduals> {
+        let mut res = Residuals::default();
+        self.solve_turbulence(None, &mut res)?;
+        self.iteration += 1;
+        Ok(res.turbulence)
+    }
+
     /// The turbulence solves of an outer iteration (after the pressure
     /// correction), into `res`.
     pub(crate) fn solve_turbulence(

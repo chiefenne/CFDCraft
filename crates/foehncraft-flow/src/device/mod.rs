@@ -441,8 +441,9 @@ pub struct ZetaFCellOps {
     pub c: foehncraft_kernels::turb::zeta_f::ZetaFConstants,
     /// Options.
     pub o: foehncraft_kernels::turb::zeta_f::ZetaFOptions,
-    /// Added sources of k, ε and ζ, if any.
-    pub add: Option<[Buf; 3]>,
+    /// Added sources of k, ε and ζ and the added right-hand side of f, if
+    /// any.
+    pub add: Option<[Buf; 4]>,
     /// The weight and the weighted value of the wall production per cell,
     /// if any.
     pub wall: Option<(Buf, Buf)>,

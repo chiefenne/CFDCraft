@@ -199,7 +199,14 @@ pub struct KepsCell<T> {
 #[inline(always)]
 pub fn realizable_c_mu<T: Real>(g: &Tensor<T>, k_over_e: T, a0: f64, w: T) -> T {
     let f = T::from_f64;
-    let (s, r) = strain_rotation(g);
+    let (mut s, r) = strain_rotation(g);
+    // the deviatoric strain: W̃ and its range ±1/√6 are those of a
+    // trace-free S_ij; the discrete divergence (round-off, or the
+    // discretisation error where S → 0) would otherwise make W̃ jump
+    let tr = (s[0][0] + s[1][1] + s[2][2]) / f(3.0);
+    s[0][0] -= tr;
+    s[1][1] -= tr;
+    s[2][2] -= tr;
     let mut ss = T::ZERO;
     let mut rr = T::ZERO;
     let mut sss = T::ZERO;
