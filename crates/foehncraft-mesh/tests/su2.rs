@@ -123,7 +123,7 @@ fn case_reads_su2_with_renamed_markers_and_scale() {
 fn bad_files_give_clear_errors() {
     let o = ReadOptions::default();
     let e = |s: &str| su2::parse(s.as_bytes(), &o).unwrap_err();
-    assert!(e("NDIME= 3\nNZONE= 2\n").contains("multi-zone"));
+    assert!(e("NDIME= 3\nNZONE= 2\n").contains("no NELEM"));
     assert!(e("NDIME= 4\n").contains("2 or 3"));
     assert!(e("NDIME= 3\nNELEM= 1\n24 0 1 2 3 4 5 6 7 8 9\n").contains("higher-order"));
     assert!(e("NDIME= 3\nNELEM= 1\n10 0 1 2\n").contains("needs 4 nodes"));
