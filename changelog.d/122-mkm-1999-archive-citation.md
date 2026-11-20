@@ -1,0 +1,1 @@
+- **Validation data sources: MKM 1999 archive.** `docs/verification/DATA_SOURCES.md` now names the Moser, Kim & Mansour (1999) archive page and its Re_τ = 395 profile listing as the sources of the Re_τ 395 and 590 reference values. The Re_τ = 590 listing is still marked "to verify".
