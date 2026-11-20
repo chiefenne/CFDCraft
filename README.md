@@ -46,7 +46,8 @@ Everything below is on `main`, verified by the cases of the
 [verification manual](docs/verification/manual.md) and shown in the
 [gallery](docs/gallery.md).
 
-- **Meshes.** Arbitrary polyhedral cells in 2D and 3D; the Gmsh v4 reader;
+- **Meshes.** Arbitrary polyhedral cells in 2D and 3D; the Gmsh v4 and SU2
+  readers behind one mesh-format interface (2D SU2 files extruded one layer);
   a built-in test mesher (hexahedra, tetrahedra, prisms, polyhedra; graded
   segments, the cylinder O-grid, annuli for rotors); a quality report with
   automatic remediation of skewed cells; partitioning with METIS and halos;
@@ -179,7 +180,7 @@ The [changelog](CHANGELOG.md) lists every release.
 | `foehncraft-core` | generic floating-point type, index types, reproducible sums, counter-based random numbers (`no_std`) |
 | `foehncraft-kernels` | compute kernels, one source for CPU and GPU (`no_std`): benchmark, scalar operators, multigrid, flow |
 | `foehncraft-parallel` | communicator (serial, MPI), reproducible threaded reductions |
-| `foehncraft-mesh` | polyhedral mesh, geometry, quality report, Gmsh reader, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location, wall distance, the imprint of sliding interfaces |
+| `foehncraft-mesh` | polyhedral mesh, geometry, quality report, mesh-format layer with the Gmsh and SU2 readers, test mesher (also the cylinder benchmark mesh and annuli for rotors), partitioning and halo, VTKHDF output, point location, wall distance, the imprint of sliding interfaces |
 | `foehncraft-fv` | finite-volume operators on a scalar (gradients, limiters, convection, diffusion, assembly), BiCGStab, and the pressure solver: CG with smoothed-aggregation multigrid in mixed precision, optional hypre reference; CPU backend (the GPU backend is in `foehncraft-cuda`) |
 | `foehncraft-flow` | incompressible flow: SIMPLEC and SIMPLE (steady), PISO with BDF2 and Crank–Nicolson (transient), the coupled algorithm, the Rhie–Chow interpolation, boundary conditions and their check, turbulence models and wall treatments, passive scalars and thermal wall functions, the moving reference frame and sliding meshes, torque and machine performance, restart and control files, probes and force coefficients, the flow device written once over a CPU or GPU executor, the `foehn flow` case, exact solutions, reference and benchmark data |
 | `foehncraft-bench` | gate G1: kernel benchmark, CPU backends |

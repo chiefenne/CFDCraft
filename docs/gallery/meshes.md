@@ -1,6 +1,6 @@
 # Meshes
 
-Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and 3D, partitioning, the Gmsh reader and flow on poor Gmsh meshes.
+Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and 3D, partitioning, the Gmsh and SU2 readers and flow on poor Gmsh meshes.
 
 | # | Example | Stage | Feature |
 |---|---|---|---|
@@ -9,6 +9,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 5 | [The four test-mesh types in 2D](#mesh-types-2d) | 1 | one-cell-thick 2D meshes, boundary renaming |
 | 6 | [T-junction from Gmsh](#tjunction) | 1 | Gmsh reader, conversion to polyhedra, renumbering |
 | 26 | [Flow on raw Gmsh tetrahedra: the cell-quality remediation](#skewed-tets) | 6 | skewed faces, Gauss pressure gradient, limiter, divergence report (D50, D63) |
+| 127 | [A PyAero airfoil mesh from an SU2 file](#su2-airfoil) | 6 | SU2 reader, mesh-format layer, 2D files extruded one layer, markers as boundaries (D187) |
 
 ---
 
@@ -203,6 +204,61 @@ target/release/foehn flow examples/cases/flow/pipe_gmsh_raw.toml --set solver.re
     --set solver.log_every=1 --out output/pipe_gmsh_raw_off
 python3 -m tools.plot.residuals_chart pipe_gmsh_raw_residuals.svg \
     "output/pipe_gmsh_raw_off=remediation off" "output/pipe_gmsh_raw=remediation auto"
+```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="su2-airfoil"></a>
+## 127. A PyAero airfoil mesh from an SU2 file
+
+<img src="../figures/gallery/naca0012_su2_speed.png" alt="Speed around a NACA 0012 at Re 1000 and 4 degrees on the PyAero C-mesh read from an SU2 file" width="800" height="400">
+
+<img src="../figures/gallery/naca0012_su2_vorticity.png" alt="Vorticity of the same flow: the boundary layers and the wake" width="800" height="400">
+
+<img src="../figures/gallery/naca0012_su2_mesh.png" alt="The PyAero C-mesh around the airfoil, a blunt trailing edge with its own block" width="800" height="400">
+
+A NACA 0012 C-mesh made by [PyAero](https://github.com/chiefenne/PyAero)
+in batch mode (27 297 quadrilaterals, orthogonal near the wall, a blunt
+trailing edge of 0.4 % chord with its own block) and written in the SU2
+format. Foehncraft reads it through the mesh-format layer (D187): the file
+is 2D (`NDIME= 2`), so the reader extrudes it one cell layer in z, the
+quadrilaterals become hexahedra and the planes the boundaries `zmin` and
+`zmax`; the five markers `airfoil`, `inlet`, `outlet`, `top` and `bottom`
+become boundaries by their names. The quality report finds the mesh valid
+(every cell closed to 1e-16, the volume equal to the volume the boundary
+encloses to 4e-16, non-orthogonality at most 35°, skewness at most 0.14).
+The flow is laminar at Re = 1000 and 4° angle of attack (U = 1 m/s,
+chord 1 m, ν = 1e-3 m²/s); the coupled solver converges in 56 iterations
+and 10 s on four cores, with C_D = 0.128 and C_L = 0.209 (along and across
+the free stream). The repository holds a coarser PyAero mesh of the same
+airfoil (6 420 cells, `examples/meshes/naca0012.su2`) that the case file
+uses and CI runs in about a second: C_D = 0.128, C_L = 0.213. The far field
+is only 3.5 chords above and below the airfoil, so the run shows the
+reader, not a validated lift.
+
+| | |
+|---|---|
+| Meshes | PyAero: 27 297 hexahedra after the extrusion (pictures), 6 420 in the repository (case, CI) |
+| Case files | `mesh/naca0012_su2.toml`, `flow/naca0012_su2_re1000.toml` |
+| PyAero control files | `examples/meshes/naca0012_pyaero_fine.json` (pictures), `naca0012_pyaero.json` (the mesh in the repository) |
+
+```
+# in a PyAero clone (https://github.com/chiefenne/PyAero):
+python src/PyAero.py -no-gui /path/to/Foehncraft/examples/meshes/naca0012_pyaero_fine.json
+cp data/OUTPUT/NACA0012.su2 /path/to/Foehncraft/examples/meshes/naca0012_fine.su2
+# in Foehncraft:
+target/release/foehn mesh examples/meshes/naca0012_fine.su2
+target/release/foehn flow examples/cases/flow/naca0012_su2_re1000.toml \
+    --set mesh.file=../../meshes/naca0012_fine.su2 --out output/naca0012_fine
+python3 -m tools.mesh.render_mesh output/naca0012_fine/fields.vtkhdf speed.png \
+    --field speed --top --crop -1.2 3.5 -1.5 1.5 --no-edges --size 1200x600 --zoom 2.3
+python3 -m tools.mesh.render_mesh output/naca0012_fine/fields.vtkhdf vorticity.png \
+    --field vorticity_z --diverging --range -20 20 --top --crop -1.2 3.5 -1.5 1.5 \
+    --no-edges --size 1200x600 --zoom 2.3
+python3 -m tools.mesh.render_mesh output/naca0012_fine/fields.vtkhdf mesh.png \
+    --top --crop -0.4 1.6 -0.6 0.6 --size 1200x600 --zoom 2.0
 ```
 
 [↑ back to top](#meshes)

@@ -49,7 +49,7 @@ use foehncraft_kernels::{pack_face, unpack_face};
 /// A named set of boundary faces.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Boundary {
-    /// Name, from the Gmsh physical group or the generator.
+    /// Name, from the file (Gmsh physical group, SU2 marker) or the generator.
     pub name: String,
     /// First face of the boundary.
     pub start: usize,

@@ -8,8 +8,8 @@ On this page:
 
 Stage 1: build or read a mesh, check it, renumber and partition it, write
 the quality report (`mesh_report.md`, `mesh_report.json`) and `mesh.vtkhdf`
-for ParaView. Run with `foehn mesh FILE`; a Gmsh file can be given
-directly instead of a case file (`foehn mesh pipe.msh`), command-line
+for ParaView. Run with `foehn mesh FILE`; a mesh file (Gmsh `.msh`, SU2
+`.su2`) can be given directly instead of a case file (`foehn mesh pipe.msh`), command-line
 options override the file (`foehn mesh --help`).
 
 | Case file | Mesh | Shows | Where |
@@ -22,6 +22,7 @@ options override the file (`foehn mesh --help`).
 | `mesh/poly_partition.toml` | generated, 2 197 polyhedra | METIS partition into 4 parts, halo layout, point location | [gallery 4](../gallery/meshes.md#poly-partition), [recipe 9](../recipes/meshes.md#mesh-partition) |
 | `mesh/tjunction_tet.toml` | Gmsh, `meshes/tjunction.geo`, 77 776 tetrahedra | Gmsh reader, physical groups as boundaries and zones, RCM renumbering, 4 parts | [gallery 6](../gallery/meshes.md#tjunction), [recipe 8](../recipes/meshes.md#mesh-gmsh) |
 | `mesh/tjunction_poly.toml` | Gmsh, the same, converted into 15 927 polyhedra | conversion of tetrahedra into polyhedra with the exact volume | [gallery 6](../gallery/meshes.md#tjunction), [recipe 8](../recipes/meshes.md#mesh-gmsh) |
+| `mesh/naca0012_su2.toml` | SU2 from PyAero (`meshes/naca0012.su2`, made from `meshes/naca0012_pyaero.json`), 6 420 quadrilaterals | SU2 reader, 2D file extruded one layer, markers as boundaries, 4 parts | [gallery 127](../gallery/meshes.md#su2-airfoil), [recipe 127](../recipes/meshes.md#mesh-su2) |
 
 ## Mesh case-file keys
 
@@ -30,7 +31,9 @@ Every key is optional; a case needs either `mesh.file` or a
 
 | Key | Default | Meaning |
 |---|---|---|
-| `mesh.file` | – | Gmsh MSH 4.1 file, ASCII or binary (D33) |
+| `mesh.file` | – | mesh file: Gmsh MSH 4.1, ASCII or binary (D33), or SU2 `.su2`, ASCII, 2D or 3D (D187) |
+| `mesh.format` | from the extension | `gmsh` or `su2`; without it the extension decides, else the first lines of the file |
+| `mesh.thickness` | median edge length | layer thickness in z of a 2D file (SU2 `NDIME= 2`) extruded into one layer, in the units of the file |
 | `mesh.scale` | 1.0 | factor on the coordinates of the file (0.001: millimetres to metres) |
 | `mesh.polyhedral` | false | convert a tetrahedral mesh into polyhedra (dual mesh, one cell per node) |
 | `mesh.renumber` | `"none"` | cell order: `none` (as read), `rcm` (reverse Cuthill-McKee), `shuffle` |
@@ -57,4 +60,7 @@ Every key is optional; a case needs either `mesh.file` or a
 The generator names the six sides `xmin`, `xmax`, `ymin`, `ymax`, `zmin`,
 `zmax`. A Gmsh file gives its surface physical groups as boundaries (or
 `surface_<tag>` for surfaces without one) and its volume physical groups as
-cell zones.
+cell zones. An SU2 file gives its markers (`MARKER_TAG`) as boundaries and
+one cell zone `fluid`; a 2D SU2 file adds the extruded planes `zmin` and
+`zmax`. `[mesh.boundaries]` renames boundaries of any format to the names
+the boundary conditions use.

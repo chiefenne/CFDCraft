@@ -1,0 +1,67 @@
+# Laminar flow around a NACA 0012 at Re = 1000 and 4 degrees angle of attack,
+# on the PyAero C-mesh read from an SU2 file (D187). Gallery example 127.
+#
+#   foehn flow examples/cases/flow/naca0012_su2_re1000.toml
+#
+# Mesh: examples/meshes/naca0012.su2 (6 420 quadrilaterals, in the
+# repository); examples/cases/mesh/naca0012_su2.toml says how PyAero made it.
+# Chord c = 1 m, U = 1 m/s at 4 degrees, nu = 1e-3 m^2/s, so Re = U c / nu
+# = 1000. The C-shaped inflow boundary and the lower edge take the free
+# stream, the upper edge and the outlet a zero static pressure (at 4 degrees
+# the flow leaves through the upper edge). The domain reaches 2.6 chords
+# upstream, 3.5 above and below and 7 downstream: a demonstration of the
+# reader, not a validation (the far field is close for C_L). C_D 0.128,
+# C_L 0.213; on a PyAero mesh of 27 297 cells 0.128 and 0.209.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/naca0012.su2"
+thickness = 0.01
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1e-3
+
+[flow]
+convection = true
+
+[boundary.inlet]
+type = "velocity-inlet"
+velocity = [0.9975640502598242, 0.0697564737441253, 0.0]
+[boundary.bottom]
+type = "velocity-inlet"
+velocity = [0.9975640502598242, 0.0697564737441253, 0.0]
+[boundary.top]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.outlet]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.airfoil]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+max_iterations = 2000
+tolerance = 1e-7
+log_every = 50
+
+[verification]
+require_convergence = true
+
+[output.coefficients]
+boundaries = ["airfoil"]
+velocity = 1.0
+area = 0.01                 # chord x layer thickness
+drag_direction = [0.9975640502598242, 0.0697564737441253, 0.0]
+lift_direction = [-0.0697564737441253, 0.9975640502598242, 0.0]
+
+[output]
+derived = ["vorticity", "pressure-coefficient"]
+wall_csv = true

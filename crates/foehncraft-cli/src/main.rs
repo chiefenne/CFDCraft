@@ -226,7 +226,7 @@ enum Bench {
 
 #[derive(clap::Args)]
 struct MeshArgs {
-    /// Mesh case file (TOML) or a Gmsh `.msh` file.
+    /// Mesh case file (TOML) or a mesh file (Gmsh `.msh`, SU2 `.su2`).
     input: PathBuf,
     /// Number of parts (overrides `partition.parts`).
     #[arg(long)]
@@ -811,8 +811,7 @@ fn info(out: Out) -> Result<Done> {
 
 fn mesh(a: MeshArgs, out: Out) -> Result<Done> {
     use foehncraft_mesh::case::MeshCase;
-    let is_msh = a.input.extension().is_some_and(|e| e == "msh");
-    let mut case = if is_msh {
+    let mut case = if foehncraft_mesh::format::is_mesh_file(&a.input) {
         MeshCase::for_file(&a.input)
     } else {
         MeshCase::from_file(&a.input)?

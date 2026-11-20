@@ -1,0 +1,400 @@
+//! Mesh file formats (D33, D187): one reader interface for every format.
+//!
+//! A format is a [`MeshFormat`]: a name (`gmsh`, `su2`), the file
+//! extensions it owns, a test of the first bytes of a file, and a reader.
+//! The readers are listed in [`FORMATS`]; [`read`] picks the reader from
+//! the `mesh.format` key, else from the file extension, else from the
+//! content, and returns a [`MeshFile`] with the same [`Mesh`] type for every
+//! format.
+//!
+//! Most readers only parse: they hand their cells (tetrahedra, hexahedra,
+//! prisms, pyramids) and their named boundary faces to an [`ElementMesh`],
+//! and [`ElementMesh::into_mesh`] builds the face-based mesh the same way
+//! for every format (unused nodes dropped, faces matched, boundary faces
+//! named, faces without a name in the boundary `default`). A new format is
+//! a parser that fills an [`ElementMesh`], one [`MeshFormat`] value and one
+//! line in [`FORMATS`].
+//!
+//! Boundary names come from the file (Gmsh physical groups, SU2 markers);
+//! the case maps them to the names of its boundary conditions with
+//! `[mesh.boundaries]` (`old = "new"`), whatever the format.
+
+pub mod gmsh;
+pub mod su2;
+
+use crate::builder::CellSoup;
+use crate::generate::{hex_faces, tet_faces};
+use crate::mesh::Mesh;
+use std::collections::HashMap;
+use std::path::Path;
+
+/// A mesh read from a file.
+#[derive(Debug, Clone)]
+pub struct MeshFile {
+    /// The mesh.
+    pub mesh: Mesh,
+    /// Name of the format (the `mesh.format` value, e.g. `gmsh`).
+    pub reader: &'static str,
+    /// Version, encoding and dimension as read, for reports
+    /// (e.g. `MSH 4.1 ASCII`, `SU2 2D ASCII`).
+    pub format: String,
+    /// Warnings.
+    pub warnings: Vec<String>,
+}
+
+/// Options of a reader that the file does not give.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ReadOptions {
+    /// Cell layer thickness in z when a 2D mesh is extruded into one layer
+    /// (in the units of the file; `None`: the median edge length of the 2D
+    /// cells).
+    pub thickness: Option<f64>,
+}
+
+/// A mesh file format.
+pub trait MeshFormat: Sync {
+    /// Name, as given in `mesh.format`.
+    fn name(&self) -> &'static str;
+    /// One line for lists and docs.
+    fn title(&self) -> &'static str;
+    /// File extensions (lower case, without the dot).
+    fn extensions(&self) -> &'static [&'static str];
+    /// Whether the first bytes of a file look like this format.
+    fn sniff(&self, head: &[u8]) -> bool;
+    /// Reads a file from its bytes.
+    fn parse(&self, bytes: &[u8], options: &ReadOptions) -> Result<MeshFile, String>;
+}
+
+/// The formats Foehncraft reads.
+pub static FORMATS: &[&dyn MeshFormat] = &[&gmsh::Gmsh, &su2::Su2];
+
+/// The format of a name.
+pub fn by_name(name: &str) -> Result<&'static dyn MeshFormat, String> {
+    FORMATS
+        .iter()
+        .copied()
+        .find(|f| f.name() == name)
+        .ok_or_else(|| format!("unknown mesh format '{name}' (formats: {})", names()))
+}
+
+/// The format that owns the extension of `path`, if any.
+pub fn by_extension(path: &Path) -> Option<&'static dyn MeshFormat> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    FORMATS
+        .iter()
+        .copied()
+        .find(|f| f.extensions().contains(&ext.as_str()))
+}
+
+/// Whether `path` has the extension of a mesh format.
+pub fn is_mesh_file(path: &Path) -> bool {
+    by_extension(path).is_some()
+}
+
+fn names() -> String {
+    FORMATS
+        .iter()
+        .map(|f| f.name())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The format of a file: by `format` if given, else by extension, else by
+/// content.
+pub fn detect(
+    path: &Path,
+    bytes: &[u8],
+    format: Option<&str>,
+) -> Result<&'static dyn MeshFormat, String> {
+    if let Some(name) = format {
+        return by_name(name);
+    }
+    if let Some(f) = by_extension(path) {
+        return Ok(f);
+    }
+    let head = &bytes[..bytes.len().min(4096)];
+    FORMATS
+        .iter()
+        .copied()
+        .find(|f| f.sniff(head))
+        .ok_or_else(|| {
+            format!(
+                "cannot tell the mesh format from the name or the content; set `mesh.format` \
+                 (formats: {})",
+                names()
+            )
+        })
+}
+
+/// Reads a mesh file with the default options; `format` forces the format.
+pub fn read(path: impl AsRef<Path>, format: Option<&str>) -> Result<MeshFile, String> {
+    read_with(path, format, &ReadOptions::default())
+}
+
+/// Reads a mesh file.
+pub fn read_with(
+    path: impl AsRef<Path>,
+    format: Option<&str>,
+    options: &ReadOptions,
+) -> Result<MeshFile, String> {
+    let path = path.as_ref();
+    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let f = detect(path, &bytes, format).map_err(|e| format!("{}: {e}", path.display()))?;
+    f.parse(&bytes, options)
+        .map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// A linear 3D cell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CellKind {
+    /// 4 nodes.
+    Tetrahedron,
+    /// 8 nodes: one quadrilateral (0-3), then the opposite one (4-7) with
+    /// node 4 across from node 0.
+    Hexahedron,
+    /// 6 nodes: one triangle (0-2), then the opposite one (3-5) with node 3
+    /// across from node 0.
+    Prism,
+    /// 5 nodes: the quadrilateral base (0-3), then the apex.
+    Pyramid,
+}
+
+impl CellKind {
+    /// Number of nodes.
+    pub fn nodes(self) -> usize {
+        match self {
+            Self::Tetrahedron => 4,
+            Self::Hexahedron => 8,
+            Self::Prism => 6,
+            Self::Pyramid => 5,
+        }
+    }
+}
+
+/// Cells and named boundary faces, as most file formats store a mesh.
+/// Orientation does not matter (the builder orients every cell from its
+/// volume); only the node numbering of each kind ([`CellKind`]) does.
+#[derive(Debug, Clone, Default)]
+pub struct ElementMesh {
+    /// Nodes.
+    pub points: Vec<[f64; 3]>,
+    /// Kind of each cell.
+    pub cell_kind: Vec<CellKind>,
+    /// Nodes of the cells, concatenated.
+    pub cell_nodes: Vec<u32>,
+    /// Zone of each cell (index into `zones`).
+    pub cell_zone: Vec<u32>,
+    /// Zone names (`fluid` if empty).
+    pub zones: Vec<String>,
+    /// Start of each boundary face in `face_nodes` (length faces + 1, or
+    /// empty for none).
+    pub face_ptr: Vec<u32>,
+    /// Nodes of the boundary faces (triangles, quadrilaterals).
+    pub face_nodes: Vec<u32>,
+    /// Boundary of each face (index into `boundaries`). A face given twice
+    /// takes the boundary of its last entry.
+    pub face_boundary: Vec<u32>,
+    /// Boundary names in the order they should appear; `default` is added.
+    pub boundaries: Vec<String>,
+    /// What the file calls its boundary faces in warnings
+    /// (`surface elements`, `marker elements`).
+    pub face_word: &'static str,
+    /// What names a boundary in the file, in warnings
+    /// (`surface physical group`, `marker`).
+    pub group_word: &'static str,
+}
+
+/// A mesh built from an [`ElementMesh`].
+#[derive(Debug, Clone)]
+pub struct Built {
+    /// The mesh.
+    pub mesh: Mesh,
+    /// Warnings.
+    pub warnings: Vec<String>,
+    /// New index of every input node (`u32::MAX`: used by no cell, dropped).
+    pub node_map: Vec<u32>,
+}
+
+impl ElementMesh {
+    /// Adds a cell.
+    pub fn add_cell(&mut self, kind: CellKind, nodes: &[u32], zone: u32) {
+        debug_assert_eq!(nodes.len(), kind.nodes());
+        self.cell_kind.push(kind);
+        self.cell_nodes.extend_from_slice(nodes);
+        self.cell_zone.push(zone);
+    }
+
+    /// Adds a boundary face.
+    pub fn add_face(&mut self, nodes: &[u32], boundary: u32) {
+        if self.face_ptr.is_empty() {
+            self.face_ptr.push(0);
+        }
+        self.face_nodes.extend_from_slice(nodes);
+        self.face_ptr.push(self.face_nodes.len() as u32);
+        self.face_boundary.push(boundary);
+    }
+
+    /// Index of a boundary name, added if new.
+    pub fn boundary(&mut self, name: &str) -> u32 {
+        index_of(&mut self.boundaries, name)
+    }
+
+    /// Index of a zone name, added if new.
+    pub fn zone(&mut self, name: &str) -> u32 {
+        index_of(&mut self.zones, name)
+    }
+
+    /// Builds the face-based mesh: drops the nodes no cell uses (the others
+    /// keep their order of first use by the cells), matches the faces,
+    /// names the boundary faces and drops empty boundaries.
+    pub fn into_mesh(self) -> Result<Built, String> {
+        let n_cells = self.cell_kind.len();
+        if n_cells == 0 {
+            return Err("the file has no 3D cells".into());
+        }
+        let np = self.points.len();
+        let mut new_index = vec![u32::MAX; np];
+        let mut points: Vec<[f64; 3]> = Vec::new();
+        for &n in &self.cell_nodes {
+            let i = n as usize;
+            if i >= np {
+                return Err(format!("a cell refers to node {n}, beyond the {np} nodes"));
+            }
+            if new_index[i] == u32::MAX {
+                new_index[i] = points.len() as u32;
+                points.push(self.points[i]);
+            }
+        }
+
+        let mut soup = CellSoup::new(points);
+        let mut at = 0usize;
+        for (c, &kind) in self.cell_kind.iter().enumerate() {
+            let e = &self.cell_nodes[at..at + kind.nodes()];
+            at += kind.nodes();
+            let mut v = [0u32; 8];
+            for (k, &n) in e.iter().enumerate() {
+                v[k] = new_index[n as usize];
+            }
+            let z = self.cell_zone[c];
+            match kind {
+                CellKind::Tetrahedron => {
+                    let f = tet_faces(&[v[0], v[1], v[2], v[3]]);
+                    soup.add_cell_in_zone(f.iter().map(|x| &x[..]), z);
+                }
+                CellKind::Hexahedron => {
+                    let f = hex_faces(&v);
+                    soup.add_cell_in_zone(f.iter().map(|x| &x[..]), z);
+                }
+                CellKind::Prism => {
+                    let f: [&[u32]; 5] = [
+                        &[v[0], v[2], v[1]],
+                        &[v[3], v[4], v[5]],
+                        &[v[0], v[1], v[4], v[3]],
+                        &[v[1], v[2], v[5], v[4]],
+                        &[v[2], v[0], v[3], v[5]],
+                    ];
+                    soup.add_cell_in_zone(f, z);
+                }
+                CellKind::Pyramid => {
+                    let f: [&[u32]; 5] = [
+                        &[v[0], v[3], v[2], v[1]],
+                        &[v[0], v[1], v[4]],
+                        &[v[1], v[2], v[4]],
+                        &[v[2], v[3], v[4]],
+                        &[v[3], v[0], v[4]],
+                    ];
+                    soup.add_cell_in_zone(f, z);
+                }
+            }
+        }
+        let zones = if self.zones.is_empty() {
+            vec!["fluid".to_string()]
+        } else {
+            self.zones
+        };
+        soup.set_zone_names(zones);
+
+        // boundary faces by their sorted nodes
+        let mut warnings = Vec::new();
+        let mut face_boundary: HashMap<Vec<u32>, u32> = HashMap::new();
+        let mut skipped = 0usize;
+        for (f, &b) in self.face_boundary.iter().enumerate() {
+            let nodes = &self.face_nodes[self.face_ptr[f] as usize..self.face_ptr[f + 1] as usize];
+            let mut k = Vec::with_capacity(nodes.len());
+            let mut ok = true;
+            for &n in nodes {
+                let m = new_index.get(n as usize).copied().ok_or_else(|| {
+                    format!("a boundary face refers to node {n}, beyond the {np} nodes")
+                })?;
+                if m == u32::MAX {
+                    ok = false;
+                }
+                k.push(m);
+            }
+            if !ok {
+                skipped += 1;
+                continue;
+            }
+            k.sort_unstable();
+            face_boundary.insert(k, b);
+        }
+        if skipped > 0 {
+            warnings.push(format!(
+                "{skipped} {} are not faces of any cell and are ignored",
+                self.face_word
+            ));
+        }
+        let mut boundary_names = self.boundaries;
+        let default = boundary_names.len() as u32;
+        boundary_names.push("default".into());
+        let unnamed = std::cell::Cell::new(0usize);
+        let used = std::cell::Cell::new(0usize);
+        let n_face_boundary = face_boundary.len();
+        let names: Vec<&str> = boundary_names.iter().map(|s| s.as_str()).collect();
+        let mut mesh = soup.finish(&names, |bf| {
+            let mut k = bf.nodes.to_vec();
+            k.sort_unstable();
+            let b = match face_boundary.get(&k) {
+                Some(&b) => {
+                    used.set(used.get() + 1);
+                    b
+                }
+                None => {
+                    unnamed.set(unnamed.get() + 1);
+                    default
+                }
+            };
+            boundary_names[b as usize].clone()
+        })?;
+        if unnamed.get() > 0 {
+            warnings.push(format!(
+                "{} boundary faces belong to no {} and are in the boundary 'default'",
+                unnamed.get(),
+                self.group_word
+            ));
+        }
+        if used.get() < n_face_boundary {
+            warnings.push(format!(
+                "{} {} lie inside the domain (internal surfaces) and are ignored",
+                n_face_boundary - used.get(),
+                self.face_word
+            ));
+        }
+        mesh.boundaries.retain(|p| p.len > 0);
+        Ok(Built {
+            mesh,
+            warnings,
+            node_map: new_index,
+        })
+    }
+}
+
+fn index_of(list: &mut Vec<String>, name: &str) -> u32 {
+    match list.iter().position(|x| x == name) {
+        Some(i) => i as u32,
+        None => {
+            list.push(name.to_string());
+            (list.len() - 1) as u32
+        }
+    }
+}
