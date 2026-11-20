@@ -75,7 +75,7 @@ def main(src, dst):
     f = h5py.File(dst, "w")
     f.create_dataset(" format", data=text("IEEE_LITTLE_32"))
     f.create_dataset(" hdf5version", data=text("HDF5 Version 1.14.0"))
-    lib = node(f, "CGNSLibraryVersion", "CGNSLibraryVersion_t", "R4", np.array([4.0], dtype=np.float32))
+    node(f, "CGNSLibraryVersion", "CGNSLibraryVersion_t", "R4", np.array([4.0], dtype=np.float32))
     base = node(f, "Base", "CGNSBase_t", "I4", np.array([3, 3], dtype=np.int32))
     zone = node(base, "Zone", "Zone_t", "I4", np.array([[len(pts)], [n_cells], [0]], dtype=np.int32))
     node(zone, "ZoneType", "ZoneType_t", "C1", text("Unstructured"))
