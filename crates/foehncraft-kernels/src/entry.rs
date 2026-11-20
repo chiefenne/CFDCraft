@@ -217,6 +217,12 @@ pub struct Mesh {
     pub pset: Raw<f64>,
     /// Viscosity per face.
     pub mu_face: Raw<f64>,
+    /// Density per cell (D150; a constant fill reproduces the constant
+    /// density bit for bit).
+    pub rho: Raw<f64>,
+    /// Density per face, the face value of the mass flux and of the
+    /// pressure-correction coefficient.
+    pub rho_face: Raw<f64>,
     /// Closed state per boundary face of the backflow suppression (1
     /// closed, 0 open), written by [`CloseBackflow`] in every outer
     /// iteration.
@@ -427,8 +433,6 @@ impl Entry for ScaleVector {
 pub struct PseudoArgs {
     /// Mesh (cell volumes).
     pub m: Mesh,
-    /// Density.
-    pub rho: f64,
     /// 1/Δτ_max.
     pub inv_dt: f64,
     /// Factor f of the rate f · num / den.
@@ -453,7 +457,7 @@ impl Entry for PseudoCoefficient {
         unsafe {
             let (num, den) = (a.num.get(), a.den.get());
             *a.out.out().add(c) = crate::scalar::pseudo_coefficient(
-                a.rho * ld(a.m.volume.get(), c),
+                ld(a.m.rho.get(), c) * ld(a.m.volume.get(), c),
                 a.inv_dt,
                 a.factor,
                 if num.is_empty() { 1.0 } else { ld(num, c) },
@@ -599,8 +603,6 @@ impl Entry for BoundaryConstants {
 pub struct BoundaryValuesArgs {
     /// Mesh.
     pub m: Mesh,
-    /// Density.
-    pub rho: f64,
     /// Face mass flux.
     pub mass_flux: Raw<f64>,
     /// Cell velocity.
@@ -631,7 +633,7 @@ impl Entry for BoundaryValues {
             let inp = k::BoundaryInputs {
                 topo: a.m.topo(),
                 geo: a.m.geo(),
-                rho: a.rho,
+                rho_face: a.m.rho_face.get(),
                 mass_flux: a.mass_flux.get(),
             };
             let (u, g, ub0) = (a.u.v(), a.grad_u.v(), a.ub_set.v());
@@ -756,8 +758,6 @@ impl Entry for Limiter {
 pub struct MassFluxArgs {
     /// Mesh.
     pub m: Mesh,
-    /// Density.
-    pub rho: f64,
     /// Cell velocity.
     pub u: Raw3,
     /// Velocity gradient.
@@ -802,7 +802,7 @@ impl Entry for MassFlux {
             let inp = k::FluxInputs {
                 topo: a.m.topo(),
                 geo: a.m.geo(),
-                rho: a.rho,
+                rho_face: a.m.rho_face.get(),
                 u: a.u.v(),
                 grad: a.grad_u.v(),
                 p: a.p.get(),
@@ -928,10 +928,10 @@ pub struct MomentumRowArgs {
     pub theta: f64,
     /// 1 in a time step.
     pub transient: u32,
-    /// ρ a₀ / Δt.
-    pub tau: f64,
-    /// ρ (−a₁) / Δt, ρ (−a₂) / Δt.
-    pub c_old: [f64; 2],
+    /// a₀, −a₁, −a₂ (the density is `m.rho`).
+    pub time_a: [f64; 3],
+    /// Δt.
+    pub dt: f64,
     /// uⁿ.
     pub u_old: Raw3,
     /// uⁿ⁻¹.
@@ -978,8 +978,9 @@ impl Entry for MomentumRows {
                 face_area: a.m.area.v(),
                 theta: a.theta,
                 transient: a.transient != 0,
-                tau: a.tau,
-                c_old: a.c_old,
+                rho: a.m.rho.get(),
+                time_a: a.time_a,
+                dt: a.dt,
                 u_old: a.u_old.v(),
                 u_old2: a.u_old2.v(),
                 explicit_weight: a.explicit_weight,
@@ -1157,7 +1158,8 @@ impl Entry for Courant {
     }
 }
 
-/// Pressure-correction coefficient of face `f` from D^C (`s` = ρ).
+/// Pressure-correction coefficient of face `f` from D^C (`s` unused; the
+/// density is `m.rho_face`).
 pub struct PressureFaces;
 impl Entry for PressureFaces {
     type Args = UnaryArgs;
@@ -1171,7 +1173,7 @@ impl Entry for PressureFaces {
                 &a.m.topo(),
                 &a.m.geo(),
                 a.m.flux_kind.get(),
-                a.s,
+                a.m.rho_face.get(),
                 a.x.get(),
                 a.m.closed.get(),
             )
@@ -1425,8 +1427,6 @@ impl Entry for TransposedProduct {
 pub struct DeltaFluxArgs {
     /// Mesh.
     pub m: Mesh,
-    /// Density.
-    pub rho: f64,
     /// Velocity increment.
     pub delta: Raw3,
     /// Output per face.
@@ -1447,7 +1447,7 @@ impl Entry for DeltaFlux {
                 &a.m.topo(),
                 &a.m.geo(),
                 a.m.flux_kind.get(),
-                a.rho,
+                a.m.rho_face.get(),
                 &a.delta.v(),
                 a.m.closed.get(),
             )
@@ -1552,8 +1552,6 @@ pub struct ScalarRowArgs {
     pub mass_flux: Raw<f64>,
     /// Current cell values.
     pub phi: Raw<f64>,
-    /// Density.
-    pub rho: f64,
     /// S_u per cell (empty: none).
     pub su: Raw<f64>,
     /// S_p per cell (empty: none).
@@ -1609,7 +1607,7 @@ impl Entry for ScalarRows {
                 mass_flux: a.mass_flux.get(),
                 volume: a.m.volume.get(),
                 phi: a.phi.get(),
-                rho: a.rho,
+                rho: a.m.rho.get(),
                 su: a.su.get(),
                 sp: a.sp.get(),
                 alpha: a.alpha,
@@ -1935,8 +1933,6 @@ pub struct QcrArgs {
     pub grad_u: RawGrad,
     /// ν_t per cell.
     pub nu_t: Raw<f64>,
-    /// ρ (μ_t = ρ ν_t).
-    pub rho: f64,
     /// Constants (c_cr1, c_cr2).
     pub c: crate::turb::sst::SstConstants,
     /// [`crate::turb::sst::QCR_2000`] or [`crate::turb::sst::QCR_2013`].
@@ -1959,7 +1955,12 @@ impl Entry for QcrCells {
         unsafe {
             let g = a.grad_u.v();
             let gu = [g.x.at(c), g.y.at(c), g.z.at(c)];
-            let t = crate::turb::sst::qcr_stress(&gu, a.rho * a.nu_t.read(c), &a.c, a.mode);
+            let t = crate::turb::sst::qcr_stress(
+                &gu,
+                ld(a.m.rho.get(), c) * a.nu_t.read(c),
+                &a.c,
+                a.mode,
+            );
             let mut i = 0;
             while i < 6 {
                 *a.tau[i].out().add(c) = t[i];
@@ -2278,8 +2279,6 @@ pub struct TurbFaceArgs {
     /// 1 on the wall faces (per boundary face): no turbulent diffusion
     /// through a smooth wall.
     pub wall: Raw<f64>,
-    /// Density.
-    pub rho: f64,
     /// Factor of the molecular viscosity in the diffusivities of k, ε/ω
     /// and ζ: 1; ½ for the elliptic-blending model.
     pub mol: f64,
@@ -2314,6 +2313,7 @@ impl Entry for TurbFaces {
             let ni = a.m.n_interior as usize;
             let p = ld(a.m.owner.get(), f) as usize;
             let mu = ld(a.mu.get(), f);
+            let rho = ld(a.m.rho_face.get(), f);
             let wall = f >= ni && ld(a.wall.get(), f - ni) > 0.0;
             let (nt, gk, gw) = if f < ni {
                 let n = ld(a.m.neighbour.get(), f) as usize;
@@ -2331,11 +2331,11 @@ impl Entry for TurbFaces {
             };
             // wall faces: μ_w of the wall treatment ([`WallFaces`])
             if !wall {
-                *a.mu_eff.out().add(f) = mu + a.rho * nt;
+                *a.mu_eff.out().add(f) = mu + rho * nt;
             }
             let mm = a.mol * mu;
-            *a.gamma_k.out().add(f) = mm + a.rho * gk;
-            *a.gamma_w.out().add(f) = mm + a.rho * gw;
+            *a.gamma_k.out().add(f) = mm + rho * gk;
+            *a.gamma_w.out().add(f) = mm + rho * gw;
             if a.dz.len > 0 {
                 let (gz, gf) = if f < ni {
                     let n = ld(a.m.neighbour.get(), f) as usize;
@@ -2349,8 +2349,8 @@ impl Entry for TurbFaces {
                     let s = 1.0 - ld(a.wall.get(), f - ni);
                     (s * ld(a.dz.get(), p), ld(a.l2.get(), p))
                 };
-                *a.gamma_z.out().add(f) = mm + a.rho * gz;
-                *a.gamma_f.out().add(f) = a.rho * gf;
+                *a.gamma_z.out().add(f) = mm + rho * gz;
+                *a.gamma_f.out().add(f) = rho * gf;
             }
         }
     }
@@ -2499,8 +2499,6 @@ pub struct WallFaceArgs {
     pub ub: Raw3,
     /// ν.
     pub nu: f64,
-    /// Density.
-    pub rho: f64,
     /// Treatment ([`crate::turb::wall::LOW_RE`], `AUTOMATIC`).
     pub treatment: u32,
     /// Constants.
@@ -2609,7 +2607,7 @@ impl Entry for WallFaces {
                 }
                 *a.pk.out().add(i) = 0.0;
                 *a.prod_w.out().add(i) = 0.0;
-                *a.mu_eff.out().add(f) = a.rho * nu;
+                *a.mu_eff.out().add(f) = ld(a.m.rho_face.get(), f) * nu;
                 *a.k_b.out().add(fb) = 0.0;
                 *a.w_b.out().add(fb) = e_w;
                 *a.f_b.out().add(fb) = f_w;
@@ -2634,7 +2632,8 @@ impl Entry for WallFaces {
                     }
                     if a.grad_p.x.len > 0 {
                         let gp = a.grad_p.v().at(p);
-                        cu += (tn[0] * gp[0] + tn[1] * gp[1] + tn[2] * gp[2]) / a.rho;
+                        cu +=
+                            (tn[0] * gp[0] + tn[1] * gp[1] + tn[2] * gp[2]) / ld(a.m.rho.get(), p);
                     }
                 }
                 let inp = crate::turb::wall::KepsWallInputs {
@@ -2657,7 +2656,7 @@ impl Entry for WallFaces {
                 }
                 *a.pk.out().add(i) = r.pk_wall;
                 *a.prod_w.out().add(i) = r.prod_weight;
-                *a.mu_eff.out().add(f) = a.rho * r.nu_wall;
+                *a.mu_eff.out().add(f) = ld(a.m.rho_face.get(), f) * r.nu_wall;
                 *a.k_b.out().add(fb) = 0.0;
                 *a.w_b.out().add(fb) = 0.0;
                 if zf {
@@ -2695,7 +2694,7 @@ impl Entry for WallFaces {
             }
             *a.pk.out().add(i) = m * r.pk_wall;
             *a.prod_w.out().add(i) = m;
-            *a.mu_eff.out().add(f) = a.rho * r.nu_wall;
+            *a.mu_eff.out().add(f) = ld(a.m.rho_face.get(), f) * r.nu_wall;
             *a.k_b.out().add(fb) = r.k_wall;
             *a.w_b.out().add(fb) = r.omega_wall;
         }
@@ -2982,6 +2981,7 @@ mod tests {
                 + 4 * 16
                 + 16
                 + 16
+                + 2 * 16
                 + 16
                 + 48
                 + 16

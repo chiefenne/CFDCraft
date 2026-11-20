@@ -102,6 +102,10 @@ pub struct KernelFlow<E: Exec> {
     pset: Buf,
     /// The face viscosity (the buffer behind `m.mu_face`).
     mu_buf: Buf,
+    /// The density per cell and per face (the buffers behind `m.rho` and
+    /// `m.rho_face`; D150).
+    rho_buf: Buf,
+    rho_face_buf: Buf,
     /// The wall arrays of the turbulence models: faces, cells, ptr, slots.
     wall: Option<[Raw<u32>; 4]>,
 }
@@ -148,6 +152,14 @@ impl<E: Exec> KernelFlow<E> {
             None => x.upload(mu_buf, &vec![s.mu; nf])?,
         }
         let mu_face = x.raw(mu_buf);
+        // the density per cell and per face: today's constant density
+        // filled in (a variable density uploads its fields with
+        // `set_density`)
+        let rho_buf = x.alloc(nc)?;
+        x.upload(rho_buf, &vec![s.rho; nc])?;
+        let rho_face_buf = x.alloc(nf)?;
+        x.upload(rho_face_buf, &vec![s.rho; nf])?;
+        let (rho_raw, rho_face) = (x.raw(rho_buf), x.raw(rho_face_buf));
         let pset_buf = x.alloc(nb)?;
         x.upload(pset_buf, &s.bc.pset)?;
         let pset = x.raw(pset_buf);
@@ -184,6 +196,8 @@ impl<E: Exec> KernelFlow<E> {
             pb_rule: x.alloc_u32(&s.bc.pb_rule)?,
             pset,
             mu_face,
+            rho: rho_raw,
+            rho_face,
             closed: x.raw(closed),
             conv: Raw3 {
                 x: x.raw(conv.x),
@@ -225,6 +239,8 @@ impl<E: Exec> KernelFlow<E> {
             beta,
             pset: pset_buf,
             mu_buf,
+            rho_buf,
+            rho_face_buf,
             wall: None,
             lsq_u,
             lsq_p,
@@ -465,7 +481,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         let opt = |b: Option<Buf>| b.map_or(Raw::EMPTY, |b| self.r(b));
         let args = e::PseudoArgs {
             m: self.m,
-            rho: self.rho,
             inv_dt,
             factor,
             num: opt(num),
@@ -620,7 +635,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         check(&outs, &ins)?;
         let args = e::BoundaryValuesArgs {
             m: self.m,
-            rho: self.rho,
             mass_flux: self.r(a.mass_flux),
             u: self.r3(a.u),
             grad_u: self.rg(&a.grad_u),
@@ -793,7 +807,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             bf: self.r(a.bf),
             mass_flux: self.r(a.mass_flux),
             phi: self.r(a.phi),
-            rho: self.rho,
             su: opt(a.su),
             sp: opt(a.sp),
             alpha: a.alpha,
@@ -867,7 +880,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         };
         let args = e::MassFluxArgs {
             m: self.m,
-            rho: self.rho,
             u: self.r3(a.u),
             grad_u: self.rg(&a.grad_u),
             p: self.r(a.p),
@@ -942,17 +954,17 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         }
         check(&outs, &ins)?;
         let empty = Raw3::default();
-        let (transient, tau, c_old, u_old, u_old2, ew, ex) = match &a.time {
+        let (transient, time_a, dt, u_old, u_old2, ew, ex) = match &a.time {
             Some(t) => (
                 1,
-                t.tau,
-                t.c_old,
+                t.a,
+                t.dt,
                 self.r3(t.u_old),
                 self.r3(t.u_old2),
                 t.explicit.0,
                 self.r3(t.explicit.1),
             ),
-            None => (0, 0.0, [0.0; 2], empty, empty, 0.0, empty),
+            None => (0, [0.0; 3], 1.0, empty, empty, 0.0, empty),
         };
         let args = e::MomentumRowArgs {
             m: self.m,
@@ -965,8 +977,8 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             alpha: a.alpha,
             theta: a.theta,
             transient,
-            tau,
-            c_old,
+            time_a,
+            dt,
             u_old,
             u_old2,
             explicit_weight: ew,
@@ -1112,7 +1124,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         check(&[out], &delta.all())?;
         let args = e::DeltaFluxArgs {
             m: self.m,
-            rho: self.rho,
             delta: self.r3(delta),
             out: self.r(out),
         };
@@ -1179,6 +1190,17 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
 
     fn face_viscosity(&self) -> Buf {
         self.mu_buf
+    }
+
+    fn set_density(&mut self, cell: &[f64], face: &[f64]) -> Result<()> {
+        ensure!(
+            cell.len() == self.nc && face.len() == self.nf,
+            "flow device: density fields of {} cells and {} faces expected",
+            self.nc,
+            self.nf
+        );
+        self.x.upload(self.rho_buf, cell)?;
+        self.x.upload(self.rho_face_buf, face)
     }
 
     fn wall_setup(&mut self, w: &WallStatic) -> Result<()> {
@@ -1318,7 +1340,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
         &mut self,
         grad_u: [Buf3; 3],
         nu_t: Buf,
-        rho: f64,
         c: &foehncraft_kernels::turb::sst::SstConstants,
         mode: u32,
         tau: [Buf; 6],
@@ -1330,7 +1351,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             m: self.m,
             grad_u: self.rg(&grad_u),
             nu_t: self.r(nu_t),
-            rho,
             c: *c,
             mode,
             tau: tau.map(|b| self.r(b)),
@@ -1345,7 +1365,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             m: self.m,
             grad_u: RawGrad::default(),
             nu_t: Raw::EMPTY,
-            rho: 0.0,
             c: foehncraft_kernels::turb::sst::SstConstants::default(),
             mode: 0,
             tau: tau.map(|b| self.r(b)),
@@ -1480,7 +1499,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             dw: self.r(a.dw),
             mu: self.r(a.mu),
             wall: self.r(a.wall),
-            rho: self.rho,
             mol: a.mol,
             mu_eff: self.r(a.mu_eff),
             gamma_k: self.r(a.gamma_k),
@@ -1580,7 +1598,6 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             u: self.r3(a.u),
             ub: self.r3(a.ub),
             nu: a.nu,
-            rho: self.rho,
             treatment: a.treatment,
             c: a.c,
             ke: a.ke,

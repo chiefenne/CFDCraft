@@ -1021,8 +1021,8 @@ impl Flow {
         self.dev.lincomb(w.relax, 1.0 - alpha, y, 0.0, y)?;
         // momentum rows and the residual of the current fields
         let time = dt.map(|_| TimeTerms {
-            tau,
-            c_old: [tau, 0.0],
+            a: [1.0, 1.0, 0.0],
+            dt: dt.unwrap_or(1.0),
             u_old: f.u,
             u_old2: f.u,
             explicit: (0.0, f.u),

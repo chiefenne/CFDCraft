@@ -47,8 +47,8 @@ pub struct ScalarRowInputs<'a, T> {
     pub volume: &'a [T],
     /// Current cell values (relaxation, old values of the source split).
     pub phi: &'a [T],
-    /// Density.
-    pub rho: T,
+    /// Cell density ρ, one entry per cell.
+    pub rho: &'a [T],
     /// Explicit source S_u per cell (the unit of φ per second); empty: none.
     pub su: &'a [T],
     /// Implicit source coefficient S_p ≤ 0 per cell (1/s); empty: none.
@@ -151,7 +151,7 @@ pub unsafe fn scalar_row<T: Real>(c: usize, inp: &ScalarRowInputs<T>, val: *mut 
             b += dc;
         }
         let v = ld(inp.volume, c);
-        let rv = inp.rho * v;
+        let rv = ld(inp.rho, c) * v;
         if !inp.su.is_empty() {
             b += rv * ld(inp.su, c);
         }

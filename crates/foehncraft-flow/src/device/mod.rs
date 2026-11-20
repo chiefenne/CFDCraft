@@ -142,13 +142,14 @@ pub struct MomentumFaceArgs {
 /// Time terms of a momentum row.
 #[derive(Debug, Clone, Copy)]
 pub struct TimeTerms {
-    /// ρ a₀ / Δt.
-    pub tau: f64,
-    /// ρ (−a₁) / Δt and ρ (−a₂) / Δt.
-    pub c_old: [f64; 2],
+    /// a₀, −a₁ and −a₂ of the backward difference; the rows take
+    /// ρ_P a / Δt with the cell density.
+    pub a: [f64; 3],
+    /// Δt.
+    pub dt: f64,
     /// uⁿ.
     pub u_old: Buf3,
-    /// uⁿ⁻¹ (used when `c_old[1]` is not zero).
+    /// uⁿ⁻¹ (used when `a[2]` is not zero).
     pub u_old2: Buf3,
     /// 1 − θ and the old spatial operator (Crank–Nicolson); weight 0: none.
     pub explicit: (f64, Buf3),
@@ -870,6 +871,11 @@ pub trait FlowDevice {
     /// The face viscosity of the momentum equation (a face buffer that a
     /// turbulence model overwrites with μ + ρ ν_t, stage 6).
     fn face_viscosity(&self) -> Buf;
+    /// Replaces the density per cell (`n_cells` values) and per face
+    /// (`n_faces` values) that the flux, momentum, scalar and turbulence
+    /// operations read (D150). The device starts with the constant
+    /// density of its setup on every cell and face.
+    fn set_density(&mut self, cell: &[f64], face: &[f64]) -> Result<()>;
     /// Uploads the static arrays of the wall treatment.
     fn wall_setup(&mut self, s: &WallStatic) -> Result<()>;
     /// The k-ω SST model per cell.
@@ -894,7 +900,6 @@ pub trait FlowDevice {
         &mut self,
         grad_u: [Buf3; 3],
         nu_t: Buf,
-        rho: f64,
         c: &foehncraft_kernels::turb::sst::SstConstants,
         mode: u32,
         tau: [Buf; 6],

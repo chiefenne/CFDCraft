@@ -606,7 +606,6 @@ impl Transient {
         ensure!(dt > 0.0 && dt.is_finite(), "time step {dt} must be > 0");
         let s = fl.settings.clone();
         let (l, w, f) = (self.l, fl.w, fl.f);
-        let rho = fl.phys.rho;
         let second = self.scheme != TimeScheme::Bdf1 && self.clock.levels >= 1;
         let omega = if second { dt / self.clock.dt_prev } else { 1.0 };
         let (a0, a1, a2, theta) = match self.scheme {
@@ -791,8 +790,8 @@ impl Transient {
             )?;
         }
         let time = TimeTerms {
-            tau: rho * a0 / dt,
-            c_old: [rho * (-a1) / dt, rho * (-a2) / dt],
+            a: [a0, -a1, -a2],
+            dt,
             u_old,
             u_old2,
             explicit: (ew, l.r_old),

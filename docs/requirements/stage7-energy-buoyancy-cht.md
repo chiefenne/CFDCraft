@@ -1320,7 +1320,16 @@ Read on main at b15a488:
   (`FluxInputs::rho`, `MomentumInputs::rho` in `foehncraft-kernels/src/flow.rs`);
   D102 planned the density field with stage 5 part 6a, which shipped constant
   density only ("the density must be constant in the domain until L1"). PR 7a
-  turns it into cell and face fields.
+  turns it into cell and face fields.  **Done 2026-11-20 in PR 7.0b:** the kernels read ρ per
+  cell (momentum time terms, scalar and pseudo-time rows, QCR stress, wall
+  pressure gradient) and per face (mass flux, pressure-correction
+  coefficient, boundary velocity and total pressure, turbulent face
+  viscosities, wall μ_eff) from the mesh block, on the CPU and the GPU; the
+  device fills both with the constant density and takes new fields with
+  `FlowDevice::set_density`. μ was already a face field (D94). Still scalar
+  until 7a1: the kinematic ν of the wall functions and turbulence sources,
+  the Courant factor and the pseudo-time Schur diagonal of the coupled
+  solver.
 - **F2:** the momentum cell rows use (b − ∇p_P) V with the least-squares ∇p
   (`flow.rs`, the source term of the momentum cell kernel) and `face_mass_flux`
   uses the pressure jump only; with gravity this gives the spurious wall
