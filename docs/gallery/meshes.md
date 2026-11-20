@@ -12,6 +12,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 127 | [A PyAero airfoil mesh from an SU2 file](#su2-airfoil) | 6 | SU2 reader, mesh-format layer, 2D files extruded one layer, markers as boundaries (D187) |
 | 129 | [A polyhedral mesh from OpenFOAM and CGNS](#foam-cgns-polyhedra) | 6 | OpenFOAM and CGNS readers, polyhedral cells, one mesh through two formats (D188) |
 | 134 | [One polyhedral mesh through five formats](#five-formats) | 6 | industry .msh and VTK readers, VTU writer, the same mesh as OpenFOAM, CGNS, .msh and VTU (D191, D192) |
+| 138 | [Taylor–Couette sliding case from a two-zone SU2 file](#su2-zones) | 6 | multi-zone SU2 and CGNS, rotor and stator as cell zones, interface boundaries, `[[sliding]]` (D195) |
 
 ---
 
@@ -338,5 +339,31 @@ target/release/foehn mesh output/dual_polyhedra/mesh.vtu
 | Meshes | `crates/foehncraft-mesh/tests/data/industry_msh/*.msh`, `.../vtk/channel_mixed_*.{vtk,vtu}` |
 | Made by | `tools/mesh/industry_msh_fixtures.py` (from the OpenFOAM fixtures), `tools/mesh/vtk_test_meshes.py` (meshio, generator only) |
 | Recipe | [recipe 134](../recipes/meshes.md#mesh-msh-vtk) |
+
+[↑ back to top](#meshes)
+
+<a id="su2-zones"></a>
+## 138. Taylor–Couette sliding case from a two-zone SU2 file
+
+The gap between two coaxial cylinders, written the way a mesher writes a
+machine: an SU2 file with two zones, the rotor (radius 0.05 to 0.075 m, 32
+sectors) and the stator (0.075 to 0.10 m, 48 sectors), no shared nodes and an
+interface that does not match. The reader puts both zones in one mesh (cell
+zones `zone1` and `zone2`), the markers `rotor_interface` and
+`stator_interface` are the two boundaries, and the sliding interface imprints
+them at the rotor angle in every step, as in the generated case of the
+imprinting study (same flow, Re = 50, same check against the analytic
+Taylor–Couette solution). The run takes 4 s on 640 cells: the relative L2
+error of the velocity is 1.3e-2 against the band of 3e-2.
+
+```
+target/release/foehn flow examples/cases/flow/taylor_couette_su2_zones.toml
+```
+
+| | |
+|---|---|
+| Case | `examples/cases/flow/taylor_couette_su2_zones.toml` |
+| Mesh | `examples/meshes/taylor_couette_zones.su2`, made by `tools/mesh/taylor_couette_zones.py` |
+| Recipe | [recipe 138](../recipes/meshes.md#mesh-multizone) |
 
 [↑ back to top](#meshes)

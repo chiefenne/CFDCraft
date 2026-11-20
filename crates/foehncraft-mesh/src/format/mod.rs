@@ -58,6 +58,10 @@ pub struct ReadOptions {
     /// (in the units of the file; `None`: the median edge length of the 2D
     /// cells).
     pub thickness: Option<f64>,
+    /// Join nodes that coincide (within 1e-8 of the bounding-box diagonal)
+    /// after reading, so that the zones of a multi-zone file that touch share
+    /// their interface nodes (SU2 and CGNS with several zones).
+    pub merge_nodes: bool,
 }
 
 /// A mesh file format. A format that is a file implements [`Self::parse`]
@@ -332,6 +336,77 @@ impl ElementMesh {
         self.cell_kind.push(CellKind::Polyhedron);
         self.poly.push(faces);
         self.cell_zone.push(zone);
+    }
+
+    /// Joins nodes that coincide, within 1e-8 of the bounding-box diagonal,
+    /// into one and renumbers the cells and faces. Returns the number of
+    /// nodes removed. Faces of two zones that touch then become interior
+    /// faces of the one mesh.
+    pub fn merge_points(&mut self) -> usize {
+        let n = self.points.len();
+        if n == 0 {
+            return 0;
+        }
+        let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
+        for p in &self.points {
+            for k in 0..3 {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        let diag = (0..3).map(|k| (hi[k] - lo[k]).powi(2)).sum::<f64>().sqrt();
+        let tol = (1e-8 * diag).max(f64::MIN_POSITIVE);
+        let cell = |p: &[f64; 3]| -> [i64; 3] {
+            std::array::from_fn(|k| ((p[k] - lo[k]) / tol).floor() as i64)
+        };
+        let mut grid: HashMap<[i64; 3], Vec<u32>> = HashMap::new();
+        let mut map = vec![0u32; n];
+        let mut kept: Vec<[f64; 3]> = Vec::new();
+        for (i, p) in self.points.iter().enumerate() {
+            let c = cell(p);
+            let mut found = None;
+            'search: for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        let Some(list) = grid.get(&[c[0] + dx, c[1] + dy, c[2] + dz]) else {
+                            continue;
+                        };
+                        for &j in list {
+                            let q = kept[j as usize];
+                            let d2: f64 = (0..3).map(|k| (p[k] - q[k]).powi(2)).sum();
+                            if d2 <= tol * tol {
+                                found = Some(j);
+                                break 'search;
+                            }
+                        }
+                    }
+                }
+            }
+            map[i] = match found {
+                Some(j) => j,
+                None => {
+                    kept.push(*p);
+                    let j = (kept.len() - 1) as u32;
+                    grid.entry(c).or_default().push(j);
+                    j
+                }
+            };
+        }
+        let removed = n - kept.len();
+        if removed == 0 {
+            return 0;
+        }
+        self.points = kept;
+        for v in &mut self.cell_nodes {
+            *v = map[*v as usize];
+        }
+        for v in self.poly.iter_mut().flatten().flatten() {
+            *v = map[*v as usize];
+        }
+        for v in &mut self.face_nodes {
+            *v = map[*v as usize];
+        }
+        removed
     }
 
     /// Adds a boundary face.

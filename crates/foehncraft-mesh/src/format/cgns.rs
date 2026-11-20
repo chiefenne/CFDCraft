@@ -28,8 +28,12 @@
 //!   `ElementList`); entries that are not faces (points and lines that a
 //!   mesher also lists) are ignored. Boundary faces that no BC names go to
 //!   `default`.
-//! - Everything is one cell zone, `fluid`. Several zones, 2D bases and the
-//!   legacy ADF encoding are refused with a message.
+//! - A single zone is the cell zone `fluid`. With several zones (a rotor and a
+//!   stator) all are read into one mesh, each `Zone_t` a cell zone of its
+//!   name; the nodes of different zones stay apart (an interface is then two
+//!   boundaries, as `[[sliding]]` wants it) unless `mesh.merge_nodes` joins
+//!   coincident nodes. BCs of equal name in several zones are one boundary.
+//!   2D bases and the legacy ADF encoding are refused with a message.
 
 use super::{CellKind, ElementMesh, MeshFile, MeshFormat, ReadOptions};
 use hdf5_metno as h5;
@@ -56,8 +60,8 @@ impl MeshFormat for Cgns {
         head.starts_with(b"\x89HDF\r\n\x1a\n")
     }
 
-    fn read_path(&self, path: &Path, _options: &ReadOptions) -> Result<MeshFile, String> {
-        read_file(path)
+    fn read_path(&self, path: &Path, options: &ReadOptions) -> Result<MeshFile, String> {
+        read_file(path, options)
     }
 }
 
@@ -286,15 +290,15 @@ impl Sections {
     }
 }
 
-fn node_idx(v: i64, n_points: usize) -> Result<u32, String> {
+fn node_idx(v: i64, n_points: usize, off: u32) -> Result<u32, String> {
     if v < 1 || v as usize > n_points {
         return Err(format!("a vertex number {v} lies outside 1..={n_points}"));
     }
-    Ok((v - 1) as u32)
+    Ok((v - 1) as u32 + off)
 }
 
 /// Reads a CGNS file (HDF5 encoding).
-pub fn read_file(path: &Path) -> Result<MeshFile, String> {
+pub fn read_file(path: &Path, options: &ReadOptions) -> Result<MeshFile, String> {
     let mut sig = [0u8; 8];
     {
         use std::io::Read;
@@ -325,14 +329,55 @@ pub fn read_file(path: &Path) -> Result<MeshFile, String> {
         ));
     }
     let zones = base.with_label("Zone_t");
-    if zones.len() != 1 {
-        return Err(format!(
-            "base '{base_name}' has {} zones: only a single zone is read (merge the zones in \
-             the mesher)",
-            zones.len()
+    if zones.is_empty() {
+        return Err(format!("base '{base_name}' has no Zone_t"));
+    }
+    let single = zones.len() == 1;
+    let mut em = ElementMesh {
+        face_word: "boundary faces of the BCs",
+        group_word: "BC",
+        ..Default::default()
+    };
+    let mut warnings = Vec::new();
+    for (zone_name, zone) in &zones {
+        let cell_zone = if single { "fluid" } else { zone_name.as_str() };
+        read_zone(&mut em, &mut warnings, base, zone_name, zone, cell_zone)?;
+    }
+    if !single {
+        warnings.push(format!(
+            "{} zones read as cell zones{}",
+            zones.len(),
+            if options.merge_nodes {
+                ""
+            } else {
+                "; their nodes are kept apart (mesh.merge_nodes joins coincident nodes)"
+            }
         ));
     }
-    let (zone_name, zone) = &zones[0];
+    if options.merge_nodes {
+        let removed = em.merge_points();
+        warnings.push(format!("{removed} coincident nodes merged"));
+    }
+    let built = em.into_mesh()?;
+    warnings.extend(built.warnings);
+    Ok(MeshFile {
+        mesh: built.mesh,
+        reader: "cgns",
+        format: "CGNS HDF5".into(),
+        warnings,
+    })
+}
+
+/// Adds one zone to `em`: its nodes (after those already there), cells in
+/// cell zone `cell_zone` and the faces of its BCs.
+fn read_zone(
+    em: &mut ElementMesh,
+    warnings: &mut Vec<String>,
+    base: &Node,
+    zone_name: &str,
+    zone: &Node,
+    cell_zone: &str,
+) -> Result<(), String> {
     if let Some(t) = zone.child("ZoneType").map(|n| n.text())
         && t != "Unstructured"
     {
@@ -368,7 +413,8 @@ pub fn read_file(path: &Path) -> Result<MeshFile, String> {
         coord("CoordinateY")?,
         coord("CoordinateZ")?,
     );
-    let points: Vec<[f64; 3]> = (0..n_points).map(|i| [x[i], y[i], z[i]]).collect();
+    let off = em.points.len() as u32;
+    em.points.extend((0..n_points).map(|i| [x[i], y[i], z[i]]));
 
     // sections, by first element number
     let mut secs = Vec::new();
@@ -378,13 +424,7 @@ pub fn read_file(path: &Path) -> Result<MeshFile, String> {
     secs.sort_by_key(|s| s.first);
     let secs = Sections(secs);
 
-    let mut em = ElementMesh {
-        points,
-        face_word: "boundary faces of the BCs",
-        group_word: "BC",
-        ..Default::default()
-    };
-    let z0 = em.zone("fluid");
+    let z0 = em.zone(cell_zone);
     let mut n_cells = 0usize;
     for s in &secs.0 {
         for &(t, a, n) in &s.elems {
@@ -405,7 +445,7 @@ pub fn read_file(path: &Path) -> Result<MeshFile, String> {
                         })?;
                         let mut v = nodes
                             .iter()
-                            .map(|&x| node_idx(x, n_points))
+                            .map(|&x| node_idx(x, n_points, off))
                             .collect::<Result<Vec<_>, _>>()?;
                         if f < 0 {
                             v.reverse();
@@ -420,18 +460,17 @@ pub fn read_file(path: &Path) -> Result<MeshFile, String> {
             };
             let v = nodes
                 .iter()
-                .map(|&x| node_idx(x, n_points))
+                .map(|&x| node_idx(x, n_points, off))
                 .collect::<Result<Vec<_>, _>>()?;
             em.add_cell(kind, &v, z0);
             n_cells += 1;
         }
     }
     if n_cells == 0 {
-        return Err("the zone has no 3D cells (TETRA_4, PYRA_5, PENTA_6, HEXA_8, NFACE_n)".into());
+        return Err("zone has no 3D cells (TETRA_4, PYRA_5, PENTA_6, HEXA_8, NFACE_n)".into());
     }
 
     // boundary conditions
-    let mut warnings = Vec::new();
     let mut bcs: Vec<(i64, String, Vec<i64>)> = Vec::new();
     for zbc in zone.with_label("ZoneBC_t") {
         for (name, bc) in zbc.1.with_label("BC_t") {
@@ -485,20 +524,15 @@ pub fn read_file(path: &Path) -> Result<MeshFile, String> {
             }
             let v = nodes
                 .iter()
-                .map(|&x| node_idx(x, n_points))
+                .map(|&x| node_idx(x, n_points, off))
                 .collect::<Result<Vec<_>, _>>()?;
             em.add_face(&v, b);
         }
     }
     if bcs.is_empty() {
-        warnings.push("the zone has no ZoneBC: all boundary faces are in 'default'".into());
+        warnings.push(format!(
+            "zone '{zone_name}' has no ZoneBC: its boundary faces are in 'default'"
+        ));
     }
-    let built = em.into_mesh()?;
-    warnings.extend(built.warnings);
-    Ok(MeshFile {
-        mesh: built.mesh,
-        reader: "cgns",
-        format: "CGNS HDF5".into(),
-        warnings,
-    })
+    Ok(())
 }

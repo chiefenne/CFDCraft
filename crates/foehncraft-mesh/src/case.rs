@@ -70,6 +70,11 @@ pub struct MeshSection {
     /// into one layer, in the units of the file (before `scale`); default the
     /// median edge length of the 2D cells.
     pub thickness: Option<f64>,
+    /// Join coincident nodes of a multi-zone file (SU2 with `NZONE` > 1, CGNS
+    /// with several zones). Off: the zones are kept apart, each a cell zone,
+    /// and the interface is two boundaries, as `[[sliding]]` wants it. On:
+    /// touching zones become one connected mesh.
+    pub merge_nodes: bool,
     /// Factor applied to the coordinates of a file (0.001: mm to m).
     pub scale: f64,
     /// Built-in generator.
@@ -99,6 +104,7 @@ impl Default for MeshSection {
             file: None,
             format: None,
             thickness: None,
+            merge_nodes: false,
             scale: 1.0,
             generate: None,
             cylinder: None,
@@ -293,6 +299,7 @@ pub fn build_mesh(case: &MeshSection) -> Result<(Mesh, String, Vec<String>)> {
         (Some(f), None) => {
             let options = crate::format::ReadOptions {
                 thickness: case.thickness,
+                merge_nodes: case.merge_nodes,
             };
             let g = crate::format::read_with(f, case.format.as_deref(), &options)
                 .map_err(anyhow::Error::msg)?;

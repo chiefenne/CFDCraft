@@ -30,8 +30,12 @@
 //!   name the side faces and the two planes are the boundaries `zmin`
 //!   (z = 0) and `zmax`. The layer thickness is `mesh.thickness` (in the
 //!   units of the file), by default the median edge length of the 2D cells.
-//! - One zone (`NZONE= 1` or none); the cells are the zone `fluid`.
-//!   Multi-zone files are refused (split them into one file per zone).
+//! - One zone (`NZONE= 1` or none): the cells are the cell zone `fluid`.
+//!   With `NZONE= n` and `IZONE=` blocks (3D only) every zone is a cell zone
+//!   `zone1` .. `zone<n>` of one mesh (D195): the nodes of the zones stay apart,
+//!   markers of equal name in several zones are one boundary, and
+//!   `mesh.merge_nodes` joins coincident nodes. The interface connectivity
+//!   entries (`MARKER_TAG= SEND_RECEIVE`) are not read.
 //! - Higher-order elements are refused.
 
 use super::{CellKind, ElementMesh, MeshFile, MeshFormat, ReadOptions};
@@ -187,6 +191,8 @@ pub fn parse(bytes: &[u8], options: &ReadOptions) -> Result<MeshFile, String> {
     let mut points: Option<Vec<[f64; 3]>> = None;
     let mut markers: Option<Vec<(String, Vec<Element>)>> = None;
     let mut warnings = Vec::new();
+    let mut nzone = 1usize;
+    let mut done: Vec<ZoneData> = Vec::new();
 
     while let Some(l) = lines.next() {
         let Some((key, value)) = split_keyword(l) else {
@@ -203,14 +209,20 @@ pub fn parse(bytes: &[u8], options: &ReadOptions) -> Result<MeshFile, String> {
                 ndime = Some(d);
             }
             "NZONE" => {
-                let z = count(&lines, key, value)?;
-                if z > 1 {
-                    return Err(lines.err(format!(
-                        "NZONE= {z}: multi-zone files are not read; write one file per zone"
-                    )));
+                nzone = count(&lines, key, value)?;
+            }
+            "IZONE" => {
+                // the next zone starts: close the one before
+                if cells.is_some() || points.is_some() {
+                    done.push(finish_zone(
+                        ndime,
+                        cells.take(),
+                        points.take(),
+                        markers.take(),
+                        &mut warnings,
+                    )?);
                 }
             }
-            "IZONE" => {}
             "NELEM" => {
                 let n = count(&lines, key, value)?;
                 let mut v = Vec::with_capacity(n);
@@ -267,28 +279,23 @@ pub fn parse(bytes: &[u8], options: &ReadOptions) -> Result<MeshFile, String> {
             }
         }
     }
+    done.push(finish_zone(ndime, cells, points, markers, &mut warnings)?);
     let ndime = ndime.ok_or("no NDIME= (is this an SU2 mesh file?)")?;
-    let cells = cells.ok_or("no NELEM= section")?;
-    let points = points.ok_or("no NPOIN= section")?;
-    let markers = markers.unwrap_or_else(|| {
-        warnings.push("no NMARK= section: all boundary faces are in 'default'".into());
-        Vec::new()
-    });
+    if nzone != done.len() {
+        warnings.push(format!(
+            "NZONE= {nzone} but the file has {} zones; all of them are read",
+            done.len()
+        ));
+    }
+    if done.len() > 1 {
+        return multi_zone(done, ndime, options, warnings);
+    }
+    let ZoneData {
+        cells,
+        points,
+        markers,
+    } = done.pop().expect("one zone");
     let np = points.len() as u32;
-    let check = |e: &Element, what: &str| -> Result<(), String> {
-        match e.nodes.iter().find(|&&n| n >= np) {
-            Some(n) => Err(format!("{what} refers to node {n}, beyond the {np} nodes")),
-            None => Ok(()),
-        }
-    };
-    for e in &cells {
-        check(e, "a cell")?;
-    }
-    for (name, es) in &markers {
-        for e in es {
-            check(e, &format!("an element of marker '{name}'"))?;
-        }
-    }
 
     let mut em = ElementMesh {
         face_word: "marker elements",
@@ -404,4 +411,125 @@ fn median_edge(cells: &[Element], p: &[[f64; 3]]) -> Option<f64> {
     }
     l.sort_unstable_by(f64::total_cmp);
     Some(l[l.len() / 2])
+}
+
+/// Cells, nodes and markers of one zone of a file.
+struct ZoneData {
+    cells: Vec<Element>,
+    points: Vec<[f64; 3]>,
+    markers: Vec<(String, Vec<Element>)>,
+}
+
+/// Checks the sections of a zone and collects them.
+fn finish_zone(
+    ndime: Option<usize>,
+    cells: Option<Vec<Element>>,
+    points: Option<Vec<[f64; 3]>>,
+    markers: Option<Vec<(String, Vec<Element>)>>,
+    warnings: &mut Vec<String>,
+) -> Result<ZoneData, String> {
+    ndime.ok_or("no NDIME= (is this an SU2 mesh file?)")?;
+    let cells = cells.ok_or("no NELEM= section")?;
+    let points = points.ok_or("no NPOIN= section")?;
+    let markers = markers.unwrap_or_else(|| {
+        warnings.push("no NMARK= section: all boundary faces are in 'default'".into());
+        Vec::new()
+    });
+    let np = points.len() as u32;
+    let check = |e: &Element, what: &str| -> Result<(), String> {
+        match e.nodes.iter().find(|&&n| n >= np) {
+            Some(n) => Err(format!("{what} refers to node {n}, beyond the {np} nodes")),
+            None => Ok(()),
+        }
+    };
+    for e in &cells {
+        check(e, "a cell")?;
+    }
+    for (name, es) in &markers {
+        for e in es {
+            check(e, &format!("an element of marker '{name}'"))?;
+        }
+    }
+    Ok(ZoneData {
+        cells,
+        points,
+        markers,
+    })
+}
+
+/// Several zones (`NZONE= n`) into one mesh: the cells of zone k are the
+/// cell zone `zone<k>`, the nodes of the zones are numbered one after the
+/// other and stay apart unless `merge_nodes` joins coincident ones, markers
+/// of the same name in several zones are one boundary.
+fn multi_zone(
+    zones: Vec<ZoneData>,
+    ndime: usize,
+    options: &ReadOptions,
+    mut warnings: Vec<String>,
+) -> Result<MeshFile, String> {
+    if ndime != 3 {
+        return Err(format!(
+            "{} zones with NDIME= 2: only 3D multi-zone files are read",
+            zones.len()
+        ));
+    }
+    let mut em = ElementMesh {
+        face_word: "marker elements",
+        group_word: "marker",
+        ..Default::default()
+    };
+    let n_zones = zones.len();
+    for (k, zone) in zones.into_iter().enumerate() {
+        let off = em.points.len() as u32;
+        let z = em.zone(&format!("zone{}", k + 1));
+        em.points.extend_from_slice(&zone.points);
+        let mut v = Vec::with_capacity(8);
+        for e in &zone.cells {
+            let kind = match e.kind {
+                TETRAHEDRON => CellKind::Tetrahedron,
+                HEXAHEDRON => CellKind::Hexahedron,
+                PRISM => CellKind::Prism,
+                PYRAMID => CellKind::Pyramid,
+                t => return Err(format!("element type {t} is not a 3D cell (NDIME= 3)")),
+            };
+            v.clear();
+            v.extend(e.nodes.iter().map(|&a| a + off));
+            em.add_cell(kind, &v, z);
+        }
+        for (name, es) in &zone.markers {
+            let b = em.boundary(name);
+            for e in es {
+                if e.kind != TRIANGLE && e.kind != QUADRILATERAL {
+                    return Err(format!(
+                        "marker '{name}': element type {} is not a face of a 3D mesh \
+                         (triangle 5, quadrilateral 9)",
+                        e.kind
+                    ));
+                }
+                v.clear();
+                v.extend(e.nodes.iter().map(|&a| a + off));
+                em.add_face(&v, b);
+            }
+        }
+    }
+    warnings.push(format!(
+        "{n_zones} zones read as the cell zones zone1..zone{n_zones}{}",
+        if options.merge_nodes {
+            ""
+        } else {
+            "; their nodes are kept apart (mesh.merge_nodes joins coincident nodes)"
+        }
+    ));
+    if options.merge_nodes {
+        let removed = em.merge_points();
+        warnings.push(format!("{removed} coincident nodes merged"));
+    }
+    let built = em.into_mesh()?;
+    warnings.extend(built.warnings);
+    Ok(MeshFile {
+        mesh: built.mesh,
+        reader: "su2",
+        format: format!("SU2 {ndime}D ASCII, {n_zones} zones"),
+        warnings,
+    })
 }

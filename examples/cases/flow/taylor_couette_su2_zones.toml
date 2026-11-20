@@ -1,0 +1,70 @@
+# Laminar Taylor-Couette flow with an imprinted sliding interface, the mesh
+# from a two-zone SU2 file (D195). Gallery example 138, recipe 138.
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/taylor_couette_su2_zones.toml
+#
+# The same flow and check as taylor_couette_imprint.toml, but the mesh is a
+# file written by a mesher, the way a rotor/stator machine has it: a
+# multi-zone SU2 file (NZONE= 2, tools/mesh/taylor_couette_zones.py) with the
+# rotor (32 sectors) as zone 1 and the stator (48 sectors) as zone 2. Both
+# zones are read into one mesh, each a cell zone (zone1, zone2), their nodes
+# stay apart, and the markers rotor_interface and stator_interface of the file
+# are the two boundaries that the sliding interface imprints.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/taylor_couette_zones.su2"
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 5e-4
+
+[constants]
+spin = 10.0
+
+[flow]
+convection = true
+
+[time]
+scheme = "bdf2"
+time_step = 0.02
+steps = 500
+start_time = 0.0
+
+[[sliding]]
+zone = "zone1"
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "rotor_interface"
+stator_interface = "stator_interface"
+
+[boundary.inner]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.outer]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 3000
+extrapolation = false
+outer_iterations = 4
+
+[analytic]
+type = "taylor-couette"
+inner_radius = 0.05
+outer_radius = 0.10
+inner_omega = 10.0
+
+[verification]
+max_error = 0.03
+
+[output]
+vtkhdf = false
+wall_csv = false
