@@ -48,7 +48,7 @@ line (recipe 26).
 | `solver.remediation` | `"auto"` | cell-quality remediation (D50): `auto` switches to the `gauss` pressure gradient and the Venkatakrishnan limiter when a face of the mesh is skewed beyond `skewness_limit`, and reports it (`MESH001`, `MESH002`, the report); `off` keeps the schemes as set. A mesh without such faces runs unchanged ([recipe 36](../recipes/meshes.md#skewed-tets)) |
 | `solver.skewness_limit` | 0.9 | faces with a larger skewness (distance of the face centroid from the line through the two cell centroids, over the centroid distance) are poor |
 | `solver.max_iterations` | 2000 | largest number of outer iterations |
-| `solver.tolerance` | 1e-8 | converged when every scaled residual (momentum, continuity) is below it |
+| `solver.tolerance` | 1e-8 | converged when every scaled residual (momentum, continuity) is below it; on fine wall-resolved meshes an integral quantity can still move after 10⁻⁶ is reached (the channel on 768 cells across: U_b⁺ 2.9 % from its converged value at 10⁻⁶, 0.001 % at 10⁻⁹; [verification](../verification/stage6.md#the-level-3-channel-drop-pr-128)), so check the monitored quantity or tighten the tolerance |
 | `solver.momentum.tolerance` | 1e-2 steady, 1e-8 transient | relative tolerance of each momentum solve (BiCGStab, Jacobi) |
 | `solver.momentum.max_iter` | 50 | largest number of BiCGStab iterations per solve |
 | `solver.pressure.tolerance` | 1e-2 steady, 1e-8 transient | relative tolerance of each pressure-correction solve |

@@ -9,10 +9,23 @@ value for the plate, the DNS of Moser, Kim & Mansour for the channel).
     python3 examples/studies/plate_channel_gci.py [OUT] [--models sst,zf,...]
         [--cases plate,channel] [--levels 0,1,2] [--jobs 4] [--report-only]
 
-Each run is a separate `foehn flow` of the gallery case of the model with
-one level (`verification.levels = [L]`, the built-in mesher refines both
-directions twice per level), in OUT/<case>_<model>_<L> (default
-output/plate_channel_gci); a finished run is not run again. The models
+Each run is a separate `foehn flow` of the gallery case of the model on
+one level, in OUT/<case>_<model>_<L> (default output/plate_channel_gci); a
+finished run is not run again. The plate takes `verification.levels =
+[L]` (the built-in mesher halves every interval in both directions L
+times). The channel solution does not depend on x, so the channel is
+refined in y only: its y nodes are those of level L (the base intervals
+times 2^L, with the grading ratio that keeps the mesher's nested mapping,
+`nested_ratio`), its two cells in x stay; on 768 cells across this is a
+1 536-cell run instead of 12 288 with the same U_b+ (17.316 on both).
+
+The channel runs converge to the scaled residual 10^-9
+(`CHANNEL_TOLERANCE`) instead of the 10^-6 of the cases. On the fine
+meshes the residuals pass 10^-6 while U_b+ is still moving: on 768 cells
+across, SST stops 2.9 % low and EB 1.5 % high on 384 cells, which was the
+"level-3 drop" of the first levels 1 to 3 run (2026-11-20). With 10^-9 the
+stopped value is within 0.001 % of the converged one on every mesh. The
+plate keeps the tolerance of its case. The models
 that resolve the wall (SST low-re, k-ε-ζ-f compound, k-ε-ζ-f₀
 compound-2023, EB compound) have a first-cell y+ about 1 and below. The
 k-ε family runs with scalable wall functions, which take the wall cell at
@@ -32,12 +45,13 @@ Models (key, case files, treatment):
 
 The finest k-ε plate (level 2 and above) and the k-ε-ζ-f plate and channel
 of level 3 run with the relaxations 0.5 for momentum and turbulence: the
-defaults diverge there (RUN014). Results
-of levels 0 to 2 (2026-11-19) are on the stage-6 verification page; the
-next step, levels 1 to 3 on a machine with time to spare:
+defaults diverge there (RUN014). Results are on the stage-6 verification
+page: the plate on levels 0 to 3 (2026-11-19/20), the channel converged on
+levels 0 to 3 (2026-11-20, PR #128, about 15 minutes on four cores):
 
     cargo build --release -p foehncraft-cli
-    python3 examples/studies/plate_channel_gci.py output/gci123 --levels 1,2,3 --jobs 4
+    python3 examples/studies/plate_channel_gci.py output/gci_channel --cases channel --levels 0,1,2,3 --jobs 4
+    python3 examples/studies/plate_channel_gci.py output/gci_channel --cases channel --levels 0,1,2 --report-only
 
 Bands (specification 9.3, 9.4): plate GCI_fine of C_f ≤ 2 %, C_f within
 ±5 % of White, SST C_f within 1 % of the TMR value; channel GCI_fine of
@@ -53,6 +67,7 @@ import math
 import os
 import subprocess
 import sys
+import tomllib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -85,6 +100,38 @@ RELAXED_FROM = {("keps", "plate"): 2, ("zf", "plate"): 3, ("zf", "channel"): 3}
 # iterations per level (fine meshes converge more slowly)
 ITERATIONS = {0: 6000, 1: 12000, 2: 24000, 3: 40000}
 
+# the channel: converged to this scaled residual, with these limits (SST
+# needs 76 000 iterations for 10^-9 on 768 cells across, EB about 90 000)
+CHANNEL_TOLERANCE = 1e-9
+CHANNEL_ITERATIONS = {0: 20000, 1: 40000, 2: 80000, 3: 160000}
+
+
+def nested_ratio(ratio: float, n0: int, symmetric: bool, level: int) -> float:
+    """The grading ratio of a mesh of n0·2^level intervals whose nodes are
+    those of level `level` of the base mesh (n0 intervals, `ratio`): the
+    mesher maps ξ with (e^{βξ} − 1)/(e^β − 1), β = ln(r) m0/(m0 − 1), m0
+    the base intervals of one side (`Grading::nodes` in
+    crates/foehncraft-mesh/src/generate.rs), so the same β on m0·2^level
+    intervals is the ratio exp(β (m − 1)/m), m = m0·2^level."""
+    m0 = n0 // 2 if symmetric else n0
+    if level == 0 or abs(ratio - 1.0) < 1e-14 or m0 < 2:
+        return ratio
+    beta = math.log(ratio) * m0 / (m0 - 1)
+    m = m0 << level
+    return math.exp(beta * (m - 1) / m)
+
+
+def channel_mesh(file: str, level: int) -> list[str]:
+    """The sets of the channel mesh of `level`, refined in y only."""
+    gen = tomllib.loads((CASES / file).read_text())["mesh"]["generate"]
+    nx, ny, nz = gen["cells"]
+    sets = [f"mesh.generate.cells=[{nx},{ny << level},{nz}]"]
+    gy = gen.get("grading", {}).get("y")
+    if gy is not None:
+        r = nested_ratio(gy.get("ratio", 1.0), ny, gy.get("symmetric", False), level)
+        sets.append(f"mesh.generate.grading.y.ratio={r!r}")
+    return sets
+
 
 def runs(models, cases, levels):
     """(directory name, case file, sets) of every run."""
@@ -96,15 +143,18 @@ def runs(models, cases, levels):
             if file is None:
                 continue
             for lv in levels:
-                sets = [f"solver.max_iterations={ITERATIONS[lv]}", "verification.require_convergence=false",
-                        "output.vtkhdf=false"] + extra
-                sets.append(f"verification.levels=[{lv}]")
+                sets = ["verification.require_convergence=false", "output.vtkhdf=false"] + extra
+                if case == "plate":
+                    sets += [f"solver.max_iterations={ITERATIONS[lv]}", f"verification.levels=[{lv}]"]
+                else:
+                    sets += [f"solver.max_iterations={CHANNEL_ITERATIONS[lv]}",
+                             f"solver.tolerance={CHANNEL_TOLERANCE}"] + channel_mesh(file, lv)
                 if lv >= RELAXED_FROM.get((key, case), 99):
                     # the default relaxations (0.7, 0.8) diverge on the
                     # finest meshes (RUN014): k-ε in outer iteration 11 on
                     # the 128 × 96 plate (level 2), k-ε-ζ-f in iteration 51
                     # on the 512 × 384 plate and in iteration 1 182 on the
-                    # 6 144-cell channel (level 3)
+                    # level-3 channel
                     sets += ["solver.momentum.relaxation=0.5", "solver.turbulence.relaxation=0.5"]
                 out.append((f"{case}_{key}_{lv}", file, sets))
     return out
