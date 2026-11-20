@@ -104,7 +104,7 @@ codes! {
     BC_POTENTIAL_CONVECTIVE = "BC025", Error, "A potential-flow start with a convective outlet and no pressure boundary.";
     BC_WALL_MASS_CLOSED = "BC026", Error, "Walls that add or remove mass in a closed volume (no pressure boundary, no uniform thermodynamic pressure).";
     BC_ROUGHNESS = "BC027", Warning, "A wall roughness k_s larger than the first-cell distance on more than 10 % of the wall's area.";
-    BC_TURBULENCE_UNUSED_VALUE = "BC028", Warning, "A turbulence value that the run does not use (at an outlet, whose backflow takes k and ω or ε of the cell; `zeta` with a model other than k-ε-ζ-f); `omega` with an ε model and `epsilon` with SST are converted (ε = C_μ k ω); BC009 stays for laminar cases.";
+    BC_TURBULENCE_UNUSED_VALUE = "BC028", Warning, "A turbulence value that the run does not use (on a boundary other than an inlet or a pressure outlet, whose backflow takes the values; `zeta` with a model other than k-ε-ζ-f, ζ-f₀ or the elliptic-blending k-ε); `omega` with an ε model and `epsilon` with SST are converted (ε = C_μ k ω); BC009 stays for laminar cases.";
     TURB_INLET_CONFLICT = "BC029", Error, "Two incompatible turbulence specifications on one inlet (for example `turbulence_length_scale` and `viscosity_ratio`, `k` with intensity, or `omega` with `epsilon`).";
     BC_PERIODIC = "BC030", Error, "A periodic boundary without a periodic partner that names it back, a pair whose faces do not match, or a driving given twice.";
     BC_PERIODIC_UNDRIVEN = "BC031", Warning, "A periodic pair with no driving (`mass_flow`, `pressure_gradient`) and no body force: the flow decays to rest.";
