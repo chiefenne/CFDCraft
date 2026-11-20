@@ -1267,6 +1267,12 @@ pub struct TurbState {
     pub u_tau: Vec<f64>,
     /// First-cell y⁺ per boundary face (0 off the walls).
     pub y_plus: Vec<f64>,
+    /// The viscous weight of the wall treatment per boundary face (0 off
+    /// the walls): 1 for the integration to the wall, the weight of the
+    /// automatic or compound blending, 0 in the log layer (spec 2.3, the
+    /// wall field `blending`). `None` from a restart file written before
+    /// it was stored.
+    pub wall_blending: Option<Vec<f64>>,
     /// The modified pressure p̂ = p + ⅔ρk of the solver, per cell (the
     /// state's `p` is the static pressure).
     pub p_modified: Vec<f64>,
@@ -1345,6 +1351,8 @@ struct WallDev {
     y_star: Buf,
     omega: Buf,
     blending: Buf,
+    /// The viscous weight of the wall treatment (output only).
+    viscous_weight: Buf,
     pk: Buf,
     weight: Buf,
 }
@@ -1974,6 +1982,7 @@ impl Turbulence {
                 y_star: dev.alloc(nw)?,
                 omega: dev.alloc(nw)?,
                 blending: dev.alloc(nw)?,
+                viscous_weight: dev.alloc(nw)?,
                 pk: dev.alloc(nw)?,
             };
             dev.wall_setup(&walls.stat)?;
@@ -2554,6 +2563,7 @@ impl Turbulence {
             y_star: wd.y_star,
             omega: wd.omega,
             blending: wd.blending,
+            viscous_weight: wd.viscous_weight,
             pk: wd.pk,
             prod_w: wd.prod_w,
             mu_eff: dev.face_viscosity(),
@@ -3356,12 +3366,15 @@ impl Turbulence {
         let omega_b = dev.download(self.w.bc_b)?;
         let mut u_tau = vec![0.0; self.nb];
         let mut y_plus = vec![0.0; self.nb];
+        let mut wall_blending = vec![0.0; self.nb];
         if let Some(wd) = self.wd {
             let ut = dev.download(wd.u_tau)?;
             let yp = dev.download(wd.y_plus)?;
+            let vw = dev.download(wd.viscous_weight)?;
             for (i, &f) in self.walls.stat.faces.iter().enumerate() {
                 u_tau[f as usize - ni] = ut[i];
                 y_plus[f as usize - ni] = yp[i];
+                wall_blending[f as usize - ni] = vw[i];
             }
         }
         Ok(TurbState {
@@ -3380,6 +3393,7 @@ impl Turbulence {
             omega_b,
             u_tau,
             y_plus,
+            wall_blending: Some(wall_blending),
             p_modified: p.to_vec(),
             pb_modified: pb.to_vec(),
             wall_distance: self.wall_distance.clone(),
