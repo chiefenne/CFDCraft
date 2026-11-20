@@ -24,6 +24,8 @@ Terminology: the project says *reacting flows*, not "combustion", everywhere.
   [ArtCraft Crafting Apps](https://getartcraft.com/apps/craft-anything): Rust,
   one engine with thin front ends on top (first a CLI), built step by step
   with a coding agent in an explore, build, check, refine loop.
+  How Foehncraft compares with their development method, and the open
+  questions that follow: [docs/assessments/artcraft-development-method.md](assessments/artcraft-development-method.md) (2026-11-20).
 - First milestone: incompressible flow on unstructured 3D meshes with two or
   three turbulence models, run from a case file by an expert user.
   *2026-11-17 (O18, decided by the maintainer):* with heat transfer: the energy equation,
