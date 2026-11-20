@@ -800,7 +800,7 @@ limit on their number.
 - **Models per fluid part:** the turbulence model, the buoyancy model and the
   turbulent Prandtl number are case-wide by default and may be set per fluid
   region (`[regions.<name>] turbulence = "laminar"` for laminar oil in the
-  tubes beside turbulent air; open point MF1).
+  tubes beside turbulent air; MF1 decided 2026-11-20).
 
 ### 9c.2 Interfaces
 
@@ -1378,9 +1378,10 @@ Read on main at b15a488:
      stage 7 builds only the interface (§9b.5). Alternative: a film without
      sprays (wetted walls, falling films, condensation) earlier, with L2.
 
-7. **Several fluids and materials (D194), added 2026-11-20**, open point:
+7. **Several fluids and materials (D194), added 2026-11-20**, decided:
    - MF1 *Models per fluid region:* turbulence model, buoyancy model and
-     Pr_t set per fluid region (recommended), or one set for the whole case.
+     Pr_t set per fluid region. **Decided 2026-11-20 (maintainer): yes, per
+     fluid region**, case-wide values stay the default.
 
 ## 19. References
 
