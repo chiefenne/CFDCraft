@@ -31,7 +31,7 @@ Every key is optional; a case needs either `mesh.file` or a
 
 | Key | Default | Meaning |
 |---|---|---|
-| `mesh.file` | – | mesh file: Gmsh MSH 4.1, ASCII or binary (D33), SU2 `.su2`, ASCII, 2D or 3D (D187), CGNS `.cgns`, HDF5, one unstructured zone (D188), an OpenFOAM case, `constant` or `polyMesh` directory, ASCII or binary (D188), the industry face-based `.msh`, ASCII, 3D (D189), or a VTK unstructured grid, `.vtk` or `.vtu` (D190) |
+| `mesh.file` | – | mesh file: Gmsh MSH 4.1, ASCII or binary (D33), SU2 `.su2`, ASCII, 2D or 3D (D187), CGNS `.cgns`, HDF5, one unstructured zone (D188), an OpenFOAM case, `constant` or `polyMesh` directory, ASCII or binary (D188), the industry face-based `.msh`, ASCII, 3D (D191), or a VTK unstructured grid, `.vtk` or `.vtu` (D192) |
 | `mesh.format` | from the extension | `gmsh`, `su2`, `industry_msh`, `cgns`, `vtk` or `openfoam`; without it the extension or directory decides (`.msh`: the first bytes tell Gmsh from the industry format), else the first bytes of the file |
 | `mesh.thickness` | median edge length | layer thickness in z of a 2D file (SU2 `NDIME= 2`) extruded into one layer, in the units of the file |
 | `mesh.scale` | 1.0 | factor on the coordinates of the file (0.001: millimetres to metres) |

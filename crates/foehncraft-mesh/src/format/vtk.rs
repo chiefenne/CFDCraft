@@ -1,4 +1,4 @@
-//! Reader and writer for VTK unstructured grids (D190): legacy `.vtk` and
+//! Reader and writer for VTK unstructured grids (D192): legacy `.vtk` and
 //! XML `.vtu`.
 //!
 //! Written from the public descriptions of the two file formats (the VTK file
