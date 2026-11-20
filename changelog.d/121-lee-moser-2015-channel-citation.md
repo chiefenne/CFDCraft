@@ -1,1 +1,0 @@
-- **Validation data sources: channel DNS citation.** `docs/verification/DATA_SOURCES.md` now cites Lee & Moser (2015, JFM 774) for the Re_τ = 180–5200 channel set, with its DOI. The Re_τ 395 and 590 entries keep the Moser, Kim & Mansour (1999) citation, since the 2015 set has no case at those values.
