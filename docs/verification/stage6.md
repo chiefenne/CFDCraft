@@ -2087,6 +2087,15 @@ C_D of SST: 2.8259 / 2.8477 / 2.8606 ·10⁻³, p 0.74, GCI 0.84 %; of k-ε:
 | k-ε-ζ-f₀, compound-2023 | 384 / 1536 / 6144 | 17.840 / 18.106 / 18.378 | 0.03 (divergent) | 84.61 % | +4.72 % |
 | elliptic-blending k-ε, compound | 768 / 3072 / 12288 | 17.675 / 17.866 / 16.720 | – (oscillatory) | 3.43 % | −4.73 % |
 
+Rerun in the cloud (2026-11-20, one thread each, same executable
+source): SST, ζ-f₀ and EB reproduce the Mac values and iteration counts
+exactly (17.009 in 30 077 iterations with residuals at 10⁻⁶, 18.378 in
+31 771, 16.720 in 25 545), so the level-3 channel values are not an
+artefact of the machine or of an unfinished run. The ζ-f channel on
+level 3 (12 288 cells, relaxations 0.5) reaches the limit of 40 000
+iterations unconverged with U_b⁺ = 21.37 (+21.8 %), which is not a
+usable result.
+
 What these show: the SST plate on the three finest meshes meets the 2 %
 GCI band (1.87 %) and stays within 0.4 % of the TMR value, while it is
 6 % below White's correlation (outside ±5 %: the correlation, not the
@@ -2098,7 +2107,7 @@ there is at y⁺ near 0.005, and the driving force of these runs was
 still drifting at the iteration limit. ζ-f₀ drifts upward by about 1.5 %
 per level. The channel GCI of level 1 to 3 is therefore not meaningful
 for SST, ζ-f₀ and EB; levels 0 to 2 remain the reference of the table
-above. The cause of the level-3 drop is open.
+above. The cause of the level-3 drop is open (see the rerun above: it is reproducible and converged).
 
 **Findings.**
 
