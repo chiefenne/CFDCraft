@@ -13,6 +13,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | 90 | [Impinging jet at H/D = 2: a pipe profile as the inlet, Nusselt number, the stagnation-point anomaly](#impinging-jet) | 6 | `profile = "table"` with `k`, `epsilon`/`omega`, `zeta` columns, `foehncraft.profiles`, wall probes with scalars, `production_limiter`, `examples/studies/impinging_jet.py` |
 | 113 | [Curvature and rotation correction of SST: channel in spanwise rotation, backward-facing step](#curvature-correction) | 6 | `turbulence.curvature_correction`, `flow.frame_rotation`, constants `c_r1` … `c_r3`, derived field `curvature-correction` |
 | 115 | [Quadratic constitutive relation of SST: secondary flow in a square duct](#qcr) | 6 | `turbulence.qcr`, constants `c_cr1`, `c_cr2` |
+| 141 | [The sink of k near walls of the ζ-f models: grid convergence at the wall](#k-sink) | 6 | `turbulence.k_sink`, constants `c_epsilon1_zeta`, `c_epsilon1_power` |
 | 140 | [Turbulence of the backflow at a pressure outlet: an outlet inside the recirculation](#outlet-backflow) | 6 | `k`, `omega`/`epsilon`, `turbulence_intensity`, `zeta` on `static-pressure-outlet` and `total-pressure-outlet` |
 
 ---
@@ -243,21 +244,23 @@ the blend of viscous sublayer and log law of Popovac & Hanjalić (2007),
 and covers every y⁺.
 
 **The channel** (`channel_zeta_f.toml`). Re_τ = 395 on 96 cells across
-(first-cell y⁺ 0.27): U_b⁺ = 17.89, +1.9 % from the DNS of Moser, Kim &
-Mansour with `compound`, +1.4 % with `low-re` (band ±3 %). The k⁺ peak
-and U⁺ up to y⁺ ≈ 25 follow the DNS.
+(first-cell y⁺ 0.27): U_b⁺ = 17.87, +1.8 % from the DNS of Moser, Kim &
+Mansour with `compound`, +1.2 % with `low-re` (band ±3 %), in about 370
+iterations of the coupled algorithm. The k⁺ peak and U⁺ up to y⁺ ≈ 25
+follow the DNS.
 
 **The flat plate** (`tmr_plate_zeta_f.toml`). The TMR plate on 64 × 48
-cells at first-cell y⁺ 1: C_f(0.97) = 3.023·10⁻³, +5.1 % from White's
-correlation, +4.7 % on 96 cells across (finding: outside the ±3 % band,
-mesh-independent). Two more findings: from the free stream of the TMR
-(ν_t/ν = 0.009) the model keeps the boundary layer laminar over the
-whole plate, because the length scale of the weak free stream exceeds the
-layer and f drives ζ to zero across it, so the case starts from a
-turbulent field; and in the laminar part near the leading edge the
-published k sink −ε has no positive steady solution while T sits at its
-Kolmogorov bound, so the floor holds k there (TURB002) and the k residual
-stays at 7·10⁻⁶ while every other field converges to round-off.
+cells at first-cell y⁺ 1: C_f(0.97) = 2.931·10⁻³, +2.0 % from White's
+correlation, and +0.03 % / −0.4 % on 128 × 96 / 256 × 192 cells (GCI
+0.15 %), every field converged. Since PR #141 (gallery 141) the sink of
+k is max(k/T_K, 2νk/d²); with the published −ε the laminar part near
+the leading edge had no positive steady k while T sat at its Kolmogorov
+bound, the floor held k there (TURB002), and C_f came out at +5.1 %
+with the k residual stalled at 7·10⁻⁶. A finding remains: from the
+free stream of the TMR (ν_t/ν = 0.009) the model keeps the boundary
+layer laminar over the whole plate, because the length scale of the
+weak free stream exceeds the layer and f drives ζ to zero across it, so
+the case starts from a turbulent field.
 
 **The scalar multigrid.** The f equation is symmetric positive definite
 and runs CG with the aggregation multigrid by default
@@ -271,8 +274,8 @@ into the restart file, so a continued run is bit-identical.
 
 | Check | Result |
 |---|---|
-| Channel Re_τ 395, y⁺ 0.27: U_b⁺, `compound` / `low-re` | 17.89 (+1.9 %) / 17.79 (+1.4 %) (band ±3 %) |
-| Plate, `compound`, y⁺ 1: C_f(0.97) against White, 48 / 96 cells across | +5.1 % / +4.7 % (finding, band ±3 %) |
+| Channel Re_τ 395, y⁺ 0.27: U_b⁺, `compound` / `low-re` | 17.87 (+1.8 %) / 17.77 (+1.2 %) (band ±3 %) |
+| Plate, `compound`, y⁺ 1: C_f(0.97) against White, 64 × 48 / 128 × 96 / 256 × 192 cells | +2.0 / +0.03 / −0.4 %, converged (band ±3 %; +5.1 % with the k floor before #141) |
 | Plate from the TMR free-stream values | laminar, C_f = 3.0·10⁻⁴ (finding; turbulent start) |
 | Homogeneous decay: k, ε (C_ε2 = 1.9) and the return of ζ to 2/3, BDF2 | second order (asserted 1.8 to 2.2) |
 | Sustaining terms: k, ε held, ζ = 2/3 and f = 0 a fixed point | to 10⁻¹⁰ |
@@ -304,13 +307,14 @@ the f of k-ε-ζ-f (gallery 73). With N_ζ = 2 its wall value is zero, so
 the stiff wall value −2νζ/y² of f is gone, and with the compound wall
 treatment of the same paper the model is meant to run on any near-wall
 mesh. No code of the author is available, so Foehncraft takes its own
-default, which keeps the constants of the paper (ν_t = (0.09/0.41) ζ k T,
-C_ε1 = 1.4(1 + 0.012/√ζ)) and deviates where the validation asked for it
-(specification 3.3.1): the sign of the (N_ζ − 1) term of the f₀
-equation, which the paper prints the other way round; ε/k in the
-(N_ζ − 1) terms; the k sink k/T_K with the Kolmogorov-bounded k/ε, which
-keeps k positive in laminar regions; and the realizability coefficient
-of T, a = 0.6 √2 instead of 0.6.
+default, which keeps the constants of the paper (ν_t = (0.09/0.41) ζ k T)
+and deviates where the validation asked for it (specification 3.3.1):
+the sign of the (N_ζ − 1) term of the f₀ equation, which the paper
+prints the other way round; ε/k in the (N_ζ − 1) terms; the k sink
+max(k/T_K, 2νk/d²), which is ε at the wall and keeps k positive in
+laminar regions (gallery 141); C_ε1 = 1.4(1 + 0.009/ζ) in place of the
+printed 1.4(1 + 0.012/√ζ); and the realizability coefficient of T,
+a = 0.6 √2 instead of 0.6.
 
 ```toml
 [turbulence]
@@ -325,31 +329,34 @@ the pressure gradient next to the wall (non-equilibrium). ε and P_k of
 the first cell follow from the slope of the blend; k and ζ have zero
 flux through the wall and f₀,w = 0.
 
-**The channel** (`channel_zeta_f0.toml`, Re_τ = 395). U_b⁺ = 17.79, +1.4 %
-from the DNS at first-cell y⁺ 1 (band ±3 %). The same channel at y⁺ 0.3,
-10 and 30: +2.7, −4.2 and −1.5 %; ζ-f with its 2007 treatment gives
-+1.9, −7.1 and +4.8 %. Every run converges.
+**The channel** (`channel_zeta_f0.toml`, Re_τ = 395). U_b⁺ = 17.34, −1.2 %
+from the DNS at first-cell y⁺ 1 (band ±3 %), and 17.54, 17.58, 17.58 on
+two, four and eight times the cells across (+0.2 %, mesh-converged). The
+same channel at y⁺ 10 and 30: −3.4 and −1.2 %; ζ-f with its 2007
+treatment gives −7.1 and +4.8 %. Every run converges.
 
 **The flat plate** (`tmr_plate_zeta_f0.toml`). The run starts from the
 free stream of the TMR (ν_t/ν = 0.009), and the boundary layer turns
-turbulent on its own, which ζ-f does not do. C_f(0.97) = 2.802·10⁻³,
-−2.5 % from White's correlation (+4.1 % from the TMR value of SST); at
-y⁺ 10 and 30 +0.9 and −2.0 %. Every field converges to 10⁻⁷ without a
-positivity floor, at all three y⁺; ζ-f converges at none of them.
+turbulent on its own, which ζ-f does not do. C_f(0.97) = 2.926·10⁻³,
++1.8 % from White's correlation (+8.7 % from the TMR value of SST), and
++0.2 / −0.2 % on the two finer meshes; at y⁺ 10 and 30 −0.3 and −2.7 %.
+Every field converges to 10⁻⁷ without a positivity floor, at all three
+y⁺.
 
 **The backward-facing step** (`backstep_zeta_f0.toml`). Driver &
 Seegmiller (1985), Re_H = 36 000, the step cut out of the box by the
 built-in mesher (`mesh.generate.remove`), the wall from x = −85 H so
 that the boundary layer is about 1.5 H thick at x = −4 H. The
-reattachment length x_r/H is 6.38, +2 % from the experiment's 6.26
-(band ±10 %). With a = 0.6 the realizability bound of T is active in the
+reattachment length x_r/H is 6.44, +3 % from the experiment's 6.26
+(band ±10 %; 6.50 on 32 800 cells). With a = 0.6 the realizability bound of T is active in the
 separated shear layer, halves ν_t there and the bubble grows to 7.4 H;
 ζ-f of 2004 has the same bound and gives 7.82 (+25 %), and 6.80 with `constants = { a = 0.849 }`.
 
 **Three models on the same step** (`examples/studies/backstep/`, the
 fine mesh of 32 800 cells, 3 000 iterations). k-ε with scalable wall
-functions reattaches at 5.36 H (−14 %), k-ε-ζ-f₀ at 6.35 H (+1.5 %) and
-k-ω SST at 6.80 H (+9 %). The streamwise velocity with streamlines, the
+functions reattaches at 5.36 H (−14 %), k-ε-ζ-f₀ at 6.35 H (+1.5 %; 6.50
+H since PR #141, the figures are those of 6d2) and k-ω SST at 6.80 H
+(+9 %). The streamwise velocity with streamlines, the
 line U = 0 in white, the computed reattachment point in red and the
 experiment's in black:
 
@@ -364,10 +371,10 @@ shear layer (0.030), mixes less and has the longest bubble:
 
 | Check | Result |
 |---|---|
-| Channel Re_τ 395, U_b⁺ at first-cell y⁺ 0.3 / 1 / 10 / 30 | +2.7 / +1.4 / −4.2 / −1.5 % (band ±3 % at y⁺ 1) |
-| Plate C_f(0.97) from White at y⁺ 1 / 10 / 30 | −2.5 / +0.9 / −2.0 %, all converged without a floor (band ±3 %) |
+| Channel Re_τ 395, U_b⁺ at first-cell y⁺ 1 / 10 / 30 | −1.2 / −3.4 / −1.2 % (band ±3 % at y⁺ 1); +0.2 % mesh-converged (GCI 0.02 %) |
+| Plate C_f(0.97) from White at y⁺ 1 / 10 / 30 | +1.8 / −0.3 / −2.7 %, all converged without a floor (band ±3 %); GCI 0.20 % |
 | Plate from the TMR free stream | turbulent on its own, the same C_f |
-| Step x_r/H, 8 200 / 32 800 cells | 6.38 (+2 %) / 6.35 (+1.5 %): mesh-independent to 0.5 % (band ±10 %) |
+| Step x_r/H, 8 200 / 32 800 cells | 6.44 (+3 %) / 6.50 (+3.8 %): within 1 % (band ±10 %) |
 | Step x_r/H with a = 0.6 / ζ-f | 7.44 / 7.82 (6.80 with a = 0.849) |
 | Step x_r/H, 32 800 cells: k-ε scalable / ζ-f₀ / SST | 5.36 (−14 %) / 6.35 (+1.5 %) / 6.80 (+9 %); SST 6.81 on 8 200 cells |
 | Step iterations to x_r within 1 %, 8 200 / 32 800 cells (relaxation 0.5, then 0.8 from iteration 100) | k-ε 600 / 1 500, ζ-f₀ 550 / 1 750, SST 600 / 1 750 |
@@ -821,6 +828,96 @@ python3 -m tools.plot.square_duct_fields docs/figures/gallery/square_duct_qcr.pn
 
 ---
 
+<a id="k-sink"></a>
+## 141. The sink of k near walls of the ζ-f models: grid convergence at the wall
+
+**The problem.** The grid-convergence study of the channel (gallery 25,
+PR #128) showed that k-ε-ζ-f₀ did not converge with the mesh below a
+first-cell y⁺ of 1: U_b⁺ rose from 17.79 to 18.39 over four meshes. Its
+sink of k was k/T_K, with T_K = max(k/ε, C_T (ν/ε)^½). The Kolmogorov
+bound keeps 1/T_K finite at the wall, so the sink is linear in k there
+and k falls like y instead of y²; the wall value of ε, 2νk_P/y_P², then
+grows with every refinement. The papers' sink −ε is right at the wall
+but has no positive steady k in a laminar boundary layer, where it held
+k of the ζ-f plate at its floor.
+
+**The sink since PR #141**, for ζ-f and ζ-f₀:
+
+  sink of k = max(k/T_K, 2νk/d²),  d the wall distance.
+
+At the wall k = ε d²/(2ν), so the sink is ε and k falls like y²; away
+from walls 2ν/d² is negligible and the sink is k/T_K, which keeps k
+positive in laminar regions. It has no feedback from ε, unlike the
+blends with −ε that were tried and drove a limit cycle in the wall jet
+of the impinging jet. ζ-f₀ takes C_ε1 = 1.4 (1 + 0.009/ζ) with it: the
+printed 1.4 (1 + 0.012/√ζ) gives U_b⁺ −11 % with a sink that is ε at the
+wall (specification 3.3.2, maintainer decision 2026-11-20).
+
+```toml
+[turbulence]
+model = "k-epsilon-zeta-f0"
+k_sink = "wall"          # default; "epsilon" (the papers' −ε), "kolmogorov" (k/T_K, 6d2)
+# constants = { c_epsilon1_zeta = 0.009, c_epsilon1_power = 1.0 }   # the defaults of ζ-f₀
+```
+
+**The flat plate with ζ-f.** k on the TMR plate near the leading edge:
+with −ε (top) k sits at its floor of 10⁻⁹ U∞² from x = 0.03 to 0.24
+and the run stops at its iteration limit; with the new sink (bottom) k
+grows smoothly from the leading edge, the run converges in 1 364
+iterations and C_f(0.97) moves from +5.1 % to +2.0 % of White's
+correlation (+0.03 % on 128 × 96 cells):
+
+<img src="../figures/gallery/zeta_f_sink_plate.png" alt="Two panels of k over U-infinity squared on a log colour scale from 10 to the minus 9 to 3 times 10 to the minus 3, on the TMR flat plate from x = -0.05 to 1 m and y up to 0.02 m. Top, with the sink minus epsilon: a black band of k at its floor along the plate from x = 0.03 to 0.24, then a turbulent boundary layer. Bottom, with the new wall sink: the boundary layer grows from the leading edge without the black band" width="800" height="368">
+
+**The wall layer of the impinging jet with ζ-f₀.** k within 0.012 D of
+the plate, from the axis to r/D = 1.5, on a log scale. With k/T_K (top)
+k of the wall cell stays near 10⁻³ U_b²; with the new sink (bottom) it
+falls to 3·10⁻⁵, k falls like y² to the wall, and the buffer layer above
+holds more k:
+
+<img src="../figures/gallery/zeta_f_sink_jet.png" alt="Two panels of k over U_b squared on a log colour scale from 10 to the minus 5 to 2 times 10 to the minus 2, in the wall layer of the impinging jet from r/D = 0 to 1.5 and up to 0.012 D above the plate. Top, with the sink k over T_K: k stays near 10 to the minus 3 down to the wall cell. Bottom, with the new wall sink: k falls to about 10 to the minus 5 at the wall and the layer above holds slightly more k" width="800" height="400">
+
+The jet converges with the mesh with the new sink (Nu₀ 198, 196, 196 on
+2 600, 10 400 and 41 600 cells, GCI 0.01 %; before 166, 157, 152, GCI
+7.2 %), but Nu₀ is +38 % from the experiment's 141 (finding): the k of
+the buffer layer near the stagnation point raises the heat transfer.
+ζ-f₀ has no production limiter at stagnation points; one is a follow-up.
+
+| Check | Result |
+|---|---|
+| Channel Re_τ 395, ζ-f₀, 48 / 96 / 192 / 384 cells across (first-cell y⁺ 1 to 0.1) | U_b⁺ 17.34 / 17.54 / 17.58 / 17.58: p 2.2, GCI 0.02 %, +0.2 % from the DNS (before 17.79 to 18.39, divergent) |
+| Channel, ζ-f, 96 to 768 cells across | 17.87 / 17.90 / 17.91 / 17.91: p 2.8, +2.1 % (before the finest did not converge) |
+| Plate C_f(0.97), ζ-f₀ / ζ-f, 64 × 48 to 256 × 192 cells | +1.8 / +0.2 / −0.2 % (GCI 0.20 %) / +2.0 / +0.03 / −0.4 % (GCI 0.15 %), all converged |
+| Step x_r/H, ζ-f₀, 8 200 / 32 800 cells | 6.44 / 6.50 (+3 / +3.8 %; before 6.38) |
+| Jet Nu₀, ζ-f₀, three meshes | 198 / 196 / 196, GCI 0.01 % (finding: +38 %) |
+| First-cell y⁺ 10 / 30, ζ-f₀ | channel −3.4 / −1.2 %, plate −0.3 / −2.7 % |
+| The sink at the wall and away from it | ε at the wall to 1 %, k/T_K away (kernel test `wall_sink_is_epsilon_at_the_wall_and_k_over_t_away_from_it`) |
+| Free stream (sustaining terms) | held for every sink: the ambient source is the sink at the ambient state |
+| `k_sink` with EB, `c_epsilon1_power` other than 1 or ½ | CASE005, CASE004 (`bad_zeta_f0_input_is_refused`) |
+
+| | |
+|---|---|
+| Code | kernels `turb::zeta_f` (`k_sink_rate`, `K_SINK_*`, `ZetaFConstants::c_e1_power`), `entry` (`ZetaFCellArgs::dist`); `foehncraft_flow::turbulence` (`KSink`, the wall distance of the cells) |
+| Tests | kernel tests of `turb::zeta_f`, `tests/zeta_f.rs`, `tests/zeta_f0.rs`, `tests/coupled.rs`, `tests/impinging_jet.rs` |
+| Case files | `flow/channel_zeta_f0.toml`, `flow/channel_zeta_f.toml` (both now coupled), `flow/tmr_plate_zeta_f0.toml`, `flow/tmr_plate_zeta_f.toml`, `flow/impinging_jet.toml` (inlet table remade) |
+| Study | `examples/studies/plate_channel_gci.py` (channel with the coupled algorithm, at most 3 000 iterations) |
+| Figures | `tools/plot/zeta_f_sink_fields.py` |
+| Recipe | [141](../recipes/turbulence.md#k-sink) |
+
+```
+target/release/foehn flow examples/cases/flow/tmr_plate_zeta_f.toml --out output/pl_eps \
+    --set output.vtkhdf=true --set turbulence.k_sink=\"epsilon\" \
+    --set solver.max_iterations=3000 --set verification.require_convergence=false
+target/release/foehn flow examples/cases/flow/tmr_plate_zeta_f.toml --out output/pl_wall \
+    --set output.vtkhdf=true
+target/release/foehn flow examples/cases/flow/impinging_jet.toml --out output/jet_kol \
+    --set output.vtkhdf=true --set turbulence.k_sink=\"kolmogorov\" \
+    --set turbulence.constants.c_epsilon1_zeta=0.012 --set turbulence.constants.c_epsilon1_power=0.5
+target/release/foehn flow examples/cases/flow/impinging_jet.toml --out output/jet_wall \
+    --set output.vtkhdf=true
+python3 -m tools.plot.zeta_f_sink_fields plate docs/figures/gallery/zeta_f_sink_plate.png output/pl_eps output/pl_wall
+python3 -m tools.plot.zeta_f_sink_fields jet docs/figures/gallery/zeta_f_sink_jet.png output/jet_kol output/jet_wall
+python3 examples/studies/plate_channel_gci.py output/gci --cases channel --levels 0,1,2,3
 <a id="outlet-backflow"></a>
 ## 140. Turbulence of the backflow at a pressure outlet: an outlet inside the recirculation
 

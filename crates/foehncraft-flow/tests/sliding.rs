@@ -710,6 +710,7 @@ fn turbulent_spin_up_agrees_with_a_fixed_mesh() {
 /// the imprinted one (the patch in the rotor) it arrives at the opposite
 /// side as the same patch decays at rest, and leaves its start empty. The
 /// patch lags the turn by the velocity error of the coarse mesh (3 % here).
+/// The imprinted run takes half the time step (see below).
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn turbulence_is_carried_by_the_rotor() {
@@ -739,9 +740,14 @@ fn turbulence_is_carried_by_the_rotor() {
             .replace("rotor_layers = 4\n", "")
             .replace("steps = 510", "steps = 16"),
     );
+    // half the step of the conformal run (Courant number 0.85): at 1.7 the
+    // rotor of the imprinted mesh drives ζ of k-ε-ζ-f₀ to its cap and the
+    // run diverges in step 8 with any sink of k that is ε at the wall
+    // (`"wall"` since #141, the papers' `"epsilon"`); k/T_K
+    // (`"kolmogorov"`) held at 1.7 (finding of #141)
     let imprinted = parse(&solid(imprint_text()).replace(
         "time_step = 0.02\nsteps = 500",
-        "time_step = 0.019634954084936207\nsteps = 16",
+        "time_step = 0.009817477042468103\nsteps = 32",
     ));
     let mut rest = conformal.clone();
     rest.sliding.clear();

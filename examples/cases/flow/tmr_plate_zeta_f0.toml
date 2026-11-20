@@ -9,14 +9,15 @@
 # first-cell y⁺ 1 at x = 0.97). Unlike ζ-f, the run starts from the TMR
 # free-stream values themselves (ν_t/ν = 0.009): the boundary layer turns
 # turbulent on its own, and every field, k included, converges to the
-# tolerance (the k sink k/T_K keeps k positive in the laminar part near
-# the leading edge, where −ε held k at its floor).
+# tolerance (the k sink max(k/T_K, 2νk/d²) keeps k positive in the
+# laminar part near the leading edge, where −ε held k at its floor, and
+# is ε at the wall, so that the wall value of ε converges with the mesh).
 #
-# Result: C_f(0.97) = 2.802·10⁻³, −2.5 % from White's correlation
-# (2.875·10⁻³; +4.1 % from the TMR value of SST, 2.6907·10⁻³), converged
-# in about 630 iterations. First cell at y⁺ 10 / 30: +0.9 % / −2.0 % from
-# White, converged in 380 and 240 iterations (ζ-f converges at none of
-# the three).
+# Result: C_f(0.97) = 2.926·10⁻³, +1.8 % from White's correlation
+# (2.875·10⁻³; +8.7 % from the TMR value of SST, 2.6907·10⁻³), converged
+# in about 700 iterations. On 128 × 96 and 256 × 192 cells: 2.881·10⁻³
+# and 2.869·10⁻³ (+0.2 %, −0.2 %; GCI 0.2 %). First cell at y⁺ 10 / 30:
+# −0.3 % / −2.7 % from White.
 
 case_format = "0.6"
 

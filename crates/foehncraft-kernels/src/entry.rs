@@ -2175,6 +2175,8 @@ pub struct ZetaFCellArgs {
     pub g2: Raw<f64>,
     /// ∇·(ν_t/σ_k ∇k) per cell (with `grad_k`).
     pub dkt: Raw<f64>,
+    /// The wall distance per cell.
+    pub dist: Raw<f64>,
 }
 
 /// The k-ε-ζ-f model per cell ([`crate::turb::zeta_f::zeta_f_cell`]).
@@ -2216,6 +2218,11 @@ impl Entry for ZetaFCells {
                     ld(a.dkt.get(), c)
                 } else {
                     0.0
+                },
+                d: if a.dist.len > 0 {
+                    ld(a.dist.get(), c)
+                } else {
+                    1e10
                 },
             };
             let r = crate::turb::zeta_f::zeta_f_cell(&inp, &a.c, &a.o);

@@ -365,7 +365,9 @@ Hanjalić, Popovac & Hadžiabdić (2004); constants of the paper ◇.
   `zeta`, in (0, 2]); f starts at 0; a two-equation restart continues
   with ζ = 2/3, f = 0. Findings of the flat plate (section 9.3): +5 %
   C_f, laminar from the TMR free stream, the k floor near the leading
-  edge.
+  edge. *Since #141* the sink of k is that of 3.3.2, which removes the
+  k floor: the plate converges, C_f +2.0 % (64 × 48) and +0.03 %
+  (128 × 96) from White.
 
 #### 3.3.1 k-ε-ζ-f₀ (Popovac 2023), part 6d2
 
@@ -393,12 +395,13 @@ fits the validation).* The deviations from the paper:
    the wall; with ε/k the wall value f₀,w = 0 is consistent with the
    balance of ζ at the wall, where ε/k = 2ν/y²; the Kolmogorov-bounded 1/T
    is small there and leaves ζ without its wall sink.
-3. *Sink of k: k/T_K with T_K = max(k/ε, C_T (ν/ε)^½)*, in place of −ε.
-   With −ε the laminar leading edge of the flat plate holds k at its
-   floor (the finding of 6d) and the k residual stalls; with k/T_K every
-   field of the plate converges to 10⁻⁷ without a floor. The
-   realizability bound of T is left out of T_K: with it the plate
-   relaminarizes and the channel gives U_b⁺ +30 %.
+3. *Sink of k: max(k/T_K, 2νk/d²)* (3.3.2; until #141 k/T_K alone),
+   T_K = max(k/ε, C_T (ν/ε)^½), in place of −ε. With −ε the laminar
+   leading edge of the flat plate holds k at its floor (the finding of
+   6d) and the k residual stalls; with k/T_K every field of the plate
+   converges to 10⁻⁷ without a floor. The realizability bound of T is
+   left out of T_K: with it the plate relaminarizes and the channel gives
+   U_b⁺ +30 %.
 4. *Realizability bounds of T and L* take C_μ/ζ_eq = 0.2195, consistent
    with ν_t, not C_μ = 0.09.
 5. *Realizability coefficient of T: a = 0.6 √2 = 0.849* (key `a`), in
@@ -409,18 +412,58 @@ fits the validation).* The deviations from the paper:
    0.849 the bound no longer acts in the shear layer (a = 1.2 gives the
    same x_r) and x_r/H is 6.38; the channel moves by 0.1 %, C_f of the
    plate by +1.5 %.
+6. *C_ε1 = 1.4 (1 + 0.009/ζ)* (#141, `c_epsilon1_zeta = 0.009`,
+   `c_epsilon1_power = 1`), in place of the printed 1.4 (1 + 0.012/√ζ).
+   With the sink of 3.3.2 the printed form gives U_b⁺ −11 % in the
+   channel; 1.4 (1 + 0.038/√ζ) meets the channel but moves x_r/H of the
+   step to 7.18, since √ζ is not small in the shear layer. The 1/ζ form
+   acts only near the wall. `c_epsilon1_power = 0.5` restores the
+   printed form.
 
 The model as printed (deviations 1 and 4 only) gave U_b⁺ −11 % in the
 channel; the cause is C_ε1 with √ζ, which the paper keeps (the 1/ζ form
-of 2004 gave +8.5 % and did not converge). Results of the default
-(sections 9.3 to 9.5): channel U_b⁺ +2.7 / +1.4 / −4.2 / −1.5 % at
-first-cell y⁺ 0.3 / 1 / 10 / 30; flat plate C_f(0.97) −2.5 / +0.9 /
-−2.0 % from White's correlation at y⁺ 1 / 10 / 30 (+4.1 / +7.8 / +4.7 %
-from the TMR value of SST), all converged without a floor, and the
+of 2004 with 0.012 gave +8.5 % and did not converge with the sink
+k/T_K). Results of the default since #141 (sections 9.3 to 9.6): channel
+U_b⁺ 17.34 / 17.54 / 17.58 / 17.58 on 48 / 96 / 192 / 384 cells across
+(first-cell y⁺ 1 to 0.1; +0.2 % from the DNS, observed order 2.2), −3.4
+/ −1.2 % at first-cell y⁺ 10 / 30; flat plate C_f(0.97) +1.8 / +0.2 /
+−0.2 % from White's correlation on 64 × 48 / 128 × 96 / 256 × 192 cells,
+−0.3 / −2.7 % at y⁺ 10 / 30, all converged without a floor, and the
 boundary layer turns turbulent from the TMR free stream on its own (ζ-f
-stays laminar); backward-facing step x_r/H = 6.38 (+2 %). Keys: `constants.n_zeta` and
-`constants.c_epsilon1_zeta` (C''ε1); both ζ-f models take
-`c_epsilon1_zeta`.
+stays laminar); backward-facing step x_r/H = 6.42 (+3 %); impinging jet
+Nu₀ 196, mesh-converged, +38 % from the experiment (finding: the
+excess of k at the stagnation point, which ζ-f₀ has no limiter for).
+Until #141 (the sink k/T_K and the printed C_ε1) the channel drifted
+from 17.79 to 18.39 over four meshes (+1.4 % on 48 cells). Keys:
+`constants.n_zeta`, `constants.c_epsilon1_zeta` (C''ε1) and
+`constants.c_epsilon1_power`; both ζ-f models take `c_epsilon1_zeta` and
+`turbulence.k_sink`.
+
+#### 3.3.2 The sink of k near walls (#141, maintainer decision 2026-11-20)
+
+The level-3 channel of the grid-convergence study (#128) showed that
+ζ-f₀ with the sink k/T_K does not converge with the mesh: U_b⁺ rose
+from 17.79 to 18.39 over 48 to 384 cells across. A sink linear in k
+with a rate that stays finite at the wall (1/T_K → 1/(C_T √(ν/ε)))
+lets k fall like y instead of y², and the wall value ε_w = 2νk_P/y_P²
+then grows like 1/y_P with every refinement. A sink that tends to ε at
+the wall restores k ~ y². Both ζ-f models therefore take
+
+  sink of k = k · max(1/T_K, 2ν/d²),  d the wall distance,
+
+which is ε at the wall (k = ε y²/(2ν) there) and k/T_K away from walls,
+where 2ν/d² is negligible. Unlike −ε or a blend with ε, it has no
+feedback from ε: the forms max(k/T_K, min(ε, 2νk/d²)) and the blend
+with w = min(1, 2νk/(d²ε)) met the channel and the plate but drove a
+limit cycle (period about 80 iterations) in the near-laminar wall jet of
+the impinging jet. The ambient (sustaining) source of k is the sink at
+the ambient state, so the free stream holds its k for every form.
+
+`turbulence.k_sink`: `"wall"` (the default), `"epsilon"` (−ε, the
+papers), `"kolmogorov"` (k/T_K, the default of 6d2 to #140). EB takes
+−ε and refuses the key. ζ-f (2004) gains as well: with −ε its plate
+stopped at the k floor near the leading edge, with the new sink it
+converges (C_f +2.0 / +0.03 % from White on 64 × 48 / 128 × 96).
 
 ### 3.4 Elliptic-blending k-ε (D133)
 
@@ -1531,7 +1574,7 @@ only on the maintainer's go. Branch names from the task (project rule).
 | 6b | k-ω SST 2003 with the three production options, low-re and automatic treatments, rough walls (Aupoix), inlet turbulence, TURB codes, log columns, p̂; the optional PDE wall distance with the key `turbulence.wall_distance` (the exact distance of 6a is the default); the invariant features of D166 as named expression variables (same definitions as the D106 export) (done, PR #68: the features as the derived field `turbulence-features`; their names in the expression language come with the first consumer, D104; the SST MMS moves to 6g; turbulence values of the backflow at outlets later, BC028, done in PR #140) | `foehncraft-kernels/src/turb/{mod,invariants,sst,wall}.rs`, `foehncraft-flow/src/turbulence/{mod,wall,inlet}.rs` | 9.2 decay (SST), 9.3 flat plate, 9.4 channel (SST) |
 | 6c | Standard and realizable k-ε, scalable and standard wall functions, compound treatment for the k-ε family, Cebeci–Bradshaw roughness (done, PR #71: compound claimed from y⁺ 30 for the k-ε family, owner decision; Durbin bound and Picard ε destruction as defaults; findings: realizable 3–7 % low friction, rough pipe against Colebrook in 4.5 and 9.7) | `turb/keps.rs`, `turb/wall.rs` | 9.2, 9.3, 9.4 for the k-ε family, rough pipe and Moody study |
 | 6d | k-ε-ζ-f with the compound treatment (Popovac & Hanjalić 2007; Popovac 2023 refinements as decided then), elliptic solver path (CG + AMG), the AMG preconditioner for the scalar equations (D36; 6a solves them with Jacobi-preconditioned BiCGStab, enough for the laminar cases) (done, PR #73: channel +1.9 % / +1.4 %; findings on the plate: +5 % C_f, laminar from the TMR free stream, the k floor near the leading edge; the elliptic solve lives in `turbulence/mod.rs`) | `turb/zeta_f.rs`, `foehncraft-flow/src/turbulence/elliptic.rs` | 9.2, 9.3, 9.4 incl. near-wall profiles |
-| 6d2 | ζ-f₀ of Popovac (2023) with its compound treatment (maintainer decision 2026-11-17: robustness in y⁺ for industrial use) (done, PR #74: no code of the author available, own default of 3.3.1; channel +2.7 to −4.2 % and plate within 2.5 % of White over y⁺ 0.3 to 30, all converged; backward-facing step x_r/H 6.38 (+2 %; ζ-f +25 %, SST −7 %); the built-in mesher removes boxes, `mesh.generate.remove`) | `turb/zeta_f.rs`, `turb/wall.rs` | 9.3 and 9.4 over first-cell y⁺ 0.5 to 100, same or similar results as ζ-f |
+| 6d2 | ζ-f₀ of Popovac (2023) with its compound treatment (maintainer decision 2026-11-17: robustness in y⁺ for industrial use) (done, PR #74: no code of the author available, own default of 3.3.1; channel +2.7 to −4.2 % and plate within 2.5 % of White over y⁺ 0.3 to 30, all converged; backward-facing step x_r/H 6.38 (+2 %; ζ-f +25 %, SST −7 %); the built-in mesher removes boxes, `mesh.generate.remove`; #141: the wall sink of k of 3.3.2 and C_ε1 = 1.4 (1 + 0.009/ζ), channel mesh-converged at +0.2 % from the DNS) | `turb/zeta_f.rs`, `turb/wall.rs` | 9.3 and 9.4 over first-cell y⁺ 0.5 to 100, same or similar results as ζ-f |
 | 6e | EB k-ε (D133) (done, PR #88: channel C_f at 97.8 / 99.0 / 99.1 % of the DNS at Re_τ 180 / 395 / 590, the paper 100 / 98 / 100 %; plate +0.5 % from White; step x_r/H 7.59, +21 %, finding: the variable C*_ε2, 6.24 with it constant; the coupled algorithm does not converge the step; wall normal not yet exported) | `turb/eb.rs` | 9.4 at Re_τ = 395 against the paper first, then 9.2–9.4 |
 | 6f | Thermal wall treatment and Pr_t (D135) on passive scalars (done, PR #85; the default wall law is `kader` also with `low-re`, equal to `none` there; the channel Nu against DNS is open) | `turb/thermal.rs` | 9.2 wall-function functions, St on the flat plate, channel Nu, heated pipe against Gnielinski |
 | 6g | Validation cases: backward-facing step, impinging jet; MRF (D55) with Taylor–Couette, then the sliding mesh in both variants (D182); statistics (D71) and derived fields (D72) of the turbulence models; GPU parity notebook; GCI reports (in several PRs; part 1 done, PR #89: the backward-facing step in the TMR layout, six models on three meshes, the reattachment point as a wall crossing `[[output.wall_crossings]]` with its GCI; part 2 done, PR #90: the impinging jet, the inlet table with turbulence columns, wall probes with scalars, the thermal law in u*, the comparison with the experiment once its data are in, made in part 4; part 3 done, PR #91: the full stress on symmetry and wedge planes, the axis cells of the jet; part 4 done, PR #92: the jet against the ERCOFTAC data of case 025, the comparison with the bands of 9.6, `ercoftac_to_csv.py`; part 5 done, PR #94: the moving reference frame (D55), `[[mrf]]`, `[mesh.annulus]`, laminar Taylor–Couette flow against the analytic solution in any frame, `crates/foehncraft-flow/src/frame.rs`, `tests/mrf.rs`, `taylor_couette_mrf.toml`; part 6 done, PR #95: the sliding mesh with conformal stepping (D56, variant A of D182), `[[sliding]]`, `crates/foehncraft-flow/src/sliding.rs`, `tests/sliding.rs`, `taylor_couette_sliding.toml`; part 7 done, PR #96: the sliding mesh by imprinting (variant B of D182), `[[sliding]] rotor_interface`, `[mesh.annulus] n_theta_stator`, `crates/foehncraft-mesh/src/imprint.rs`, `taylor_couette_imprint.toml`; PR #97: the rebuild of every step and its multigrid setup made cheaper; PR #98: walls of a turning zone move normal to themselves with it, the stirred vessel with blades and baffles in both methods, field figures, `examples/studies/mixer.py`, `tools/plot/rotor_fields.py`; PR #99: the fields of rotating machinery of D183, relative and frame velocity, cylindrical components, flow angles, relative total pressure, rothalpy; PR #100: turbulence on the frame and both sliding meshes, the wall distance of a turning rotor `crates/foehncraft-mesh/src/query/turning.rs`, the turbulent stirred vessel; PR #108: the derived fields of D72 for the turbulence models, `turbulence-scales`, `reynolds-stress`, `wall-normal`, `turbulence-wall`, spec 2.3 except the blending weight, which PR #130 adds as the dataset `blending` of `turbulence-wall`; PR #109: the GPU parity notebook `tools/notebooks/stage6_colab.ipynb` with `tools/bench/stage6_cloud.py`, 14 cases, the T4 run by the maintainer; PR #110: the statistics of D71, `[output.statistics]`, time means, RMS, covariances and phase averages of fields, probes and coefficients, batch means of whole periods with the von Neumann test, `cylinder_re100_statistics.toml`, `tests/statistics.rs`) | cases, gallery, `tools/notebooks/stage6_colab.ipynb`; `examples/cases/flow/backstep_validation.toml`, `examples/studies/backstep_validation.py`; `examples/cases/flow/{jet_pipe_profile,impinging_jet}.toml`, `examples/studies/impinging_jet.py`, `python/foehncraft/profiles.py`; `foehncraft-kernels/src/flow.rs`, `tests/symmetry_stress.rs` | 9.5, 9.6, 9.7, 6.6 |

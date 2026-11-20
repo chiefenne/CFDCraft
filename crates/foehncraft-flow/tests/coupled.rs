@@ -496,18 +496,16 @@ fn failed_multigrid_setup_falls_back_to_bicgstab() {
 }
 
 /// The turbulence equations take the step min(Δτ, c_T T) with the coupled
-/// algorithm (D178): the channel of the gallery meets its band in a
-/// fraction of the iterations of SIMPLEC (about 2 100).
+/// algorithm (D178): the channel of the gallery (coupled since #141)
+/// meets its band in a fraction of the iterations of SIMPLEC (about
+/// 2 100).
 #[test]
 #[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
 fn coupled_channel_meets_its_band() {
     let text = std::fs::read_to_string(cases().join("channel_zeta_f0.toml"))
         .unwrap()
-        .replace("\r\n", "\n")
-        .replace(
-            "max_iterations = 5000",
-            "max_iterations = 5000\nalgorithm = \"coupled\"",
-        );
+        .replace("\r\n", "\n");
+    assert!(text.contains("algorithm = \"coupled\""));
     let r = run_case(&FlowCase::from_toml(&text, &cases()).unwrap(), "channel");
     assert!(r.failures.is_empty(), "{:?}", r.failures);
     let f = r.solves[0].periodic[0].driving_force;
@@ -539,10 +537,8 @@ fn turbulence_multigrid_gives_the_same_result() {
             .unwrap()
             .replace("\r\n", "\n")
             .replace(
-                "tolerance = 1e-6\nmax_iterations = 5000",
-                &format!(
-                    "tolerance = 1e-10\nmax_iterations = 5000\nalgorithm = \"coupled\"\n{extra}"
-                ),
+                "tolerance = 1e-6\nmax_iterations = 1000",
+                &format!("tolerance = 1e-10\nmax_iterations = 5000\n{extra}"),
             );
         let r = run_case(&FlowCase::from_toml(&text, &cases()).unwrap(), name);
         assert!(r.failures.is_empty(), "{name}: {:?}", r.failures);
@@ -607,8 +603,8 @@ fn turbulence_multigrid_restart_continues_bit_identically() {
             .unwrap()
             .replace("\r\n", "\n")
             .replace(
-                "tolerance = 1e-6\nmax_iterations = 5000",
-                "tolerance = 1e-14\nmax_iterations = 60\nalgorithm = \"coupled\"",
+                "tolerance = 1e-6\nmax_iterations = 1000",
+                "tolerance = 1e-14\nmax_iterations = 60",
             );
         FlowCase::from_toml(
             &format!("{text}\n[run]\n{run}\n[verification]\nrequire_convergence = false\n"),

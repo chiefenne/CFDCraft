@@ -9,15 +9,20 @@
 # 17.55/√F follows from the driving force F in the log (u_τ = √(F h/ρ)).
 #
 # ζ-f₀ solves f₀ = f + ζ/T, which is zero at the wall, instead of the f of
-# 2004, whose wall value −2νζ/y² is stiff. The default of Foehncraft keeps
-# the published constants and takes the sink k/T_K of k, T_K the time
-# scale with the Kolmogorov bound (docs/requirements/stage6-turbulence.md
-# 3.3.1).
+# 2004, whose wall value −2νζ/y² is stiff. The sink of k is
+# max(k/T_K, 2νk/d²), d the wall distance and T_K the time scale with its
+# Kolmogorov bound: it is ε at the wall, so that k falls like y² and the
+# wall value of ε converges with the mesh, and k/T_K away from walls
+# (`turbulence.k_sink`, docs/requirements/stage6-turbulence.md 3.3.2).
+# C_ε1 = 1.4 (1 + 0.009/ζ) replaces the printed 1.4 (1 + 0.012/√ζ).
 #
-# Result: U_b⁺ = 17.79, +1.4 % from the DNS of Moser, Kim & Mansour (band
-# ±3 %), in about 2 100 iterations. With the first cell at y⁺ 0.3 / 10 /
-# 30: +2.7 % / −4.2 % / −1.5 % (ζ-f with its 2007 treatment: +1.9 % /
-# −7.1 % / +4.8 %).
+# The coupled algorithm (D178) converges the case in about 230
+# iterations, against 2 100 with SIMPLEC, with the same U_b⁺.
+#
+# Result: U_b⁺ = 17.34, −1.2 % from the DNS of Moser, Kim & Mansour (band
+# ±3 %). On 96, 192 and 384 cells across: 17.54, 17.58, 17.58 (+0.2 %;
+# examples/studies/plate_channel_gci.py). With the first cell at y⁺ 10 /
+# 30: −3.4 % / −1.2 % (ζ-f with its 2007 treatment: −7.1 % / +4.8 %).
 
 case_format = "0.6"
 
@@ -57,8 +62,9 @@ type = "symmetry"
 type = "symmetry"
 
 [solver]
+algorithm = "coupled"
 tolerance = 1e-6
-max_iterations = 5000
+max_iterations = 1000
 
 [output]
 vtkhdf = false

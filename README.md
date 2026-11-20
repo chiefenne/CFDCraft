@@ -72,7 +72,9 @@ Everything below is on `main`, verified by the cases of the
   k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004), k-ε-ζ-f₀ (Popovac 2023)
   and the elliptic-blending k-ε; wall treatments `low-re`, `automatic`,
   `scalable`, `standard`, `compound` and `compound-2023`, rough walls; the
-  exact wall distance; the curvature and rotation correction of SST
+  exact wall distance; a sink of k for the ζ-f models that is ε at the
+  wall, so their results converge with the mesh; the curvature and
+  rotation correction of SST
   (Smirnov & Menter 2009), a whole domain in a turning frame, and the
   quadratic constitutive relation QCR2000/QCR2013 for the secondary flow
   of non-circular ducts. Validated

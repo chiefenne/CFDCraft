@@ -53,7 +53,8 @@ fn small_channel(extra: &str) -> String {
     text("channel_zeta_f0.toml")
         .replace("cells = [2, 48, 1]", "cells = [2, 24, 1]")
         .replace("ratio = 27.32", "ratio = 8.0")
-        .replace("max_iterations = 5000", "max_iterations = 30")
+        .replace("algorithm = \"coupled\"\n", "")
+        .replace("max_iterations = 1000", "max_iterations = 30")
         + "\n[verification]\nrequire_convergence = false\n"
         + extra
 }
@@ -184,10 +185,23 @@ fn bad_zeta_f0_input_is_refused() {
         "model = \"k-epsilon-zeta-f\"\nconstants = { n_zeta = 2.0 }",
     ));
     assert_eq!(code, "CASE002", "{msg}");
+    // the sink of k is an option of the ζ-f models, not of EB (#141)
+    let (code, msg) = refused(&t.replace(
+        "model = \"k-epsilon-zeta-f0\"\nwall_treatment = \"compound-2023\"",
+        "model = \"elliptic-blending-k-epsilon\"\nwall_treatment = \"compound\"\nk_sink = \"epsilon\"",
+    ));
+    assert_eq!(code, "CASE005", "{msg}");
+    // C_ε1″/ζ^power with the power 1 or ½ only
+    let (code, msg) = refused(&t.replace(
+        "model = \"k-epsilon-zeta-f0\"",
+        "model = \"k-epsilon-zeta-f0\"\nconstants = { c_epsilon1_power = 0.7 }",
+    ));
+    assert_eq!(code, "CASE004", "{msg}");
     let r = run_case(
         &parse(&t.replace(
             "model = \"k-epsilon-zeta-f0\"",
-            "model = \"k-epsilon-zeta-f0\"\nconstants = { n_zeta = 2.0, c_epsilon1_zeta = 0.012 }",
+            "model = \"k-epsilon-zeta-f0\"\nk_sink = \"kolmogorov\"\n\
+             constants = { n_zeta = 2.0, c_epsilon1_zeta = 0.012, c_epsilon1_power = 0.5 }",
         )),
         "constants",
     );

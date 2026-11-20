@@ -272,6 +272,38 @@ pub enum WallDistanceMethod {
     Pde,
 }
 
+/// `turbulence.k_sink`: the sink of the k equation of k-ε-ζ-f and
+/// k-ε-ζ-f₀ (stage 6 specification 3.3.2).
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum KSink {
+    /// max(k/T_K, 2νk/d²), T_K = max(k/ε, C_T (ν/ε)^½), d the wall
+    /// distance: ε at the wall, so that k vanishes like y² and the results
+    /// converge with the mesh; k/T_K away from walls, which keeps k
+    /// positive in laminar regions.
+    #[default]
+    Wall,
+    /// ε, as printed in the papers (Hanjalić et al. 2004; Popovac 2023):
+    /// holds k at its floor at a laminar leading edge.
+    Epsilon,
+    /// k/T_K (the ζ-f₀ default of 6d2): k vanishes like y only, results
+    /// drift with refinement below y⁺ 1.
+    Kolmogorov,
+}
+
+impl KSink {
+    /// The kernel code.
+    pub fn code(self) -> u32 {
+        match self {
+            Self::Wall => foehncraft_kernels::turb::zeta_f::K_SINK_WALL,
+            Self::Epsilon => foehncraft_kernels::turb::zeta_f::K_SINK_EPSILON,
+            Self::Kolmogorov => foehncraft_kernels::turb::zeta_f::K_SINK_KOLMOGOROV,
+        }
+    }
+}
+
 /// `solver.turbulence.destruction`.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
@@ -336,15 +368,18 @@ pub struct TurbulenceSection {
     /// (specification 3.6, D170; constants `c_cr1`, `c_cr2`), an explicit
     /// non-linear stress in the momentum equations.
     pub qcr: QcrMode,
+    /// k-ε-ζ-f and k-ε-ζ-f₀: the sink of k (default `wall`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub k_sink: Option<KSink>,
     /// Constant overrides by their literature name (SST: `beta_star`, `a1`,
     /// `kappa`, `gamma1`, `gamma2`, `beta1`, `beta2`, `sigma_k1`,
     /// `sigma_k2`, `sigma_omega1`, `sigma_omega2`, and `c_r1`, `c_r2`,
     /// `c_r3` of the curvature correction, `c_cr1`, `c_cr2` of the QCR; k-ε: `c_mu`,
     /// `c_epsilon1`, `c_epsilon2`, `sigma_k`, `sigma_epsilon`, `a0`,
     /// `kappa`; k-ε-ζ-f and ζ-f₀: `c_mu`, `c_epsilon1`,
-    /// `c_epsilon1_zeta`, `c_epsilon2`, `c_1`, `c_2`, `sigma_k`,
-    /// `sigma_epsilon`, `sigma_zeta`, `a`, `c_t`, `c_l`, `c_eta`, `kappa`,
-    /// `n_zeta` (ζ-f₀ only); the elliptic-blending k-ε: `c_mu`, `c_epsilon1` …
+    /// `c_epsilon1_zeta`, `c_epsilon1_power` (1 or ½), `c_epsilon2`, `c_1`,
+    /// `c_2`, `sigma_k`, `sigma_epsilon`, `sigma_zeta`, `a`, `c_t`, `c_l`,
+    /// `c_eta`, `kappa`, `n_zeta` (ζ-f₀ only); the elliptic-blending k-ε: `c_mu`, `c_epsilon1` …
     /// `c_epsilon4`, `c_1`, `c_2`, `sigma_k`, `sigma_epsilon`, `sigma_phi`,
     /// `a`, `c_t`, `c_l`, `c_eta`, `kappa`, where `c_epsilon4 = 1.83`
     /// makes C*_ε2 constant); TURB007.
@@ -365,6 +400,7 @@ impl Default for TurbulenceSection {
             wall_distance: WallDistanceMethod::Exact,
             curvature_correction: false,
             qcr: QcrMode::None,
+            k_sink: None,
             constants: BTreeMap::new(),
         }
     }
@@ -418,6 +454,7 @@ pub const ZETA_F_CONSTANTS: &[&str] = &[
     "c_eta",
     "kappa",
     "n_zeta",
+    "c_epsilon1_power",
 ];
 
 /// The names of the elliptic-blending k-ε constants that
@@ -579,6 +616,7 @@ impl TurbulenceSection {
                 "c_eta" => &mut c.c_eta,
                 "kappa" => &mut c.kappa,
                 "n_zeta" if f0 => &mut c.n_zeta,
+                "c_epsilon1_power" if !eb => &mut c.c_e1_power,
                 _ => {
                     let hint = crate::bc::did_you_mean(name, names.iter().copied())
                         .map(|h| format!(" (did you mean `{h}`?)"))
@@ -604,6 +642,16 @@ impl TurbulenceSection {
             );
             *slot = v;
         }
+        if !eb {
+            c.k_sink = self.k_sink.unwrap_or_default().code();
+        }
+        crate::need!(
+            c.c_e1_power == 1.0 || c.c_e1_power == 0.5,
+            CASE_RANGE,
+            "[turbulence.constants] c_epsilon1_power must be 1 (C_ε1 = C_ε1′(1 + C_ε1″/ζ)) \
+             or 0.5 (C_ε1″/√ζ), is {}",
+            c.c_e1_power
+        );
         Ok(c)
     }
 
@@ -726,6 +774,11 @@ impl TurbulenceSection {
             self.qcr == QcrMode::None || !(self.model.has_zeta() || self.model.is_epsilon()),
             CASE_INCONSISTENT,
             "turbulence.qcr is an option of k-ω SST (Spalart 2000; Mani et al. 2013)"
+        );
+        crate::need!(
+            self.k_sink.is_none() || (self.model.has_zeta() && !self.model.is_eb()),
+            CASE_INCONSISTENT,
+            "turbulence.k_sink is an option of k-ε-ζ-f and k-ε-ζ-f₀"
         );
         if self.model.is_eb() {
             self.zeta_f_constants()?;
@@ -2610,6 +2663,7 @@ impl Turbulence {
                 },
                 wall: (sources && self.wd.is_some() && !self.walls.stat.cells.is_empty())
                     .then_some((self.prod_mask, self.wall_pk)),
+                dist: self.d,
                 nu_t: self.nu_t,
                 t: z.t,
                 l2: z.l2,
