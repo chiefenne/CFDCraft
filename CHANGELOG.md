@@ -8,7 +8,7 @@ Nothing yet.
 
 | Version | Stage | Highlights |
 |---|---|---|
-| 0.6 (2026-11-20) | 6 RANS turbulence, heat transfer, rotating machinery | Six RANS models: k-ω SST 2003 (with the curvature and rotation correction and QCR2000/QCR2013), standard and realizable k-ε, k-ε-ζ-f, k-ε-ζ-f₀ and the elliptic-blending k-ε; wall treatments `low-re`, `automatic`, `scalable`, `standard`, `compound`, `compound-2023` and rough walls; passive scalars with turbulent diffusivity and thermal wall functions (also for high Prandtl numbers); periodic boundaries; rotating machinery with the moving reference frame, sliding meshes (conformal stepping and imprinted interfaces of any shape of revolution, several rotors), torque, shaft power and machine performance; the coupled pressure–velocity algorithm with pseudo-time steps and multigrid for momentum and turbulence; SU2, OpenFOAM and CGNS mesh readers; derived turbulence fields, transient statistics, the grid convergence study of the models; the new log, case format 0.6 and `[[schedule]]`. **TMR flat plate C_f +0.37 % (SST) and within −2.6 to +2.4 % for first-cell y⁺ 0.24 to 85; channel at Re_τ 395 U_b⁺ −0.7 % (SST) and EB C_f 97.8–99.1 % of DNS; backward-facing step x_r/H +0.5 % (k-ε against the published k-ε) and +0.6 % (k-ε-ζ-f₀ against the experiment); impinging jet Nu₀ −0.2 % (SST); heated channel Nu within −2.6 to +1.0 % of DNS; GPU bitwise equal to the CPU for 14 turbulence cases on a Tesla T4; the coupled algorithm settles the step in about 70 instead of 600 iterations.** Gallery 26–129, recipes 36–129 |
+| 0.6 (2026-11-20) | 6 RANS turbulence, heat transfer, rotating machinery | Six RANS models: k-ω SST 2003 (with the curvature and rotation correction and QCR2000/QCR2013), standard and realizable k-ε, k-ε-ζ-f, k-ε-ζ-f₀ and the elliptic-blending k-ε; wall treatments `low-re`, `automatic`, `scalable`, `standard`, `compound`, `compound-2023` and rough walls; passive scalars with turbulent diffusivity and thermal wall functions (also for high Prandtl numbers); periodic boundaries; rotating machinery with the moving reference frame, sliding meshes (conformal stepping and imprinted interfaces of any shape of revolution, several rotors), torque, shaft power and machine performance; the coupled pressure–velocity algorithm with pseudo-time steps and multigrid for momentum and turbulence; SU2, OpenFOAM, CGNS, industry `.msh` and VTK mesh readers; derived turbulence fields, transient statistics, the grid convergence study of the models; the new log, case format 0.6 and `[[schedule]]`. **TMR flat plate C_f +0.37 % (SST) and within −2.6 to +2.4 % for first-cell y⁺ 0.24 to 85; channel at Re_τ 395 U_b⁺ −0.7 % (SST) and EB C_f 97.8–99.1 % of DNS; backward-facing step x_r/H +0.5 % (k-ε against the published k-ε) and +0.6 % (k-ε-ζ-f₀ against the experiment); impinging jet Nu₀ −0.2 % (SST); heated channel Nu within −2.6 to +1.0 % of DNS; GPU bitwise equal to the CPU for 14 turbulence cases on a Tesla T4; the coupled algorithm settles the step in about 70 instead of 600 iterations.** Gallery 26–134, recipes 36–134 |
 | 0.5 (2026-11-16) | 5 Transient flow, run control, Python | Transient incompressible flow: PISO with variable-step BDF2 and Crank–Nicolson, outer correctors for large time steps, a time step from the integration error, output at exact times, restart files and control files; the whole flow loop on NVIDIA GPUs; adjoint-ready kernels (dual numbers, transposed matrices, checkpointing); the run contract for scripts and agents (`--json`, `--set`, `result.json`, run record, exit codes and signals, case schema, diagnostic codes, estimate, limits, provenance); the conservation ledger and the divergence report; the bounded central scheme and the boundary conditions of D29 (slip, wedge, tables, backflow, convective outlet); derived fields; expressions, the material database and regions; the Python package `foehncraft` with studies; the grid convergence index of every sweep and a generated verification manual; all scripts in Python. **Taylor–Green time order 2.0–2.4 and space order 2.1; Schäfer & Turek 2D-1 inside all reference ranges, C_D extrapolated to 5.5797 ± 0.0004 from three meshes; GPU flow loop bitwise equal to the CPU on a Tesla T4 (722 ns per cell and iteration on 970 225 polyhedra); a case built in Python is bitwise its TOML file.** Commands `foehn materials`, `foehn post derive`, `foehn schema`; gallery 14–25, recipes 21–35 |
 | 0.4 (2026-11-15) | 4 Laminar steady flow | First flow solver: steady incompressible laminar flow with SIMPLEC (and SIMPLE) on polyhedral meshes, relaxation-independent Rhie–Chow interpolation (Majumdar 1988), CG + AMG for the pressure correction, boundary conditions of D29 (walls also moving, velocity and mass-flow inlets, static and total pressure inlets and outlets, symmetry) with a check of their combination and guidance (D30), TOML case file with "did you mean" (D39), log, CSV, wall and line output (D43). **Couette exact to the iteration tolerance on all mesh types; Poiseuille observed order 1.80–2.00; lid-driven cavity within 0.4–1.4 % of Ghia et al. at Re 100 and 1000 in 2D and within 2.5 % on 3D tetrahedra and polyhedra.** New crate `cfdcraft-flow`, command `cfdcraft flow`, thirteen case files, gallery 12–13, recipes 18–20. CPU only; the GPU flow loop follows with stage 5 |
 | 0.3 (2026-11-14) | 3 Pressure solver | Pressure linear solver: smoothed-aggregation algebraic multigrid as the preconditioner of CG (Vaněk, Mandel, Brezina 1996), symmetric V-cycle with Chebyshev or Jacobi smoothing, float32 hierarchy with float64 Krylov iteration (mixed precision, D37), one kernel source for the CPU and the NVIDIA GPU, optional hypre 3.2.1 reference (BoomerAMG-PCG, built from source). **10–13 iterations from 512 to 274 625 cells on all mesh types; same solution as hypre to 1.6e-9; on a Tesla T4 6.5 ns per cell and iteration against 10.5 for hypre at 912 673 cells, all GPU results bitwise equal to the CPU.** New command `cfdcraft poisson`, four Poisson case files, gallery 10–11, recipes 15–17 |
@@ -104,8 +104,9 @@ crates stays 0.0.0; the release is the Git tag `v0.0` (D46).
   pseudo-time steps and a reduction multigrid for momentum and the
   turbulence equations: the backward-facing step settles in about 70
   outer iterations instead of about 600 with SIMPLEC.
-- **Meshes from other tools.** SU2, OpenFOAM polyMesh and CGNS (HDF5)
-  readers behind one mesh-format interface, besides Gmsh; removed boxes in
+- **Meshes from other tools.** SU2, OpenFOAM polyMesh, CGNS (HDF5), the
+  face-based industry `.msh` and VTK (`.vtk`, `.vtu`) readers behind one
+  mesh-format interface, besides Gmsh, and meshes written as `.vtu`; removed boxes in
   the built-in mesher (a backward-facing step) and annuli for rotors.
 - **Results and verification.** Derived turbulence fields (time and length
   scales, Reynolds stresses, wall fields with the viscous weight), time
@@ -1061,6 +1062,39 @@ entries, before the fragments of `changelog.d/`, are at the end):
   the energy matrix, shell edges on solids refused first, radiation slot,
   film evaporation needs the vapour species of L2); TW6 (a film without
   sprays) waits until the wall film exists. No code.
+- **Industry `.msh` and VTK meshes, VTU output (D191, D192, gallery 134,
+  recipe 134).** `mesh.file` reads the ASCII face-based industry `.msh`
+  (polyhedra, zones; it shares `.msh` with Gmsh, the content decides) and VTK
+  grids, legacy `.vtk` and XML `.vtu` in every encoding including zlib.
+  `mesh.format` takes `industry_msh` and `vtk`. `output.vtu` and
+  `foehn mesh --vtu` write the mesh as a `.vtu` with polyhedra and the names
+  of zones and boundaries.
+- **Stage 7 plan decided.** The maintainer chose 19 small pull requests in
+  four lanes (groundwork, energy, buoyancy, conjugate heat transfer, then
+  turbulent heat transfer), GPU kernels in every pull request, water by
+  IAPWS tables with all other property forms kept, a solids starter set and
+  user material database files (stage 7 page §16.1, D164). No code.
+- **Fix: smooth limits keep floors (spec 2.6).** With
+  `turbulence.smooth_limits = true` the SST flat plate did not converge:
+  the smooth width followed the larger operand, so the floor of CD_kω
+  became a large, non-monotone value. The width of `smin`/`smax` now
+  follows the smaller operand, m = |a||b|/(|a| + |b|), in a form free of
+  cancellation. Runs without smooth limits are unchanged. New test: the
+  flat-plate C_f with smooth limits is within 0.090 % of the hard form
+  (band 0.1 %).
+- **Ledger as data (D119, stage 7 part 7.0a).** The conservation ledger
+  books every quantity as an account of named terms (quantity, unit,
+  region, term kind, name, exchange-pair id) and closes it with one
+  routine, so the energy module and later modules add their quantities
+  without new structs. Mass and kinetic energy are booked this way; every
+  report (`balance.csv`, log tables, `flow.md`, `result.json`) is bitwise
+  as before.
+- **Requirements: heat exchangers with several fluids and materials (D191).**
+  Any number of fluid and solid regions with their own materials; fluid
+  parts joined only through solids or thin walls get their own pressure
+  reference and ledger; heat-exchanger outputs (duty, effectiveness, NTU,
+  LMTD, UA); thin walls allowed on every face set, also inside solids and
+  between two fluids (D189 amended). Checks V7.33–V7.35. No code.
 - **CI: shorter waits with parallel work.** Pull requests run on Linux
   only (about 5 minutes); macOS and Windows join when a pull request touches
   build files, the toolchain, the workflow, the command line, MPI, VTKHDF,
