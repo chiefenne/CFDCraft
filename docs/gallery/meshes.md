@@ -10,6 +10,7 @@ Part of the [Example gallery](../gallery.md): the built-in test mesher in 2D and
 | 6 | [T-junction from Gmsh](#tjunction) | 1 | Gmsh reader, conversion to polyhedra, renumbering |
 | 26 | [Flow on raw Gmsh tetrahedra: the cell-quality remediation](#skewed-tets) | 6 | skewed faces, Gauss pressure gradient, limiter, divergence report (D50, D63) |
 | 127 | [A PyAero airfoil mesh from an SU2 file](#su2-airfoil) | 6 | SU2 reader, mesh-format layer, 2D files extruded one layer, markers as boundaries (D187) |
+| 129 | [A polyhedral mesh from OpenFOAM and CGNS](#foam-cgns-polyhedra) | 6 | OpenFOAM and CGNS readers, polyhedral cells, one mesh through two formats (D188) |
 
 ---
 
@@ -260,5 +261,30 @@ python3 -m tools.mesh.render_mesh output/naca0012_fine/fields.vtkhdf vorticity.p
 python3 -m tools.mesh.render_mesh output/naca0012_fine/fields.vtkhdf mesh.png \
     --top --crop -0.4 1.6 -0.6 0.6 --size 1200x600 --zoom 2.0
 ```
+
+<a id="foam-cgns-polyhedra"></a>
+## 129. A polyhedral mesh from OpenFOAM and CGNS
+
+The dual of a tetrahedral unit cube (OpenFOAM's `polyDualMesh`, 81
+polyhedral cells with 9 to 48 faces each) is read from the OpenFOAM
+`polyMesh` directory and from a CGNS file of the same mesh (NGON_n faces and
+NFACE_n cells, HDF5). Both readers give the same 81 cells and the same six
+boundaries `xmin` to `zmax` with 40 faces each; the quality report finds the
+mesh valid (volume 1 and the volume enclosed by the boundary equal to
+4e-16, every boundary of area 1). The same two readers take hexahedral,
+tetrahedral and prism meshes: the repository holds Gmsh CGNS files of a unit
+cube in each type, and an OpenFOAM channel in ASCII and in binary that reads
+alike.
+
+```
+target/release/foehn mesh crates/foehncraft-mesh/tests/data/openfoam/dual_polyhedra
+target/release/foehn mesh crates/foehncraft-mesh/tests/data/cgns/dual_ngon.cgns
+```
+
+| | |
+|---|---|
+| Meshes | `crates/foehncraft-mesh/tests/data/openfoam/{channel_ascii,channel_binary,dual_polyhedra}`, `.../cgns/{box_hex,box_tet,box_prism,dual_ngon}.cgns` |
+| Made by | OpenFOAM utilities and Gmsh; `tools/mesh/cgns_test_meshes.py`, `tools/mesh/cgns_ngon_fixture.py`, `tools/mesh/openfoam_test_meshes.md` |
+| Recipe | [recipe 129](../recipes/meshes.md#mesh-cgns-openfoam) |
 
 [↑ back to top](#meshes)

@@ -75,7 +75,11 @@ fn ngon_nface_equals_openfoam_dual() {
     let a = format::read(path("dual_ngon.cgns"), None).unwrap();
     let q = check(&a);
     assert_eq!(a.mesh.n_cells, 81);
-    assert!(q.shapes.iter().any(|x| x.0 == "polyhedra"), "{:?}", q.shapes);
+    assert!(
+        q.shapes.iter().any(|x| x.0 == "polyhedra"),
+        "{:?}",
+        q.shapes
+    );
     let dir = format!(
         "{}/tests/data/openfoam/dual_polyhedra",
         env!("CARGO_MANIFEST_DIR")
@@ -83,7 +87,12 @@ fn ngon_nface_equals_openfoam_dual() {
     let b = format::read(dir, None).unwrap();
     assert_eq!(a.mesh.n_cells, b.mesh.n_cells);
     let names = |f: &MeshFile| {
-        let mut n: Vec<_> = f.mesh.boundaries.iter().map(|b| (b.name.clone(), b.len)).collect();
+        let mut n: Vec<_> = f
+            .mesh
+            .boundaries
+            .iter()
+            .map(|b| (b.name.clone(), b.len))
+            .collect();
         n.sort();
         n
     };
