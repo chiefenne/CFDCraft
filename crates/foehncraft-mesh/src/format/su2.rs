@@ -30,8 +30,12 @@
 //!   name the side faces and the two planes are the boundaries `zmin`
 //!   (z = 0) and `zmax`. The layer thickness is `mesh.thickness` (in the
 //!   units of the file), by default the median edge length of the 2D cells.
-//! - One zone (`NZONE= 1` or none); the cells are the zone `fluid`.
-//!   Multi-zone files are refused (split them into one file per zone).
+//! - One zone (`NZONE= 1` or none): the cells are the cell zone `fluid`.
+//!   With `NZONE= n` and `IZONE=` blocks (3D only) every zone is a cell zone
+//!   `zone1` .. `zone<n>` of one mesh (D193): the nodes of the zones stay apart,
+//!   markers of equal name in several zones are one boundary, and
+//!   `mesh.merge_nodes` joins coincident nodes. The interface connectivity
+//!   entries (`MARKER_TAG= SEND_RECEIVE`) are not read.
 //! - Higher-order elements are refused.
 
 use super::{CellKind, ElementMesh, MeshFile, MeshFormat, ReadOptions};

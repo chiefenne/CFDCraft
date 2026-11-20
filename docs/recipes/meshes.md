@@ -12,6 +12,7 @@ Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2, CGNS, OpenFOAM,
 | 127 | [Read an SU2 mesh and map its markers to boundary conditions](#mesh-su2) |
 | 129 | [Read a CGNS or OpenFOAM mesh](#mesh-cgns-openfoam) |
 | 134 | [Read an industry `.msh` or VTK mesh, write a VTU](#mesh-msh-vtk) |
+| 138 | [Run a rotor/stator sliding case from a multi-zone SU2 or CGNS file](#mesh-multizone) |
 
 ---
 
@@ -293,6 +294,54 @@ file = "channel.msh"        # industry .msh or Gmsh, by the content
 
 [mesh.boundaries]           # zone or region names to the names of the conditions
 boundary3 = "inlet"         # a VTK region number without a name
+```
+
+[↑ back to top](#meshes)
+
+<a id="mesh-multizone"></a>
+## 138. Run a rotor/stator sliding case from a multi-zone SU2 or CGNS file
+
+A machine mesh has one zone for the rotor and one for the stator, and the
+two do not share nodes. SU2 (`NZONE= 2`, one `IZONE=` block per zone) and CGNS
+(several `Zone_t`) store it that way, and both are read now (D193):
+
+- all zones come into **one mesh**, every zone a cell zone: `zone1`, `zone2`
+  for SU2, the `Zone_t` names for CGNS (a single zone is still `fluid`);
+- the nodes of different zones **stay apart**, so the interface is two
+  ordinary boundaries, one per side: the markers (SU2) or BCs (CGNS) that
+  the mesher put there, e.g. `rotor_interface` in the rotor zone and
+  `stator_interface` in the stator zone (rename with `[mesh.boundaries]` if
+  the mesher called them otherwise). That is the mesh `[[sliding]]` wants:
+  two boundaries, no interior face between the zones, and the two sides may
+  have different pitch and node positions;
+- markers or BCs of the same name in several zones (`wall`) are one boundary;
+- the interface connectivity entries that some writers add are not read.
+
+```toml
+[mesh]
+file = "rotor_stator.su2"   # NZONE= 2: zone1 the rotor, zone2 the stator
+
+[[sliding]]
+zone = "zone1"              # the cell zone that turns
+axis = [0.0, 0.0, 1.0]
+omega = 10.0
+rotor_interface = "rotor_interface"    # the two interface boundaries of the file
+stator_interface = "stator_interface"
+```
+
+`mesh.merge_nodes = true` joins nodes that coincide (within 1e-8 of the
+bounding-box diagonal). Use it where zones **touch conformally and do not move
+against each other**: the interface faces become interior faces and the zones
+are one connected mesh (the two interface boundaries then lie inside and are
+ignored, with a warning). Do not use it for the zones of an imprinted sliding run (the
+two interface boundaries have to stay); it is for conformal stepping on a
+conformal interface.
+
+Multi-zone SU2 files are 3D only. Try the case of gallery 138:
+
+```
+python3 -m tools.mesh.taylor_couette_zones examples/meshes/taylor_couette_zones.su2
+target/release/foehn flow examples/cases/flow/taylor_couette_su2_zones.toml
 ```
 
 [↑ back to top](#meshes)

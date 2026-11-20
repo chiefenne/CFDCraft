@@ -50,7 +50,7 @@ FLOW = {
         "pipe_heated_keps", "plate_heated_keps", "jet_pipe_profile", "taylor_couette_mrf",
         "taylor_couette_sliding", "taylor_couette_imprint", "couette_two_rotors",
         "axial_stage_uniform", "pot_solid_body", "pot_solid_body_viscous",
-        "naca0012_su2_re1000",
+        "naca0012_su2_re1000", "taylor_couette_su2_zones",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
