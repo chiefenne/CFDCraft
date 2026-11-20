@@ -16,7 +16,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | [GPU runs](recipes/gpu.md) | scalar operators, pressure solver and flow cases on an NVIDIA GPU (also a free Colab T4) | 14, 16, 24 |
 | [Incompressible flow](recipes/flow.md) | Couette, Poiseuille, cavity and cylinder runs, boundary conditions, transient runs, time-step control | 18, 19, 20, 21, 23, 28, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103 |
 | [Passive scalars and the wall distance](recipes/scalars.md) | passive scalars with their boundary conditions, bounds, exact solutions, the Nusselt number of a heated channel, the wall distance | 63 |
-| [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks | 68, 71, 73, 74, 88, 89, 90 |
+| [Turbulence models](recipes/turbulence.md) | RANS turbulence models: the model, the wall treatment by the mesh, inlet turbulence, roughness, the near-wall checks | 68, 71, 73, 74, 88, 89, 90, 113 |
 | [Boundary conditions](recipes/boundary-conditions.md) | slip walls, wedges for axisymmetric flow, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 29, 67 |
 | [Expressions and materials](recipes/properties.md) | values as expressions of x, y, z and t, constants and tables, wall mass flux, the material database, regions | 31, 32 |
 | [Python](recipes/python.md) | the `foehncraft` package: cases, expressions, runs with callbacks, results, materials, studies | 33 |
@@ -94,6 +94,7 @@ The recipes are split by topic; each page has its own table of contents. The num
 | <a id="revolved-interfaces"></a>103 | [Give a rotor an interface of any rotationally symmetric shape: discs, cones, pots](recipes/flow.md#revolved-interfaces) | [Incompressible flow](recipes/flow.md) |
 | <a id="turbulence-derived-fields"></a>108 | [Write the Reynolds stress, the scales and the wall values of a turbulence model](recipes/post-processing.md#turbulence-derived-fields) | [Post-processing](recipes/post-processing.md) |
 | <a id="transient-statistics"></a>110 | [Average a transient run: mean, RMS, covariance, confidence interval](recipes/post-processing.md#transient-statistics) | [Post-processing](recipes/post-processing.md) |
+| <a id="curvature-correction"></a>113 | [Make SST sensitive to curvature and system rotation](recipes/turbulence.md#curvature-correction) | [Turbulence models](recipes/turbulence.md) |
 
 ## Adding a feature
 
