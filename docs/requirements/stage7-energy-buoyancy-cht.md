@@ -1164,6 +1164,68 @@ D116) and the source hook; 7b and 7c can run beside 7d. The Python package
 (D61) gets the new keys with each PR (case round trip bitwise, as in stage 5).
 
 
+### 16.1 The finer cut (decided 2026-11-20)
+
+The maintainer chose on 2026-11-20 to build stage 7 in 19 small pull
+requests instead of the six above (which remain the grouping). Each brings
+its GPU kernels with a CPU = GPU check (the GPU part of 7f moves into every
+PR; 7f keeps the Colab notebook, the Jacobian sweep and the release), its
+verification section, and, for physics, a gallery entry with 1–3 field
+images, case files and a recipe. After 7a1 the buoyancy lane (B) and the
+CHT lane (C) run in parallel.
+
+| Lane | PR | Content | Checks |
+|---|---|---|---|
+| 0 | 7.0a | Ledger as data (D119): named rows per region; mass and kinetic energy moved onto it (stage 6 debt, finding F6) | V7.25 bitwise, ledger numbers identical |
+| 0 | 7.0b | ρ, μ as cell and face fields in the flux, momentum and scalar kernels (F1), CPU and GPU | V7.25 bitwise |
+| 0 | 7.0c | Thermal material data: c_p and k of the database fluids, NASA-7/9 forms and importer, water by IAPWS (below), solids starter set, orthotropic k, glycol–water mixtures, user database files, MAT006–MAT009 | unit tests against the sources |
+| A | 7a1 | Energy module on the fluid, constant ρ: δT form, T(h), k(T), c_p(T), SGDH, thermal BCs, viscous heating, ENE and THM codes, thermal ledger | V7.1–V7.3, channel DNS regression |
+| A | 7a2 | Wall-temperature periodic mode (D109 (2)) | V7.14 |
+| A | 7a3 | Radiation to ambient, convection–radiation, backflow temperature | V7.11 |
+| A | 7t1 | Thin walls 1D (D189): layers, heat capacity, sources, contact resistance | V7.26, V7.27 |
+| B | 7b1 | Gravity, Boussinesq, reduced pressure, balanced force in SIMPLEC **and the coupled algorithm** (D176), wall pressure, BUO codes | V7.7 (a) |
+| B | 7b2 | Laminar natural convection | V7.9, V7.12, V7.15 |
+| B | 7b3 | Transient buoyancy | V7.8, V7.13, V7.16 |
+| B | 7c | Low-Mach variable density, p₀(t), pressure work | V7.7 (b), (c), V7.17 |
+| C | 7d1 | Domain views, solid regions, interface faces, one-sided gradients, AMG over the energy view | V7.4–V7.6 |
+| C | 7d2 | Contact resistance, orthotropic k, energy sources | V7.4 with resistance, V7.10 |
+| C | 7d3 | General static non-conformal interfaces by imprinting (D58 beyond surfaces of revolution, which `imprint.rs` already handles) | D58 cases, V7.4 on non-matching layers |
+| C | 7d4 | METIS with two constraints, per-view halo plans | V7.24 |
+| C | 7t2 | Shell conduction and baffles (D189), surface mesh W1 and wall-face halo W2, film slots (D190) | V7.28–V7.32 |
+| D | 7e1 | `buoyancy_production` hook in k, ε, ω, ζ/φ (not delivered by stage 6), G_b with SGDH, C_ε3 | V7.25, V7.18 (SGDH, reported) |
+| D | 7e2 | GGDH, G_b with GGDH | V7.18, V7.19, V7.21 |
+| D | 7e3 | Heated backward-facing step | V7.20 |
+| D | 7e4 | D172 Pr_t closures, D173 variable-property wall treatment | H-0 to H-2 of step 21 |
+| – | 7f | Jacobians, Colab notebook, restart check, verification manual, release v0.7 | V7.22, V7.23 |
+
+Other decisions of 2026-11-20:
+
+- v0.6 is tagged before stage 7 code merges.
+- The two stage 6 items that were not delivered (ledger as data, the
+  buoyancy hook) are done in stage 7 (7.0a, 7e1).
+- Water: IAPWS-95 (with the IAPWS formulations of μ and k) is evaluated in
+  the database code into monotone tables (D96) at the operating pressure
+  when the case is resolved; the kernel reads tables. Every other form of
+  D95 (polynomial, Sutherland, power law, NASA-7/9, tables, expressions)
+  stays available for every property, water included.
+- Solids starter set: aluminium (pure and 6061), copper, carbon steel,
+  stainless steel 304, titanium, fused silica glass, silicon, PTFE, from open
+  sources; glycol–water at any fraction. User-defined materials with
+  thermal data and solids in the case file (`[materials.<name>]`) and in user
+  database files (`[materials] include = ["my_materials.toml"]`, the TOML
+  format of D103), so users extend the fluid and solid database without
+  changing the built-in one.
+- Reference data: only published numbers in the repository; tables that may
+  not be redistributed are fetched by a script into a git-ignored folder
+  (as for the channel DNS); the maintainer supplies what is not openly
+  available.
+- Turbulent bands (V7.18–V7.21): ζ-f₀ and elliptic-blending k-ε with GGDH
+  must pass; SST and k-ε are reported without a band (recommended,
+  explained to the maintainer 2026-11-20).
+- §18 point 3 and 5 defaults (reduced pressure at pressure boundaries, C_θ
+  = 0.3, transformed ω source) as recommended, explained to the maintainer
+  2026-11-20; the validation cases may change C_θ and the ω source.
+
 ## 17. Findings in the code today
 
 Read on main at b15a488:
