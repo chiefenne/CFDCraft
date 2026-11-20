@@ -338,7 +338,9 @@ def size_fields(groups, level):
     m = f.add("Min")
     f.setNumbers(m, "FieldsList", fields)
     f.setAsBackgroundMesh(m)
-    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+    # sizes graded from the walls: the blade-hub and sparger corners keep cells
+    # with skewness below 1.1 (with 0 they reach 1.4 and the solver blows up)
+    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 1)
     gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
     gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 10)   # small radii: legs, pipes, edges
     gmsh.option.setNumber("Mesh.MeshSizeMax", h_bulk)
