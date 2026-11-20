@@ -1706,6 +1706,11 @@ The tests are in `tests/mrf.rs` and `tests/sliding.rs`, the wall distance in
    k of the same patch decayed at rest within 12 % (conformal) and 7 %
    (imprinted), 7 mm short of the place of the resting peak (the velocity
    error of the coarse mesh), and leaves 10 % and 7 % of its peak behind.
+   Since PR #141 (the wall sink of k) the imprinted run takes 32 steps:
+   with 16 (Courant 1.7) the rotor drives ζ to its cap and the run
+   diverges in step 8, also with the papers' −ε; the sink k/T_K of 6d2
+   held there (finding). The peaks now agree within 4 % (conformal) and
+   4 % (imprinted), at the place of the resting peak.
    **Found:** with conformal stepping ζ-f blew up within ten steps (`GEN001`,
    Courant 598): the time terms used the moved old levels, but each step
    started from the fields at the places of the fixed lattice, so the first

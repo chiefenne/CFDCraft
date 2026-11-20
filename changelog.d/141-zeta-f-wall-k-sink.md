@@ -39,3 +39,8 @@
   is made again from the pipe flow with the new sink.
 - **Gallery 141 and recipe 141**: the sink of k with two field images
   (the ζ-f plate near its leading edge, the wall layer of the jet).
+- **Finding:** in the test of a turbulence patch carried by the rotor
+  (`tests/sliding.rs`), the imprinted run of ζ-f₀ at a Courant number of
+  1.7 drives ζ to its cap and diverges with any sink of k that is ε at the
+  wall (the new default and the papers' −ε); k/T_K held there. The
+  imprinted run of the test now takes half the time step (Courant 0.85).
