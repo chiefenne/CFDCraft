@@ -2111,3 +2111,28 @@ rotation tensor. With it, r* and r̃ both mark the side of the rotating
 channel whose mean vorticity opposes the rotation as unstable, and the
 inertial and the turning frame give the same f_r1.
 
+## Quadratic constitutive relation of SST (6h, D170, PR #115)
+
+`turbulence.qcr` adds the non-linear stress of Spalart (2000),
+−C_cr1 (O_ik τ_jk + O_jk τ_ik) with τ = 2 μ_t S* and O = 2W/|∇u|
+(C_cr1 = 0.3), and for `"qcr2013"` the isotropic −C_cr2 μ_t √(2 S*:S*) δ_ij
+(C_cr2 = 2.5) of Mani et al. (2013). The kernel `turb::sst::qcr_stress`
+gives the cell stress. `ExplicitStressFaces` interpolates it to the faces
+and subtracts τ_f·S from the deferred part b_f of the momentum faces.
+
+| Check (9.8) | Quantity | Band | Result |
+|---|---|---|---|
+| Simple shear by hand (kernel test) | the six components | 10⁻¹² | met: only τ_xx and τ_yy, of equal size and opposite sign |
+| Square duct, Re_b 3 500, linear SST (`tests/curvature.rs`, 12 × 12; the gallery duct, 72 × 72) | largest secondary velocity | 0 | below 10⁻¹⁰ U_b on both |
+| The same with QCR2000 and QCR2013 (`tests/curvature.rs`) | largest secondary velocity | > 0 | met for both |
+| Square duct, QCR2000, quarter duct 2 × 48 × 48 and 2 × 72 × 72 (`square_duct_qcr.toml`) | largest secondary velocity / U_b, its position | DNS of Pinelli et al. (2010) ±30 %, the vortex pair present | 1.55 % and 1.56 % on the diagonal at 0.35 h and 0.33 h from the corner, directed into the corner; eight vortices in the whole duct. **Open:** the DNS value (the data are not in the repository) |
+| QCR2013 against QCR2000, 48 × 48 | velocity | the same | the same to the printed digits; the isotropic term only shifts the pressure |
+| Driving force, 72 × 72 | relative to linear SST | reported | +1.9 % (1.1150 against 1.0941 × 10⁻² N/m³) |
+
+**Findings.** (1) The isotropic 2013 term only changes the pressure in
+incompressible flow. A model that carries k could use (2/3) ρk in its
+place ("QCR2013-V"); with the modified pressure p̂ = p + (2/3) ρk that
+form is also only a pressure shift here. (2) The secondary velocity is
+small (about 1.5 % of U_b), but the in-plane residuals fall like the
+others: the 72 × 72 duct converges in 2 624 iterations, against 2 664
+for linear SST on the same mesh.

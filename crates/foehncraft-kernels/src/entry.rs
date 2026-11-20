@@ -1915,6 +1915,90 @@ impl Entry for CurvatureCells {
     }
 }
 
+/// Arguments of [`QcrCells`] and [`ExplicitStressFaces`] (the quadratic
+/// constitutive relation of SST, D170).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct QcrArgs {
+    /// Mesh ([`ExplicitStressFaces`]).
+    pub m: Mesh,
+    /// Velocity gradient ([`QcrCells`]).
+    pub grad_u: RawGrad,
+    /// ν_t per cell.
+    pub nu_t: Raw<f64>,
+    /// ρ (μ_t = ρ ν_t).
+    pub rho: f64,
+    /// Constants (c_cr1, c_cr2).
+    pub c: crate::turb::sst::SstConstants,
+    /// [`crate::turb::sst::QCR_2000`] or [`crate::turb::sst::QCR_2013`].
+    pub mode: u32,
+    /// The cell stress (xx, yy, zz, xy, yz, zx): output of [`QcrCells`],
+    /// input of [`ExplicitStressFaces`].
+    pub tau: [Raw<f64>; 6],
+    /// [`ExplicitStressFaces`]: b_f, updated in place.
+    pub bf: Raw3,
+}
+
+/// tau = the non-linear stress of a cell ([`crate::turb::sst::qcr_stress`]).
+pub struct QcrCells;
+impl Entry for QcrCells {
+    type Args = QcrArgs;
+    const NAME: &'static str = "qcr_cells";
+    #[inline(always)]
+    unsafe fn run(c: usize, a: &QcrArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let g = a.grad_u.v();
+            let gu = [g.x.at(c), g.y.at(c), g.z.at(c)];
+            let t = crate::turb::sst::qcr_stress(&gu, a.rho * a.nu_t.read(c), &a.c, a.mode);
+            let mut i = 0;
+            while i < 6 {
+                *a.tau[i].out().add(c) = t[i];
+                i += 1;
+            }
+        }
+    }
+}
+
+/// b_f −= τ_f·S with τ_f = w τ_P + (1 − w) τ_N on the interior faces and
+/// τ_P on the boundary faces: the divergence of an explicit cell stress
+/// in the momentum equations (b_f is subtracted from the owner row).
+pub struct ExplicitStressFaces;
+impl Entry for ExplicitStressFaces {
+    type Args = QcrArgs;
+    const NAME: &'static str = "explicit_stress_faces";
+    #[inline(always)]
+    unsafe fn run(f: usize, a: &QcrArgs) {
+        // SAFETY: guaranteed by the caller.
+        unsafe {
+            let o = a.m.owner.read(f) as usize;
+            let mut t = [0.0; 6];
+            let mut i = 0;
+            while i < 6 {
+                t[i] = a.tau[i].read(o);
+                i += 1;
+            }
+            if f < a.m.n_interior as usize {
+                let n = a.m.neighbour.read(f) as usize;
+                let w = a.m.weight.read(f);
+                let mut i = 0;
+                while i < 6 {
+                    t[i] = w * t[i] + (1.0 - w) * a.tau[i].read(n);
+                    i += 1;
+                }
+            }
+            let s = [a.m.area.x.read(f), a.m.area.y.read(f), a.m.area.z.read(f)];
+            // xx, yy, zz, xy, yz, zx
+            let fx = t[0] * s[0] + t[3] * s[1] + t[5] * s[2];
+            let fy = t[3] * s[0] + t[1] * s[1] + t[4] * s[2];
+            let fz = t[5] * s[0] + t[4] * s[1] + t[2] * s[2];
+            *a.bf.x.out().add(f) -= fx;
+            *a.bf.y.out().add(f) -= fy;
+            *a.bf.z.out().add(f) -= fz;
+        }
+    }
+}
+
 /// Arguments of [`KepsCells`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -2725,6 +2809,7 @@ send_sync!(
     ScalarScaleArgs,
     SstCellArgs,
     CurvatureArgs,
+    QcrArgs,
     KepsCellArgs,
     ZetaFCellArgs,
     TurbFaceArgs,
@@ -2734,7 +2819,7 @@ send_sync!(
 );
 
 /// Names of all entries (the PTX module has `flow_<name>` for each).
-pub const NAMES: [&str; 51] = [
+pub const NAMES: [&str; 53] = [
     Lincomb::NAME,
     ScaledDifference::NAME,
     SquaresAdd::NAME,
@@ -2778,6 +2863,8 @@ pub const NAMES: [&str; 51] = [
     StrainCells::NAME,
     ConvectiveDerivative::NAME,
     CurvatureCells::NAME,
+    QcrCells::NAME,
+    ExplicitStressFaces::NAME,
     KepsCells::NAME,
     ZetaFCells::NAME,
     TurbFaces::NAME,
@@ -2886,7 +2973,7 @@ mod tests {
             unsafe { Lincomb::run(i, &a) };
         }
         assert_eq!(y, [-8.0, -16.0, -24.0]);
-        assert_eq!(NAMES.len(), 51);
+        assert_eq!(NAMES.len(), 53);
         // the elliptic-blending helpers: out += |v|², out3 = s v
         let (vx, vy, vz) = ([1.0, 0.0], [2.0, -3.0], [2.0, 4.0]);
         let s = [0.5, -2.0];

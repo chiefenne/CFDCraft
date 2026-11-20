@@ -12,6 +12,7 @@ Part of the [Example gallery](../gallery.md): the RANS turbulence models of stag
 | 89 | [Backward-facing step against the experiment: six models, three meshes](#step-validation) | 6 | `[[output.wall_crossings]]` (`skip`, `kind`, `direction`, `width`), `verification.levels`, the TMR layout of the step, `examples/studies/backstep_validation.py` |
 | 90 | [Impinging jet at H/D = 2: a pipe profile as the inlet, Nusselt number, the stagnation-point anomaly](#impinging-jet) | 6 | `profile = "table"` with `k`, `epsilon`/`omega`, `zeta` columns, `foehncraft.profiles`, wall probes with scalars, `production_limiter`, `examples/studies/impinging_jet.py` |
 | 113 | [Curvature and rotation correction of SST: channel in spanwise rotation, backward-facing step](#curvature-correction) | 6 | `turbulence.curvature_correction`, `flow.frame_rotation`, constants `c_r1` … `c_r3`, derived field `curvature-correction` |
+| 115 | [Quadratic constitutive relation of SST: secondary flow in a square duct](#qcr) | 6 | `turbulence.qcr`, constants `c_cr1`, `c_cr2` |
 
 ---
 
@@ -760,5 +761,59 @@ python3 -m tools.plot.rotating_channel_chart docs/figures/gallery/rotating_chann
 ```
 
 The step figure: the commands in `tools/plot/curvature_fields.py`.
+
+[↑ back to top](#turbulence-models)
+
+---
+
+<a id="qcr"></a>
+## 115. Quadratic constitutive relation of SST: secondary flow in a square duct
+
+<img src="../figures/gallery/square_duct_qcr.png" alt="The cross-section of a square duct at Re_b 3 500, streamwise velocity u/U_b in colour: left plain k-ω SST, with no secondary flow and isotachs that follow the walls; right SST with QCR2000, eight corner vortices in red streamlines that carry fluid into the corners along the diagonals, isotachs pushed towards the corners, largest secondary velocity 1.56 % of U_b" width="800" height="368">
+
+A linear eddy-viscosity model makes the Reynolds stress proportional to the
+strain rate, so in a straight duct the normal stresses of the
+cross-section are equal and nothing drives a secondary flow (left: the
+in-plane velocity is zero to round-off). `turbulence.qcr = "qcr2000"` adds
+the quadratic constitutive relation of Spalart (2000),
+
+  τ_ij,QCR = τ_ij − C_cr1 (O_ik τ_jk + O_jk τ_ik),  O_ik = 2 W_ik / |∇u|,
+  C_cr1 = 0.3,
+
+an explicit stress in the momentum equations. The normal stresses now differ near the
+walls, and the duct develops the secondary flow of Prandtl's second kind:
+a pair of vortices in each corner that carries fluid into the corner
+along the diagonal (right). The isotachs bulge towards the corners and
+the wall shear stress evens out along the wall. `"qcr2013"` (Mani,
+Babcock, Winkler & Spalart 2013) adds −C_cr2 μ_t √(2 S*:S*) δ_ij
+(C_cr2 = 2.5). That term is isotropic, so in incompressible flow it only
+shifts the pressure, and the velocity is the one of QCR2000.
+
+| Check | Result |
+|---|---|
+| Linear SST in the duct | secondary velocity 0 (below 10⁻¹⁰ U_b, `tests/curvature.rs`) |
+| QCR2000, quarter duct 2 × 48 × 48 and 2 × 72 × 72 cells | largest secondary velocity 1.55 % and 1.56 % of U_b, on the diagonal at 0.35 h and 0.33 h from the corner, towards the corner |
+| QCR2013 against QCR2000 | the same velocity (the isotropic term goes into the pressure) |
+| Driving force (wall friction), 72 × 72 | +1.9 % against linear SST |
+| Kernel: the stress of a simple shear flow by hand | 10⁻¹² (`turb/sst.rs`) |
+
+The specification compares the largest secondary velocity with the DNS
+of Pinelli, Uhlmann, Sekimoto & Kawahara (2010) (band ±30 %). That
+comparison is open, because the DNS data are not in the repository.
+
+| | |
+|---|---|
+| Code | `turb::sst::qcr_stress`, `entry::{QcrCells, ExplicitStressFaces}`, `turbulence::Turbulence::add_explicit_stress` (called after the momentum face kernel) |
+| Tests | `tests/curvature.rs` (`qcr_drives_the_secondary_flow_of_a_duct`, `qcr_is_refused_without_sst`), the kernel test `qcr_of_a_shear_flow` |
+| Case file | `flow/square_duct_qcr.toml` |
+| Recipe | [115](../recipes/turbulence.md#qcr) |
+
+```
+target/release/foehn flow examples/cases/flow/square_duct_qcr.toml --out output/duct_qcr
+target/release/foehn flow examples/cases/flow/square_duct_qcr.toml --out output/duct_sst \
+    --set turbulence.qcr=\"none\"
+python3 -m tools.plot.square_duct_fields docs/figures/gallery/square_duct_qcr.png \
+    output/duct_qcr output/duct_sst
+```
 
 [↑ back to top](#turbulence-models)
