@@ -1,7 +1,8 @@
-#![cfg(feature = "hdf5")]
 //! CGNS reader (D188): HDF5 files written by Gmsh (hexahedra, tetrahedra,
 //! prisms) and a polyhedral NGON_n/NFACE_n file; Gmsh physical names become the
 //! boundary names.
+
+#![cfg(feature = "hdf5")]
 
 use foehncraft_mesh::Geometry;
 use foehncraft_mesh::format::{self, MeshFile};
