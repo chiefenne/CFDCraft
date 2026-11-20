@@ -56,7 +56,7 @@ pub struct MeshCase {
 #[serde(default, deny_unknown_fields)]
 pub struct MeshSection {
     /// Mesh file (relative to the case file): Gmsh `.msh` 4.1 or SU2 `.su2`
-    /// (docs/meshes.md). The boundaries are the file's physical groups or
+    /// (docs/cases/meshes.md). The boundaries are the file's physical groups or
     /// markers; rename them with `boundaries`.
     pub file: Option<PathBuf>,
     /// Format of `file`: `gmsh` or `su2` (default: from the extension, else

@@ -1,0 +1,24 @@
+# NACA 0012 C-mesh written by PyAero in the SU2 format, read through the
+# mesh-format layer (D187). Gallery example 127, recipe 127.
+#
+#   foehn mesh examples/cases/mesh/naca0012_su2.toml
+#
+# The mesh is in the repository; PyAero (https://github.com/chiefenne/PyAero)
+# made it in batch mode from examples/meshes/naca0012_pyaero.json:
+#   python src/PyAero.py -no-gui /path/to/Foehncraft/examples/meshes/naca0012_pyaero.json
+#   cp data/OUTPUT/NACA0012.su2 /path/to/Foehncraft/examples/meshes/naca0012.su2
+#
+# The file is 2D (NDIME= 2, 6 420 quadrilaterals): it is extruded into one
+# layer of hexahedra in z, the planes are the boundaries zmin and zmax. The
+# markers airfoil, inlet, outlet, top and bottom are the boundaries.
+
+case_format = "0.6"
+
+[mesh]
+file = "../../meshes/naca0012.su2"   # relative to this case file
+format = "su2"                        # optional: the extension says so too
+thickness = 0.01                      # layer thickness in z (units of the file)
+renumber = "rcm"
+
+[partition]
+parts = 4

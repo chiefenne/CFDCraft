@@ -50,6 +50,7 @@ FLOW = {
         "pipe_heated_keps", "plate_heated_keps", "jet_pipe_profile", "taylor_couette_mrf",
         "taylor_couette_sliding", "taylor_couette_imprint", "couette_two_rotors",
         "axial_stage_uniform", "pot_solid_body", "pot_solid_body_viscous",
+        "naca0012_su2_re1000",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",
@@ -79,7 +80,7 @@ def _files(pattern: str) -> list[str]:
 def _base() -> list[tuple[str, str]]:
     mesh = sorted(
         _files("examples/cases/mesh/*_box.toml") + _files("examples/cases/mesh/*_2d.toml")
-    ) + ["examples/cases/mesh/poly_partition.toml"]
+    ) + ["examples/cases/mesh/poly_partition.toml", "examples/cases/mesh/naca0012_su2.toml"]
     return (
         [("mesh", f) for f in mesh]
         + [("scalar", f) for f in _files("examples/cases/scalar/*.toml")]

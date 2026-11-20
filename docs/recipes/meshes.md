@@ -1,6 +1,6 @@
 # Meshes
 
-Part of the [Recipes](../recipes.md): generate, read, convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes.
+Part of the [Recipes](../recipes.md): generate, read (Gmsh, SU2), convert and partition meshes, update the mesher's golden values, run flows on poor Gmsh meshes.
 
 | # | Recipe |
 |---|---|
@@ -9,6 +9,7 @@ Part of the [Recipes](../recipes.md): generate, read, convert and partition mesh
 | 9 | [Partition a mesh and test the halo exchange](#mesh-partition) |
 | 11 | [Update the golden values of the mesher](#golden) |
 | 36 | [Run a flow on raw Gmsh tetrahedra (skewed faces)](#skewed-tets) |
+| 127 | [Read an SU2 mesh and map its markers to boundary conditions](#mesh-su2) |
 
 ---
 
@@ -158,5 +159,53 @@ target/release/foehn flow examples/cases/flow/pipe_gmsh_raw.toml --set solver.re
     --out output/pipe_gmsh_raw_off
 cat output/pipe_gmsh_raw_off/divergence.md
 ```
+
+[↑ back to top](#meshes)
+
+---
+
+<a id="mesh-su2"></a>
+## 127. Read an SU2 mesh and map its markers to boundary conditions
+
+The SU2 reader (D187) takes native `.su2` files, ASCII, one zone, 2D or
+3D, first-order elements: tetrahedra, hexahedra, prisms and pyramids in 3D
+with triangle and quadrilateral markers; triangles and quadrilaterals in 2D
+with line markers. A 2D file is extruded one cell layer in z (triangles to
+prisms, quadrilaterals to hexahedra), and the planes become the boundaries
+`zmin` and `zmax`, as for the built-in 2D meshes. Every `MARKER_TAG` is a
+boundary of that name.
+
+```
+target/release/foehn mesh examples/meshes/naca0012.su2               # defaults, no case file
+target/release/foehn mesh examples/cases/mesh/naca0012_su2.toml      # thickness, RCM, 4 parts
+target/release/foehn flow examples/cases/flow/naca0012_su2_re1000.toml
+```
+
+(`examples/meshes/naca0012.su2` is a PyAero mesh in the repository, see
+[gallery 127](../gallery/meshes.md#su2-airfoil).) In your own case file:
+
+```toml
+[mesh]
+file = "wing.su2"          # the format follows from the extension, or:
+format = "su2"             # gmsh | su2, for a file with another extension
+thickness = 0.01           # 2D files: layer thickness, in the file's units
+scale = 0.001              # millimetres to metres (after the extrusion)
+
+[mesh.boundaries]          # marker names to the names of the conditions
+farfield = "inlet"
+wing = "wall"
+
+[boundary.wall]
+type = "wall"
+```
+
+Without `thickness` the layer is as thick as the median edge of the 2D
+cells. Boundary faces that no marker names go to `default` with a warning.
+A marker called `zmin` or `zmax` in a 2D file merges with the extruded
+plane of that name: rename it with `[mesh.boundaries]`. Multi-zone files
+(`NZONE` > 1) are refused: write one file per zone. The format layer
+picks the reader from `mesh.format`, else the extension (`.msh`, `.su2`),
+else the first lines of the file; a new format is one reader in
+`crates/foehncraft-mesh/src/format/` (module docs of `format`).
 
 [↑ back to top](#meshes)
