@@ -2293,3 +2293,20 @@ form is also only a pressure shift here. (2) The secondary velocity is
 small (about 1.5 % of U_b), but the in-plane residuals fall like the
 others: the 72 × 72 duct converges in 2 624 iterations, against 2 664
 for linear SST on the same mesh.
+
+## Smooth limits against the hard form (spec 2.6, PR #136)
+
+`turbulence.smooth_limits = true` replaces every min and max of the models
+with the C¹ form of spec 2.6 (width w = 10⁻³). The first run of the check
+found the SST flat plate with smooth limits not converging (k residual
+cycling at 10⁻³ for 10 000 iterations): the smooth width followed the
+larger operand, m = ½(|a| + |b|), so the floor max(CD_kω, 10⁻¹⁰) sat at
+about w²|CD_kω|/16 where CD_kω < 0. The width now follows the smaller
+operand, m = |a||b|/(|a| + |b|), in a form free of cancellation; the runs
+without smooth limits are unchanged.
+
+| Check | Quantity | Band | Result |
+|---|---|---|---|
+| TMR plate SST, level 1 (64 × 48), hard and smooth (`smooth_limits_change_the_plate_friction_below_a_tenth_percent`) | C_f at x = 0.97; drag of the plate | 0.1 % | 0.090 %; 0.093 % (both converge in 635 iterations) |
+| The same on level 0 (32 × 24) | C_f | 0.1 % | 0.1002 % (reported, not asserted) |
+| `smooth_switches_are_bounded_and_c1` (core) | error of smin, smax against min, max, incl. (±10³, 10⁻¹⁰) | w·m/2, m ≤ min(\|a\|, \|b\|) | asserted |
