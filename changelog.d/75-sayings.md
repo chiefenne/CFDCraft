@@ -1,1 +1,0 @@
-- **Sayings**: two new entries in `docs/sayings.md`, *Deemed prudent* and *Residuals got stuck*.

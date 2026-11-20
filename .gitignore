@@ -29,7 +29,7 @@ examples/meshes/*.msh
 examples/meshes/*.su2
 # the PyAero NACA 0012 C-mesh of gallery 127 (D187): mesh and flow case, CI
 !examples/meshes/naca0012.su2
-# the two-zone Taylor-Couette mesh of gallery 138 (D197)
+# the two-zone Taylor-Couette mesh of gallery 138 (D195)
 !examples/meshes/taylor_couette_zones.su2
 # the raw Gmsh pipe of the cell-quality remediation (D50): case, test and gallery
 !examples/meshes/pipe_gmsh_raw.msh

@@ -32,7 +32,7 @@
 //!   units of the file), by default the median edge length of the 2D cells.
 //! - One zone (`NZONE= 1` or none): the cells are the cell zone `fluid`.
 //!   With `NZONE= n` and `IZONE=` blocks (3D only) every zone is a cell zone
-//!   `zone1` .. `zone<n>` of one mesh (D197): the nodes of the zones stay apart,
+//!   `zone1` .. `zone<n>` of one mesh (D195): the nodes of the zones stay apart,
 //!   markers of equal name in several zones are one boundary, and
 //!   `mesh.merge_nodes` joins coincident nodes. The interface connectivity
 //!   entries (`MARKER_TAG= SEND_RECEIVE`) are not read.

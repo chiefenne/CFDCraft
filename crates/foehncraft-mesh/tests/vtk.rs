@@ -1,4 +1,4 @@
-//! VTK reader and writer (D196): legacy and XML files written by an
+//! VTK reader and writer (D192): legacy and XML files written by an
 //! independent writer, every encoding, regions as boundaries and zones,
 //! polyhedra and the round trip through [`write_vtu`].
 

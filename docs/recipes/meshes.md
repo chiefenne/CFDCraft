@@ -257,7 +257,7 @@ and 2D CGNS files and structured zones are refused.
 <a id="mesh-msh-vtk"></a>
 ## 134. Read an industry `.msh` or VTK mesh, write a VTU
 
-Two more readers (D195, D196) and a writer.
+Two more readers (D191, D192) and a writer.
 
 - **Industry `.msh`.** The ASCII, 3D, face-based text file that many
   commercial meshers and solvers write: nodes, cells and faces with the two
@@ -303,7 +303,7 @@ boundary3 = "inlet"         # a VTK region number without a name
 
 A machine mesh has one zone for the rotor and one for the stator, and the
 two do not share nodes. SU2 (`NZONE= 2`, one `IZONE=` block per zone) and CGNS
-(several `Zone_t`) store it that way, and both are read now (D197):
+(several `Zone_t`) store it that way, and both are read now (D195):
 
 - all zones come into **one mesh**, every zone a cell zone: `zone1`, `zone2`
   for SU2, the `Zone_t` names for CGNS (a single zone is still `fluid`);

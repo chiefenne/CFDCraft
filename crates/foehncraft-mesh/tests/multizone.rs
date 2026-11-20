@@ -1,4 +1,4 @@
-//! Multi-zone SU2 and CGNS files (D197): a rotor block and a stator block read
+//! Multi-zone SU2 and CGNS files (D195): a rotor block and a stator block read
 //! into one mesh, each a cell zone, the interface two boundaries (as the
 //! sliding-mesh imprinting wants it), optionally merged into one connected mesh.
 

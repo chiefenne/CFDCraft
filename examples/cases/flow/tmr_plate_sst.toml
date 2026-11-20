@@ -23,11 +23,14 @@
 # drag coefficient of the plate (one side, area 2 m²) C_D = 0.0028488.
 # The wall probe `x097` gives C_f, the force of `plate` the drag:
 # C_D = F_x / (½ ρ U² · 2 m²) = F_x on the 1 m depth of the mesh.
-# Level 1 (64 × 48 cells, 2 minutes); the sweep of the verification page,
-# four levels with the uncertainty of the three finest (D67), takes 25
-# minutes on one core:
+# Level 1 (64 × 48 cells, 635 SIMPLEC iterations, a few seconds). The
+# sweep of the verification page, four levels with the uncertainty of the
+# three finest (D67), runs with the coupled algorithm: SIMPLEC needs
+# 2 292 iterations on level 2 and more than 4 400 on level 3 (a slow
+# steady decay, no stall), the coupled one 622 and 411 (level 3 in about
+# 80 s on four cores, C_f the same to 10⁻⁵):
 #
-#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tmr_plate_sst.toml --set 'verification.levels=[0, 1, 2, 3]'
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/tmr_plate_sst.toml --set 'verification.levels=[0, 1, 2, 3]' --set 'solver.algorithm="coupled"'
 #
 # Level 1 gives C_f(0.97) = 0.002668 (−0.8 %), level 3 0.002701 (+0.4 %).
 
@@ -78,7 +81,7 @@ type = "symmetry"
 
 [solver]
 tolerance = 1e-7
-max_iterations = 10000
+max_iterations = 2000
 log_every = 200
 
 [verification]
