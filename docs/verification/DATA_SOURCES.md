@@ -33,8 +33,11 @@ Foehncraft alone.
 - Re_τ = 395 profiles: https://turbulence.oden.utexas.edu/data/MKM/chan395/profiles/
   (**verified**: the listing has chan395.flat, chan395.means,
   chan395.reystress, chan395.skew, chan395.velp and chan395.vortvar)
-- Re_τ = 590 profiles: the listing is **to verify**; the 2015 channel set
-  (section 1.3) has no 395 or 590 case, so these values come from this archive
+- Re_τ = 590 profiles: https://turbulence.oden.utexas.edu/data/MKM/chan590/profiles/
+  (**verified**: the listing has chan590.flat, chan590.means, chan590.quad,
+  chan590.reystress, chan590.skew, chan590.velp and chan590.vortvar). The 2015
+  channel set (section 1.3) has no 395 or 590 case, so these values come from
+  this archive
 - Quantities used: mean streamwise velocity U⁺(y⁺); Reynolds stress
   components R₁₁⁺, R₂₂⁺, R₃₃⁺, R₁₂⁺; turbulent kinetic energy k⁺.
 
