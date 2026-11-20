@@ -3,8 +3,12 @@
  "format_version": "1.0",
  "runs_of": [
   {
-   "version": "0.5.0",
-   "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79"
+   "version": "0.6.0",
+   "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty"
+  },
+  {
+   "version": "0.6.0",
+   "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789"
   }
  ],
  "families": [
@@ -12,6 +16,163 @@
    "family": "flow",
    "title": "Flow cases (`foehn flow`)",
    "cases": [
+    {
+     "case": "axial_stage_uniform",
+     "file": "examples/cases/flow/axial_stage_uniform.toml",
+     "description": "Uniform axial flow through a sliding rotor whose interface is a surface of revolution (D186)",
+     "status": "passed",
+     "cells": "2 090",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 0.003",
+       "value": 0.002301330994933169,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.946033315358862e-15,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "backstep_eb",
+     "file": "examples/cases/flow/backstep_eb.toml",
+     "description": "Backward-facing step of Driver & Seegmiller (1985), the elliptic-blending k-ε of Billard & Laurence (2012) with the compound wall treatment",
+     "status": "passed",
+     "cells": "8 200",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.5970946239021015e-15,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "backstep_outlet_backflow",
+     "file": "examples/cases/flow/backstep_outlet_backflow.toml",
+     "description": "Turbulence values of the backflow at a pressure outlet",
+     "status": "passed",
+     "cells": "4 600",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.576487192165725e-11,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "backstep_validation",
+     "file": "examples/cases/flow/backstep_validation.toml",
+     "description": "Backward-facing step of Driver & Seegmiller (1985) in the layout of NASA's Turbulence Modeling Resource (TMR), k-ε-ζ-f₀ with the coupled algorithm",
+     "status": "passed",
+     "cells": "11 040",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.0622723276179453e-12,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "backstep_zeta_f0",
+     "file": "examples/cases/flow/backstep_zeta_f0.toml",
+     "description": "Backward-facing step of Driver & Seegmiller (1985), k-ε-ζ-f₀ (Popovac 2023) with its compound wall treatment",
+     "status": "passed",
+     "cells": "8 200",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.245911273958231e-11,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "backstep_zeta_f0_coupled",
+     "file": "examples/cases/flow/backstep_zeta_f0_coupled.toml",
+     "description": "Backward-facing step of Driver & Seegmiller (1985), k-ε-ζ-f₀, with the coupled pressure–velocity algorithm and pseudo-time steps",
+     "status": "passed",
+     "cells": "8 200",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.3097266259402767e-13,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
     {
      "case": "cavity_re100",
      "file": "examples/cases/flow/cavity_re100.toml",
@@ -46,8 +207,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -85,8 +246,47 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cavity_re1000_coupled",
+     "file": "examples/cases/flow/cavity_re1000_coupled.toml",
+     "description": "Lid-driven cavity at Re = 1000 on 128 x 128 hexahedra with the coupled pressure–velocity algorithm",
+     "status": "passed",
+     "cells": "16 384",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 1000",
+       "band": "≤ 0.02",
+       "value": 0.013568475095925181,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -124,8 +324,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -163,8 +363,47 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cavity_re100_columns",
+     "file": "examples/cases/flow/cavity_re100_columns.toml",
+     "description": "Lid-driven cavity at Re = 100 with a chosen iteration table",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 100",
+       "band": "≤ 0.02",
+       "value": 0.009451437038922844,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -202,8 +441,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -241,8 +480,47 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cavity_re100_schedule",
+     "file": "examples/cases/flow/cavity_re100_schedule.toml",
+     "description": "Lid-driven cavity at Re = 100 with settings prepared for the run",
+     "status": "passed",
+     "cells": "4 096",
+     "checks": [
+      {
+       "check": "largest deviation from Ghia et al. (1982), Re = 100",
+       "band": "≤ 0.02",
+       "value": 0.009451457556251042,
+       "unit": "of U_lid",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -280,8 +558,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -312,8 +590,778 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_eb",
+     "file": "examples/cases/flow/channel_eb.toml",
+     "description": "Fully developed turbulent channel flow at Re_τ ≈ 395, the elliptic-blending k-ε of Billard & Laurence (2012, \"BL-v²/k\") with the compound wall treatment",
+     "status": "passed",
+     "cells": "192",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 4.312016215499642e-49,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_heated",
+     "file": "examples/cases/flow/channel_heated.toml",
+     "description": "Laminar heated channel: a passive temperature in plane Poiseuille flow with a uniform heat flux into both walls",
+     "status": "passed",
+     "cells": "512 … 8 192",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.8845316446539826,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "observed order of scalar theta in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 2.1362340065131074,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 5.986217458786081e-13,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.978049360981361,
+      1.8845316446539826
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "boundaries.xmin.mass_flow",
+       "values": [
+        -0.10001279752028137,
+        -0.10005151203141711,
+        -0.10020286829831725
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9670020812627413,
+       "extrapolated": -0.09999949150101428,
+       "relative_error": 0.0003870955727229734,
+       "extrapolated_error": 0.00013306086928409588,
+       "gci": 0.00016630395805580802,
+       "band": 1.6632524083856898e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.xmin.mean_pressure",
+       "values": [
+        2.4021404037189837,
+        2.3983492570723888,
+        2.3840239757446637
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.917857303632531,
+       "extrapolated": 2.403504805573627,
+       "relative_error": 0.0015782369093519804,
+       "extrapolated_error": 0.0005676717814247958,
+       "gci": 0.0007099927696410813,
+       "band": 0.0017055023183031866,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.xmin.force_x",
+       "values": [
+        -0.24021404037189845,
+        -0.23983492570723883,
+        -0.23840239757446643
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9178573036319548,
+       "extrapolated": -0.2403504805573628,
+       "relative_error": 0.0015782369093524883,
+       "extrapolated_error": 0.0005676717814250033,
+       "gci": 0.0007099927696416955,
+       "band": 0.00017055023183046625,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.xmax.mass_flow",
+       "values": [
+        0.10001279752207694,
+        0.10005151203226366,
+        0.10020286829857311
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9670021109976552,
+       "extrapolated": 0.09999949150350453,
+       "relative_error": 0.0003870955632270517,
+       "extrapolated_error": 0.00013306086233394275,
+       "gci": 0.00016630394937047053,
+       "band": 1.6632523215510603e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymin.mean_pressure",
+       "values": [
+        1.2011313153507068,
+        1.1994825192637637,
+        1.1938711027168045
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7669520249221753,
+       "extrapolated": 1.201817358478922,
+       "relative_error": 0.0013727026061773364,
+       "extrapolated_error": 0.0005708380923067004,
+       "gci": 0.0007139551681895922,
+       "band": 0.000857553910269,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymin.force_x",
+       "values": [
+        0.11993409126290476,
+        0.11975512086703186,
+        0.11914301538321997
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7740593272824032,
+       "extrapolated": 0.12000804140799995,
+       "relative_error": 0.0014922395624825933,
+       "extrapolated_error": 0.0006162099158320186,
+       "gci": 0.0007707373307757328,
+       "band": 9.243768136898436e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymin.force_y",
+       "values": [
+        -0.24022911956334075,
+        -0.23990757610094884,
+        -0.23882067455871175
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571355966366646,
+       "extrapolated": -0.2403642069177826,
+       "relative_error": 0.001338486620507841,
+       "extrapolated_error": 0.0005620111087839715,
+       "gci": 0.0007029089286063284,
+       "band": 0.0001688591930523094,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymax.mean_pressure",
+       "values": [
+        1.2011301515829735,
+        1.1993989071099815,
+        1.1939412055438687
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.6564840430586698,
+       "extrapolated": 1.2019344564093457,
+       "relative_error": 0.00144134627767889,
+       "extrapolated_error": 0.0006691752799690492,
+       "gci": 0.0008370292192232806,
+       "band": 0.0010053810329650368,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymax.force_x",
+       "values": [
+        0.11993719125005325,
+        0.11975908365113727,
+        0.11906274508796146
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9670398519815662,
+       "extrapolated": 0.11999840395052733,
+       "relative_error": 0.0014850072530434046,
+       "extrapolated_error": 0.0005101126219921159,
+       "gci": 0.0006379662121071384,
+       "band": 7.65158755925659e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymax.force_y",
+       "values": [
+        0.24023086908462896,
+        0.23990013408699112,
+        0.2388198002151385
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.707729617599617,
+       "extrapolated": 0.24037679464885436,
+       "relative_error": 0.0013767381306909426,
+       "extrapolated_error": 0.000607070097754559,
+       "gci": 0.0007592985696499059,
+       "band": 0.00018240695528171257,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.zmin.mean_pressure",
+       "values": [
+        1.201186163867957,
+        1.1996476122655764,
+        1.1944469512039422
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571221855572319,
+       "extrapolated": 1.2018325511645482,
+       "relative_error": 0.0012808602435332652,
+       "extrapolated_error": 0.0005378347390947533,
+       "gci": 0.0006726552012031994,
+       "band": 0.0008079841207390999,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.zmin.force_z",
+       "values": [
+        -2.4023723277359186,
+        -2.399295224531151,
+        -2.3888939024078812
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571221855545018,
+       "extrapolated": -2.403665102329107,
+       "relative_error": 0.0012808602435358508,
+       "extrapolated_error": 0.0005378347390973375,
+       "gci": 0.000672655201206365,
+       "band": 0.0016159682414858077,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.zmax.mean_pressure",
+       "values": [
+        1.2011861638679573,
+        1.1996476122655761,
+        1.1944469512039422
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.7571221855567538,
+       "extrapolated": 1.201832551164549,
+       "relative_error": 0.0012808602435336346,
+       "extrapolated_error": 0.0005378347390951225,
+       "gci": 0.0006726552012037099,
+       "band": 0.0008079841207397133,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.zmax.force_z",
+       "values": [
+        2.402372327735919,
+        2.3992952245311505,
+        2.3888939024078812
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.757122185554024,
+       "extrapolated": 2.4036651023291085,
+       "relative_error": 0.0012808602435362203,
+       "extrapolated_error": 0.0005378347390977067,
+       "gci": 0.0006726552012068755,
+       "band": 0.001615968241487034,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.23994197563863107,
+        0.2397750306570397,
+        0.23911733219579184
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9780535686724219,
+       "extrapolated": 0.2399987671399324,
+       "relative_error": 0.0006957723055627267,
+       "extrapolated_error": 0.00023663247098357679,
+       "gci": 0.00029586059895402093,
+       "band": 7.098937662665649e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        0.0003491460573323557,
+        0.00034944349180723866,
+        0.00038330203735387203
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 6.830804314595974,
+       "extrapolated": 0.00034914342132705007,
+       "relative_error": 0.0008518912605099838,
+       "extrapolated_error": 7.5499211631038404e-06,
+       "gci": 9.437330202859523e-06,
+       "band": 3.2950066320719632e-09,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_heated_keps",
+     "file": "examples/cases/flow/channel_heated_keps.toml",
+     "description": "Heated turbulent channel, standard k-ε with scalable wall functions and the thermal wall function of Kader",
+     "status": "passed",
+     "cells": "24",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 9.31017320130007e-50,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_heated_periodic",
+     "file": "examples/cases/flow/channel_heated_periodic.toml",
+     "description": "Laminar heated channel, periodic",
+     "status": "passed",
+     "cells": "512 … 8 192",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.936808311279502,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "observed order of scalar theta in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 2.0190697218197844,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 4.734871403606744e-37,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.9817250928715295,
+      1.936808311279502
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "boundaries.ymin.mean_pressure",
+       "values": [
+        4.8933923600702714e-05,
+        -0.0005159649079875566,
+        -0.0006328947184284139
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 11.544114798514686,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.ymin.force_x",
+       "values": [
+        0.11994148763627395,
+        0.11975970854789866,
+        0.1190762180124807
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.910735117004689,
+       "extrapolated": 0.12000734947212664,
+       "relative_error": 0.001515564730417023,
+       "extrapolated_error": 0.0005488150196000315,
+       "gci": 0.0006863954786482707,
+       "band": 8.232729481588591e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymin.force_y",
+       "values": [
+        -8.448283541594193e-06,
+        0.00010656358553108437,
+        0.00014074301271271465
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 13.613637433737905,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.ymax.mean_pressure",
+       "values": [
+        5.719053480840216e-05,
+        -0.0005671875647406781,
+        -0.0007078543922452201
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 10.9175076197635,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.ymax.force_x",
+       "values": [
+        0.11994270878261357,
+        0.11976871978800306,
+        0.11908107721977419
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9826628033773768,
+       "extrapolated": 0.12000164377654794,
+       "relative_error": 0.0014506008441567376,
+       "extrapolated_error": 0.0004911182220480014,
+       "gci": 0.0006141994220882737,
+       "band": 7.366874241798337e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymax.force_y",
+       "values": [
+        1.1789944950859065e-05,
+        -0.00010728071487647448,
+        -0.00015287524222703665
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 10.099339761434386,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmin.mean_pressure",
+       "values": [
+        4.075113129177495e-05,
+        -0.0005418450361119431,
+        -0.0007317711903245241
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 14.296441569495938,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmin.force_z",
+       "values": [
+        -8.150226258355004e-05,
+        0.0010836900722238855,
+        0.001463542380649046
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 14.296441569495904,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmax.mean_pressure",
+       "values": [
+        4.075113129177499e-05,
+        -0.0005418450361119429,
+        -0.0007317711903245247
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 14.296441569495919,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmax.force_z",
+       "values": [
+        8.150226258355013e-05,
+        -0.001083690072223885,
+        -0.0014635423806490472
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 14.296441569495887,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "periodic.xmin.mass_flow",
+       "values": [
+        0.1,
+        0.1,
+        0.1
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "unchanged"
+      },
+      {
+       "quantity": "periodic.xmin.driving_force",
+       "values": [
+        1.2010866523313555,
+        1.19929567000446,
+        1.1925264498817036
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9182385303317515,
+       "extrapolated": 1.201730980269631,
+       "relative_error": 0.0014911349846567664,
+       "extrapolated_error": 0.0005361665371487268,
+       "gci": 0.0006705677074015265,
+       "band": 0.0008054099228444114,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.23988060035988953,
+        0.239528116888981,
+        0.23814936300099032
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9677374425551502,
+       "extrapolated": 0.24000166455037547,
+       "relative_error": 0.0014694121591312308,
+       "extrapolated_error": 0.0005044306284822692,
+       "gci": 0.0006308565089481313,
+       "band": 0.00015133023810742175,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        0.00033698450669358837,
+        0.00033197680491969805,
+        0.0003602077417139693
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.4950564504750936,
+       "extrapolated": 0.00033806433373035635,
+       "relative_error": 0.014860332372620605,
+       "extrapolated_error": 0.003194146584032307,
+       "gci": 0.004005477311713012,
+       "band": 1.3497837959599697e-06,
+       "verdict": "oscillatory"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_heated_pr0025",
+     "file": "examples/cases/flow/channel_heated_pr0025.toml",
+     "description": "Heated turbulent channel of a liquid metal (Pr = 0.025), standard k-ε with scalable wall functions, the thermal wall function of Kader and the turbulent Prandtl number of Kays & Crawford",
+     "status": "passed",
+     "cells": "24",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 4.563352349245452e-50,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_keps",
+     "file": "examples/cases/flow/channel_keps.toml",
+     "description": "Fully developed turbulent channel flow at Re_τ ≈ 395, standard k-ε with scalable wall functions",
+     "status": "passed",
+     "cells": "24",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 9.31017320130007e-50,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -344,8 +1392,33 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_rotating_sst",
+     "file": "examples/cases/flow/channel_rotating_sst.toml",
+     "description": "Fully developed channel flow in spanwise system rotation, k-ω SST with the curvature and rotation correction of Smirnov & Menter (2009)",
+     "status": "passed",
+     "cells": "192",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 7.639936611350606e-37,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -383,8 +1456,83 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_sst",
+     "file": "examples/cases/flow/channel_sst.toml",
+     "description": "Fully developed turbulent channel flow at Re_τ ≈ 395, k-ω SST 2003",
+     "status": "passed",
+     "cells": "192",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 5.465641557354549e-50,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_zeta_f",
+     "file": "examples/cases/flow/channel_zeta_f.toml",
+     "description": "Fully developed turbulent channel flow at Re_τ ≈ 395, k-ε-ζ-f (Hanjalić, Popovac & Hadžiabdić 2004) with the compound wall treatment",
+     "status": "passed",
+     "cells": "192",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 7.309581204182373e-50,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "channel_zeta_f0",
+     "file": "examples/cases/flow/channel_zeta_f0.toml",
+     "description": "Fully developed turbulent channel flow at Re_τ ≈ 395, k-ε-ζ-f₀ (Popovac 2023) with the compound wall treatment of the same paper",
+     "status": "passed",
+     "cells": "96",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.5226965229748674e-49,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -422,8 +1570,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -461,8 +1609,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -500,8 +1648,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -539,8 +1687,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -578,8 +1726,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -963,8 +2111,40 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "couette_two_rotors",
+     "file": "examples/cases/flow/couette_two_rotors.toml",
+     "description": "Laminar Couette flow between two cylinders that turn in opposite senses, each a sliding rotor by imprinting (D182 variant B, D185)",
+     "status": "passed",
+     "cells": "960",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 0.03",
+       "value": 0.017592292735251563,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 6.572220327676565e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -1310,8 +2490,8 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -1325,7 +2505,7 @@
       {
        "check": "net mass flow out of the domain",
        "band": "≤ 1e-06",
-       "value": 2.6784721934234383e-16,
+       "value": 2.570766433264208e-16,
        "unit": "relative",
        "passed": true
       }
@@ -1335,8 +2515,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -1350,35 +2530,35 @@
       {
        "check": "C_D,max (Schäfer & Turek (1996) 2D-2, Re = 100)",
        "band": "3.22 – 3.24",
-       "value": 3.231873290591545,
+       "value": 3.2318732905920924,
        "unit": "",
        "passed": true
       },
       {
        "check": "C_L,max (Schäfer & Turek (1996) 2D-2, Re = 100)",
        "band": "0.99 – 1.01",
-       "value": 0.9711534974993412,
+       "value": 0.9711534974992703,
        "unit": "",
        "passed": true
       },
       {
        "check": "St (Schäfer & Turek (1996) 2D-2, Re = 100)",
        "band": "0.295 – 0.305",
-       "value": 0.2954666606258293,
+       "value": 0.29546666062575133,
        "unit": "",
        "passed": true
       },
       {
        "check": "Δp (Pa) (Schäfer & Turek (1996) 2D-2, Re = 100)",
        "band": "2.46 – 2.5",
-       "value": 2.48192962495015,
+       "value": 2.4819296249495664,
        "unit": "",
        "passed": true
       },
       {
        "check": "net mass flow out of the domain",
        "band": "≤ 1e-06",
-       "value": 8.747581105273315e-19,
+       "value": 8.747581105275324e-19,
        "unit": "relative",
        "passed": true
       }
@@ -1388,8 +2568,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -1441,8 +2621,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -1494,8 +2674,61 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "cylinder_re100_statistics",
+     "file": "examples/cases/flow/cylinder_re100_statistics.toml",
+     "description": "Statistics of the vortex street behind a cylinder at Re = 100 (D71, gallery and recipe 110)",
+     "status": "passed",
+     "cells": "6 144",
+     "checks": [
+      {
+       "check": "C_D,max (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "3.22 – 3.24",
+       "value": 3.2318787641496165,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "C_L,max (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "0.99 – 1.01",
+       "value": 0.9711881371348248,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "St (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "0.295 – 0.305",
+       "value": 0.29546608517193707,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "Δp (Pa) (Schäfer & Turek (1996) 2D-2, Re = 100)",
+       "band": "2.46 – 2.5",
+       "value": 2.4819332686636963,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 8.885872235303997e-19,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -1547,8 +2780,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -1562,21 +2795,21 @@
       {
        "check": "C_D (Schäfer & Turek (1996) 2D-1, Re = 20)",
        "band": "5.57 – 5.59",
-       "value": 5.580009767047828,
+       "value": 5.579975661729859,
        "unit": "",
        "passed": true
       },
       {
        "check": "C_L (Schäfer & Turek (1996) 2D-1, Re = 20)",
        "band": "0.0104 – 0.011",
-       "value": 0.010643934471006849,
+       "value": 0.010610747680844863,
        "unit": "",
        "passed": true
       },
       {
        "check": "Δp (Pa) (Schäfer & Turek (1996) 2D-1, Re = 20)",
        "band": "0.1172 – 0.1176",
-       "value": 0.11751550040018283,
+       "value": 0.11751341083440943,
        "unit": "",
        "passed": true
       },
@@ -1590,7 +2823,7 @@
       {
        "check": "net mass flow out of the domain",
        "band": "≤ 1e-06",
-       "value": 1.0597468005553094e-12,
+       "value": 1.9277150626852698e-13,
        "unit": "relative",
        "passed": true
       }
@@ -1620,123 +2853,123 @@
       {
        "quantity": "boundaries.inlet.mean_pressure",
        "values": [
-        0.06945348228863674,
-        0.06944238483508183,
-        0.0694168284152672
+        0.06945145889527556,
+        0.06944078877216103,
+        0.06941619622495501
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.2034570733493246,
-       "extrapolated": 0.06946199973540237,
-       "relative_error": 0.00015978253629939587,
-       "extrapolated_error": 0.00012262023549686085,
-       "gci": 0.00015329409132841022,
-       "band": 1.06468084570304e-05,
+       "order": 1.2046443493136212,
+       "extrapolated": 0.06945963646022622,
+       "relative_error": 0.00015363425454621664,
+       "extrapolated_error": 0.00011773117982485116,
+       "gci": 0.00014718130260961464,
+       "band": 1.0221956188344765e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.inlet.force_x",
        "values": [
-        -0.00028475927738341093,
-        -0.00028471377782383526,
-        -0.0002846089965025955
+        -0.0002847509814706301,
+        -0.00028470723396585996,
+        -0.00028460640452231557
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.2034570733277097,
-       "extrapolated": -0.0002847941989151514,
-       "relative_error": 0.00015978253630140327,
-       "extrapolated_error": 0.00012262023550154485,
-       "gci": 0.0001532940913343955,
-       "band": 4.365191467552906e-08,
+       "order": 1.204644349290112,
+       "extrapolated": -0.0002847845094869293,
+       "relative_error": 0.00015363425454827985,
+       "extrapolated_error": 0.00011773117983008015,
+       "gci": 0.00014718130261582766,
+       "band": 4.191002037398275e-08,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.outlet.mass_flow",
        "values": [
-        0.0008200250247999329,
-        0.0008201000976561853,
-        0.0008204003906250974
+        0.0008200250243621745,
+        0.000820100097649415,
+        0.0008204003905548625
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 2.000007417377596,
-       "extrapolated": 0.0008200000006860589,
-       "relative_error": 9.154946981123397e-05,
-       "extrapolated_error": 3.051721201586205e-05,
-       "gci": 3.8145350930003666e-05,
-       "band": 3.12801423423784e-08,
+       "order": 1.9999988300875122,
+       "extrapolated": 0.0008199999999060374,
+       "relative_error": 9.154999543923286e-05,
+       "extrapolated_error": 3.051762943906054e-05,
+       "gci": 3.814587267741018e-05,
+       "band": 3.128057017160969e-08,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.walls.mean_pressure",
        "values": [
-        0.02011666886745439,
-        0.020108559660984668,
-        0.020091371628508926
+        0.020116471910630533,
+        0.02010813849492323,
+        0.020091127558648683
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.0837717572627081,
-       "extrapolated": 0.020123912009852425,
-       "relative_error": 0.0004031088110637385,
-       "extrapolated_error": 0.0003599271550426531,
-       "gci": 0.0004500709365551182,
-       "band": 9.053927997544387e-06,
+       "order": 1.029482693537025,
+       "extrapolated": 0.020124474866868164,
+       "relative_error": 0.000414258312507615,
+       "extrapolated_error": 0.00039767279844933417,
+       "gci": 0.0004972887562728952,
+       "band": 1.000369529703609e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.walls.force_x",
        "values": [
-        0.00017374920602206844,
-        0.00017364951770358316,
-        0.00017328957435162266
+        0.00017374677094457555,
+        0.0001736464316522423,
+        0.00017328810395292828
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.852273508362035,
-       "extrapolated": 0.0001737873907238578,
-       "relative_error": 0.0005737483397341292,
-       "extrapolated_error": 0.0002197207842887808,
-       "gci": 0.000274711340151978,
-       "band": 4.773087723666454e-08,
+       "order": 1.8363929022323418,
+       "extrapolated": 0.00017378579585156174,
+       "relative_error": 0.0005775030625763568,
+       "extrapolated_error": 0.00022455751803512932,
+       "gci": 0.0002807599443000846,
+       "band": 4.878113373271858e-08,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.walls.force_y",
        "values": [
-        -1.3579503919801972e-07,
-        -1.2965844014986365e-07,
-        -1.0669942578386473e-07
+        -1.3496986178183028e-07,
+        -1.2701047019764654e-07,
+        -1.063472152395028e-07
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.903549479067946,
-       "extrapolated": -1.3803359098540115e-07,
-       "relative_error": 0.0451901563149706,
-       "extrapolated_error": 0.01621744222837893,
-       "gci": 0.0206059790604457,
-       "band": 2.798189734226798e-09,
+       "order": 1.3763374706666465,
+       "extrapolated": -1.399566844928043e-07,
+       "relative_error": 0.05897162136128996,
+       "extrapolated_error": 0.035631186384887645,
+       "gci": 0.04618459488973631,
+       "band": 6.2335283887175335e-09,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.cylinder.mean_pressure",
        "values": [
-        0.028911258436567635,
-        0.028902555281520196,
-        0.02889745880483866
+        0.028909560907759705,
+        0.028901010806715064,
+        0.02889683128272789
        ],
        "ratios": [
         2.0,
@@ -1744,7 +2977,7 @@
        ],
        "order": null,
        "extrapolated": null,
-       "relative_error": 0.00030102996265396064,
+       "relative_error": 0.0002957534039317067,
        "extrapolated_error": null,
        "gci": null,
        "band": null,
@@ -1753,217 +2986,678 @@
       {
        "quantity": "boundaries.cylinder.force_x",
        "values": [
-        0.0001116001953409566,
-        0.00011161585121577215,
-        0.00011167063152402193
+        0.0001115995132345972,
+        0.00011161552534468526,
+        0.00011167055551000274
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.8069532588098303,
-       "extrapolated": 0.00011159393054950212,
-       "relative_error": 0.00014028537107591577,
-       "extrapolated_error": 5.613917731577186e-05,
-       "gci": 7.017003235682875e-05,
-       "band": 7.830989318103333e-09,
+       "order": 1.7810592228763173,
+       "extrapolated": 0.00011159294223386524,
+       "relative_error": 0.00014347831477006605,
+       "extrapolated_error": 5.8883658772813994e-05,
+       "gci": 7.360023961468627e-05,
+       "band": 8.213750914948705e-09,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.cylinder.force_y",
        "values": [
-        2.1287868942013702e-07,
-        2.0885950093131078e-07,
-        1.9246705634747112e-07
+        2.122149536168973e-07,
+        2.0733968189153395e-07,
+        1.9209535647832863e-07
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 2.0280548752035528,
-       "extrapolated": 2.141842371259849e-07,
-       "relative_error": 0.018880182416446435,
-       "extrapolated_error": 0.006095442518862598,
-       "gci": 0.007666030999885983,
-       "band": 1.6319346323098705e-09,
+       "order": 1.6447177746577817,
+       "extrapolated": 2.145071853973149e-07,
+       "relative_error": 0.022973271403694213,
+       "extrapolated_error": 0.01068603728202328,
+       "gci": 0.013501827636023051,
+       "band": 2.865289725521974e-09,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.zmin.mean_pressure",
        "values": [
-        0.019876203747058042,
-        0.019868031114012856,
-        0.019849691190168054
+        0.019876051875948098,
+        0.019867647106788747,
+        0.01984945872693335
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.1661147848196827,
-       "extrapolated": 0.019882773041888655,
-       "relative_error": 0.00041117675936463044,
-       "extrapolated_error": 0.0003304013387253706,
-       "gci": 0.0004131381748128953,
-       "band": 8.21161853826879e-06,
+       "order": 1.113736938618377,
+       "extrapolated": 0.019883272128962716,
+       "relative_error": 0.0004228590874992337,
+       "extrapolated_error": 0.00036313203218202387,
+       "gci": 0.0004540799311957317,
+       "band": 9.025316268273305e-06,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.zmin.force_z",
        "values": [
-        -0.017772232358882666,
-        -0.017764936579441722,
-        -0.017748584944280645
+        -0.017772096563904466,
+        -0.01776459322060847,
+        -0.01774837708747179
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.1643008911344055,
-       "extrapolated": -0.01777811014661426,
-       "relative_error": 0.0004105156456215689,
-       "extrapolated_error": 0.00033061937872583757,
-       "gci": 0.00041341090506393684,
-       "band": 7.3472346644922685e-06,
+       "order": 1.1118243670613837,
+       "extrapolated": -0.01777855834728809,
+       "relative_error": 0.00042219798148262604,
+       "extrapolated_error": 0.00036345935690619547,
+       "gci": 0.00045448938455206053,
+       "band": 8.077229229528731e-06,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.zmax.mean_pressure",
        "values": [
-        0.019876203747058046,
-        0.019868031114012856,
-        0.019849691190168054
+        0.019876051875948098,
+        0.019867647106788747,
+        0.01984945872693335
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.1661147848190703,
-       "extrapolated": 0.01988277304188867,
-       "relative_error": 0.0004111767593648049,
-       "extrapolated_error": 0.0003304013387258939,
-       "gci": 0.00041313817481338687,
-       "band": 8.211618538278562e-06,
+       "order": 1.113736938618377,
+       "extrapolated": 0.019883272128962716,
+       "relative_error": 0.0004228590874992337,
+       "extrapolated_error": 0.00036313203218202387,
+       "gci": 0.0004540799311957317,
+       "band": 9.025316268273305e-06,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.zmax.force_z",
        "values": [
-        0.01777223235888267,
-        0.017764936579441722,
-        0.017748584944280645
+        0.017772096563904466,
+        0.01776459322060847,
+        0.01774837708747179
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.1643008911337196,
-       "extrapolated": 0.01777811014661427,
-       "relative_error": 0.0004105156456217641,
-       "extrapolated_error": 0.00033061937872622767,
-       "gci": 0.0004134109050644883,
-       "band": 7.347234664502071e-06,
+       "order": 1.1118243670613837,
+       "extrapolated": 0.01777855834728809,
+       "relative_error": 0.00042219798148262604,
+       "extrapolated_error": 0.00036345935690619547,
+       "gci": 0.00045448938455206053,
+       "band": 8.077229229528731e-06,
        "verdict": "monotonic"
       },
       {
        "quantity": "benchmark.C_D",
        "values": [
-        5.580009767047828,
-        5.580792560788606,
-        5.583531576201095
+        5.579975661729859,
+        5.580776267234262,
+        5.583527775500135
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.806953258808631,
-       "extrapolated": 5.579696527475104,
-       "relative_error": 0.00014028537107600806,
-       "extrapolated_error": 5.6139177315849604e-05,
-       "gci": 7.017003235695658e-05,
-       "band": 0.00039154946590587984,
+       "order": 1.7810592228761954,
+       "extrapolated": 5.579647111693261,
+       "relative_error": 0.00014347831477006415,
+       "extrapolated_error": 5.888365877274242e-05,
+       "gci": 7.360023961469407e-05,
+       "band": 0.00041068754574747864,
        "verdict": "monotonic"
       },
       {
        "quantity": "benchmark.C_L",
        "values": [
-        0.010643934471006849,
-        0.010442975046565536,
-        0.009623352817373554
+        0.010610747680844863,
+        0.010366984094576695,
+        0.00960476782391643
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 2.028054875203544,
-       "extrapolated": 0.010709211856299245,
-       "relative_error": 0.018880182416446522,
-       "extrapolated_error": 0.0060954425188627925,
-       "gci": 0.007666030999886081,
-       "band": 8.159673161549456e-05,
+       "order": 1.644717774657775,
+       "extrapolated": 0.010725359269865741,
+       "relative_error": 0.02297327140369428,
+       "extrapolated_error": 0.01068603728202314,
+       "gci": 0.013501827636023181,
+       "band": 0.00014326448627610005,
        "verdict": "monotonic"
       },
       {
        "quantity": "benchmark.Δp (Pa)",
        "values": [
-        0.11751550040018283,
-        0.11750337225162,
-        0.11748554240219403
+        0.11751341083440943,
+        0.11750217665110901,
+        0.11748523061324763
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 0.5559351884652992,
-       "extrapolated": 0.11754129831401465,
-       "relative_error": 0.00010320467105639773,
-       "extrapolated_error": 0.0002194795718769749,
-       "gci": 0.00027440969216773446,
-       "band": 3.224739228975145e-05,
+       "order": 0.5930527498153758,
+       "extrapolated": 0.11753550643804923,
+       "relative_error": 9.559915945462334e-05,
+       "extrapolated_error": 0.0001879908830056451,
+       "gci": 0.0002350327877782692,
+       "band": 2.7619504549744308e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "balance.viscous_dissipation",
        "values": [
-        5.9028596091852925e-05,
-        5.8982800882634244e-05,
-        5.8806790532846296e-05
+        5.9027353455032714e-05,
+        5.898177164574369e-05,
+        5.880641021067431e-05
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.9423916784861301,
-       "extrapolated": 5.904470175497485e-05,
-       "relative_error": 0.0007758139656145745,
-       "extrapolated_error": 0.0002727706744757373,
-       "gci": 0.0003410563732716941,
-       "band": 2.0132078902407054e-08,
+       "order": 1.9438014136750148,
+       "extrapolated": 5.904336291203005e-05,
+       "relative_error": 0.0007722150261022246,
+       "extrapolated_error": 0.0002711474449920242,
+       "gci": 0.0003390262323367518,
+       "band": 2.001182124666949e-08,
        "verdict": "monotonic"
       },
       {
        "quantity": "balance.numerical_dissipation",
        "values": [
-        2.76887595181065e-08,
-        7.919962612011535e-08,
-        2.988143327344194e-07
+        2.7543700226942012e-08,
+        7.916903861923333e-08,
+        2.9875671582825275e-07
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 2.0920259516015034,
-       "extrapolated": 1.1904650256260475e-08,
-       "relative_error": 1.860352991556894,
-       "extrapolated_error": 1.325877612703943,
-       "gci": 0.7125684545169099,
-       "band": 1.973013657730753e-08,
+       "order": 2.0886458574415014,
+       "extrapolated": 1.167600284374059e-08,
+       "relative_error": 1.8743065734426532,
+       "extrapolated_error": 1.3590008152240187,
+       "gci": 0.7201146383956225,
+       "band": 1.9834621729001778e-08,
        "verdict": "monotonic"
       }
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "impinging_jet",
+     "file": "examples/cases/flow/impinging_jet.toml",
+     "description": "Round jet from a pipe impinging on a heated plate at H/D = 2, Re = 23 750, k-ε-ζ-f₀ with the coupled algorithm on an axisymmetric wedge (stage 6 part 6g, specification 9.6",
+     "status": "passed",
+     "cells": "10 400",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 7.874216084578019e-16,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "jet_pipe_profile",
+     "file": "examples/cases/flow/jet_pipe_profile.toml",
+     "description": "Developed pipe flow at Re = 23 750 for the inlet of the impinging jet (impinging_jet.toml), k-ε-ζ-f₀ with the coupled algorithm",
+     "status": "passed",
+     "cells": "96",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.3875223807598517e-35,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "naca0012_su2_re1000",
+     "file": "examples/cases/flow/naca0012_su2_re1000.toml",
+     "description": "Laminar flow around a NACA 0012 at Re = 1000 and 4 degrees angle of attack, on the PyAero C-mesh read from an SU2 file (D187)",
+     "status": "passed",
+     "cells": "6 420",
+     "checks": [
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.81061692724803e-15,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "pipe_gmsh_raw",
+     "file": "examples/cases/flow/pipe_gmsh_raw.toml",
+     "description": "Developing laminar pipe flow on raw Gmsh tetrahedra",
+     "status": "passed",
+     "cells": "1 572",
+     "checks": [
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 9.284992531829148e-11,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "pipe_heated_keps",
+     "file": "examples/cases/flow/pipe_heated_keps.toml",
+     "description": "Turbulent heated pipe, standard k-ε with scalable wall functions and the thermal wall function of Kader",
+     "status": "passed",
+     "cells": "72",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.5875988831492533e-35,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "pipe_heated_periodic",
+     "file": "examples/cases/flow/pipe_heated_periodic.toml",
+     "description": "Short periodic heated pipe, laminar",
+     "status": "passed",
+     "cells": "64 … 1 024",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.9761943148555041,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "observed order of scalar theta in space (finest pair)",
+       "band": "1.8 – 2.6",
+       "value": 2.2831354712962226,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.917542175504011e-24,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      2.0164577014276492,
+      1.9761943148555041
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "boundaries.ymax.mean_pressure",
+       "values": [
+        -0.00034866055128408694,
+        0.00047286839791507214,
+        0.0004914214126753272
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 2.356242902082092,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.ymax.force_x",
+       "values": [
+        0.0034884676457550873,
+        0.0034815191261138266,
+        0.003454039864347417
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9835656921460452,
+       "extrapolated": 0.0034908193349882715,
+       "relative_error": 0.0019918544033842296,
+       "extrapolated_error": 0.0006736782994219736,
+       "gci": 0.0008426655597785921,
+       "band": 2.9396115414797176e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymax.force_y",
+       "values": [
+        -1.468646286805469e-06,
+        2.1698997046718106e-06,
+        2.871348943442043e-06
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 2.477482852179251,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmin.mean_pressure",
+       "values": [
+        -0.000339414469609568,
+        0.0005489670383271268,
+        0.0007431537541234384
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 2.6173943290002026,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmin.force_y",
+       "values": [
+        7.404851533123787e-07,
+        -1.1976564876762897e-06,
+        -1.6213048376805335e-06
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 2.617394329000206,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmin.force_z",
+       "values": [
+        0.00016970561931422203,
+        -0.00027448090627829066,
+        -0.0003715733399176578
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 2.6173943290002066,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmax.mean_pressure",
+       "values": [
+        -0.0003394144696095679,
+        0.000548967038327127,
+        0.0007431537541234387
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 2.617394329000203,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmax.force_y",
+       "values": [
+        7.404851533123785e-07,
+        -1.19765648767629e-06,
+        -1.6213048376805343e-06
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 2.6173943290002066,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmax.force_z",
+       "values": [
+        -0.00016970561931422203,
+        0.00027448090627829066,
+        0.00037157333991765787
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 2.6173943290002066,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "periodic.xmin.mass_flow",
+       "values": [
+        0.0010908169,
+        0.0010908169,
+        0.0010908169
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 0.0,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "unchanged"
+      },
+      {
+       "quantity": "periodic.xmin.driving_force",
+       "values": [
+        3.1971575805159125,
+        3.1910004432587886,
+        3.1660907631629462
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.016374858692343,
+       "extrapolated": 3.199179191106493,
+       "relative_error": 0.0019258160106485288,
+       "extrapolated_error": 0.0006319153976120854,
+       "gci": 0.0007903937089699235,
+       "band": 0.0025270132382252787,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.003488390759431455,
+        0.003481629011210359,
+        0.0034539191633401064
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.034930587822854,
+       "extrapolated": 0.0034905733554554974,
+       "relative_error": 0.0019383574511583374,
+       "extrapolated_error": 0.0006252829554867454,
+       "gci": 0.0007820927236080669,
+       "band": 2.7282450300529595e-06,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        -8.777199072204644e-07,
+        -8.286793351706088e-07,
+        -3.126288566739077e-07
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 3.3954644795860367,
+       "extrapolated": -8.82869643176335e-07,
+       "relative_error": 0.05587268973442305,
+       "extrapolated_error": 0.0058329516658237246,
+       "gci": 0.00733396826468623,
+       "band": 6.437169944838228e-09,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "pipe_rough_keps",
+     "file": "examples/cases/flow/pipe_rough_keps.toml",
+     "description": "Fully developed flow in a rough pipe, standard k-ε with scalable wall functions and the roughness shift of Cebeci & Bradshaw",
+     "status": "passed",
+     "cells": "80",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.9369499385396564e-35,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -2290,8 +3984,40 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "plate_heated_keps",
+     "file": "examples/cases/flow/plate_heated_keps.toml",
+     "description": "Heated flat plate, standard k-ε with scalable wall functions and the thermal wall function of Kader",
+     "status": "passed",
+     "cells": "3 072",
+     "checks": [
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.0172165801447208e-13,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -2637,8 +4363,8 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -2984,8 +4710,8 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -3331,8 +5057,317 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "poiseuille_periodic",
+     "file": "examples/cases/flow/poiseuille_periodic.toml",
+     "description": "Periodic plane Poiseuille flow driven by the mass flow",
+     "status": "passed",
+     "cells": "512 … 8 192",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.2",
+       "value": 1.9360361052454529,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 4.1044893161579585e-37,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      1.9817257799244163,
+      1.9360361052454529
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "boundaries.ymin.mean_pressure",
+       "values": [
+        4.8840245581661784e-05,
+        -0.0005159971737871941,
+        -0.0006328944638283872
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 11.564999574468505,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.ymin.force_x",
+       "values": [
+        0.11994154736738181,
+        0.1197597061581895,
+        0.11907621795409133
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9102372566493262,
+       "extrapolated": 0.12000746269368957,
+       "relative_error": 0.0015160819014226768,
+       "extrapolated_error": 0.0005492602278910142,
+       "gci": 0.0006869526006057101,
+       "band": 8.23941578846959e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymin.force_y",
+       "values": [
+        -8.429544908985465e-06,
+        0.0001065700442840766,
+        0.00014074296362688395
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 13.642443386294598,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.ymax.mean_pressure",
+       "values": [
+        5.7096774628798047e-05,
+        -0.0005672194572345134,
+        -0.0007078541250311746
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 10.934352000128978,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.ymax.force_x",
+       "values": [
+        0.11994276058355992,
+        0.11976872171643198,
+        0.1190810771961805
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9822534213378022,
+       "extrapolated": 0.1200017348707138,
+       "relative_error": 0.0014510160203182374,
+       "extrapolated_error": 0.0004914452879987476,
+       "gci": 0.0006146086565268357,
+       "band": 7.371785894238166e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.ymax.force_y",
+       "values": [
+        1.17711973607875e-05,
+        -0.0001072870903342428,
+        -0.00015287519058284322
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 10.114373588844934,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmin.mean_pressure",
+       "values": [
+        4.0657377210537566e-05,
+        -0.0005418771395499109,
+        -0.0007317709791157697
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 14.327892174251401,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmin.force_z",
+       "values": [
+        -8.131475442107528e-05,
+        0.001083754279099821,
+        0.0014635419582315371
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 14.32789217425137,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmax.mean_pressure",
+       "values": [
+        4.065737721053757e-05,
+        -0.0005418771395499114,
+        -0.0007317709791157699
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 14.327892174251412,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "boundaries.zmax.force_z",
+       "values": [
+        8.13147544210753e-05,
+        -0.0010837542790998222,
+        -0.0014635419582315376
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 14.32789217425138,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "divergent"
+      },
+      {
+       "quantity": "periodic.xmin.mass_flow",
+       "values": [
+        0.09999999999999992,
+        0.10000000000000003,
+        0.10000000000000002
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": null,
+       "extrapolated": null,
+       "relative_error": 1.1102230246251573e-15,
+       "extrapolated_error": null,
+       "gci": null,
+       "band": null,
+       "verdict": "unchanged"
+      },
+      {
+       "quantity": "periodic.xmin.driving_force",
+       "values": [
+        1.2010872481934232,
+        1.1992956682169356,
+        1.1925264482514195
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9177571507676834,
+       "extrapolated": 1.2017320836614815,
+       "relative_error": 0.0014916318353910994,
+       "extrapolated_error": 0.0005365883767483944,
+       "gci": 0.0006710955730196715,
+       "band": 0.0008060443350729856,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        0.23988060036710773,
+        0.23952811688798584,
+        0.23814936300002928
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.9677374089025481,
+       "extrapolated": 0.24000166456420854,
+       "relative_error": 0.0014694121933264425,
+       "extrapolated_error": 0.0005044306560149845,
+       "gci": 0.0006308565433986978,
+       "band": 0.00015133024637599798,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        0.00033710367216371884,
+        0.0003319764486636456,
+        0.0003602074160934665
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.461028875938295,
+       "extrapolated": 0.0003382415146233496,
+       "relative_error": 0.015209634078335152,
+       "extrapolated_error": 0.0033639941001855416,
+       "gci": 0.004219185941847809,
+       "band": 1.4223030745384354e-06,
+       "verdict": "oscillatory"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -3678,8 +5713,8 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -3717,8 +5752,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -4064,8 +6099,8 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -4103,8 +6138,362 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "pot_solid_body",
+     "file": "examples/cases/flow/pot_solid_body.toml",
+     "description": "Solid-body rotation in a closed vessel with a sliding rotor pot whose interface passes through the axis (D186)",
+     "status": "passed",
+     "cells": "2 896",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 0.03",
+       "value": 0.00818741446442361,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.2383224392278944e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "pot_solid_body_viscous",
+     "file": "examples/cases/flow/pot_solid_body_viscous.toml",
+     "description": "Solid-body rotation at high viscosity in a closed vessel with a sliding rotor pot whose interface passes through the axis",
+     "status": "passed",
+     "cells": "2 896",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 0.01",
+       "value": 0.0010944677001427884,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.235962963138004e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "scalar_front_bdf2",
+     "file": "examples/cases/flow/scalar_front_bdf2.toml",
+     "description": "A front of a bounded scalar entering a uniform flow",
+     "status": "passed",
+     "cells": "40",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 0.0,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "square_duct_qcr",
+     "file": "examples/cases/flow/square_duct_qcr.toml",
+     "description": "Fully developed flow in a square duct, k-ω SST with the quadratic constitutive relation QCR2000 of Spalart (2000)",
+     "status": "passed",
+     "cells": "10 368",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.5815174254733413e-21,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "taylor_couette_imprint",
+     "file": "examples/cases/flow/taylor_couette_imprint.toml",
+     "description": "Laminar Taylor-Couette flow with a sliding mesh by imprinting (D58, D182, variant B)",
+     "status": "passed",
+     "cells": "640",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 0.03",
+       "value": 0.012846243219440836,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.2642259707339724e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "taylor_couette_mrf",
+     "file": "examples/cases/flow/taylor_couette_mrf.toml",
+     "description": "Laminar Taylor-Couette flow with a rotating zone, the moving reference frame of D55",
+     "status": "passed",
+     "cells": "256 … 4 096",
+     "checks": [
+      {
+       "check": "observed order in space (finest pair)",
+       "band": "1.8 – 2.6",
+       "value": 2.405912614263079,
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 2.2306487565885805e-18,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [
+      2.324143325611495,
+      2.405912614263079
+     ],
+     "time_orders": [],
+     "uncertainty": [
+      {
+       "quantity": "boundaries.inner.mean_pressure",
+       "values": [
+        -0.05167901381700904,
+        -0.048663553889251115,
+        -0.041070119643534825
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 1.3323744504797426,
+       "extrapolated": -0.0536652631806728,
+       "relative_error": 0.058349796271953046,
+       "extrapolated_error": 0.03701182563806183,
+       "gci": 0.04804293892625581,
+       "band": 0.0024828117045796955,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.zmin.mean_pressure",
+       "values": [
+        -0.00817129056730613,
+        -0.008068664756341033,
+        -0.0074903482453123095
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.494465669434741,
+       "extrapolated": -0.00819343112434211,
+       "relative_error": 0.012559314849934482,
+       "extrapolated_error": 0.002702232642220199,
+       "gci": 0.003386943111007108,
+       "band": 2.767569629497486e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.zmin.force_z",
+       "values": [
+        0.00019245418770781487,
+        0.00018980818696666987,
+        0.00017535533414291058
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.4494689210992417,
+       "extrapolated": 0.00019304717556547162,
+       "relative_error": 0.01374873039999612,
+       "extrapolated_error": 0.0030717251154790703,
+       "gci": 0.003851487104018299,
+       "band": 7.41234822070966e-07,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.zmax.mean_pressure",
+       "values": [
+        -0.008171290567306129,
+        -0.008068664756341033,
+        -0.0074903482453123095
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.4944656694347653,
+       "extrapolated": -0.008193431124342107,
+       "relative_error": 0.012559314849934273,
+       "extrapolated_error": 0.0027022326422199883,
+       "gci": 0.0033869431110069817,
+       "band": 2.7675696294973826e-05,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "boundaries.zmax.force_z",
+       "values": [
+        -0.00019245418770781484,
+        -0.00018980818696666987,
+        -0.0001753553341429106
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.4494689210992537,
+       "extrapolated": -0.00019304717556547162,
+       "relative_error": 0.013748730399995981,
+       "extrapolated_error": 0.003071725115479211,
+       "gci": 0.003851487104018221,
+       "band": 7.412348220709509e-07,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.viscous_dissipation",
+       "values": [
+        1.3118324609855579e-05,
+        1.3346468957496968e-05,
+        1.4694636637141098e-05
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.562981128206276,
+       "extrapolated": 1.307185250354004e-05,
+       "relative_error": 0.017391271707820677,
+       "extrapolated_error": 0.00355512780632689,
+       "gci": 0.004428167058069356,
+       "band": 5.8090132894423006e-08,
+       "verdict": "monotonic"
+      },
+      {
+       "quantity": "balance.numerical_dissipation",
+       "values": [
+        4.888797356268141e-08,
+        3.1504695454554535e-07,
+        1.3922040869657342e-06
+       ],
+       "ratios": [
+        2.0,
+        2.0
+       ],
+       "order": 2.0168685682674337,
+       "extrapolated": -3.8461921171710236e-08,
+       "relative_error": 5.444262905305533,
+       "extrapolated_error": 2.2710746648464304,
+       "gci": 2.2334198057523422,
+       "band": 1.0918736841798955e-07,
+       "verdict": "monotonic"
+      }
+     ],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "taylor_couette_sliding",
+     "file": "examples/cases/flow/taylor_couette_sliding.toml",
+     "description": "Laminar Taylor-Couette flow with a sliding mesh, conformal stepping (D56, D182)",
+     "status": "passed",
+     "cells": "512",
+     "checks": [
+      {
+       "check": "velocity error L2 (largest of the levels)",
+       "band": "≤ 0.02",
+       "value": 0.013539767313776109,
+       "unit": "m/s",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.8491407259892705e-19,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -4132,8 +6521,8 @@
      ],
      "orders": [],
      "time_orders": [
-      2.348884665291193,
-      2.4215233935179477,
+      2.348884665292,
+      2.421523393517271,
       2.20828669449708
      ],
      "uncertainty": [
@@ -4406,8 +6795,8 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -4421,295 +6810,295 @@
       {
        "check": "observed order in time (finest pair)",
        "band": "1.8 – 2.2",
-       "value": 1.998399114141631,
+       "value": 1.99856390781029,
        "unit": "",
        "passed": true
       },
       {
        "check": "net mass flow out of the domain",
        "band": "≤ 1e-06",
-       "value": 3.465863768187484e-18,
+       "value": 3.465863788105817e-18,
        "unit": "relative",
        "passed": true
       }
      ],
      "orders": [],
      "time_orders": [
-      1.9683774333216526,
-      1.998399114141631
+      1.9684079250864568,
+      1.99856390781029
      ],
      "uncertainty": [
       {
        "quantity": "boundaries.xmin.mean_pressure",
        "values": [
-        -0.40799401968183563,
-        -0.40806846412552905,
-        -0.40836182822817274
+        -0.4079940098270333,
+        -0.40806844571552703,
+        -0.4083618008250094
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.9784562675577222,
-       "extrapolated": -0.4079687045720671,
-       "relative_error": 0.00018246454629770284,
-       "extrapolated_error": 6.205159730354135e-05,
-       "gci": 7.755968392719223e-05,
-       "band": 3.1643887210707816e-05,
+       "order": 1.9785778455454617,
+       "extrapolated": -0.40796870048475253,
+       "relative_error": 0.00018244358177038804,
+       "extrapolated_error": 6.203746084127377e-05,
+       "gci": 7.754201554186972e-05,
+       "band": 3.163667785099757e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.xmin.force_x",
        "values": [
-        0.006374906557528682,
-        0.006376069751961391,
-        0.006380653566065199
+        0.006374906403547396,
+        0.00637606946430511,
+        0.006380653137890772
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.9784562675577222,
-       "extrapolated": 0.006374511008938548,
-       "relative_error": 0.00018246454629770284,
-       "extrapolated_error": 6.205159730354135e-05,
-       "gci": 7.755968392719223e-05,
-       "band": 4.944357376673096e-07,
+       "order": 1.9785778455454617,
+       "extrapolated": 0.006374510945074258,
+       "relative_error": 0.00018244358177038804,
+       "extrapolated_error": 6.203746084127377e-05,
+       "gci": 7.754201554186972e-05,
+       "band": 4.94323091421837e-07,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.xmax.mean_pressure",
        "values": [
-        -0.40799401968183974,
-        -0.4080684641255213,
-        -0.40836182822818273
+        -0.40799400982703765,
+        -0.40806844571552386,
+        -0.4083618008250083
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.9784562678752955,
-       "extrapolated": -0.4079687045720827,
-       "relative_error": 0.00018246454626858442,
-       "extrapolated_error": 6.205159727537307e-05,
-       "gci": 7.755968389193644e-05,
-       "band": 3.1643887196323983e-05,
+       "order": 1.9785778457008094,
+       "extrapolated": -0.4079687004847631,
+       "relative_error": 0.00018244358175201818,
+       "extrapolated_error": 6.203746082603264e-05,
+       "gci": 7.754201552287354e-05,
+       "band": 3.163667784324757e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.xmax.force_x",
        "values": [
-        -0.006374906557528746,
-        -0.00637606975196127,
-        -0.006380653566065355
+        -0.006374906403547463,
+        -0.00637606946430506,
+        -0.006380653137890754
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.9784562678752955,
-       "extrapolated": -0.006374511008938792,
-       "relative_error": 0.00018246454626858442,
-       "extrapolated_error": 6.205159727537307e-05,
-       "gci": 7.755968389193644e-05,
-       "band": 4.944357374425622e-07,
+       "order": 1.9785778457008094,
+       "extrapolated": -0.006374510945074423,
+       "relative_error": 0.00018244358175201818,
+       "extrapolated_error": 6.203746082603264e-05,
+       "gci": 7.754201552287354e-05,
+       "band": 4.943230913007433e-07,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.ymin.mean_pressure",
        "values": [
-        -0.40799401968183546,
-        -0.4080684641255307,
-        -0.40836182822817163
+        -0.40799400982703254,
+        -0.40806844571552653,
+        -0.40836180082500906
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.978456267508572,
-       "extrapolated": -0.4079687045720651,
-       "relative_error": 0.00018246454630219285,
-       "extrapolated_error": 6.205159730803187e-05,
-       "gci": 7.755968393264165e-05,
-       "band": 3.1643887212931135e-05,
+       "order": 1.978577845540901,
+       "extrapolated": -0.40796870048475153,
+       "relative_error": 0.0001824435817710687,
+       "extrapolated_error": 6.203746084181819e-05,
+       "gci": 7.754201554248747e-05,
+       "band": 3.1636677851249544e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.ymin.force_y",
        "values": [
-        0.006374906557528679,
-        0.0063760697519614174,
-        0.006380653566065182
+        0.0063749064035473835,
+        0.006376069464305102,
+        0.0063806531378907665
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.978456267508572,
-       "extrapolated": 0.006374511008938517,
-       "relative_error": 0.00018246454630219285,
-       "extrapolated_error": 6.205159730803187e-05,
-       "gci": 7.755968393264165e-05,
-       "band": 4.94435737702049e-07,
+       "order": 1.978577845540901,
+       "extrapolated": 0.006374510945074243,
+       "relative_error": 0.0001824435817710687,
+       "extrapolated_error": 6.203746084181819e-05,
+       "gci": 7.754201554248747e-05,
+       "band": 4.943230914257741e-07,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.ymax.mean_pressure",
        "values": [
-        -0.40799401968183924,
-        -0.4080684641255199,
-        -0.408361828228184
+        -0.40799400982703854,
+        -0.4080684457155242,
+        -0.40836180082500884
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.9784562679056115,
-       "extrapolated": -0.4079687045720832,
-       "relative_error": 0.00018246454626640773,
-       "extrapolated_error": 6.205159727292378e-05,
-       "gci": 7.75596838888272e-05,
-       "band": 3.1643887195055386e-05,
+       "order": 1.9785778457126604,
+       "extrapolated": -0.4079687004847644,
+       "relative_error": 0.0001824435817506572,
+       "extrapolated_error": 6.203746082494391e-05,
+       "gci": 7.754201552144155e-05,
+       "band": 3.1636677842663394e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.ymax.force_y",
        "values": [
-        -0.006374906557528738,
-        -0.006376069751961248,
-        -0.006380653566065375
+        -0.006374906403547477,
+        -0.006376069464305066,
+        -0.006380653137890763
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.9784562679056115,
-       "extrapolated": -0.0063745110089388,
-       "relative_error": 0.00018246454626640773,
-       "extrapolated_error": 6.205159727292378e-05,
-       "gci": 7.75596838888272e-05,
-       "band": 4.944357374227404e-07,
+       "order": 1.9785778457126604,
+       "extrapolated": -0.006374510945074444,
+       "relative_error": 0.0001824435817506572,
+       "extrapolated_error": 6.203746082494391e-05,
+       "gci": 7.754201552144155e-05,
+       "band": 4.943230912916155e-07,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.zmin.mean_pressure",
        "values": [
-        -0.31602456152904557,
-        -0.31614081989511983,
-        -0.3166036006709828
+        -0.31602454602300395,
+        -0.3161407892097955,
+        -0.3166035574571933
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.9929943976327775,
-       "extrapolated": -0.31598555681448615,
-       "relative_error": 0.00036787762796587886,
-       "extrapolated_error": 0.00012343828291595078,
-       "gci": 0.000154278809733638,
-       "band": 4.8755893199295996e-05,
+       "order": 1.9931437181541127,
+       "extrapolated": -0.3159855517913838,
+       "relative_error": 0.0003678296140423251,
+       "extrapolated_error": 0.00012340510950282525,
+       "gci": 0.00015423735320099817,
+       "band": 4.8742789525135166e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.zmin.force_z",
        "values": [
-        0.31602456152904557,
-        0.31614081989511983,
-        0.3166036006709828
+        0.31602454602300395,
+        0.3161407892097955,
+        0.3166035574571933
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.9929943976327775,
-       "extrapolated": 0.31598555681448615,
-       "relative_error": 0.00036787762796587886,
-       "extrapolated_error": 0.00012343828291595078,
-       "gci": 0.000154278809733638,
-       "band": 4.8755893199295996e-05,
+       "order": 1.9931437181541127,
+       "extrapolated": 0.3159855517913838,
+       "relative_error": 0.0003678296140423251,
+       "extrapolated_error": 0.00012340510950282525,
+       "gci": 0.00015423735320099817,
+       "band": 4.8742789525135166e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.zmax.mean_pressure",
        "values": [
-        -0.3160245615290457,
-        -0.3161408198951198,
-        -0.3166036006709828
+        -0.31602454602300395,
+        -0.3161407892097955,
+        -0.3166035574571933
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.992994397635017,
-       "extrapolated": -0.31598555681448637,
-       "relative_error": 0.0003678776279653517,
-       "extrapolated_error": 0.00012343828291559936,
-       "gci": 0.0001542788097330971,
-       "band": 4.875589319912508e-05,
+       "order": 1.9931437181541127,
+       "extrapolated": -0.3159855517913838,
+       "relative_error": 0.0003678296140423251,
+       "extrapolated_error": 0.00012340510950282525,
+       "gci": 0.00015423735320099817,
+       "band": 4.8742789525135166e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "boundaries.zmax.force_z",
        "values": [
-        -0.3160245615290457,
-        -0.3161408198951198,
-        -0.3166036006709828
+        -0.31602454602300395,
+        -0.3161407892097955,
+        -0.3166035574571933
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.992994397635017,
-       "extrapolated": -0.31598555681448637,
-       "relative_error": 0.0003678776279653517,
-       "extrapolated_error": 0.00012343828291559936,
-       "gci": 0.0001542788097330971,
-       "band": 4.875589319912508e-05,
+       "order": 1.9931437181541127,
+       "extrapolated": -0.3159855517913838,
+       "relative_error": 0.0003678296140423251,
+       "extrapolated_error": 0.00012340510950282525,
+       "gci": 0.00015423735320099817,
+       "band": 4.8742789525135166e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "balance.viscous_dissipation",
        "values": [
-        0.002282343751694886,
-        0.0023205044836262087,
-        0.002402577470182045
+        0.0022823436591335,
+        0.002320504265664777,
+        0.0024025771559568897
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.1048186096958845,
-       "extrapolated": 0.00224918122169076,
-       "relative_error": 0.016719975640384646,
-       "extrapolated_error": 0.014744267684751896,
-       "gci": 0.01816254123611929,
-       "band": 4.1453162505157576e-05,
+       "order": 1.1048216584026778,
+       "extrapolated": 0.0022491813690834945,
+       "relative_error": 0.016719921374927834,
+       "extrapolated_error": 0.01474416003344301,
+       "gci": 0.018162410554002358,
+       "band": 4.1452862562506645e-05,
        "verdict": "monotonic"
       },
       {
        "quantity": "balance.numerical_dissipation",
        "values": [
-        1.1679494001041145e-05,
-        1.2017545750923637e-05,
-        1.2868163062159342e-05
+        1.1679561876805616e-05,
+        1.201765080741839e-05,
+        1.2868374207899557e-05
        ],
        "ratios": [
         2.0,
         2.0
        ],
-       "order": 1.3312661009974796,
-       "extrapolated": 1.1456539135917337e-05,
-       "relative_error": 0.028944040713780657,
-       "extrapolated_error": 0.019460926417544638,
-       "gci": 0.023861785568785498,
-       "band": 2.786935814047604e-07,
+       "order": 1.3312873565826389,
+       "extrapolated": 1.1456587941728182e-05,
+       "relative_error": 0.028947055906624695,
+       "extrapolated_error": 0.019462508053143673,
+       "gci": 0.023863687849481386,
+       "band": 2.787174188467922e-07,
        "verdict": "monotonic"
       }
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -5011,8 +7400,8 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -5036,8 +7425,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -5068,8 +7457,8 @@
      "uncertainty": [],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -5371,8 +7760,154 @@
      ],
      "failures": [],
      "provenance": {
-      "version": "0.5.0",
-      "commit": "7afe9c9cc2b10071d95b54f449a0b98120fdcc79",
+      "version": "0.6.0",
+      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "tmr_plate_eb",
+     "file": "examples/cases/flow/tmr_plate_eb.toml",
+     "description": "Turbulent flat plate of the NASA Turbulence Modeling Resource (TMR, 2D zero-pressure-gradient case), the elliptic-blending k-ε of Billard & Laurence (2012) with the compound wall treatment",
+     "status": "passed",
+     "cells": "3 072",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.8303595669430853e-16,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "tmr_plate_keps",
+     "file": "examples/cases/flow/tmr_plate_keps.toml",
+     "description": "Turbulent flat plate of the NASA Turbulence Modeling Resource (TMR, 2D zero-pressure-gradient case), standard k-ε with scalable wall functions",
+     "status": "passed",
+     "cells": "3 072",
+     "checks": [
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.0172165801447208e-13,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "tmr_plate_sst",
+     "file": "examples/cases/flow/tmr_plate_sst.toml",
+     "description": "Turbulent flat plate of the NASA Turbulence Modeling Resource (TMR, 2D zero-pressure-gradient case), k-ω SST 2003",
+     "status": "passed",
+     "cells": "3 072",
+     "checks": [
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.766826849117874e-13,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "tmr_plate_zeta_f",
+     "file": "examples/cases/flow/tmr_plate_zeta_f.toml",
+     "description": "Turbulent flat plate of the NASA Turbulence Modeling Resource (TMR, 2D zero-pressure-gradient case), k-ε-ζ-f with the compound wall treatment",
+     "status": "passed",
+     "cells": "3 072",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.199857650953788e-17,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "tmr_plate_zeta_f0",
+     "file": "examples/cases/flow/tmr_plate_zeta_f0.toml",
+     "description": "Turbulent flat plate of the NASA Turbulence Modeling Resource (TMR, 2D zero-pressure-gradient case), k-ε-ζ-f₀ (Popovac 2023) with its compound wall treatment",
+     "status": "passed",
+     "cells": "3 072",
+     "checks": [
+      {
+       "check": "every steady solve converged",
+       "band": "converged",
+       "value": "yes",
+       "unit": "",
+       "passed": true
+      },
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 3.674328563776113e-15,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     }

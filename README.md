@@ -10,8 +10,8 @@
 
 ---
 
-> **Status: stage 6 nearly done (RANS turbulence, heat transfer in forced
-> convection, rotating machinery); the last release is 0.5.** The stage
+> **Status: stage 6 done (RANS turbulence, heat transfer in forced
+> convection, rotating machinery), release 0.6.** The stage
 > plan and every decision are in [docs/requirements.md](docs/requirements.md);
 > [What works today](#what-works-today) lists what is on `main` now. Next is
 > stage 7: the energy equation with buoyancy, variable density and conjugate
