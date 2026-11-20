@@ -72,6 +72,7 @@ fn channel_2d_is_extruded_one_layer() {
 
     let opts = ReadOptions {
         thickness: Some(0.01),
+        ..Default::default()
     };
     let g = format::read_with(path("channel_2d.su2"), None, &opts).unwrap();
     check(&g, 2.0 * 0.01);
