@@ -440,6 +440,8 @@ pub struct ZetaFCellOps {
     /// The weight and the weighted value of the wall production per cell,
     /// if any.
     pub wall: Option<(Buf, Buf)>,
+    /// The wall distance per cell.
+    pub dist: Buf,
     /// Output ν_t.
     pub nu_t: Buf,
     /// Output T.

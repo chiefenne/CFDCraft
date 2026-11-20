@@ -1445,6 +1445,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             grad_z: a.eb.map_or(Raw3::default(), |b| self.r3(b.1)),
             g2: a.eb.map_or(none, |b| self.r(b.2)),
             dkt: a.eb.map_or(none, |b| self.r(b.3)),
+            dist: self.r(a.dist),
         };
         self.go::<e::ZetaFCells>(self.nc, &args)
     }

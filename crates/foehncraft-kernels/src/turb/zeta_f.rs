@@ -115,6 +115,33 @@ pub const FORM_F0: u32 = 1;
 /// ζ, α in the slot of f.
 pub const FORM_EB: u32 = 2;
 
+/// The sink of k max(k/T_K, 2νk/d²), T_K = max(k/ε, C_T (ν/ε)^½), d the
+/// wall distance (the default of ζ-f and ζ-f₀; module documentation).
+pub const K_SINK_WALL: u32 = 0;
+/// The sink of k ε of the papers (Hanjalić et al. 2004, eq. (5) of
+/// Popovac 2023).
+pub const K_SINK_EPSILON: u32 = 1;
+/// The sink of k k/T_K (the ζ-f₀ default of 6d2, not grid-convergent at
+/// the wall).
+pub const K_SINK_KOLMOGOROV: u32 = 2;
+
+/// The sink of k divided by k (1/s, the S_p of the k equation is its
+/// negative) at k, ε, the viscosity ν and the wall distance d.
+#[inline(always)]
+pub fn k_sink_rate<T: Real>(k: T, e: T, nu: T, d: T, c: &ZetaFConstants) -> T {
+    let f = T::from_f64;
+    if c.k_sink == K_SINK_EPSILON {
+        return e / k;
+    }
+    let t_kol = f(c.c_t) * (nu / e).sqrt_of();
+    let kol = T::ONE / (k / e).max_of(t_kol);
+    if c.k_sink == K_SINK_KOLMOGOROV {
+        kol
+    } else {
+        kol.max_of(f(2.0) * nu / (d * d).max_of(f(1e-300)))
+    }
+}
+
 /// The constants of the model (the paper's by default; a case may change
 /// them, TURB007).
 #[repr(C)]
@@ -165,6 +192,12 @@ pub struct ZetaFConstants {
     pub mol: f64,
     /// The wall value ε_w = e_wall ν k_P/y_P²: 2; 1 for EB.
     pub e_wall: f64,
+    /// The sink of k: [`K_SINK_WALL`] (the default of ζ-f and ζ-f₀),
+    /// [`K_SINK_EPSILON`] or [`K_SINK_KOLMOGOROV`]; not used by EB.
+    pub k_sink: u32,
+    /// The power of ζ in C_ε1 = C_ε1′ (1 + C_ε1″/ζ^p): 1 (2004 and our
+    /// ζ-f₀ default) or ½ (Popovac 2023 as printed).
+    pub c_e1_power: f64,
 }
 
 impl ZetaFConstants {
@@ -192,6 +225,8 @@ impl ZetaFConstants {
             c_e4: 0.0,
             mol: 1.0,
             e_wall: 2.0,
+            k_sink: K_SINK_WALL,
+            c_e1_power: 1.0,
         }
     }
 
@@ -221,6 +256,8 @@ impl ZetaFConstants {
             c_e4: 0.4,
             mol: 0.5,
             e_wall: 1.0,
+            k_sink: K_SINK_EPSILON,
+            c_e1_power: 1.0,
         }
     }
 
@@ -233,6 +270,7 @@ impl ZetaFConstants {
         c.a = 0.6 * core::f64::consts::SQRT_2;
         c.n_zeta = 2.0;
         c.form = FORM_F0;
+        c.c_e1_zeta = 0.009;
         c
     }
 
@@ -310,6 +348,8 @@ pub struct ZetaFCellInputs<T> {
     pub g2: T,
     /// ∇·(ν_t/σ_k ∇k) (m²/s³; EB: C*_ε2).
     pub dkt: T,
+    /// The wall distance (m; 1e10 without walls).
+    pub d: T,
 }
 
 /// Results of [`zeta_f_cell`] for one cell.
@@ -410,7 +450,7 @@ pub fn zeta_f_cell<T: Real>(
     let pk = keep * nu_t * s2 + i.wall_pk;
     let f0 = c.form == FORM_F0;
     // P_k/ζ (2004) or P_k/√ζ (2023), finite as ζ → 0
-    let p_over_z = if f0 {
+    let p_over_z = if c.c_e1_power < 0.75 {
         keep * nt_z * z.sqrt_of() * s2 + i.wall_pk / z.max_of(f(ZETA_MIN)).sqrt_of()
     } else {
         keep * nt_z * s2 + i.wall_pk / z.max_of(f(ZETA_MIN))
@@ -418,19 +458,16 @@ pub fn zeta_f_cell<T: Real>(
     let ce1p = f(c.c_e1) * (pk + f(c.c_e1_zeta) * p_over_z);
     let inv_t = T::ONE / t;
     let k_div = k.max_of(tiny);
-    // k: S_u = P_k (+ ε_amb), S_p = −ε*/k* (2004); for ζ-f₀ the sink
-    // k/T_K with T_K = max(k/ε, C_T (ν/ε)^½): ε where k/ε is the larger,
-    // below ε where the Kolmogorov bound acts, so that k keeps a positive
-    // steady solution in laminar regions (6d2 default; the paper's
-    // eq. (5) writes −ε; the realizability bound of T is left out, it
-    // would raise the sink in shear layers and relaminarise them)
-    let su_k = pk + f(o.e_amb);
-    let sp_k = if f0 {
-        let t_kol = f(c.c_t) * (nu / e).sqrt_of();
-        -(T::ONE / (k_div / e).max_of(t_kol))
+    // k: S_u = P_k (+ the sink at the ambient state, which balances the
+    // decay of the free stream), S_p = −(the sink)/k*
+    let amb_k = if o.k_amb > 0.0 && o.e_amb > 0.0 {
+        let (ka, ea) = (f(o.k_amb), f(o.e_amb));
+        ka * k_sink_rate(ka, ea, nu, i.d, c)
     } else {
-        -(e / k_div)
+        T::ZERO
     };
+    let su_k = pk + amb_k;
+    let sp_k = -k_sink_rate(k_div, e, nu, i.d, c);
     // ε: (C_ε1 P_k − C_ε2 ε)/T (+ the ambient destruction)
     let amb_e = if o.k_amb > 0.0 && o.e_amb > 0.0 {
         let nu0 = i.nu.to_f64();
@@ -506,6 +543,7 @@ mod tests {
             grad_z: [0.0; 3],
             g2: 0.0,
             dkt: 0.0,
+            d: 1e10,
         }
     }
 
@@ -651,6 +689,7 @@ mod tests {
                 grad_z: [lift(0.0); 3],
                 g2: lift(0.0),
                 dkt: lift(0.0),
+                d: lift(i.d),
             };
             let r = zeta_f_cell(&di, &c, &o);
             let x0 = [i.k, i.e, i.zeta][which];
@@ -722,8 +761,15 @@ mod tests {
             -1.0 / tk
         );
         assert!(-r.sp_k * k1 < e1);
-        let ce1 = 1.4 * (1.0 + 0.012 / z.sqrt());
+        let ce1 = 1.4 * (1.0 + 0.009 / z);
         assert!((base.su_e - ce1 * base.pk / t).abs() < 1e-12 * base.su_e);
+        // the printed form C_ε1″/√ζ with `c_epsilon1_power` = ½
+        let mut c5 = c0;
+        c5.c_e1_power = 0.5;
+        c5.c_e1_zeta = 0.012;
+        let r5 = zeta_f_cell(&shear(k, e, z, 0.0, s), &c5, &o);
+        let ce1 = 1.4 * (1.0 + 0.012 / z.sqrt());
+        assert!((r5.su_e - ce1 * r5.pk / t).abs() < 1e-12 * r5.su_e);
         // homogeneous decay: the net ζ source is (0.4/T)(2/3 − ζ)
         for z in [0.2, 1.2] {
             let r = zeta_f_cell(&shear(1.0, 1.0, z, 0.0, 0.0), &c0, &o);
@@ -734,5 +780,46 @@ mod tests {
         // finite at ζ = 0 with signs kept
         let r = zeta_f_cell(&shear(1e-3, 1e-2, 0.0, -2.0, 100.0), &c0, &o);
         assert!(r.su_e.is_finite() && r.sp_z.is_finite() && r.sp_z <= 0.0 && r.su_z == 0.0);
+    }
+    #[test]
+    fn wall_sink_is_epsilon_at_the_wall_and_k_over_t_away_from_it() {
+        let nu = 1.5e-5;
+        let o = ZetaFOptions::default();
+        for c in [ZetaFConstants::paper(), ZetaFConstants::popovac_2023()] {
+            assert_eq!(c.k_sink, K_SINK_WALL);
+            // the sublayer: k = ε d²/(2ν), the Kolmogorov bound acts; the
+            // sink is 2νk/d² = ε exactly
+            let (e, d) = (0.3, 1e-4);
+            let k = e * d * d / (2.0 * nu);
+            let mut i = shear(k, e, 0.01, 0.0, 10.0);
+            i.d = d;
+            let r = zeta_f_cell(&i, &c, &o);
+            assert!((-r.sp_k * k - e).abs() < 1e-12 * e, "{}", -r.sp_k * k);
+            // the same cell away from walls: k/T_K, far below ε
+            i.d = 1e10;
+            let r = zeta_f_cell(&i, &c, &o);
+            let tk = 6.0 * (nu / e).sqrt();
+            assert!((r.sp_k + 1.0 / tk).abs() < 1e-12 / tk);
+            assert!(-r.sp_k * k < 0.01 * e);
+            // the other sinks
+            for (code, want) in [(K_SINK_EPSILON, e / k), (K_SINK_KOLMOGOROV, 1.0 / tk)] {
+                let mut c2 = c;
+                c2.k_sink = code;
+                i.d = d;
+                let r = zeta_f_cell(&i, &c2, &o);
+                assert!((r.sp_k + want).abs() < 1e-12 * want, "{code}");
+            }
+            // the ambient source balances the sink of the ambient state
+            let (ka, ea) = (1e-8, 1e-4);
+            let oa = ZetaFOptions {
+                k_amb: ka,
+                e_amb: ea,
+                ..Default::default()
+            };
+            let mut j = shear(ka, ea, 2.0 / 3.0, 0.0, 0.0);
+            j.d = 0.01;
+            let r = zeta_f_cell(&j, &c, &oa);
+            assert!((r.su_k + r.sp_k * ka).abs() < 1e-12 * r.su_k);
+        }
     }
 }

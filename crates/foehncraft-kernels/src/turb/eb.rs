@@ -181,6 +181,7 @@ mod tests {
             grad_z: [0.0, 0.5 * cross, 0.0],
             g2,
             dkt,
+            d: 1e10,
         }
     }
 
@@ -275,6 +276,7 @@ mod tests {
                 grad_z: i.grad_z.map(lift),
                 g2: lift(i.g2),
                 dkt: lift(i.dkt),
+                d: lift(i.d),
             };
             let r = eb_cell(&di, &c, &o);
             let x0 = [i.k, i.e, i.zeta][which];
