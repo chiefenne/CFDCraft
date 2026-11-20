@@ -1886,16 +1886,44 @@ unchanged.
 ## CPU–GPU parity of the turbulence models (6.6, PR #109)
 
 `tools/bench/stage6_cloud.py` (Colab: `tools/notebooks/stage6_colab.ipynb`)
-runs 14 cases, 300 outer iterations each, on the CPU and on the GPU and
+runs 16 cases, 300 outer iterations each, on the CPU and on the GPU and
 compares every pair bitwise with `tools/check/compare_runs.py`: the five
 channels (SST, k-ε, ζ-f, ζ-f₀, EB), the TMR plate with all six models,
-the heated channel and pipe (passive scalar with the thermal wall function)
-and the coupled algorithm on the backward-facing step (8 200 cells).
+the heated channel and pipe (passive scalar with the thermal wall function),
+the coupled algorithm on the backward-facing step (8 200 cells), and since
+PR #116 the two SST options of D170 (the rotating channel with the
+curvature correction, the square duct with QCR2000).
 
 | Check | Result |
 |---|---|
 | `--cpu-only --iterations 60` in the cloud (one thread against four; these meshes are below the 20 000 cells under which one thread is used, so this tests the script and the comparison) | all 14 pairs bitwise equal (9 to 11 files each) |
-| Tesla T4, CPU against GPU | pending: run by the maintainer |
+| Tesla T4 (sm_75), CPU (2 threads) against GPU, the first 14 cases, run by the maintainer on main 2026-11-20 | all 14 pairs bitwise equal (9 to 11 files each: fields, residual histories, wall values, restart) |
+| The same with the two SST options of D170 (added after that run) | pending: run by the maintainer |
+
+Run times of the T4 run (300 outer iterations, wall time with mesh
+generation and output; ns per cell and iteration):
+
+| Case | Cells | CPU s | GPU s | CPU ns | GPU ns |
+|---|---:|---:|---:|---:|---:|
+| channel_sst | 192 | 0.5 | 6.0 | 6 707 | 26 709 |
+| channel_keps | 24 | 0.1 | 1.1 | 3 518 | 105 122 |
+| channel_zeta_f | 192 | 0.7 | 2.3 | 10 639 | 33 212 |
+| channel_zeta_f0 | 96 | 0.5 | 2.1 | 14 607 | 59 495 |
+| channel_eb | 192 | 0.8 | 2.7 | 12 756 | 40 564 |
+| tmr_plate_sst | 3 072 | 4.4 | 3.6 | 4 587 | 3 206 |
+| tmr_plate_keps | 3 072 | 2.9 | 2.7 | 3 690 | 2 916 |
+| tmr_plate_keps (realizable) | 3 072 | 5.8 | 3.5 | 6 041 | 3 077 |
+| tmr_plate_zeta_f | 3 072 | 9.7 | 4.9 | 10 348 | 4 675 |
+| tmr_plate_zeta_f0 | 3 072 | 12.6 | 4.6 | 13 369 | 4 339 |
+| tmr_plate_eb | 3 072 | 11.8 | 4.8 | 12 576 | 4 580 |
+| channel_heated_keps | 24 | 0.1 | 1.5 | 5 707 | 147 207 |
+| pipe_heated_keps | 72 | 0.1 | 1.7 | 3 943 | 58 619 |
+| backstep_zeta_f0_coupled | 8 200 | 27.4 | 10.4 | 27 136 | 8 678 |
+
+On these small meshes the times measure the launch cost, not the
+throughput. Below about 200 cells the GPU is 3 to 17 times slower. From
+3 072 cells on it is 1.1 to 2.7 times faster than two CPU threads, and
+2.6 times on the step.
 
 `compare_runs.py` now leaves out the hash and size of `case.resolved.toml`
 in `result.json`: the file's lines are compared without the device keys of
