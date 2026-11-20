@@ -41,3 +41,5 @@ __pycache__/
 .ruff_cache/
 # the experimental data of the impinging jet (ERCOFTAC, CC BY-NC-SA 4.0: not for this MIT repository)
 examples/studies/impinging_jet/data/*.csv
+# the skewed-tetrahedra test tank (D50): made by its mesh script
+examples/studies/skewed_tets/*.msh

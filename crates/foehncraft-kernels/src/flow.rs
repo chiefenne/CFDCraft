@@ -195,6 +195,11 @@ pub struct MomentumInputs<'a, T> {
     /// deferred term (variable eddy viscosity, stage 6 specification 2.4),
     /// 0 without (laminar flow: it vanishes for constant μ).
     pub transposed: T,
+    /// 1 to take the transposed part without its trace,
+    /// ∇·[μ ((∇u)ᵀ − (∇·u) I)] (the cell-quality remediation, D50): the
+    /// same term where ∇·u = 0, without the grad-div part μ ∇(∇·u) that
+    /// cell gradients on tetrahedra leave in it; 0 for the full part.
+    pub trace_free: T,
 }
 
 /// Momentum flux out of the owner through face `f` for the three velocity
@@ -292,11 +297,15 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
                 i += 1;
             }
             if inp.transposed > T::ZERO {
-                // −μ Σ_j (∂u_j/∂x_i)_f S_j with the interpolated gradients
+                // −μ Σ_j (∂u_j/∂x_i)_f S_j with the interpolated gradients,
+                // less −μ (∇·u)_f S_i in the trace-free form
                 let s = g.area.at(f);
+                let div = inp.trace_free
+                    * (w * (gp[0][0] + gp[1][1] + gp[2][2])
+                        + wn * (gn[0][0] + gn[1][1] + gn[2][2]));
                 let mut i = 0;
                 while i < 3 {
-                    let mut t = T::ZERO;
+                    let mut t = -div * s[i];
                     let mut jj = 0;
                     while jj < 3 {
                         t += (w * gp[jj][i] + wn * gn[jj][i]) * s[jj];
@@ -348,12 +357,14 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
                 (dd, T::ZERO, b)
             } else {
                 let s = g.area.at(f);
+                let div = inp.trace_free * (gp[0][0] + gp[1][1] + gp[2][2]);
                 while i < 3 {
                     b[i] = lud * mp * psi_p[i] * dot(gp[i], rp) + mm * ub[i]
                         - dd * ub[i]
                         - inp.nonorth * mu * dot(kf, gp[i]);
                     if inp.transposed > T::ZERO {
-                        b[i] -= mu * (gp[0][i] * s[0] + gp[1][i] * s[1] + gp[2][i] * s[2]);
+                        b[i] -=
+                            mu * (gp[0][i] * s[0] + gp[1][i] * s[1] + gp[2][i] * s[2] - div * s[i]);
                     }
                     if inp.central > T::ZERO {
                         b[i] += inp.central * mp * (ub[i] - up[i]);
@@ -620,6 +631,14 @@ pub struct FluxInputs<'a, T> {
     pub time: &'a [T],
     /// Under-relaxation factor α_u of the momentum equations.
     pub alpha: T,
+    /// Limiter of the velocity gradient per cell and component (read when
+    /// `bounded`).
+    pub psi: Vec3<'a, T>,
+    /// True for the bounded face velocity of the cell-quality remediation
+    /// (D50): the mean of the two limited extrapolations to the face
+    /// centroid, w (u_P + ψ_P ∇u_P·r_P) + (1 − w)(u_N + ψ_N ∇u_N·r_N),
+    /// in place of the interpolation with the interpolated gradient.
+    pub bounded: bool,
 }
 
 /// Face mass flux (kg/s) out of the owner, with the Rhie–Chow interpolation
@@ -690,7 +709,13 @@ pub unsafe fn face_mass_flux<T: Real>(f: usize, inp: &FluxInputs<T>) -> T {
                     w * gp[i][1] + wn * gn[i][1],
                     w * gp[i][2] + wn * gn[i][2],
                 ];
-                uf[i] = w * up[i] + wn * un[i] + dot(gf, rw);
+                uf[i] = if inp.bounded {
+                    let (sp, sn) = (inp.psi.at(p), inp.psi.at(n));
+                    let rn = sub(xf, xn);
+                    w * (up[i] + sp[i] * dot(gp[i], rp)) + wn * (un[i] + sn[i] * dot(gn[i], rn))
+                } else {
+                    w * up[i] + wn * un[i] + dot(gf, rw)
+                };
                 i += 1;
             }
             let gpn = inp.grad_p.at(n);

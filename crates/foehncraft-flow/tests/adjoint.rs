@@ -438,6 +438,7 @@ fn momentum_face_with<T: Real>(fx: &Fixture, l: &Lifted<T>, f: usize, central: T
         nonorth: T::ONE,
         convection: T::ONE,
         transposed: T::ZERO,
+        trace_free: T::ZERO,
     };
     // SAFETY: f is a face of the mesh.
     let (cp, cn, b) = unsafe { k::momentum_face(f, &inp) };
@@ -468,6 +469,8 @@ fn flux_inputs<'a, T: Real>(
         ds: l.s("ds"),
         time: l.s("time"),
         alpha: T::from_f64(0.7),
+        psi: l.v3("u"),
+        bounded: false,
     }
 }
 

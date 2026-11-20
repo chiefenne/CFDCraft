@@ -129,6 +129,8 @@ pub struct MomentumFaceArgs {
     pub convection: f64,
     /// 1 with the transposed viscous stress (turbulent flow).
     pub transposed: f64,
+    /// 1 for its trace-free form (cell-quality remediation, D50).
+    pub trace_free: f64,
     /// Output c_P.
     pub cp: Buf,
     /// Output c_N.
@@ -209,6 +211,10 @@ pub struct FluxArgs {
     pub relax: Buf,
     /// Time-step term: (D^s, Y, α_u).
     pub time: Option<(Buf, Buf, f64)>,
+    /// The velocity limiter of the bounded face velocity (cell-quality
+    /// remediation, D50); None: the face velocity with the interpolated
+    /// gradient.
+    pub bounded: Option<Buf3>,
 }
 
 /// Inputs and outputs of [`FlowDevice::scalar_faces`].
