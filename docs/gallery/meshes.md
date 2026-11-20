@@ -167,7 +167,8 @@ With the default `solver.remediation = "auto"` the solver measures the
 faces at start-up, reports them (`MESH001`), switches to the Gauss
 pressure gradient (the face sum of the face pressures, with the boundary
 pressures) and the Venkatakrishnan limiter on the velocity gradients, says
-so (`MESH002`, `flow.log`, `flow.md`) and converges in 105 iterations:
+so (`MESH002`, `flow.log`, `flow.md`) and converges in 148 iterations (105 before the bounded face velocity of
+2026-11-20, the run of the chart):
 
 ```
 mesh quality: 28 faces with skewness above 0.9 (largest 1.233) in 44 cells; an optimised mesh avoids them (Gmsh: Mesh.OptimizeNetgen = 1)
