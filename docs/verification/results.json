@@ -5,6 +5,10 @@
   {
    "version": "0.6.0",
    "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty"
+  },
+  {
+   "version": "0.6.0",
+   "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789"
   }
  ],
  "families": [
@@ -65,7 +69,32 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
+      "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
+     }
+    },
+    {
+     "case": "backstep_outlet_backflow",
+     "file": "examples/cases/flow/backstep_outlet_backflow.toml",
+     "description": "Turbulence values of the backflow at a pressure outlet",
+     "status": "passed",
+     "cells": "4 600",
+     "checks": [
+      {
+       "check": "net mass flow out of the domain",
+       "band": "≤ 1e-06",
+       "value": 1.576487192165725e-11,
+       "unit": "relative",
+       "passed": true
+      }
+     ],
+     "orders": [],
+     "time_orders": [],
+     "uncertainty": [],
+     "failures": [],
+     "provenance": {
+      "version": "0.6.0",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -90,7 +119,7 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -115,7 +144,7 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -140,7 +169,7 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -3192,7 +3221,7 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -3988,7 +4017,7 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -7757,7 +7786,7 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -7789,7 +7818,7 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -7821,7 +7850,7 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -7846,7 +7875,7 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     },
@@ -7878,7 +7907,7 @@
      "failures": [],
      "provenance": {
       "version": "0.6.0",
-      "commit": "0bd0359bc95861d6ab27df04c83cda58546e2b3e-dirty",
+      "commit": "77736fa17e0712e0f3c5bdc1ecca8121ce42d789",
       "materials_database": "b5d634df7d9c62ee919d8a00e6a5d3c1be6a5934d4ecc1a21b475bffbc40ae42"
      }
     }

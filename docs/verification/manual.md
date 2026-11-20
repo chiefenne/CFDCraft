@@ -4,7 +4,7 @@
 
 Every verification case of the [case catalogue](../cases.md) with its pass bands and the result of its run. The cases check themselves (a run outside its band exits with code 1, R5); this page collects the bands and the values. The explanations stay on the stage pages ([stage 2](stage2.md), [stage 3](stage3.md), [stage 4](stage4.md), [stage 5](stage5.md), [stage 6](stage6.md)). The same data as JSON: [results.json](results.json).
 
-Runs of Foehncraft 0.6.0 (0bd0359bc958): 89 of 89 cases passed, 0 without a run.
+Runs of Foehncraft 0.6.0 (0bd0359bc958), 0.6.0 (77736fa17e07): 90 of 90 cases passed, 0 without a run.
 
 ![Observed orders against their bands](../figures/verification/orders.svg)
 
@@ -15,6 +15,7 @@ Runs of Foehncraft 0.6.0 (0bd0359bc958): 89 of 89 cases passed, 0 without a run.
 | `axial_stage_uniform` | Uniform axial flow through a sliding rotor whose interface is a surface of revolution (D186) | 2 090 | velocity error L2 (largest of the levels) | ≤ 0.003 | 0.002301 m/s | passed |
 |  |  |  | net mass flow out of the domain | ≤ 1e-06 | 2.946e-15 relative | passed |
 | `backstep_eb` | Backward-facing step of Driver & Seegmiller (1985), the elliptic-blending k-ε of Billard & Laurence (2012) with the compound wall treatment | 8 200 | net mass flow out of the domain | ≤ 1e-06 | 1.597e-15 relative | passed |
+| `backstep_outlet_backflow` | Turbulence values of the backflow at a pressure outlet | 4 600 | net mass flow out of the domain | ≤ 1e-06 | 1.576e-11 relative | passed |
 | `backstep_validation` | Backward-facing step of Driver & Seegmiller (1985) in the layout of NASA's Turbulence Modeling Resource (TMR), k-ε-ζ-f₀ with the coupled algorithm | 11 040 | net mass flow out of the domain | ≤ 1e-06 | 1.062e-12 relative | passed |
 | `backstep_zeta_f0` | Backward-facing step of Driver & Seegmiller (1985), k-ε-ζ-f₀ (Popovac 2023) with its compound wall treatment | 8 200 | net mass flow out of the domain | ≤ 1e-06 | 3.246e-11 relative | passed |
 | `backstep_zeta_f0_coupled` | Backward-facing step of Driver & Seegmiller (1985), k-ε-ζ-f₀, with the coupled pressure–velocity algorithm and pseudo-time steps | 8 200 | net mass flow out of the domain | ≤ 1e-06 | 2.310e-13 relative | passed |
