@@ -26,8 +26,10 @@
 pub mod cgns;
 pub mod gmsh;
 pub mod industry_msh;
+mod inflate;
 pub mod openfoam;
 pub mod su2;
+pub mod vtk;
 
 use crate::builder::CellSoup;
 use crate::generate::{hex_faces, tet_faces};
@@ -91,6 +93,7 @@ pub static FORMATS: &[&dyn MeshFormat] = &[
     &gmsh::Gmsh,
     &su2::Su2,
     &industry_msh::IndustryMsh,
+    &vtk::Vtk,
     #[cfg(feature = "hdf5")]
     &cgns::Cgns,
     &openfoam::OpenFoam,
