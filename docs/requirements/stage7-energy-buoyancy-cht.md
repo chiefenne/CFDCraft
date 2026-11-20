@@ -30,6 +30,7 @@ Contents
 9. [Fluid–solid interfaces (D157)](#9-fluidsolid-interfaces-d157)
    - 9a. [Thin walls: wall conduction without meshing the wall (D189)](#9a-thin-walls-wall-conduction-without-meshing-the-wall-d189)
    - 9b. [Wall film heat exchange with walls, thin walls and solids (D190)](#9b-wall-film-heat-exchange-with-walls-thin-walls-and-solids-d190)
+   - 9c. [Several fluids and materials: heat exchangers (D191)](#9c-several-fluids-and-materials-heat-exchangers-d191)
 10. [Coupling strategy, linear solvers and order of solution (D158)](#10-coupling-strategy-linear-solvers-and-order-of-solution-d158)
 11. [Multi-region partitioning and halos (D159)](#11-multi-region-partitioning-and-halos-d159)
 12. [Kernels: GPU, reproducibility, adjoint (D160)](#12-kernels-gpu-reproducibility-adjoint-d160)
@@ -557,6 +558,15 @@ simplest case of this model and stays valid with the same meaning.
 | **Wall boundary** | fluid cell on one side, the boundary's `thermal` condition (adiabatic, temperature, heat flux, convection, radiation, §8) on the outer side | a duct or a housing whose outside is ambient |
 | **Baffle** (a pair of coincident boundaries, D116 paired-boundary structure) | a fluid cell on each side | a plate inside the flow: a fin, a separating plate of a plate heat exchanger, a shield |
 | **Region interface** (§9) | fluid and solid, or two solids | a coating, a contact layer, a gasket with heat capacity |
+| **Inside a solid** (a baffle in a solid region) | the same solid, or two solids, on both sides | a glue or solder layer, a crack, an air gap or a thermal pad inside a part |
+| **Between two fluid regions** (§9c) | two different fluids | the tube wall of a tube-and-fin exchanger, the plate of a plate exchanger, without meshing the wall |
+
+Thin walls are allowed on every face set of the energy domain, whatever its
+two sides are (maintainer, 2026-11-20): boundaries, inside fluids, inside
+solids, at fluid–solid, solid–solid and fluid–fluid interfaces. The model is
+the same everywhere; only the two outer nodes connect to different
+neighbours (a fluid cell with its near-wall conductance, a solid cell with
+δ/k, or a boundary condition).
 
 A baffle needs two faces at the same place. Mesh readers and the built-in
 mesher keep internal faces of a named face zone and split them into a pair
@@ -754,6 +764,66 @@ thin walls); the surface mesh W1 and the wall-face halo W2 on those faces;
 the ledger exchange-pair slots. A test module (a prescribed per-face heat
 sink with its derivative, standing in for the film) checks the slots in
 stage 7 (V7.32).
+
+
+## 9c. Several fluids and materials: heat exchangers (D191)
+
+Added 2026-11-20 at the maintainer's request: conjugate heat transfer must
+model tube-and-fin and other heat exchangers, with several fluid regions of
+different fluids and several solid regions of different materials, and no
+limit on their number.
+
+### 9c.1 Regions and domains
+
+- **Any number** of fluid regions and solid regions (D112), each with its own
+  material (D94–D103, case or database). No fixed upper bound in the code:
+  regions and materials are lists, the per-cell region index is a 32-bit
+  integer, and kernels read properties from per-cell (and per-face) fields
+  (7.0b), never from a fixed table of a few materials.
+- **The flow domain** is the union of all fluid regions; the **energy
+  domain** the union of all regions. Fluid regions that touch only through
+  solids or thin walls (water in the tubes, air around the fins) are
+  separate connected parts of the flow domain: the momentum and pressure
+  rows of different parts never couple, the matrix is block diagonal over
+  the parts and one AMG setup serves all of them.
+- **Pressure level per part:** each connected fluid part needs its own
+  pressure reference (an outlet, or a reference cell when closed), its own
+  mass ledger and, with D151, its own thermodynamic pressure p₀(t) when it is
+  closed. The boundary-condition check (D29, D30) runs per part; a part
+  without inflow and outflow and without a reference is refused (new code
+  REG003).
+- **Two fluids touching directly** (two immiscible liquids at rest, or a gas
+  over a liquid) need a multiphase model (L3) and are refused: fluid regions
+  of different materials may meet only through a solid region or a thin
+  wall (REG004). Fluid regions of the same material may touch (they are one
+  part of the flow).
+- **Models per fluid part:** the turbulence model, the buoyancy model and the
+  turbulent Prandtl number are case-wide by default and may be set per fluid
+  region (`[regions.<name>] turbulence = "laminar"` for laminar oil in the
+  tubes beside turbulent air; open point MF1).
+
+### 9c.2 Interfaces
+
+Every interface between two regions is a region interface of §9 (fluid–solid,
+solid–solid) or carries a thin wall (§9a, also fluid–fluid). A fluid–solid
+interface face exchanges heat through the near-wall conductance of the fluid
+side (D135 with that region's material and turbulence model). Region
+interfaces are found automatically from the cell zones; named interfaces
+(`[interfaces.<name>]`) only add contact resistances or thin walls.
+
+### 9c.3 Ledger, outputs, checks
+
+- One mass and one kinetic-energy account per fluid part, one thermal
+  account per region and per thin-wall set (D119); interface heat flows as
+  exchange pairs. The report gives the heat-exchanger numbers per pair of
+  fluids: heat duty, inlet and outlet bulk temperatures, the effectiveness
+  and NTU against the case's capacity rates, log-mean temperature
+  difference, overall conductance UA (log columns `exchanger.<name>.*`,
+  with `[[output.exchangers]] hot = "water", cold = "air"`).
+- Checks V7.33–V7.35 (§14.3b).
+- Codes REG003 (fluid part without pressure reference), REG004 (fluids of
+  different materials touching), REG005 info (number of fluid parts, regions
+  and materials, listed in the log).
 
 
 ## 10. Coupling strategy, linear solvers and order of solution (D158)
@@ -1012,6 +1082,14 @@ the dry case, q_wall = latent plus sensible to the ledger tolerance), and the
 closed hot box of D123 with a thin wall and with a solid region (mass and
 energy to round-off).
 
+### 14.3b Several fluids and materials (D191)
+
+| # | Case | Checks | Pass band |
+|---|---|---|---|
+| V7.33 | Laminar double-pipe counterflow exchanger: water in the inner tube, an oil in the annulus, the tube wall meshed (copper) and, second run, as a thin wall | outlet temperatures, heat duty, effectiveness | thin wall within 0.5 % of the meshed wall; effectiveness against ε–NTU with the fully developed Nusselt numbers of Shah & London (1978), within 2 % for a long exchanger; ledger closes to round-off between the two fluids and the wall |
+| V7.34 | Three fluid parts and four materials in one case (two closed, one open), one closed part without reference | pressure levels per part, REG003 | each part reaches its own reference; the refused set-up gives REG003; results of each part equal to the part run alone (bitwise) |
+| V7.35 | Tube-and-fin exchanger cell: one row of three tubes (water) with plate fins (aluminium, as shell thin walls joined to the tube walls) in air, periodic in the fin pitch | heat duty, fin efficiency, air-side pressure drop | fin efficiency against the straight-fin formula where it applies (±2 %); duty equal from the water side, the air side and the ledger to the solver tolerance; GCI ≤ 2 % |
+
 ### 14.4 Implementation checks
 
 | # | Check | Pass |
@@ -1164,6 +1242,76 @@ D116) and the source hook; 7b and 7c can run beside 7d. The Python package
 (D61) gets the new keys with each PR (case round trip bitwise, as in stage 5).
 
 
+### 16.1 The finer cut (decided 2026-11-20)
+
+The maintainer chose on 2026-11-20 to build stage 7 in 19 small pull
+requests instead of the six above (which remain the grouping). Each brings
+its GPU kernels with a CPU = GPU check (the GPU part of 7f moves into every
+PR; 7f keeps the Colab notebook, the Jacobian sweep and the release), its
+verification section, and, for physics, a gallery entry with 1–3 field
+images, case files and a recipe. After 7a1 the buoyancy lane (B) and the
+CHT lane (C) run in parallel.
+
+| Lane | PR | Content | Checks |
+|---|---|---|---|
+| 0 | 7.0a | Ledger as data (D119): named rows per region; mass and kinetic energy moved onto it (stage 6 debt, finding F6) | V7.25 bitwise, ledger numbers identical |
+| 0 | 7.0b | ρ, μ as cell and face fields in the flux, momentum and scalar kernels (F1), CPU and GPU | V7.25 bitwise |
+| 0 | 7.0c | Thermal material data: c_p and k of the database fluids, NASA-7/9 forms and importer, water by IAPWS (below), solids starter set, orthotropic k, glycol–water mixtures, user database files, MAT006–MAT009 | unit tests against the sources |
+| A | 7a1 | Energy module on the fluid, constant ρ: δT form, T(h), k(T), c_p(T), SGDH, thermal BCs, viscous heating, ENE and THM codes, thermal ledger | V7.1–V7.3, channel DNS regression |
+| A | 7a2 | Wall-temperature periodic mode (D109 (2)) | V7.14 |
+| A | 7a3 | Radiation to ambient, convection–radiation, backflow temperature | V7.11 |
+| A | 7t1 | Thin walls 1D (D189): layers, heat capacity, sources, contact resistance | V7.26, V7.27 |
+| B | 7b1 | Gravity, Boussinesq, reduced pressure, balanced force in SIMPLEC **and the coupled algorithm** (D176), wall pressure, BUO codes | V7.7 (a) |
+| B | 7b2 | Laminar natural convection | V7.9, V7.12, V7.15 |
+| B | 7b3 | Transient buoyancy | V7.8, V7.13, V7.16 |
+| B | 7c | Low-Mach variable density, p₀(t), pressure work | V7.7 (b), (c), V7.17 |
+| C | 7d1 | Domain views, solid regions, interface faces, one-sided gradients, AMG over the energy view | V7.4–V7.6 |
+| C | 7d2 | Contact resistance, orthotropic k, energy sources | V7.4 with resistance, V7.10 |
+| C | 7d3 | General static non-conformal interfaces by imprinting (D58 beyond surfaces of revolution, which `imprint.rs` already handles) | D58 cases, V7.4 on non-matching layers |
+| C | 7d4 | METIS with two constraints, per-view halo plans | V7.24 |
+| C | 7t2 | Shell conduction and baffles (D189), surface mesh W1 and wall-face halo W2, film slots (D190) | V7.28–V7.32 |
+| D | 7e1 | `buoyancy_production` hook in k, ε, ω, ζ/φ (not delivered by stage 6), G_b with SGDH, C_ε3 | V7.25, V7.18 (SGDH, reported) |
+| D | 7e2 | GGDH, G_b with GGDH | V7.18, V7.19, V7.21 |
+| D | 7e3 | Heated backward-facing step | V7.20 |
+| D | 7e4 | D172 Pr_t closures, D173 variable-property wall treatment | H-0 to H-2 of step 21 |
+| – | 7f | Jacobians, Colab notebook, restart check, verification manual, release v0.7 | V7.22, V7.23 |
+
+Other decisions of 2026-11-20:
+
+- v0.6 is tagged before stage 7 code merges.
+- The two stage 6 items that were not delivered (ledger as data, the
+  buoyancy hook) are done in stage 7 (7.0a, 7e1).
+- Water: IAPWS-95 (with the IAPWS formulations of μ and k) is evaluated in
+  the database code into monotone tables (D96) at the operating pressure
+  when the case is resolved; the kernel reads tables. Every other form of
+  D95 (polynomial, Sutherland, power law, NASA-7/9, tables, expressions)
+  stays available for every property, water included.
+- Solids starter set: aluminium (pure and 6061), copper, carbon steel,
+  stainless steel 304, titanium, fused silica glass, silicon, PTFE, from open
+  sources; glycol–water at any fraction. User-defined materials with
+  thermal data and solids in the case file (`[materials.<name>]`) and in user
+  database files (`[materials] include = ["my_materials.toml"]`, the TOML
+  format of D103), so users extend the fluid and solid database without
+  changing the built-in one.
+- Reference data: only published numbers in the repository; tables that may
+  not be redistributed are fetched by a script into a git-ignored folder
+  (as for the channel DNS); the maintainer supplies what is not openly
+  available.
+- Turbulent bands (V7.18–V7.21): ζ-f₀ and elliptic-blending k-ε with GGDH
+  must pass; SST and k-ε are reported without a band (maintainer,
+  2026-11-20).
+- §18 point 3 and 5 defaults (reduced pressure at pressure boundaries, C_θ
+  = 0.3, transformed ω source) as recommended (maintainer, 2026-11-20); the
+  validation cases may change C_θ and the ω source.
+- Reduced and static pressure get dedicated 2D examples with recipes in
+  7b1 (maintainer, 2026-11-20): a tall 2D channel with gravity, run once
+  with `pressure_kind = "reduced"` and once with `"static"` at the outlet
+  (same flow, the static pressure field shows the hydrostatic part), a 2D
+  box at rest where a static outlet value of 0 Pa without the hydrostatic
+  part drives a false flow (the reason for the default), and a recipe
+  "which pressure do my boundary values mean" with the field images of p′
+  and p side by side.
+
 ## 17. Findings in the code today
 
 Read on main at b15a488:
@@ -1185,7 +1333,7 @@ Read on main at b15a488:
 - **F5:** METIS gets one constraint and no weights (finding F6 of the
   multi-physics plan, D122 (1)); PR 7d.
 - **F6:** `balance.rs` has fixed mass and kinetic-energy structs; the ledger
-  as data (D119) is planned for stage 6 and is a prerequisite of 7a.
+  as data (D119) is planned for stage 6 and is a prerequisite of 7a. **Done 2026-11-20 in PR 7.0a.**
 
 
 ## 18. Points for the maintainer
@@ -1214,7 +1362,10 @@ Read on main at b15a488:
      less robust at high wall conductance).
    - TW3 *Shell edges on solid regions* (a thin fin on a meshed base): join
      the edge to the solid cells now, or refuse (TWL004) in the first version.
-     Recommended: refuse first, join in a follow-up.
+     Recommended: refuse first, join in a follow-up. **Changed 2026-11-20 by
+     D191:** fins of a tube-and-fin exchanger are shell thin walls whose
+     edges sit on the tube walls (meshed or thin), so the edge joint is part
+     of 7t2 and TWL004 is dropped.
    - TW4 *Thin walls with radiation between surfaces* (L15): the thin-wall
      outer node takes the radiation flux slot like any wall face. Recommended,
      no extra work now.
@@ -1226,6 +1377,10 @@ Read on main at b15a488:
    - TW6 *When the film comes:* it stays with the sprays (L12) after v1.0;
      stage 7 builds only the interface (§9b.5). Alternative: a film without
      sprays (wetted walls, falling films, condensation) earlier, with L2.
+
+7. **Several fluids and materials (D191), added 2026-11-20**, open point:
+   - MF1 *Models per fluid region:* turbulence model, buoyancy model and
+     Pr_t set per fluid region (recommended), or one set for the whole case.
 
 ## 19. References
 
@@ -1316,6 +1471,8 @@ Read on main at b15a488:
   J. Heat Fluid Flow 28, 847–861 (2007)
 - R. G. Rehm, H. R. Baum, *The equations of motion for thermally driven,
   buoyant flows*, J. Res. Natl. Bur. Stand. 83, 297–308 (1978)
+- R. K. Shah, A. L. London, *Laminar Flow Forced Convection in Ducts*,
+  Academic Press (1978)
 - E. Tric, G. Labrosse, M. Betrouni, *A first incursion into the 3D
   structure of natural convection of air in a differentially heated cubic
   cavity, from accurate numerical solutions*, Int. J. Heat Mass Transfer 43,

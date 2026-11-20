@@ -1,6 +1,7 @@
 //! Mesh file formats (D33, D187): one reader interface for every format.
 //!
-//! A format is a [`MeshFormat`]: a name (`gmsh`, `su2`, `cgns`, `openfoam`),
+//! A format is a [`MeshFormat`]: a name (`gmsh`, `su2`, `industry_msh`, `cgns`,
+//! `openfoam`),
 //! the file extensions it owns (an OpenFOAM mesh is a directory), a test of
 //! the first bytes of a file, and a reader.
 //! The readers are listed in [`FORMATS`]; [`read`] picks the reader from
@@ -24,8 +25,11 @@
 #[cfg(feature = "hdf5")]
 pub mod cgns;
 pub mod gmsh;
+pub mod industry_msh;
+mod inflate;
 pub mod openfoam;
 pub mod su2;
+pub mod vtk;
 
 use crate::builder::CellSoup;
 use crate::generate::{hex_faces, tet_faces};
@@ -88,6 +92,8 @@ pub trait MeshFormat: Sync {
 pub static FORMATS: &[&dyn MeshFormat] = &[
     &gmsh::Gmsh,
     &su2::Su2,
+    &industry_msh::IndustryMsh,
+    &vtk::Vtk,
     #[cfg(feature = "hdf5")]
     &cgns::Cgns,
     &openfoam::OpenFoam,
@@ -109,6 +115,23 @@ pub fn by_extension(path: &Path) -> Option<&'static dyn MeshFormat> {
         .iter()
         .copied()
         .find(|f| f.extensions().contains(&ext.as_str()))
+}
+
+/// The formats that own the extension of `path` (`.msh` is shared by Gmsh
+/// and the industry format: the first bytes tell them apart).
+fn owners(path: &Path) -> Vec<&'static dyn MeshFormat> {
+    let Some(ext) = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+    else {
+        return Vec::new();
+    };
+    FORMATS
+        .iter()
+        .copied()
+        .filter(|f| f.extensions().contains(&ext.as_str()))
+        .collect()
 }
 
 /// Whether `path` is a mesh of a known format: a file with the extension of
@@ -138,8 +161,15 @@ pub fn detect(
     if let Some(name) = format {
         return by_name(name);
     }
-    if let Some(f) = by_extension(path) {
-        return Ok(f);
+    let own = owners(path);
+    if own.len() > 1 {
+        let head = &bytes[..bytes.len().min(4096)];
+        if let Some(f) = own.iter().copied().find(|f| f.sniff(head)) {
+            return Ok(f);
+        }
+    }
+    if let Some(f) = own.first() {
+        return Ok(*f);
     }
     if !cfg!(feature = "hdf5")
         && path
@@ -195,7 +225,7 @@ pub fn read_with(
         return f.read_path(path, options).map_err(err);
     }
     // sniff the first bytes only when the name does not decide
-    let head = if format.is_some() || by_extension(path).is_some() {
+    let head = if format.is_some() || owners(path).len() == 1 {
         Vec::new()
     } else {
         use std::io::Read;

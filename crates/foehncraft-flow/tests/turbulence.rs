@@ -315,3 +315,42 @@ fn inlet_turbulence_checks() {
         r.findings
     );
 }
+
+/// The smooth switches of specification 2.6 (`turbulence.smooth_limits`,
+/// for the adjoint) change the converged flat-plate C_f (wall probe at
+/// x = 0.97) and the drag of the plate by less than 0.1 % against the
+/// published hard min and max (level 1 of `tmr_plate_sst.toml`, 64 × 48
+/// cells: 0.090 % for C_f; level 0, 32 × 24 cells, gives 0.1002 %).
+#[test]
+#[cfg_attr(debug_assertions, ignore = "release builds only (CI runs it)")]
+fn smooth_limits_change_the_plate_friction_below_a_tenth_percent() {
+    let mk = |smooth: bool| {
+        parse(
+            &text("tmr_plate_sst.toml")
+                .replace("derived = [\"turbulence-features\"]", "")
+                .replace(
+                    "wall_treatment = \"low-re\"",
+                    &format!("wall_treatment = \"low-re\"\nsmooth_limits = {smooth}"),
+                ),
+        )
+    };
+    let hard = run_case(&mk(false), "plate_hard");
+    let smooth = run_case(&mk(true), "plate_smooth");
+    let (h, s) = (&hard.solves[0], &smooth.solves[0]);
+    assert!(hard.failures.is_empty(), "{:?}", hard.failures);
+    assert!(smooth.failures.is_empty(), "{:?}", smooth.failures);
+    let (th, ts) = (h.wall_probes[0].magnitude, s.wall_probes[0].magnitude);
+    let d_cf = (ts - th).abs() / th;
+    let drag = |r: &foehncraft_flow::case::Solve| {
+        r.boundaries
+            .iter()
+            .find(|b| b.name == "plate")
+            .map(|b| b.force[0])
+            .unwrap()
+    };
+    let (dh, ds) = (drag(h), drag(s));
+    let d_cd = (ds - dh).abs() / dh.abs();
+    eprintln!("C_f relative change {d_cf:.3e}, drag {d_cd:.3e} (tau hard {th:e})");
+    assert!(d_cf < 1e-3, "C_f changes by {d_cf:e}");
+    assert!(d_cd < 1e-3, "drag changes by {d_cd:e}");
+}

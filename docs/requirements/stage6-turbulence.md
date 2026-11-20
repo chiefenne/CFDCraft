@@ -188,12 +188,19 @@ such operations go through one helper in `foehncraft-core::math`:
 - `pmin(a, b)`, `pmax(a, b)`, `pabs(a)`: hard form (select instructions on
   the GPU, no branch);
 - the same with a smooth variant, `smin(a, b; w) = ½(a + b − √((a − b)² + (w·m)²))`
-  with m = ½(|a| + |b|) and relative width w (default 10⁻³), and
-  `smax` likewise. It is C¹ and its error is bounded by w·m/2;
+  with m = |a||b|/(|a| + |b|) (half the harmonic mean; amended in PR #136,
+  first m = ½(|a| + |b|)) and relative width w (default 10⁻³), and
+  `smax` likewise, evaluated as min(a, b) − ½e²/(√(d² + e²) + d), d = |a − b|,
+  e = w·m, free of cancellation. It is C¹ away from a = 0 and b = 0, and
+  its error is bounded by w·m/2 ≤ w·min(|a|, |b|)/2, so a floor such as
+  max(CD_kω, 10⁻¹⁰) stays a floor. (With the arithmetic mean that smooth
+  floor sat at about w²|CD_kω|/16, and the SST flat plate with smooth
+  limits never converged; PR #136);
 - the linearisation and the adjoint (D59 (3)) always use the smooth
   variant or the frozen switch; `turbulence.smooth_limits = true` makes
   the primal use it as well. A test checks that the flat-plate C_f with
-  smooth limits differs from the hard form by less than 0.1 %.
+  smooth limits differs from the hard form by less than 0.1 % (PR #136:
+  0.090 % on level 1 of `tmr_plate_sst.toml`, 0.1002 % on level 0).
 
 ### 2.7 Software structure
 

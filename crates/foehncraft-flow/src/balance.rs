@@ -161,24 +161,6 @@ impl BoundaryTerms {
     pub fn power(&self) -> f64 {
         self.viscous_power - self.convective_power - self.pressure_power
     }
-
-    fn scaled(&self, a: f64) -> Self {
-        Self {
-            boundary: self.boundary.clone(),
-            kind: self.kind.clone(),
-            mass_flow: a * self.mass_flow,
-            convective_power: a * self.convective_power,
-            pressure_power: a * self.pressure_power,
-            viscous_power: a * self.viscous_power,
-        }
-    }
-
-    fn add(&mut self, o: &Self, a: f64) {
-        self.mass_flow += a * o.mass_flow;
-        self.convective_power += a * o.convective_power;
-        self.pressure_power += a * o.pressure_power;
-        self.viscous_power += a * o.viscous_power;
-    }
 }
 
 /// The instantaneous terms of one state.
@@ -394,6 +376,345 @@ pub fn rates(
     }
 }
 
+/// What a term of an account is (D119). Every kind but [`TermKind::Part`]
+/// is a contribution to the quantity and enters the closure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TermKind {
+    /// A flow through a boundary (convective, diffusive, work).
+    Boundary,
+    /// A named volume source (positive) or sink (negative).
+    Source,
+    /// A physical dissipation or other loss to another quantity
+    /// (negative), booked as a pair when the partner is in the ledger.
+    Dissipation,
+    /// One side of an exchange pair between two accounts: the same face
+    /// or volume sum with opposite signs (D88, D117 (1)).
+    Exchange,
+    /// A breakdown of other terms, reported and not closed (the pressure
+    /// source of the momentum rows, whose difference to the boundary
+    /// pressure work is the pressure part of the numerical dissipation).
+    Part,
+}
+
+/// How a term is booked over a time step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StepRule {
+    /// The mean of its values at the two ends of the step (trapezoidal
+    /// rule, second order).
+    #[default]
+    Trapezoid,
+    /// Its value at the end of the step: a term of an equation that holds
+    /// at the new time level (the mass flows of the discrete continuity
+    /// equation).
+    End,
+}
+
+/// One term of an account (D119): `{quantity, unit, region, term kind,
+/// name, exchange-pair id}`, the quantity, unit and region being those of
+/// its [`Account`]. The value is the contribution to the quantity: a
+/// rate (per second) for a state, an integral over a run.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Term {
+    /// Name of the term ("outflow", "viscous work", "body force", …).
+    pub name: String,
+    /// Its kind.
+    pub kind: TermKind,
+    /// The boundary of a boundary term; the terms of one boundary are
+    /// summed together, in their order, before the boundaries are summed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub boundary: Option<String>,
+    /// The id of an exchange pair: the other account has the term with the
+    /// same id and the opposite sign.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pair: Option<u32>,
+    /// How it is booked over a time step.
+    #[serde(skip)]
+    pub rule: StepRule,
+    /// Its contribution to the quantity (unit of the account per second,
+    /// or the unit over a run).
+    pub value: f64,
+}
+
+impl Term {
+    /// A term of a boundary.
+    pub fn boundary(name: &str, boundary: &str, value: f64) -> Self {
+        Self {
+            name: name.into(),
+            kind: TermKind::Boundary,
+            boundary: Some(boundary.into()),
+            pair: None,
+            rule: StepRule::Trapezoid,
+            value,
+        }
+    }
+
+    /// A volume term of the given kind.
+    pub fn volume(name: &str, kind: TermKind, value: f64) -> Self {
+        Self {
+            name: name.into(),
+            kind,
+            boundary: None,
+            pair: None,
+            rule: StepRule::Trapezoid,
+            value,
+        }
+    }
+
+    /// The same term with another step rule.
+    pub fn rule(mut self, rule: StepRule) -> Self {
+        self.rule = rule;
+        self
+    }
+
+    /// The same term as one side of the exchange pair `id`.
+    pub fn paired(mut self, id: u32) -> Self {
+        self.pair = Some(id);
+        self
+    }
+}
+
+/// The ledger of one conserved quantity in one region (D88, D119): its
+/// content and its terms, with one closure routine ([`Account::close`])
+/// for every quantity a module books.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct Account {
+    /// The quantity ("mass", "kinetic energy", later "thermal energy",
+    /// species, charge, …).
+    pub quantity: String,
+    /// Unit of the content (kg, J, …); the terms are this unit per second,
+    /// or this unit over a run.
+    pub unit: String,
+    /// The region ("domain" for the whole mesh).
+    pub region: String,
+    /// The content at the end (the integral of the quantity), if the
+    /// account knows it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<f64>,
+    /// The scale the imbalance is measured against (for mass: the largest
+    /// mass flow), if the account has one; otherwise the largest term.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f64>,
+    /// The terms in their booking order.
+    pub terms: Vec<Term>,
+}
+
+/// The closure of an account: imbalance = storage − Σ contributions.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+pub struct Closure {
+    /// Storage: the change of the content per time (or over the run).
+    pub storage: f64,
+    /// Σ of the boundary terms: per boundary in the order of its terms,
+    /// then a pairwise sum over the boundaries (D31).
+    pub boundary: f64,
+    /// Σ of all contributions: the boundary sum, then the volume terms
+    /// added one after the other in their order.
+    pub contributions: f64,
+    /// storage − contributions.
+    pub imbalance: f64,
+    /// The largest magnitude of the storage and of every term (parts
+    /// included).
+    pub largest: f64,
+    /// imbalance over the scale, or over the largest term (-).
+    pub relative: f64,
+}
+
+impl Account {
+    /// A new account of the whole domain.
+    pub fn new(quantity: &str, unit: &str) -> Self {
+        Self {
+            quantity: quantity.into(),
+            unit: unit.into(),
+            region: "domain".into(),
+            ..Default::default()
+        }
+    }
+
+    /// The first term of this name (of the boundary, if one is given).
+    pub fn term(&self, name: &str, boundary: Option<&str>) -> Option<&Term> {
+        self.terms
+            .iter()
+            .find(|t| t.name == name && t.boundary.as_deref() == boundary)
+    }
+
+    /// The value of a term, zero if the account has none of this name.
+    pub fn value(&self, name: &str, boundary: Option<&str>) -> f64 {
+        self.term(name, boundary).map_or(0.0, |t| t.value)
+    }
+
+    /// The boundaries in the order of their first term.
+    pub fn boundaries(&self) -> Vec<&str> {
+        let mut out: Vec<&str> = Vec::new();
+        for t in &self.terms {
+            if let Some(b) = t.boundary.as_deref()
+                && !out.contains(&b)
+            {
+                out.push(b);
+            }
+        }
+        out
+    }
+
+    /// The sum of the terms of each boundary (in the order of the terms),
+    /// in the order of [`Account::boundaries`].
+    pub fn boundary_sums(&self) -> Vec<f64> {
+        self.boundaries()
+            .iter()
+            .map(|b| {
+                let mut s = 0.0;
+                let mut first = true;
+                for t in self
+                    .terms
+                    .iter()
+                    .filter(|t| t.kind != TermKind::Part && t.boundary.as_deref() == Some(*b))
+                {
+                    s = if first { t.value } else { s + t.value };
+                    first = false;
+                }
+                s
+            })
+            .collect()
+    }
+
+    /// The one closure routine of the ledger (D119): the boundary terms
+    /// summed per boundary and pairwise over the boundaries, the volume
+    /// terms added in their order, imbalance = storage − contributions.
+    /// Every sum has a fixed order, so the closure is bitwise
+    /// reproducible (D31).
+    pub fn close(&self, storage: f64) -> Closure {
+        let boundary = pairwise_sum(&self.boundary_sums());
+        let mut contributions = boundary;
+        for t in self
+            .terms
+            .iter()
+            .filter(|t| t.kind != TermKind::Part && t.boundary.is_none())
+        {
+            contributions += t.value;
+        }
+        let imbalance = storage - contributions;
+        let mut largest = storage.abs();
+        for t in &self.terms {
+            largest = largest.max(t.value.abs());
+        }
+        let denom = self.scale.unwrap_or(largest);
+        Closure {
+            storage,
+            boundary,
+            contributions,
+            imbalance,
+            largest,
+            relative: if denom > 0.0 { imbalance / denom } else { 0.0 },
+        }
+    }
+
+    /// The account with every value (terms, scale) multiplied by `a`.
+    fn scaled(&self, a: f64) -> Self {
+        let mut o = self.clone();
+        for t in &mut o.terms {
+            t.value *= a;
+        }
+        o.scale = o.scale.map(|s| a * s);
+        o
+    }
+
+    /// The account of a time step from the accounts at its two ends: each
+    /// term by its [`StepRule`], the content and the scale of the end.
+    fn over_step(a: &Self, b: &Self) -> Self {
+        let mut o = b.clone();
+        for (t, ta) in o.terms.iter_mut().zip(&a.terms) {
+            if t.rule == StepRule::Trapezoid {
+                t.value = 0.5 * ta.value + 0.5 * t.value;
+            }
+        }
+        o
+    }
+
+    /// Adds `dt` times the step account `s` to this (run) account.
+    fn accumulate(&mut self, s: &Self, dt: f64) {
+        for (t, ts) in self.terms.iter_mut().zip(&s.terms) {
+            t.value += dt * ts.value;
+        }
+        if let (Some(acc), Some(v)) = (self.scale.as_mut(), s.scale) {
+            *acc += dt * v;
+        }
+        self.content = s.content;
+    }
+}
+
+/// The sum of the two sides of every exchange pair over a set of accounts:
+/// each is zero to the bit when the two modules book the same face or volume
+/// sum with opposite signs (D88, D117 (1)). Pairs whose partner is missing
+/// are returned with the one value they have.
+pub fn exchange_residuals(accounts: &[Account]) -> Vec<(u32, f64)> {
+    let mut out: Vec<(u32, f64)> = Vec::new();
+    for a in accounts {
+        for t in &a.terms {
+            if let Some(id) = t.pair {
+                match out.iter_mut().find(|(i, _)| *i == id) {
+                    Some((_, v)) => *v += t.value,
+                    None => out.push((id, t.value)),
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Names of the mass and kinetic-energy terms.
+mod names {
+    pub const MASS: &str = "mass";
+    pub const KINETIC: &str = "kinetic energy";
+    pub const OUTFLOW: &str = "outflow";
+    pub const VISCOUS_WORK: &str = "viscous work";
+    pub const CONVECTED: &str = "convected";
+    pub const PRESSURE_WORK: &str = "pressure work";
+    pub const BODY_FORCE: &str = "body force";
+    pub const VISCOUS_DISSIPATION: &str = "viscous dissipation";
+    pub const PRESSURE_SOURCE: &str = "pressure source";
+}
+
+impl Rates {
+    /// The terms of the state as accounts (D119): mass and kinetic energy
+    /// of the domain. Every term is a contribution to the quantity, so the
+    /// outflows and the dissipation carry a minus sign; negating is exact,
+    /// so the closures give the numbers of the fixed terms bitwise.
+    pub fn accounts(&self) -> Vec<Account> {
+        use names::*;
+        let mut mass = Account::new(MASS, "kg");
+        mass.scale = Some(self.mass_scale);
+        let mut ke = Account::new(KINETIC, "J");
+        ke.content = Some(self.kinetic_energy);
+        for p in &self.boundaries {
+            let b = p.boundary.as_str();
+            mass.terms
+                .push(Term::boundary(OUTFLOW, b, -p.mass_flow).rule(StepRule::End));
+            ke.terms
+                .push(Term::boundary(VISCOUS_WORK, b, p.viscous_power));
+            ke.terms
+                .push(Term::boundary(CONVECTED, b, -p.convective_power));
+            ke.terms
+                .push(Term::boundary(PRESSURE_WORK, b, -p.pressure_power));
+        }
+        ke.terms.push(Term::volume(
+            BODY_FORCE,
+            TermKind::Source,
+            self.body_force_power,
+        ));
+        ke.terms.push(Term::volume(
+            VISCOUS_DISSIPATION,
+            TermKind::Dissipation,
+            -self.viscous_dissipation,
+        ));
+        ke.terms.push(Term::volume(
+            PRESSURE_SOURCE,
+            TermKind::Part,
+            self.pressure_source_power,
+        ));
+        vec![mass, ke]
+    }
+}
+
 /// Mass ledger (kg/s, or kg over a run).
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct MassBalance {
@@ -462,45 +783,57 @@ pub struct Balance {
     /// The shaft work per rotor, in the terms of its walls (D184).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub shafts: Vec<ShaftTerms>,
+    /// The accounts the balance is closed from (D119): every quantity
+    /// with its terms. Not yet written to `result.json` (the fixed fields
+    /// above are); later quantities report through them.
+    #[serde(skip)]
+    pub accounts: Vec<Account>,
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The balance of a set of accounts: the closure of each, and the fixed
+/// views of mass and kinetic energy (with their storages) that the
+/// reports print.
 fn close(
+    accounts: Vec<Account>,
     storage_ke: f64,
-    energy: f64,
-    boundaries: Vec<BoundaryTerms>,
     shafts: &[ShaftTerms],
-    body: f64,
-    source: f64,
-    phi: f64,
-    scale: f64,
-) -> (MassBalance, EnergyBalance, Vec<BoundaryTerms>) {
-    let out = pairwise_sum(&boundaries.iter().map(|p| p.mass_flow).collect::<Vec<_>>());
-    let boundary = pairwise_sum(
-        &boundaries
+) -> (MassBalance, EnergyBalance, Vec<BoundaryTerms>, Vec<Account>) {
+    use names::*;
+    let find = |q: &str| {
+        accounts
             .iter()
-            .map(BoundaryTerms::power)
-            .collect::<Vec<_>>(),
-    );
+            .find(|a| a.quantity == q)
+            .expect("the mass and kinetic-energy accounts are booked")
+    };
+    let (mass, ke) = (find(MASS), find(KINETIC));
+    let ck = ke.close(storage_ke);
+    // the boundary terms per boundary, in the sign of the reports
+    let boundaries: Vec<BoundaryTerms> = ke
+        .boundaries()
+        .into_iter()
+        .map(|b| BoundaryTerms {
+            boundary: b.into(),
+            kind: String::new(),
+            mass_flow: -mass.value(OUTFLOW, Some(b)),
+            convective_power: -ke.value(CONVECTED, Some(b)),
+            pressure_power: -ke.value(PRESSURE_WORK, Some(b)),
+            viscous_power: ke.value(VISCOUS_WORK, Some(b)),
+        })
+        .collect();
     let wall_pressure = pairwise_sum(
         &boundaries
             .iter()
             .map(|p| p.pressure_power)
             .collect::<Vec<_>>(),
     );
+    let source = ke.value(PRESSURE_SOURCE, None);
     let pressure = -(source + wall_pressure);
-    let num = boundary + body - phi - storage_ke;
-    let mut big = storage_ke
-        .abs()
-        .max(body.abs())
-        .max(phi.abs())
-        .max(source.abs());
-    for p in &boundaries {
-        big = big
-            .max(p.viscous_power.abs())
-            .max(p.convective_power.abs())
-            .max(p.pressure_power.abs());
-    }
+    // the views keep the signs of the reports, signed zeros included: the
+    // outflow and the numerical dissipation (= −imbalance of the closure)
+    // are formed from the terms in the sign the tables print
+    let out = pairwise_sum(&boundaries.iter().map(|p| p.mass_flow).collect::<Vec<_>>());
+    let num = ck.contributions - storage_ke;
+    let scale = mass.scale.unwrap_or(0.0);
     (
         MassBalance {
             storage: 0.0,
@@ -509,41 +842,52 @@ fn close(
             relative: if scale > 0.0 { out / scale } else { 0.0 },
         },
         EnergyBalance {
-            energy,
+            energy: ke.content.unwrap_or(0.0),
             storage: storage_ke,
-            boundary,
+            boundary: ck.boundary,
             shaft: pairwise_sum(&shafts.iter().map(|t| t.power).collect::<Vec<_>>()),
-            body_force: body,
-            viscous_dissipation: phi,
+            body_force: ke.value(BODY_FORCE, None),
+            viscous_dissipation: -ke.value(VISCOUS_DISSIPATION, None),
             numerical_dissipation: num,
             pressure_dissipation: pressure,
             scheme_dissipation: num - pressure,
-            relative: if big > 0.0 { num / big } else { 0.0 },
+            relative: if ck.largest > 0.0 {
+                num / ck.largest
+            } else {
+                0.0
+            },
         },
         boundaries,
+        accounts,
     )
 }
 
-/// The ledger of a steady state (no storage).
-pub fn steady(r: &Rates, iteration: usize) -> Balance {
-    let shafts = ShaftTerms::of(r);
-    let (mass, kinetic_energy, boundaries) = close(
-        0.0,
-        r.kinetic_energy,
-        r.boundaries.clone(),
-        &shafts,
-        r.body_force_power,
-        r.pressure_source_power,
-        r.viscous_dissipation,
-        r.mass_scale,
-    );
+/// The ledger of a set of accounts with the boundary kinds of the rates.
+fn balance_of(
+    accounts: Vec<Account>,
+    storage_ke: f64,
+    shafts: Vec<ShaftTerms>,
+    kinds: &[BoundaryTerms],
+) -> Balance {
+    let (mass, kinetic_energy, mut boundaries, accounts) = close(accounts, storage_ke, &shafts);
+    for (b, k) in boundaries.iter_mut().zip(kinds) {
+        b.kind = k.kind.clone();
+    }
     Balance {
-        iteration: Some(iteration),
         mass,
         kinetic_energy,
         boundaries,
         shafts,
+        accounts,
         ..Default::default()
+    }
+}
+
+/// The ledger of a steady state (no storage).
+pub fn steady(r: &Rates, iteration: usize) -> Balance {
+    Balance {
+        iteration: Some(iteration),
+        ..balance_of(r.accounts(), 0.0, ShaftTerms::of(r), &r.boundaries)
     }
 }
 
@@ -555,12 +899,10 @@ pub struct Ledger {
     start_time: f64,
     time: f64,
     step: usize,
-    boundaries: Vec<BoundaryTerms>,
+    /// The accounts integrated over the run.
+    run: Vec<Account>,
     shafts: Vec<ShaftTerms>,
-    body: f64,
-    source: f64,
-    phi: f64,
-    scale: f64,
+    kinds: Vec<BoundaryTerms>,
     energy: f64,
     /// A step counts as negative below −tolerance (relative).
     pub tolerance: f64,
@@ -584,7 +926,7 @@ impl Ledger {
             start_time: t,
             time: t,
             step,
-            boundaries: r.boundaries.iter().map(|p| p.scaled(0.0)).collect(),
+            run: r.accounts().iter().map(|a| a.scaled(0.0)).collect(),
             shafts: ShaftTerms::of(&r)
                 .into_iter()
                 .map(|t| ShaftTerms {
@@ -593,6 +935,7 @@ impl Ledger {
                     ..t
                 })
                 .collect(),
+            kinds: r.boundaries.clone(),
             prev: Some(r),
             ..Default::default()
         }
@@ -603,18 +946,11 @@ impl Ledger {
         let prev = self.prev.take().unwrap_or_else(|| r.clone());
         let dt = t - self.time;
         let half = 0.5;
-        let boundaries: Vec<BoundaryTerms> = prev
-            .boundaries
+        let accounts: Vec<Account> = prev
+            .accounts()
             .iter()
-            .zip(&r.boundaries)
-            .map(|(a, b)| {
-                let mut m = a.scaled(half);
-                m.add(b, half);
-                // the discrete continuity equation holds at the new level:
-                // the mass flows of the step are those at its end
-                m.mass_flow = b.mass_flow;
-                m
-            })
+            .zip(&r.accounts())
+            .map(|(a, b)| Account::over_step(a, b))
             .collect();
         let shafts: Vec<ShaftTerms> = ShaftTerms::of(&prev)
             .into_iter()
@@ -625,78 +961,55 @@ impl Ledger {
                 ..b
             })
             .collect();
-        let body = half * (prev.body_force_power + r.body_force_power);
-        let source = half * (prev.pressure_source_power + r.pressure_source_power);
-        let phi = half * (prev.viscous_dissipation + r.viscous_dissipation);
-        let scale = r.mass_scale;
         let storage = if dt > 0.0 {
             (r.kinetic_energy - prev.kinetic_energy) / dt
         } else {
             0.0
         };
-        let (mass, kinetic_energy, boundaries) = close(
-            storage,
-            r.kinetic_energy,
-            boundaries,
-            &shafts,
-            body,
-            source,
-            phi,
-            scale,
-        );
-        for (acc, p) in self.boundaries.iter_mut().zip(&boundaries) {
-            acc.add(p, dt);
+        for (acc, s) in self.run.iter_mut().zip(&accounts) {
+            acc.accumulate(s, dt);
         }
         for (acc, t) in self.shafts.iter_mut().zip(&shafts) {
             acc.power += dt * t.power;
             acc.transposed += dt * t.transposed;
         }
-        self.body += dt * body;
-        self.source += dt * source;
-        self.phi += dt * phi;
-        self.scale += dt * scale;
+        let b = balance_of(accounts, storage, shafts, &r.boundaries);
         self.energy = r.kinetic_energy;
         self.time = t;
         self.step = step;
         self.steps += 1;
-        if kinetic_energy.relative < -self.tolerance {
+        if b.kinetic_energy.relative < -self.tolerance {
             self.negative_steps += 1;
         }
-        self.largest_mass_relative = self.largest_mass_relative.max(mass.relative.abs());
+        self.largest_mass_relative = self.largest_mass_relative.max(b.mass.relative.abs());
+        self.kinds = r.boundaries.clone();
         self.prev = Some(r);
         Balance {
             step: Some(step),
             time: Some(t),
             duration: Some(dt),
-            mass,
-            kinetic_energy,
-            boundaries,
-            shafts,
-            ..Default::default()
+            ..b
         }
     }
 
     /// The ledger of the run so far: integrals over time (kg, J).
     pub fn run(&self) -> Balance {
-        let (mass, kinetic_energy, boundaries) = close(
-            self.energy - self.start_energy,
-            self.energy,
-            self.boundaries.clone(),
-            &self.shafts,
-            self.body,
-            self.source,
-            self.phi,
-            self.scale,
-        );
+        let mut accounts = self.run.clone();
+        for a in &mut accounts {
+            if a.quantity == names::KINETIC {
+                a.content = Some(self.energy);
+            }
+        }
         Balance {
             step: Some(self.step),
             time: Some(self.time),
             duration: Some(self.time - self.start_time),
-            mass,
-            kinetic_energy,
-            boundaries,
-            shafts: self.shafts.clone(),
-            ..Default::default()
+            ..balance_of(
+                accounts,
+                self.energy - self.start_energy,
+                self.shafts.clone(),
+                &self.kinds,
+            )
         }
     }
 }
@@ -1145,5 +1458,92 @@ mod tests {
         let d = check(&s, &BalanceSection::default());
         let codes: Vec<&str> = d.iter().map(|d| d.code).collect();
         assert_eq!(codes, [diag::BAL_MASS_STEP, diag::BAL_NEGATIVE_DISSIPATION]);
+    }
+
+    /// A thermal-like account of a later module: two boundaries with two
+    /// terms each, a source, a part that is not closed and one side of an
+    /// exchange pair, closed by the one routine.
+    fn heat_account() -> Account {
+        let mut a = Account::new("thermal energy", "J");
+        a.terms = vec![
+            Term::boundary("conduction", "hot", 3.0),
+            Term::boundary("convected", "hot", -0.5),
+            Term::boundary("conduction", "cold", -1.25),
+            Term::volume("heater", TermKind::Source, 0.75),
+            Term::volume("to the solid", TermKind::Exchange, -0.25).paired(7),
+            Term::volume("of it radiation", TermKind::Part, 100.0),
+        ];
+        a
+    }
+
+    #[test]
+    fn one_closure_routine_closes_any_account() {
+        let a = heat_account();
+        assert_eq!(a.boundaries(), ["hot", "cold"]);
+        assert_eq!(a.boundary_sums(), [2.5, -1.25]);
+        let c = a.close(1.5);
+        assert_eq!(c.boundary, 1.25);
+        // 1.25 + 0.75 − 0.25; the part is reported, not closed
+        assert_eq!(c.contributions, 1.75);
+        assert_eq!(c.imbalance, -0.25);
+        assert_eq!(c.largest, 100.0);
+        assert_eq!(c.relative, -0.25 / 100.0);
+        let mut b = a.clone();
+        b.scale = Some(2.0);
+        assert_eq!(b.close(1.5).relative, -0.125);
+        assert_eq!(a.value("conduction", Some("cold")), -1.25);
+        assert_eq!(a.value("missing", None), 0.0);
+    }
+
+    #[test]
+    fn exchange_pairs_cancel_to_the_bit() {
+        let gas = heat_account();
+        let mut solid = Account::new("thermal energy", "J");
+        solid.region = "solid".into();
+        solid.terms = vec![Term::volume("from the gas", TermKind::Exchange, 0.25).paired(7)];
+        assert_eq!(exchange_residuals(&[gas.clone(), solid]), [(7, 0.0)]);
+        assert_eq!(exchange_residuals(&[gas]), [(7, -0.25)]);
+    }
+
+    #[test]
+    fn step_rules_and_run_integrals() {
+        // a trapezoidal term and an end-of-step term over two steps
+        let at = |v: f64| {
+            let mut a = Account::new("q", "kg");
+            a.scale = Some(v);
+            a.terms = vec![
+                Term::volume("source", TermKind::Source, v),
+                Term::boundary("outflow", "out", -v).rule(StepRule::End),
+            ];
+            a
+        };
+        let s1 = Account::over_step(&at(1.0), &at(3.0));
+        assert_eq!(s1.terms[0].value, 2.0);
+        assert_eq!(s1.terms[1].value, -3.0);
+        let mut run = at(1.0).scaled(0.0);
+        run.accumulate(&s1, 0.5);
+        run.accumulate(&Account::over_step(&at(3.0), &at(5.0)), 0.25);
+        assert_eq!(run.terms[0].value, 0.5 * 2.0 + 0.25 * 4.0);
+        assert_eq!(run.terms[1].value, -(0.5 * 3.0 + 0.25 * 5.0));
+        assert_eq!(run.scale, Some(0.5 * 3.0 + 0.25 * 5.0));
+    }
+
+    #[test]
+    fn mass_and_kinetic_energy_are_accounts() {
+        let r = rates(2.0, 1.0, 0.9);
+        let acc = r.accounts();
+        assert_eq!(acc.len(), 2);
+        assert_eq!(acc[0].quantity, "mass");
+        assert_eq!(acc[1].quantity, "kinetic energy");
+        assert_eq!(acc[1].content, Some(2.0));
+        let b = steady(&r, 1);
+        // the fixed views and the closure of the account agree
+        assert_eq!(
+            b.kinetic_energy.numerical_dissipation,
+            -b.accounts[1].close(0.0).imbalance
+        );
+        assert_eq!(b.boundaries[0].kind, "wall");
+        // a closed domain reports +0 outflow, as before the accounts
+        assert!(b.mass.outflow.is_sign_positive());
     }
 }
