@@ -1946,10 +1946,10 @@ restart file give the same numbers.
 | The step, k-ε-ζ-f₀, 8 200 cells (gallery 108) | largest −u'v'/U_ref² in the shear layer | reported | 0.011 at x/H 4 to 7 |
 
 Not in this part: the blending weight of the compound and automatic
-treatments as a wall field (added in PR #NNN, below); the
+treatments as a wall field (added in PR #130, below); the
 heat-transfer coefficient and T⁺ of the scalars stay in the wall CSV.
 
-### The wall blending weight (spec 2.3, PR #NNN)
+### The wall blending weight (spec 2.3, PR #130)
 
 The wall kernel writes the viscous weight of each wall treatment to an
 output buffer (not read by the solver), the restart file stores it as
