@@ -1891,7 +1891,7 @@ compares every pair bitwise with `tools/check/compare_runs.py`: the five
 channels (SST, k-ε, ζ-f, ζ-f₀, EB), the TMR plate with all six models,
 the heated channel and pipe (passive scalar with the thermal wall function),
 the coupled algorithm on the backward-facing step (8 200 cells), and since
-PR #116 the two SST options of D170 (the rotating channel with the
+PR #118 the two SST options of D170 (the rotating channel with the
 curvature correction, the square duct with QCR2000).
 
 | Check | Result |
