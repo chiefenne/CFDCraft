@@ -220,13 +220,15 @@ fn raw_pipe() -> foehncraft_fv::Discretisation {
     use foehncraft_fv::problem::{Boundary, Problem};
     use foehncraft_mesh::Geometry;
     use foehncraft_mesh::case::{MeshSection, build_mesh};
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/meshes/pipe_gmsh_raw.msh");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/meshes/pipe_gmsh_raw.msh");
     let sec: MeshSection = toml::from_str(&format!("file = {:?}", path.to_str().unwrap())).unwrap();
     let (mesh, _, _) = build_mesh(&sec).unwrap();
     let geo = Geometry::compute(&mesh);
     let mut prob = Problem::default();
     for p in &mesh.boundaries {
-        prob.boundary.insert(p.name.clone(), Boundary::zero_gradient());
+        prob.boundary
+            .insert(p.name.clone(), Boundary::zero_gradient());
     }
     foehncraft_fv::Discretisation::new(&mesh, &geo, &prob).unwrap()
 }
@@ -245,7 +247,9 @@ fn plain_fluxes(
     psi: &[Vec<f64>; 3],
     bounded: bool,
 ) -> Vec<f64> {
-    use foehncraft_kernels::flow::{self as k, FLUX_FIXED, FaceGeometry, FluxInputs, MOM_FIXED, VelocityGradient};
+    use foehncraft_kernels::flow::{
+        self as k, FLUX_FIXED, FaceGeometry, FluxInputs, MOM_FIXED, VelocityGradient,
+    };
     let (nc, nf, ni) = (d.n_cells, d.n_faces, d.n_interior);
     let zc = vec![0.0; nc];
     let zf = vec![0.0; nf];
@@ -287,7 +291,9 @@ fn plain_fluxes(
         bounded,
     };
     // SAFETY: every face of the mesh, every array has its entries.
-    (0..ni).map(|f| unsafe { k::face_mass_flux(f, &inp) }).collect()
+    (0..ni)
+        .map(|f| unsafe { k::face_mass_flux(f, &inp) })
+        .collect()
 }
 
 #[test]
@@ -300,7 +306,8 @@ fn the_bounded_face_velocity_is_exact_for_a_linear_field_and_bounded_on_skewed_f
     let u0 = [0.3, -0.2, 1.1];
     let gm = [[0.5, -1.0, 0.2], [0.7, 0.1, -0.4], [-0.3, 0.9, -0.6]];
     let at = |x: [f64; 3], i: usize| u0[i] + gm[i][0] * x[0] + gm[i][1] * x[1] + gm[i][2] * x[2];
-    let u: [Vec<f64>; 3] = std::array::from_fn(|i| (0..nc).map(|c| at(d.cell_centroid.get(c), i)).collect());
+    let u: [Vec<f64>; 3] =
+        std::array::from_fn(|i| (0..nc).map(|c| at(d.cell_centroid.get(c), i)).collect());
     let g: [Vec<f64>; 9] = std::array::from_fn(|n| vec![gm[n / 3][n % 3]; nc]);
     let ones: [Vec<f64>; 3] = std::array::from_fn(|_| vec![1.0; nc]);
     let a = plain_fluxes(&d, &u, &g, &ones, false);
@@ -309,18 +316,32 @@ fn the_bounded_face_velocity_is_exact_for_a_linear_field_and_bounded_on_skewed_f
         let (xf, s) = (d.face_centroid.get(f), d.face_area.get(f));
         let exact: f64 = (0..3).map(|i| at(xf, i) * s[i]).sum();
         let scale = (s[0] * s[0] + s[1] * s[1] + s[2] * s[2]).sqrt();
-        assert!((a[f] - exact).abs() < 1e-12 * scale, "face {f}: {} {exact}", a[f]);
-        assert!((b[f] - exact).abs() < 1e-12 * scale, "face {f}: {} {exact}", b[f]);
+        assert!(
+            (a[f] - exact).abs() < 1e-12 * scale,
+            "face {f}: {} {exact}",
+            a[f]
+        );
+        assert!(
+            (b[f] - exact).abs() < 1e-12 * scale,
+            "face {f}: {} {exact}",
+            b[f]
+        );
     }
     // a cell-to-cell oscillation with a gradient of the size the cells see:
     // with the limiter at zero the bounded face velocity is the weighted
     // mean of the two cell values; the interpolated gradient moves the face
     // value of a skewed face out of the range of the two cells
     let osc: [Vec<f64>; 3] = std::array::from_fn(|i| {
-        (0..nc).map(|c| if (c + i) % 2 == 0 { 1.0 } else { -1.0 }).collect()
+        (0..nc)
+            .map(|c| if (c + i) % 2 == 0 { 1.0 } else { -1.0 })
+            .collect()
     });
     let zeros: [Vec<f64>; 3] = std::array::from_fn(|_| vec![0.0; nc]);
-    let big: [Vec<f64>; 9] = std::array::from_fn(|n| (0..nc).map(|c| if (c + n) % 3 == 0 { 40.0 } else { -40.0 }).collect());
+    let big: [Vec<f64>; 9] = std::array::from_fn(|n| {
+        (0..nc)
+            .map(|c| if (c + n) % 3 == 0 { 40.0 } else { -40.0 })
+            .collect()
+    });
     let lim = plain_fluxes(&d, &osc, &big, &zeros, true);
     let unl = plain_fluxes(&d, &osc, &big, &ones, false);
     let mut out_of_range = 0;
@@ -328,19 +349,26 @@ fn the_bounded_face_velocity_is_exact_for_a_linear_field_and_bounded_on_skewed_f
         let (p, n) = (d.owner[f] as usize, d.neighbour[f] as usize);
         let s = d.face_area.get(f);
         let w = d.weight[f];
-        let mean: f64 = (0..3).map(|i| (w * osc[i][p] + (1.0 - w) * osc[i][n]) * s[i]).sum();
+        let mean: f64 = (0..3)
+            .map(|i| (w * osc[i][p] + (1.0 - w) * osc[i][n]) * s[i])
+            .sum();
         assert!((lim[f] - mean).abs() < 1e-12, "face {f}");
         let bound: f64 = (0..3).map(|i| s[i].abs()).sum();
         if skew[f] > 0.9 && unl[f].abs() > bound {
             out_of_range += 1;
         }
     }
-    assert!(out_of_range > 0, "the interpolated gradient kept every skewed face in range");
+    assert!(
+        out_of_range > 0,
+        "the interpolated gradient kept every skewed face in range"
+    );
 }
 
 #[test]
 fn the_trace_free_transposed_stress_differs_only_by_the_divergence() {
-    use foehncraft_kernels::flow::{self as k, FaceGeometry, MOM_FIXED, MomentumInputs, VelocityGradient};
+    use foehncraft_kernels::flow::{
+        self as k, FaceGeometry, MOM_FIXED, MomentumInputs, VelocityGradient,
+    };
     let d = raw_pipe();
     let (nc, nf, ni) = (d.n_cells, d.n_faces, d.n_interior);
     // a linear field with divergence 0.9: the extra flux −μ (∇·u) S sums to
@@ -348,8 +376,10 @@ fn the_trace_free_transposed_stress_differs_only_by_the_divergence() {
     // is the same with both forms; for ∇·u = 0 every face flux is
     let run = |gm: [[f64; 3]; 3], trace_free: f64| -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
         let at = |x: [f64; 3], i: usize| gm[i][0] * x[0] + gm[i][1] * x[1] + gm[i][2] * x[2];
-        let u: [Vec<f64>; 3] = std::array::from_fn(|i| (0..nc).map(|c| at(d.cell_centroid.get(c), i)).collect());
-        let ub: [Vec<f64>; 3] = std::array::from_fn(|i| (ni..nf).map(|f| at(d.face_centroid.get(f), i)).collect());
+        let u: [Vec<f64>; 3] =
+            std::array::from_fn(|i| (0..nc).map(|c| at(d.cell_centroid.get(c), i)).collect());
+        let ub: [Vec<f64>; 3] =
+            std::array::from_fn(|i| (ni..nf).map(|f| at(d.face_centroid.get(f), i)).collect());
         let g: [Vec<f64>; 9] = std::array::from_fn(|n| vec![gm[n / 3][n % 3]; nc]);
         let ones = vec![1.0; nc];
         let (zero, mu) = (vec![0.0; nf], vec![1.3; nf]);
@@ -427,7 +457,12 @@ fn the_trace_free_transposed_stress_differs_only_by_the_divergence() {
     let (_, cb) = run(div, 1.0);
     for c in 0..nc {
         for i in 0..3 {
-            assert!((ca[c][i] - cb[c][i]).abs() < 1e-12, "cell {c}: {:?} {:?}", ca[c], cb[c]);
+            assert!(
+                (ca[c][i] - cb[c][i]).abs() < 1e-12,
+                "cell {c}: {:?} {:?}",
+                ca[c],
+                cb[c]
+            );
         }
     }
 }

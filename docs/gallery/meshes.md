@@ -187,7 +187,17 @@ extrapolations, w (u_P + ψ_P ∇u_P·r_P) + (1 − w)(u_N + ψ_N ∇u_N·r_N),
 which is just as exact for a linear field and stays between the values
 the two cells see (`solver.face_velocity = "bounded"`). On the ungraded
 58k-cell tank this removes the blow-up (stable past iteration 500, torque
-−1.03 N·m; before: runaway from iteration 330).
+−1.03 N·m; before: runaway from iteration 330). A coarser version of the
+tank (about 36k tetrahedra, faces up to skewness 1.3) is the test case:
+`python3 examples/studies/skewed_tets.py` meshes it and runs both face
+velocities for 300 iterations, a few minutes each:
+
+```
+iteration | bounded: residual     torque | interpolated: residual     torque
+      100 |          1.20e-02      -1.13 |               1.18e-02      -1.09
+      200 |          4.08e-03      -1.09 |               7.71e-02      -1.13
+      300 |          1.73e-03      -1.11 |               1.23e-01       -177
+```
 
 The switch is global, not per cell: treating only the cells at the
 skewed faces (first-order convection, a Gauss gradient or a damped

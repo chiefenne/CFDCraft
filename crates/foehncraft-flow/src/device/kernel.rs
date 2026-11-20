@@ -880,7 +880,14 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             ds,
             time,
             alpha,
-            psi: a.bounded.map_or(Raw3 { x: Raw::EMPTY, y: Raw::EMPTY, z: Raw::EMPTY }, |b| self.r3(b)),
+            psi: a.bounded.map_or(
+                Raw3 {
+                    x: Raw::EMPTY,
+                    y: Raw::EMPTY,
+                    z: Raw::EMPTY,
+                },
+                |b| self.r3(b),
+            ),
             bounded: u32::from(a.bounded.is_some()),
             out: self.r(out),
         };

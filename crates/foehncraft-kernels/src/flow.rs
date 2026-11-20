@@ -301,7 +301,8 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
                 // less −μ (∇·u)_f S_i in the trace-free form
                 let s = g.area.at(f);
                 let div = inp.trace_free
-                    * (w * (gp[0][0] + gp[1][1] + gp[2][2]) + wn * (gn[0][0] + gn[1][1] + gn[2][2]));
+                    * (w * (gp[0][0] + gp[1][1] + gp[2][2])
+                        + wn * (gn[0][0] + gn[1][1] + gn[2][2]));
                 let mut i = 0;
                 while i < 3 {
                     let mut t = -div * s[i];
@@ -362,7 +363,8 @@ pub unsafe fn momentum_face<T: Real>(f: usize, inp: &MomentumInputs<T>) -> (T, T
                         - dd * ub[i]
                         - inp.nonorth * mu * dot(kf, gp[i]);
                     if inp.transposed > T::ZERO {
-                        b[i] -= mu * (gp[0][i] * s[0] + gp[1][i] * s[1] + gp[2][i] * s[2] - div * s[i]);
+                        b[i] -=
+                            mu * (gp[0][i] * s[0] + gp[1][i] * s[1] + gp[2][i] * s[2] - div * s[i]);
                     }
                     if inp.central > T::ZERO {
                         b[i] += inp.central * mp * (ub[i] - up[i]);

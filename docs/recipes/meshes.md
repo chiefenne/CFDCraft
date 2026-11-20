@@ -157,7 +157,9 @@ also on a good mesh), `face_velocity = "interpolated"` or `"bounded"`.
 A limiter set in the case stays, and first-order `upwind` needs none (the
 bounded face velocity then takes the Venkatakrishnan limiter for itself).
 A turbulent run that still grows k in a few cells of a poor mesh can also
-take `transposed_stress = "trace-free"` (not switched automatically). Least squares is more accurate on good meshes (the
+take `transposed_stress = "trace-free"` (not switched automatically).
+The test case of the bounded face velocity is a coarse stirred tank on raw
+tetrahedra (`pip install gmsh`, then `python3 examples/studies/skewed_tets.py`). Least squares is more accurate on good meshes (the
 cylinder lift at Re = 20 is 3.5 % lower with the Gauss gradient), so treat
 the remediation as a remedy and fix the mesh for production runs.
 
