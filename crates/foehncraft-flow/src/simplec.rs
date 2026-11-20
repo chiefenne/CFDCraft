@@ -1787,6 +1787,9 @@ impl Flow {
                 self.dev.upload(f.p, p)?;
                 self.dev.upload(f.pb, pb)?;
                 t.load(self.dev.as_mut(), ts)?;
+                // p̂ of the pressure boundaries from the loaded k (the
+                // start set them from the start fields)
+                t.modified_pressure(self.dev.as_mut(), &self.bc)?;
             }
             _ => {
                 self.dev.upload(f.p, &s.p)?;

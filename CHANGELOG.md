@@ -1089,12 +1089,28 @@ entries, before the fragments of `changelog.d/`, are at the end):
   without new structs. Mass and kinetic energy are booked this way; every
   report (`balance.csv`, log tables, `flow.md`, `result.json`) is bitwise
   as before.
-- **Requirements: heat exchangers with several fluids and materials (D191).**
+- **Turbulence values of the backflow at pressure outlets (BC028, gallery
+  and recipe 140).** A `static-pressure-outlet` or `total-pressure-outlet`
+  that gives `k` with `omega`/`epsilon`, `turbulence_intensity` with
+  `turbulence_length_scale` or `viscosity_ratio`, or `zeta` now uses them on
+  the faces where the flow enters (fixed values), decided per face in every
+  outer iteration; the faces where it leaves stay zero gradient. Before,
+  the entering fluid always carried the values of the cell and BC028
+  warned that the values were unused. New case
+  `backstep_outlet_backflow.toml`, plot `tools/plot/outlet_backflow.py`.
+- **Fix: restarts of turbulent runs with pressure boundaries.** The
+  modified pressure p̂ = p + ⅔ρk prescribed at the pressure boundaries came
+  from the start fields until the first turbulence solve after a restart,
+  so a continued run was not bit-identical to the uninterrupted one. It is
+  now set from the loaded k.
+- **Requirements: heat exchangers with several fluids and materials (D194).**
   Any number of fluid and solid regions with their own materials; fluid
   parts joined only through solids or thin walls get their own pressure
   reference and ledger; heat-exchanger outputs (duty, effectiveness, NTU,
   LMTD, UA); thin walls allowed on every face set, also inside solids and
   between two fluids (D189 amended). Checks V7.33–V7.35. No code.
+- **Requirements: numbering.** The heat-exchanger and thin-wall decision of
+  #142 is D194 (D191 belongs to the `.msh` reader of #134). No code.
 - **CI: shorter waits with parallel work.** Pull requests run on Linux
   only (about 5 minutes); macOS and Windows join when a pull request touches
   build files, the toolchain, the workflow, the command line, MPI, VTKHDF,
