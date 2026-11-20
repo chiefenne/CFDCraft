@@ -96,7 +96,7 @@ components are expressed. With C_ij = −2 Ω_k (R_im ε_jkm + R_jm ε_ikm):
 | **Absolute velocity, inertial basis (D55 MRF)** | absolute-velocity gradients | **½ C_ij** (the basis-rotation term of a co-rotating tensor) | W_ij(abs), no correction |
 | Inertial frame, moving mesh (sliding, D182) | absolute-velocity gradients | **none** | W_ij(abs) |
 
-The first two are the same equation (P_abs + ½C = P_rel + C), the check in
+The first row is the frame of `flow.frame_rotation` (PR #113: relative velocity, Coriolis force −2ρΩ×u in momentum, centrifugal part in the pressure, whole domain, refuses `[[mrf]]` and `[[sliding]]`); with it the stress equations take the full C_ij. The first two are the same equation (P_abs + ½C = P_rel + C), the check in
 section 6.1. The supplied text adds the full C_ij in every case, which
 double-counts rotation in our MRF and on sliding meshes.
 
@@ -105,7 +105,7 @@ double-counts rotation in our MRF and on sliding meshes.
 | # | Finding | Decision on this page |
 |---|---------|-----------------------|
 | F1 | Coriolis production C_ij (factor 2) is correct only in a relative-velocity frame; D55 needs ½C_ij, sliding meshes none; the same holds for the ε_mji Ω_m term in W_ij | Section 3.1 |
-| F2 | The spanwise rotating channel cannot run with D55: Ω × r varies along the channel, so the absolute velocity is not streamwise periodic. The D171 EARSM checks name the same case | O22 (whole-domain relative frame) |
+| F2 | The spanwise rotating channel cannot run with D55: Ω × r varies along the channel, so the absolute velocity is not streamwise periodic. The D171 EARSM checks name the same case | O22, answered: the whole-domain relative frame `flow.frame_rotation` (PR #113) runs the periodic rotating channel; the stress equations add C_ij there |
 | F3 | No tensor boundary conditions: symmetry planes (R_nt = 0, reflected tensor), wedge/axis faces and rotational periodic faces (Q R Qᵀ) cannot be six scalar zero-gradients | Section 5.4, required |
 | F4 | The stabilising viscosity C_μ k²/ε uses C_μ = 0.21, the GGDH coefficient; that is about 2.3 times the usual eddy viscosity. "Cancels to machine precision" holds only if the implicit and deferred νS terms use the identical face discretisation | Section 5.1 |
 | F5 | Clipping shear components by Cauchy–Schwarz does not make the tensor positive definite; an active clip at convergence means the model is not solved | Section 5.3 |
@@ -185,11 +185,11 @@ the other models (D61); docs, gallery with field images, case and recipe
 
 | # | Case | Reference | Target |
 |---|------|-----------|--------|
-| V1 | Frame equivalence | section 3.1 | the same steady field (to the solver tolerance) from the D55 absolute formulation and the relative formulation of O22 on an annular case |
+| V1 | Frame equivalence | section 3.1 | the same steady field (to the solver tolerance) from the D55 absolute formulation and the relative formulation of `flow.frame_rotation` on an annular case |
 | V2 | Stabilisation cancels | section 5.1 | converged fields independent of the scaling of ν_stab to the solver tolerance |
 | V3 | Channel Re_τ 395 and 590, `low-re` | Manceau (2015) results first, then the DNS of Moser, Kim & Mansour (1999) | C_f within 3 % of the paper's model result; U⁺ and the four stress profiles plotted; peak R_11⁺ and R_12⁺ within numbers set at implementation from the paper |
 | V4 | Square duct, periodic | DNS of the duct at low Re (Gavrilakis 1992; Pinelli et al. 2010) | eight corner vortices; peak secondary velocity within a band set at implementation (RSMs commonly underpredict it) |
-| V5 | Spanwise rotating channel | DNS of Kristoffersen & Andersson (1993) | asymmetric profiles, stabilised suction side; needs O22 |
+| V5 | Spanwise rotating channel | DNS of Kristoffersen & Andersson (1993) | asymmetric profiles, stabilised suction side; on `flow.frame_rotation`, case as `examples/cases/flow/channel_rotating_sst.toml` |
 | V6 | U-bend, shared with D171 | as D171 | as D171 |
 | V7 | Realizability | all of the above | zero limited cells at convergence |
 | V8 | GPU parity | D60 | bitwise equal to CPU on the channel and the duct |
@@ -210,7 +210,7 @@ it is raised with the maintainer when the model exists (project rule).
 | L47 | EB-RSM as an optional closure, sections 3–6 | After D171 (EARSM), after v1.0 |
 | P18 | EB-AFM heat flux (Dehoux et al. 2012) with EB-RSM, constants and near-wall form from the paper; stage 7 (D152, D172) unchanged | After L47, next to P12 |
 | O21 | Wall treatment of EB-RSM beyond `low-re` (adaptive treatment of Wald et al.; compound blending) | Assessment before its implementation |
-| O22 | Whole-domain relative rotating frame (Coriolis and centrifugal body force) for the rotating channel of L47 and D171 | Decide with D171 |
+| O22 | Whole-domain relative rotating frame for the rotating channel of L47 and D171 | Answered 2026-11-20: `flow.frame_rotation` (PR #113); L47 still adds the frame term C_ij of section 3.1 in the stress equations |
 | O23 | Reference data licences for V3–V5 (channel and duct DNS) | Before the cases enter the repository |
 
 ## 8. References
