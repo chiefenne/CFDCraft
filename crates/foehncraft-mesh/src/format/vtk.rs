@@ -448,7 +448,7 @@ fn parse_legacy(bytes: &[u8]) -> Result<(Grid, String), String> {
                 let n = c.number("the number of points")?;
                 let ty = Ty::legacy(c.need("the point type")?)?;
                 let v = c.values(3 * n, ty, binary, "POINTS")?;
-                g.points = v.chunks_exact(3).map(|p| [p[0], p[1], p[2]]).collect();
+                g.points = v.as_chunks::<3>().0.to_vec();
             }
             "CELLS" => {
                 let n1 = c.number("the number of cells")?;
@@ -953,7 +953,7 @@ fn parse_xml(bytes: &[u8]) -> Result<(Grid, String), String> {
         .and_then(|p| p.kids.iter().find(|k| k.name == "DataArray"))
         .ok_or("the piece has no Points")?;
     let v = x.array(pts)?;
-    g.points = v.chunks_exact(3).map(|p| [p[0], p[1], p[2]]).collect();
+    g.points = v.as_chunks::<3>().0.to_vec();
 
     let cells = piece.kid("Cells").ok_or("the piece has no Cells")?;
     let need = |n: &str| -> Result<Vec<f64>, String> {
