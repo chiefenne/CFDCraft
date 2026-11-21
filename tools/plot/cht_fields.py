@@ -26,7 +26,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 
 from tools.plot.energy_fields import field, grid, line
 from tools.plot.turbulence_fields import read
