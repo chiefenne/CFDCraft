@@ -1479,6 +1479,227 @@ pub fn thermal_properties(
     })
 }
 
+/// A property as a function of the temperature, for the energy equation
+/// (stage 7a1): c_p(T), k(T) and μ(T) per cell and face, refreshed every
+/// outer iteration. The forms of D95 are evaluated directly (clamped to
+/// their data range, as [`evaluate`] does with MAT003 at the case
+/// temperature); an expression in `T` is sampled every
+/// [`Curve::SAMPLE_STEP`] K from [`Curve::SAMPLE_RANGE`] and interpolated
+/// linearly between the samples.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Curve {
+    kind: CurveKind,
+    /// The data range (K), if the form has one.
+    pub range: Option<[f64; 2]>,
+    /// How it was obtained (form, source), for the log.
+    pub origin: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum CurveKind {
+    Constant(f64),
+    Polynomial(Vec<f64>),
+    Sutherland {
+        mu_ref: f64,
+        t_ref: f64,
+        s: f64,
+    },
+    PowerLaw {
+        value_ref: f64,
+        t_ref: f64,
+        exponent: f64,
+    },
+    Table {
+        t: Vec<f64>,
+        v: Vec<f64>,
+        cubic: bool,
+    },
+    Nasa {
+        t: Vec<f64>,
+        c: Vec<Vec<f64>>,
+        nine: bool,
+        r: f64,
+    },
+    IdealGas {
+        pm_over_r: f64,
+    },
+    Sampled {
+        t0: f64,
+        dt: f64,
+        v: Vec<f64>,
+    },
+}
+
+impl Curve {
+    /// The step of the samples of an expression in `T` (K).
+    pub const SAMPLE_STEP: f64 = 0.5;
+    /// The range of the samples of an expression in `T` (K).
+    pub const SAMPLE_RANGE: [f64; 2] = [1.0, 4000.0];
+
+    /// A constant.
+    pub fn constant(v: f64) -> Self {
+        Self {
+            kind: CurveKind::Constant(v),
+            range: None,
+            origin: format!("{v:?}"),
+        }
+    }
+
+    /// True for a constant (the energy module then keeps the value).
+    pub fn is_constant(&self) -> bool {
+        matches!(self.kind, CurveKind::Constant(_))
+    }
+
+    /// The value at the temperature `t` (K), with `t` clamped to the data
+    /// range.
+    pub fn at(&self, t: f64) -> f64 {
+        let t = match self.range {
+            Some([lo, hi]) => t.clamp(lo, hi),
+            None => t,
+        };
+        match &self.kind {
+            CurveKind::Constant(v) => *v,
+            CurveKind::Polynomial(c) => {
+                let mut v = 0.0;
+                for a in c.iter().rev() {
+                    v = v * t + a;
+                }
+                v
+            }
+            CurveKind::Sutherland { mu_ref, t_ref, s } => {
+                let r = t / t_ref;
+                mu_ref * r * foehncraft_core::math::sqrt(r) * (t_ref + s) / (t + s)
+            }
+            CurveKind::PowerLaw {
+                value_ref,
+                t_ref,
+                exponent,
+            } => value_ref * foehncraft_core::math::pow(t / t_ref, *exponent),
+            CurveKind::Table { t: xs, v, cubic } => {
+                if *cubic {
+                    steffen(xs, v, t)
+                } else {
+                    linear(xs, v, t)
+                }
+            }
+            CurveKind::Nasa { t: lim, c, nine, r } => r * nasa_cp_over_r(lim, c, *nine, t),
+            CurveKind::IdealGas { pm_over_r } => pm_over_r / t,
+            CurveKind::Sampled { t0, dt, v } => {
+                let x = ((t - t0) / dt).clamp(0.0, (v.len() - 1) as f64);
+                let i = (x.floor() as usize).min(v.len() - 2);
+                let w = x - i as f64;
+                v[i] + w * (v[i + 1] - v[i])
+            }
+        }
+    }
+}
+
+/// The curve of property `p` (`what` of material `m`, named `owner` in
+/// messages) over T: checked as [`evaluate`] checks it at the case
+/// temperature `cond` (MAT002, MAT005), so that a curve that is built
+/// evaluates everywhere.
+pub fn curve(
+    p: &Property,
+    what: &str,
+    owner: &str,
+    m: &MaterialSection,
+    env: &Env,
+    cond: Conditions,
+) -> Result<Curve> {
+    // the checks and the origin text of the case temperature
+    let mut warnings = Vec::new();
+    let r = evaluate(p, what, owner, m, env, cond, false, &mut warnings)?;
+    let origin = r.origin;
+    let sampled = |text: &str| -> Result<Curve> {
+        let [lo, hi] = Curve::SAMPLE_RANGE;
+        let n = ((hi - lo) / Curve::SAMPLE_STEP).round() as usize + 1;
+        let mut v = Vec::with_capacity(n);
+        // samples where the expression is not positive are kept: the
+        // energy module refuses such a value where the temperature reaches
+        // it (MAT005)
+        let key = format!("{owner}.{what}");
+        let mut tenv = env.clone();
+        for i in 0..n {
+            let t = lo + i as f64 * Curve::SAMPLE_STEP;
+            tenv.constants.insert("T".into(), t);
+            let x = expr::value(&Scalar::Expr(text.to_string()), &tenv, Vars::NONE, &key)?;
+            v.push(x.constant().unwrap_or(f64::NAN));
+        }
+        Ok(Curve {
+            kind: CurveKind::Sampled {
+                t0: lo,
+                dt: Curve::SAMPLE_STEP,
+                v,
+            },
+            range: Some(Curve::SAMPLE_RANGE),
+            origin: origin.clone(),
+        })
+    };
+    let kind = match p {
+        Property::Number(v) => CurveKind::Constant(*v),
+        Property::Expr(s) => return sampled(s),
+        Property::Form(f) => match f {
+            Form::Constant { value, .. } => CurveKind::Constant(*value),
+            Form::Polynomial { coefficients, .. } => CurveKind::Polynomial(coefficients.clone()),
+            Form::Sutherland {
+                mu_ref, t_ref, s, ..
+            } => CurveKind::Sutherland {
+                mu_ref: *mu_ref,
+                t_ref: *t_ref,
+                s: *s,
+            },
+            Form::PowerLaw {
+                value_ref,
+                t_ref,
+                exponent,
+                ..
+            } => CurveKind::PowerLaw {
+                value_ref: *value_ref,
+                t_ref: *t_ref,
+                exponent: *exponent,
+            },
+            Form::Table {
+                temperature,
+                values,
+                interpolation,
+                ..
+            } => CurveKind::Table {
+                t: temperature.clone(),
+                v: values.clone(),
+                cubic: *interpolation == Interpolation::MonotoneCubic,
+            },
+            Form::Expression { expression, .. } => return sampled(expression),
+            Form::IdealGas { molar_mass, .. } => CurveKind::IdealGas {
+                pm_over_r: cond.pressure * molar_mass.or(m.molar_mass).unwrap_or(f64::NAN) / R_GAS,
+            },
+            Form::Nasa7 {
+                temperature,
+                coefficients,
+                ..
+            }
+            | Form::Nasa9 {
+                temperature,
+                coefficients,
+                ..
+            } => CurveKind::Nasa {
+                t: temperature.clone(),
+                c: coefficients.clone(),
+                nine: matches!(f, Form::Nasa9 { .. }),
+                r: R_GAS / m.molar_mass.unwrap_or(f64::NAN),
+            },
+        },
+    };
+    let range = match p {
+        Property::Form(f) => f.range(),
+        _ => None,
+    };
+    Ok(Curve {
+        kind,
+        range,
+        origin,
+    })
+}
+
 /// The resolved property program of a case (D94 (3)): the default fluid
 /// and one entry per region.
 #[derive(Debug, Clone, PartialEq)]

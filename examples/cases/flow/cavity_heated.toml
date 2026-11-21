@@ -1,0 +1,69 @@
+# Lid-driven cavity with a warm lid: forced convection with the energy
+# equation (stage 7a1).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/cavity_heated.toml
+#
+# The cavity of cavity_re100.toml (Re = 100) with the lid held at 310 K,
+# the bottom at 300 K and adiabatic side walls; Pr = μ c_p/k = 0.71. The
+# lid drags warm fluid down the right-hand wall and the primary vortex
+# wraps it around its core; the heat leaves through the bottom. No buoyancy
+# yet (gravity is stage 7b): the temperature does not act on the flow.
+# The report gives the heat flows of the lid and the bottom (they balance:
+# the side walls are adiabatic and no fluid leaves) and their mean Nusselt
+# number Nu = q L/(k ΔT).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.015625]
+cells = [64, 64, 1]
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.01
+specific_heat = 1000.0
+conductivity = 14.084507042253522   # μ c_p / 0.71
+
+[energy]
+initial = 305.0
+
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]     # the lid
+[boundary.ymax.energy]
+temperature = 310.0
+[boundary.xmin]
+type = "wall"
+[boundary.xmax]
+type = "wall"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 300.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-8
+max_iterations = 3000
+
+[solver.momentum]
+relaxation = 0.9
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-8
+max_iter = 200
+
+[verification]
+require_convergence = true
+
+[output]
+wall_csv = false

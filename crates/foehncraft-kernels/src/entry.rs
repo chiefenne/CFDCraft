@@ -1578,6 +1578,10 @@ pub struct ScalarRowArgs {
     pub fix_val: Raw<f64>,
     /// Pseudo-time coefficient ρ V/Δτ per cell (empty: none).
     pub pseudo: Raw<f64>,
+    /// The heat capacity ρ c_p per cell of the energy equation (stage
+    /// 7a1), in place of the density of the mesh in the time and source
+    /// terms (empty: the density).
+    pub capacity: Raw<f64>,
     /// 1: a positive variable (the deferred corrections split by sign).
     pub positive: u32,
     /// Output: matrix values.
@@ -1607,7 +1611,11 @@ impl Entry for ScalarRows {
                 mass_flux: a.mass_flux.get(),
                 volume: a.m.volume.get(),
                 phi: a.phi.get(),
-                rho: a.m.rho.get(),
+                rho: if a.capacity.len > 0 {
+                    a.capacity.get()
+                } else {
+                    a.m.rho.get()
+                },
                 su: a.su.get(),
                 sp: a.sp.get(),
                 alpha: a.alpha,

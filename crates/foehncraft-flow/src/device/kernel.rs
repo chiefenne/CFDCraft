@@ -776,6 +776,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             ins.push(t.old2);
         }
         ins.extend(a.pseudo);
+        ins.extend(a.capacity);
         check(&[a.val, a.rhs, a.diag, a.order], &ins)?;
         let opt = |b: Option<Buf>| b.map_or(Raw::EMPTY, |b| self.r(b));
         let (transient, inv_dt, coef, old, old2, (lo, hi)) = match &a.time {
@@ -820,6 +821,7 @@ impl<E: Exec> FlowDevice for KernelFlow<E> {
             fix_mask: a.fix.map_or(Raw::EMPTY, |(m, _)| self.r(m)),
             fix_val: a.fix.map_or(Raw::EMPTY, |(_, v)| self.r(v)),
             pseudo: opt(a.pseudo),
+            capacity: opt(a.capacity),
             positive: u32::from(a.positive),
             val: self.r(a.val),
             rhs: self.r(a.rhs),

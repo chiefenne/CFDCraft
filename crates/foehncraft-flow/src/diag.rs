@@ -137,6 +137,9 @@ codes! {
     MAT_THERMAL = "MAT007", Error, "A fluid without specific heat or thermal conductivity in a run with the energy equation.";
     MAT_AXES = "MAT008", Error, "An orthotropic thermal conductivity without both axes, or with parallel axes.";
     MAT_FILE = "MAT009", Error, "A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format.";
+    ENE_BOUNDARY = "ENE001", Error, "A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one of `temperature`, `heat_flux`, `heat_flow` and `heat_transfer_coefficient` (with `ambient_temperature`), with a condition its boundary does not take (a flux at an inlet, anything at an outlet or a periodic boundary), or without `[energy]`.";
+    ENE_INLET = "ENE002", Error, "An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation.";
+    ENE_UNSUPPORTED = "ENE003", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, `[energy]` with `[regions]` (7d1), or an orthotropic conductivity of a fluid.";
     REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid: solids and porous zones come with the energy equation (L1).";
     REG_ZONE = "REG002", Error, "A region that names a cell zone the mesh does not have, or a zone in two regions.";
     // moving reference frame and sliding mesh (D55, D182)

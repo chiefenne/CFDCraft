@@ -619,6 +619,77 @@ struct Field {
     /// The source S, when it is not zero.
     source: Option<Value>,
     time_dependent: bool,
+    /// The settings of its solves (`[solver.scalar]`, the energy equation
+    /// `[solver.energy]`).
+    settings: ScalarSettings,
+    /// The energy equation (stage 7a1): the temperature with its property
+    /// refresh.
+    energy: Option<Box<EnergyField>>,
+}
+
+/// A thermal condition per boundary face of the energy equation.
+#[derive(Debug, Clone)]
+enum ECond {
+    /// Zero normal gradient.
+    Zero,
+    /// Fixed temperature.
+    Temperature(Value),
+    /// Heat flux into the fluid (W/m²).
+    Flux(Value),
+    /// h and T_amb.
+    Convection(Value, Value),
+}
+
+/// The energy equation on the device and its host data (stage 7a1).
+#[derive(Debug, Clone)]
+struct EnergyField {
+    fluid: crate::energy::Fluid,
+    /// Refresh c_p, k and μ every outer iteration.
+    dependent: bool,
+    viscous_heating: bool,
+    /// q''' (W/m³), if not zero.
+    source: Option<Value>,
+    /// ρ c_p per cell.
+    capacity: Buf,
+    /// Ċ_f = ṁ_f c_p,f per face.
+    cflux: Buf,
+    /// μ c_p and μ_eff c_p per face (the turbulent conductivity, D135).
+    mu_cp: Buf,
+    mu_eff_cp: Buf,
+    /// Per boundary face.
+    conds: Vec<ECond>,
+    /// Host copies of the connectivity and geometry.
+    owner: Vec<u32>,
+    neighbour: Vec<u32>,
+    weight: Vec<f64>,
+    /// d_n per boundary face.
+    dn: Vec<f64>,
+    /// Cell volumes.
+    volume: Vec<f64>,
+    /// c_p per cell and per face, k per face, of the last refresh.
+    cp_cell: Vec<f64>,
+    cp_face: Vec<f64>,
+    k_face: Vec<f64>,
+    /// The heat source per cell of the last refresh (W/m³), q''' + Φ.
+    heat: Vec<f64>,
+    /// Cell centroids (the source expression).
+    cells: Vec<[f64; 3]>,
+    /// μ(T) per face of the last refresh, if the viscosity follows T.
+    mu_face: Option<Vec<f64>>,
+    /// h_s(T), in which the equation is conservative (D150).
+    h: crate::energy::Enthalpy,
+    /// The temperature of the properties when they do not follow T.
+    t_ref: f64,
+}
+
+/// The buffers of the flow the energy equation reads (stage 7a1).
+#[derive(Debug, Clone, Copy)]
+pub struct EnergyLink {
+    /// The velocity gradients ∇u_i (viscous heating).
+    pub grad_u: [Buf3; 3],
+    /// The face viscosity of the momentum equations (μ, or μ + μ_t with a
+    /// turbulence model).
+    pub mu_face: Buf,
 }
 
 /// The heat-flux mode of one scalar on one periodic pair (D109 (1), (2)).
@@ -1008,6 +1079,8 @@ impl Scalars {
                 rules,
                 source,
                 time_dependent,
+                settings: settings.clone(),
+                energy: None,
             });
         }
         let mut s = Self {
@@ -1108,6 +1181,7 @@ impl Scalars {
     /// The scalar solves of one outer iteration with the fluxes
     /// `mass_flux`; `step` carries the time terms of a time step (and the
     /// new time, for time-dependent values; `cells` are the cell centroids).
+    #[allow(clippy::too_many_arguments)]
     pub fn solve(
         &mut self,
         dev: &mut dyn FlowDevice,
@@ -1116,15 +1190,15 @@ impl Scalars {
         step: Option<StepTime>,
         cells: &[[f64; 3]],
         turb: Option<TurbCoupling>,
+        link: Option<EnergyLink>,
     ) -> Result<ScalarResiduals> {
         if let Some(st) = step
             && st.time != self.t_set
         {
             self.set_values(dev, cells, st.time, false)?;
         }
-        let s = self.settings.clone();
         let tr = step.is_some();
-        let alpha = s.alpha(tr);
+        let time_now = step.map_or(0.0, |st| st.time);
         let mut out = ScalarResiduals::default();
         // the jumps of the heat-flux mode: Δ = Q/ṁ with the mass flow of
         // the current fluxes, so that the scalar balance of the module
@@ -1141,12 +1215,62 @@ impl Scalars {
                 dev.lincomb(jump, hf.delta, hf.sign, 0.0, hf.sign)?;
             }
         }
-        for f in &self.fields {
-            if let Some(tc) = turb {
+        let (w_cp, w_cn, w_bf, w_val, w_rhs, w_diag, w_order) = (
+            self.cp, self.cn, self.bf, self.val, self.rhs, self.diag, self.order,
+        );
+        let xf = &self.xf;
+        for f in self.fields.iter_mut() {
+            let s = f.settings.clone();
+            let alpha = s.alpha(tr);
+            // the energy equation: properties from the current T, the heat
+            // capacity flux, the boundary coefficients and the heat source
+            let mut conv = mass_flux;
+            let mut capacity = None;
+            let mut mus = turb.map(|tc| (tc.mu, tc.mu_eff));
+            if let Some(e) = f.energy.as_deref_mut() {
+                refresh_energy(
+                    dev,
+                    e,
+                    f.phi,
+                    f.bc_a,
+                    f.bc_b,
+                    f.gamma,
+                    f.turb.gamma0,
+                    f.turb.fq,
+                    f.su,
+                    mass_flux,
+                    xf,
+                    time_now,
+                    turb,
+                    link,
+                    match (step, f.old) {
+                        (Some(st), Some((o1, o2, _))) => Some((
+                            st,
+                            f.content.map_or(o1, |c| c.0),
+                            f.content.map_or(o2, |c| c.1),
+                        )),
+                        _ => None,
+                    },
+                )?;
+                conv = e.cflux;
+                capacity = Some(e.capacity);
+                if let Some(tc) = turb {
+                    // the turbulent conductivity c_p μ_t/Pr_t and the
+                    // Prandtl number μ c_p/k of the thermal law
+                    let mu = dev.download(tc.mu)?;
+                    let me = dev.download(tc.mu_eff)?;
+                    let a: Vec<f64> = mu.iter().zip(&e.cp_face).map(|(m, c)| m * c).collect();
+                    let b: Vec<f64> = me.iter().zip(&e.cp_face).map(|(m, c)| m * c).collect();
+                    dev.upload(e.mu_cp, &a)?;
+                    dev.upload(e.mu_eff_cp, &b)?;
+                    mus = Some((e.mu_cp, e.mu_eff_cp));
+                }
+            }
+            if let (Some(tc), Some((mu_t, mu_eff_t))) = (turb, mus) {
                 // the turbulent diffusivity of this iteration (D135)
                 dev.scalar_turb_faces(&ScalarTurbOps {
-                    mu: tc.mu,
-                    mu_eff: tc.mu_eff,
+                    mu: mu_t,
+                    mu_eff: mu_eff_t,
                     gamma0: f.turb.gamma0,
                     wall: tc.wall,
                     fq: f.turb.fq,
@@ -1158,7 +1282,7 @@ impl Scalars {
                 if let (Some(y_plus), true) = (tc.y_plus, f.turb.law != thermal::NONE) {
                     dev.scalar_wall_faces(&ScalarWallOps {
                         y_plus,
-                        mu: tc.mu,
+                        mu: mu_t,
                         gamma0: f.turb.gamma0,
                         fq: f.turb.fq,
                         bc_a: f.bc_a,
@@ -1170,6 +1294,9 @@ impl Scalars {
                         t_plus: None,
                     })?;
                 }
+            }
+            if let Some(e) = f.energy.as_deref() {
+                convection_faces(dev, e, f.bc_a, f.bc_b, f.gamma, xf, time_now)?;
             }
             let mut res = f64::NAN;
             let mut its = 0;
@@ -1191,7 +1318,7 @@ impl Scalars {
                     bc_a: f.bc_a,
                     bc_b: f.bc_b,
                     jump: f.jump,
-                    mass_flux,
+                    mass_flux: conv,
                     gamma: f.gamma,
                     phi: f.phi,
                     grad: f.grad,
@@ -1204,9 +1331,9 @@ impl Scalars {
                     },
                     beta: s.central_bounding,
                     nonorth: 1.0,
-                    cp: self.cp,
-                    cn: self.cn,
-                    bf: self.bf,
+                    cp: w_cp,
+                    cn: w_cn,
+                    bf: w_bf,
                 })?;
                 let time = match (step, f.old) {
                     (Some(st), Some((o1, o2, _))) => Some(ScalarTime {
@@ -1219,10 +1346,10 @@ impl Scalars {
                     _ => None,
                 };
                 dev.scalar_rows(&ScalarRowArgs {
-                    cp: self.cp,
-                    cn: self.cn,
-                    bf: self.bf,
-                    mass_flux,
+                    cp: w_cp,
+                    cn: w_cn,
+                    bf: w_bf,
+                    mass_flux: conv,
                     phi: f.phi,
                     su: f.su,
                     sp: None,
@@ -1231,15 +1358,16 @@ impl Scalars {
                     fix: None,
                     positive: false,
                     pseudo: None,
-                    val: self.val,
-                    rhs: self.rhs,
-                    diag: self.diag,
-                    order: self.order,
+                    capacity,
+                    val: w_val,
+                    rhs: w_rhs,
+                    diag: w_diag,
+                    order: w_order,
                 })?;
-                let scale = dev.scalar_scale(f.phi, self.rhs, self.diag, alpha, None)?;
+                let scale = dev.scalar_scale(f.phi, w_rhs, w_diag, alpha, None)?;
                 let (it, r0) = dev.solve(
-                    self.val,
-                    self.rhs,
+                    w_val,
+                    w_rhs,
                     f.phi,
                     Preconditioner::Jacobi,
                     false,
@@ -1249,7 +1377,7 @@ impl Scalars {
                 if sweep == 0 {
                     res = r0 / scale;
                     if time.is_some() {
-                        first = dev.sum_sq(self.order)?.round() as usize;
+                        first = dev.sum_sq(w_order)?.round() as usize;
                     }
                 }
                 its += it;
@@ -1470,10 +1598,460 @@ impl Scalars {
             .collect()
     }
 
+    /// The energy equation's h_s(T) and the heat sources over the volume
+    /// (W) of the last refresh, if the case has it.
+    fn energy_host(&self) -> Option<(crate::energy::Enthalpy, f64)> {
+        self.fields.iter().find_map(|f| {
+            f.energy.as_deref().map(|e| {
+                let src: f64 = e.heat.iter().zip(&e.volume).map(|(h, v)| h * v).sum();
+                (e.h.clone(), src)
+            })
+        })
+    }
+
+    /// The laminar viscosity μ(T) per face of the energy equation's last
+    /// refresh, when the fluid's viscosity follows the temperature.
+    pub fn energy_viscosity(&self) -> Option<&[f64]> {
+        self.fields
+            .iter()
+            .find_map(|f| f.energy.as_deref().and_then(|e| e.mu_face.as_deref()))
+    }
+
     /// The minimum and maximum of each scalar.
     pub fn extremes(&self, dev: &mut dyn FlowDevice) -> Result<Vec<(f64, f64)>> {
         self.fields.iter().map(|f| dev.min_max(f.phi)).collect()
     }
+}
+
+impl Scalars {
+    /// Adds the energy equation of `case` (stage 7a1): the field
+    /// [`crate::energy::FIELD`] with its thermal conditions, solved with the
+    /// settings `[solver.energy]`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_energy(
+        &mut self,
+        dev: &mut dyn FlowDevice,
+        mesh: &Mesh,
+        geo: &Geometry,
+        disc: &Discretisation,
+        case: &crate::case::FlowCase,
+        env: &Env,
+        transient: bool,
+    ) -> Result<()> {
+        use crate::energy::Condition;
+        let Some(sec) = &case.energy else {
+            return Ok(());
+        };
+        let fluid = crate::energy::fluid(case, env)?;
+        let (nc, nf, ni) = (disc.n_cells, disc.n_faces, disc.n_interior);
+        let nb = nf - ni;
+        let mut area = BTreeMap::new();
+        for p in &mesh.boundaries {
+            let a: f64 = p.range().map(|f| geo.normal_area(f).1).sum();
+            area.insert(p.name.clone(), a);
+        }
+        let by_name = crate::energy::conditions(case, env, &area)?;
+        let mut conds = vec![ECond::Zero; nb];
+        let mut points = BTreeMap::new();
+        for p in &mesh.boundaries {
+            let c = match by_name.get(&p.name) {
+                Some(Condition::Temperature(v)) => ECond::Temperature(v.clone()),
+                Some(Condition::HeatFlux(v)) => ECond::Flux(v.clone()),
+                Some(Condition::Convection(h, t)) => ECond::Convection(h.clone(), t.clone()),
+                Some(Condition::ZeroGradient) | None => ECond::Zero,
+            };
+            let kind = match c {
+                ECond::Temperature(_) | ECond::Convection(..) => BoundaryKind::FixedValue,
+                _ => BoundaryKind::ZeroGradient,
+            };
+            points.insert(p.name.clone(), kind);
+            for f in p.range() {
+                conds[f - ni] = c.clone();
+            }
+        }
+        let dn: Vec<f64> = (ni..nf)
+            .map(|f| {
+                let (s, _) = geo.normal_area(f);
+                let o = mesh.owner[f] as usize;
+                (0..3)
+                    .map(|d| (geo.face_centroid[f][d] - geo.cell_centroid[o][d]) * s[d])
+                    .sum()
+            })
+            .collect();
+        let t_ref = case.fluid.conditions().temperature;
+        let k0 = fluid.k.at(t_ref);
+        let cp0 = fluid.cp.at(t_ref);
+        let mut put = |v: &[f64]| -> Result<Buf> {
+            let b = dev.alloc(v.len())?;
+            dev.upload(b, v)?;
+            Ok(b)
+        };
+        let lsq = crate::simplec::lsq_with(mesh, geo, &points)?;
+        let lsq_b = Buf3 {
+            x: put(&lsq.x)?,
+            y: put(&lsq.y)?,
+            z: put(&lsq.z)?,
+        };
+        let ini = expr::value(&sec.initial, env, Vars::SPACE, "energy.initial")?;
+        let phi0: Vec<f64> = (0..nc).map(|c| ini.at(geo.cell_centroid[c], 0.0)).collect();
+        if let Some(c) = phi0.iter().position(|t| !(*t > 0.0 && t.is_finite())) {
+            return Err(diag::err(
+                Diagnostic::new(
+                    diag::EXPR_VALUE,
+                    format!(
+                        "[energy] initial is {} K at the cell centroid {:?}; a temperature must \
+                         be > 0 K",
+                        phi0[c], geo.cell_centroid[c]
+                    ),
+                )
+                .key("energy.initial"),
+            ));
+        }
+        let phi = put(&phi0)?;
+        // the start coefficients: the fixed temperatures, zero gradients
+        // elsewhere (the first refresh sets them all)
+        let (mut a0, mut b0) = (vec![1.0; nb], vec![0.0; nb]);
+        for (fb, c) in conds.iter().enumerate() {
+            if let ECond::Temperature(v) = c {
+                a0[fb] = 0.0;
+                b0[fb] = v.at(self.xf[fb], 0.0);
+            }
+        }
+        let bc_a = put(&a0)?;
+        let bc_b = put(&b0)?;
+        let gamma = put(&vec![k0; nf])?;
+        let time = if transient { Vars::T } else { Vars::NONE };
+        let src = expr::value(&sec.source, env, Vars::SPACE.with(time), "energy.source")?;
+        let source = (src.constant() != Some(0.0)).then_some(src);
+        let enthalpy = if sec.temperature_dependent {
+            crate::energy::Enthalpy::of(&fluid.cp)
+        } else {
+            crate::energy::Enthalpy::constant(cp0)
+        };
+        let su = if source.is_some() || sec.viscous_heating || !enthalpy.is_constant() {
+            Some(put(&vec![0.0; nc])?)
+        } else {
+            None
+        };
+        let settings = case.solver.energy.clone();
+        let eps2 = if settings.limiter == LimiterKind::Venkatakrishnan {
+            Some(put(&disc.venkat_eps2(settings.limiter_k))?)
+        } else {
+            None
+        };
+        let psi = put(&vec![1.0; nc])?;
+        use foehncraft_kernels::turb::thermal as th;
+        let turb = TurbField {
+            gamma0: put(&vec![k0; nf])?,
+            fq: put(&vec![0.0; nb])?,
+            law: match sec.wall_function {
+                ThermalWallFunction::Kader => th::KADER,
+                ThermalWallFunction::Jayatilleke => th::JAYATILLEKE,
+                ThermalWallFunction::None => th::NONE,
+            },
+            prt_model: match sec.turbulent_prandtl_model {
+                PrandtlModel::Constant => th::PRT_CONSTANT,
+                PrandtlModel::KaysCrawford => th::PRT_KAYS_CRAWFORD,
+            },
+            prt: match sec.turbulent_prandtl_model {
+                PrandtlModel::Constant => sec.turbulent_prandtl,
+                PrandtlModel::KaysCrawford => th::KC_PRT_INF,
+            },
+            dn: dn.clone(),
+        };
+        let capacity = put(&vec![fluid.rho * cp0; nc])?;
+        let old = if transient {
+            Some((dev.alloc(nc)?, dev.alloc(nc)?, dev.alloc(nc)?))
+        } else {
+            None
+        };
+        let energy = EnergyField {
+            dependent: sec.temperature_dependent,
+            viscous_heating: sec.viscous_heating,
+            source,
+            capacity,
+            cflux: dev.alloc(nf)?,
+            mu_cp: dev.alloc(nf)?,
+            mu_eff_cp: dev.alloc(nf)?,
+            conds,
+            owner: mesh.owner[..nf].to_vec(),
+            neighbour: mesh.neighbour[..ni].to_vec(),
+            weight: disc.weight[..ni].to_vec(),
+            dn,
+            volume: geo.cell_volume[..nc].to_vec(),
+            cells: geo.cell_centroid[..nc].to_vec(),
+            cp_cell: vec![cp0; nc],
+            cp_face: vec![cp0; nf],
+            k_face: vec![k0; nf],
+            heat: vec![0.0; nc],
+            mu_face: None,
+            h: enthalpy,
+            t_ref,
+            fluid,
+        };
+        let grad = Buf3 {
+            x: dev.alloc(nc)?,
+            y: dev.alloc(nc)?,
+            z: dev.alloc(nc)?,
+        };
+        self.fields.push(Field {
+            name: crate::energy::FIELD.to_string(),
+            phi,
+            grad,
+            psi,
+            bc_a,
+            bc_b,
+            jump: None,
+            heat_flux: None,
+            lsq: lsq_b,
+            gamma,
+            turb,
+            su,
+            eps2,
+            old,
+            content: None,
+            valid: None,
+            bounds: (f64::NEG_INFINITY, f64::INFINITY),
+            rules: vec![FaceRule::ZeroGradient; nb],
+            source: None,
+            time_dependent: false,
+            settings,
+            energy: Some(Box::new(energy)),
+        });
+        Ok(())
+    }
+}
+
+/// The energy refresh before a solve (stage 7a1): c_p, k (and μ) from the
+/// current temperature per cell and face, the heat capacity ρ c_p per
+/// cell, the heat capacity flux ṁ c_p per face, the face conductivity, the
+/// boundary coefficients of the thermal conditions and the heat source
+/// (q''' + Φ) per unit heat capacity.
+#[allow(clippy::too_many_arguments, clippy::needless_range_loop)]
+fn refresh_energy(
+    dev: &mut dyn FlowDevice,
+    e: &mut EnergyField,
+    phi: Buf,
+    bc_a: Buf,
+    bc_b: Buf,
+    gamma: Buf,
+    gamma0: Buf,
+    fq: Buf,
+    su: Option<Buf>,
+    mass_flux: Buf,
+    xf: &[[f64; 3]],
+    t: f64,
+    turb: Option<TurbCoupling>,
+    link: Option<EnergyLink>,
+    step: Option<(StepTime, Buf, Buf)>,
+) -> Result<()> {
+    let tv = dev.download(phi)?;
+    let a_old = dev.download(bc_a)?;
+    let b_old = dev.download(bc_b)?;
+    let nc = tv.len();
+    let nf = e.owner.len();
+    let ni = e.neighbour.len();
+    let nb = nf - ni;
+    let tf: Vec<f64> = (0..nf)
+        .map(|f| {
+            let o = e.owner[f] as usize;
+            if f < ni {
+                let w = e.weight[f];
+                w * tv[o] + (1.0 - w) * tv[e.neighbour[f] as usize]
+            } else {
+                a_old[f - ni] * tv[o] + b_old[f - ni]
+            }
+        })
+        .collect();
+    let dep = e.dependent;
+    let t_ref = e.t_ref;
+    let at = |c: &crate::materials::Curve, x: f64| c.at(if dep { x } else { t_ref });
+    e.cp_cell = tv.iter().map(|&x| at(&e.fluid.cp, x)).collect();
+    e.cp_face = tf.iter().map(|&x| at(&e.fluid.cp, x)).collect();
+    e.k_face = tf.iter().map(|&x| at(&e.fluid.k, x)).collect();
+    for (what, vals, ts) in [
+        ("specific_heat", &e.cp_cell, &tv),
+        ("specific_heat", &e.cp_face, &tf),
+        ("conductivity", &e.k_face, &tf),
+    ] {
+        if let Some(i) = vals.iter().position(|v| !(*v > 0.0 && v.is_finite())) {
+            return Err(diag::err(
+                Diagnostic::new(
+                    diag::MAT_VALUE,
+                    format!(
+                        "the fluid's {what} is {} at T = {} K (the temperature of the energy \
+                         equation reached it); a property must be positive and finite",
+                        vals[i], ts[i]
+                    ),
+                )
+                .key(format!("fluid.{what}")),
+            ));
+        }
+    }
+    let rho = e.fluid.rho;
+    let cap: Vec<f64> = e.cp_cell.iter().map(|c| rho * c).collect();
+    dev.upload(e.capacity, &cap)?;
+    let m = dev.download(mass_flux)?;
+    let cf: Vec<f64> = m.iter().zip(&e.cp_face).map(|(m, c)| m * c).collect();
+    dev.upload(e.cflux, &cf)?;
+    dev.upload(gamma, &e.k_face)?;
+    dev.upload(gamma0, &e.k_face)?;
+    // μ(T) for the next momentum solve (the laminar viscosity of a
+    // turbulence model, which adds μ_t to it)
+    if let (true, Some(mu)) = (dep, &e.fluid.mu) {
+        let target = turb.map(|tc| tc.mu).or(link.map(|l| l.mu_face));
+        if let Some(b) = target {
+            let v: Vec<f64> = tf.iter().map(|&x| mu.at(x)).collect();
+            dev.upload(b, &v)?;
+            e.mu_face = Some(v);
+        }
+    }
+    // the thermal conditions
+    let (mut a, mut b, mut q) = (vec![1.0; nb], vec![0.0; nb], vec![0.0; nb]);
+    for (fb, c) in e.conds.iter().enumerate() {
+        match c {
+            ECond::Zero => {}
+            ECond::Temperature(v) => {
+                a[fb] = 0.0;
+                b[fb] = v.at(xf[fb], t);
+            }
+            ECond::Flux(v) => {
+                let qv = v.at(xf[fb], t);
+                q[fb] = qv * e.dn[fb];
+                b[fb] = q[fb] / e.k_face[ni + fb];
+            }
+            ECond::Convection(..) => {
+                // set from the final face conductivity
+                a[fb] = a_old[fb];
+                b[fb] = b_old[fb];
+            }
+        }
+    }
+    dev.upload(bc_a, &a)?;
+    dev.upload(bc_b, &b)?;
+    dev.upload(fq, &q)?;
+    // the heat source per unit heat capacity
+    if let Some(su) = su {
+        let mut heat = vec![0.0; nc];
+        if let Some(src) = &e.source {
+            for (c, h) in heat.iter_mut().enumerate() {
+                *h = src.at(e.cells[c], t);
+            }
+        }
+        if let (true, Some(l)) = (e.viscous_heating, link) {
+            let mut g = Vec::with_capacity(3);
+            for b in &l.grad_u {
+                g.push([dev.download(b.x)?, dev.download(b.y)?, dev.download(b.z)?]);
+            }
+            let mu_f = dev.download(l.mu_face)?;
+            let (mut sum, mut cnt) = (vec![0.0; nc], vec![0.0; nc]);
+            for f in 0..nf {
+                let o = e.owner[f] as usize;
+                sum[o] += mu_f[f];
+                cnt[o] += 1.0;
+                if f < ni {
+                    let n = e.neighbour[f] as usize;
+                    sum[n] += mu_f[f];
+                    cnt[n] += 1.0;
+                }
+            }
+            for c in 0..nc {
+                let mu = sum[c] / cnt[c];
+                let mut p = 0.0;
+                for i in 0..3 {
+                    for j in 0..3 {
+                        p += (g[i][j][c] + g[j][i][c]) * g[i][j][c];
+                    }
+                }
+                heat[c] += mu * p;
+            }
+        }
+        // the correction to the h-form (D150): the matrix is in T with
+        // the heat capacity flux and ρ c_p; the difference of the upwind
+        // convection and of the storage in h_s at the current temperature
+        // goes to the right-hand side, so that at convergence the residual
+        // is that of h_s (zero for a constant c_p)
+        let mut corr = vec![0.0; nc];
+        if !e.h.is_constant() {
+            let hv: Vec<f64> = tv.iter().map(|&x| e.h.at(x)).collect();
+            for f in 0..nf {
+                let o = e.owner[f] as usize;
+                let mf = m[f];
+                let (tu, hu) = if f < ni {
+                    let n = e.neighbour[f] as usize;
+                    if mf >= 0.0 {
+                        (tv[o], hv[o])
+                    } else {
+                        (tv[n], hv[n])
+                    }
+                } else if mf >= 0.0 {
+                    (tv[o], hv[o])
+                } else {
+                    (tf[f], e.h.at(tf[f]))
+                };
+                corr[o] += cf[f] * (tu - tv[o]) - mf * (hu - hv[o]);
+                if f < ni {
+                    let n = e.neighbour[f] as usize;
+                    corr[n] += -cf[f] * (tu - tv[n]) + mf * (hu - hv[n]);
+                }
+            }
+            if let Some((st, o1, o2)) = step {
+                let t1 = dev.download(o1)?;
+                let t2 = if st.a[2] != 0.0 {
+                    dev.download(o2)?
+                } else {
+                    vec![0.0; nc]
+                };
+                let [a0, a1, a2] = st.a;
+                for c in 0..nc {
+                    let lt = cap[c] * (a0 * tv[c] + a1 * t1[c] + a2 * t2[c]);
+                    let lh = rho
+                        * (a0 * hv[c]
+                            + a1 * e.h.at(t1[c])
+                            + if a2 != 0.0 { a2 * e.h.at(t2[c]) } else { 0.0 });
+                    corr[c] += e.volume[c] * (lt - lh) / st.dt;
+                }
+            }
+        }
+        let v: Vec<f64> = (0..nc)
+            .map(|c| (heat[c] + corr[c] / e.volume[c]) / cap[c])
+            .collect();
+        dev.upload(su, &v)?;
+        e.heat = heat;
+    }
+    Ok(())
+}
+
+/// The convection conditions h (T_amb - T_b) = k (T_b - T_P)/d_n with the
+/// final face conductivity of the iteration (after the turbulent one and
+/// the wall function): T_b = a T_P + b.
+fn convection_faces(
+    dev: &mut dyn FlowDevice,
+    e: &EnergyField,
+    bc_a: Buf,
+    bc_b: Buf,
+    gamma: Buf,
+    xf: &[[f64; 3]],
+    t: f64,
+) -> Result<()> {
+    if !e.conds.iter().any(|c| matches!(c, ECond::Convection(..))) {
+        return Ok(());
+    }
+    let g = dev.download(gamma)?;
+    let mut a = dev.download(bc_a)?;
+    let mut b = dev.download(bc_b)?;
+    let ni = e.neighbour.len();
+    for (fb, c) in e.conds.iter().enumerate() {
+        if let ECond::Convection(h, ta) = c {
+            let kd = g[ni + fb] / e.dn[fb];
+            let h = h.at(xf[fb], t);
+            a[fb] = kd / (kd + h);
+            b[fb] = h * ta.at(xf[fb], t) / (kd + h);
+        }
+    }
+    dev.upload(bc_a, &a)?;
+    dev.upload(bc_b, &b)?;
+    Ok(())
 }
 
 /// A scalar on a heat-flux pair: the pair, Δ and the bulk values on side
@@ -1534,12 +2112,12 @@ pub fn attach(
     mesh: &Mesh,
     geo: &Geometry,
 ) -> Result<()> {
-    if case.scalars.is_empty() {
+    if case.scalars.is_empty() && case.energy.is_none() {
         return Ok(());
     }
     let env = case.env()?;
     let transient = case.time.is_some();
-    let s = Scalars::new(
+    let mut s = Scalars::new(
         fl.dev.as_mut(),
         mesh,
         geo,
@@ -1552,6 +2130,7 @@ pub fn attach(
         &env,
         transient,
     )?;
+    s.add_energy(fl.dev.as_mut(), mesh, geo, &fl.disc, case, &env, transient)?;
     fl.add_scalars(s);
     Ok(())
 }
@@ -1567,8 +2146,33 @@ pub struct ScalarBoundarySummary {
     /// or bulk value), where mass crosses the boundary.
     pub mixed_mean: Option<f64>,
     /// Area-weighted mean diffusive flux into the domain, Γ ∂φ/∂n (the unit
-    /// of the scalar times m/s).
+    /// of the scalar times m/s); of the temperature: the heat flux k ∂T/∂n
+    /// into the domain (W/m²).
     pub flux: f64,
+    /// The temperature: the heat flow by conduction into the domain (W).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heat_flow: Option<f64>,
+    /// The temperature: the sensible enthalpy the flow carries into the
+    /// domain, −Σ ṁ_f h_s(T_f) (W), where mass crosses the boundary.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enthalpy_flow: Option<f64>,
+}
+
+/// The heat balance of the energy equation over the domain (stage 7a1).
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct EnergyBalance {
+    /// Conduction into the domain through the boundaries (W).
+    pub conduction: f64,
+    /// Enthalpy carried into the domain by the flow (W).
+    pub convection: f64,
+    /// The heat sources q''' + Φ over the volume (W).
+    pub source: f64,
+    /// conduction + convection + source (W): zero in a converged steady
+    /// run (a transient run also stores heat).
+    pub imbalance: f64,
+    /// |imbalance| over the largest single heat flow of a boundary or the
+    /// source.
+    pub relative: f64,
 }
 
 /// A scalar in the report of a solve.
@@ -1591,6 +2195,9 @@ pub struct ScalarSummary {
     pub linf: Option<f64>,
     /// Per boundary.
     pub boundaries: Vec<ScalarBoundarySummary>,
+    /// The temperature of the energy equation: the heat balance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy: Option<EnergyBalance>,
 }
 
 /// The scalars of `fl` for the report, at time `t` (for the exact
@@ -1631,13 +2238,8 @@ pub fn summaries(
             mx = mx.max(v);
         }
         let (mut l2, mut linf) = (None, None);
-        if let Some(e) = case.scalars.get(&name).and_then(|s| s.exact.as_ref()) {
-            let ex = expr::value(
-                e,
-                &env,
-                Vars::SPACE.with(time),
-                &format!("scalars.{name}.exact"),
-            )?;
+        if let Some((e, key)) = exact_of(case, &name) {
+            let ex = expr::value(e, &env, Vars::SPACE.with(time), &key)?;
             let (mut e2, mut ei) = (0.0, 0.0f64);
             for ((&v, &x), &vc) in phi[..nc]
                 .iter()
@@ -1652,8 +2254,17 @@ pub fn summaries(
             linf = Some(ei);
         }
         let mut bs = Vec::new();
+        // the energy equation: the flux in W/m² (k, not ρΓ), the heat
+        // flows and the balance
+        let heat = (name == crate::energy::FIELD)
+            .then(|| sc.energy_host())
+            .flatten();
+        let div = if heat.is_some() { 1.0 } else { rho };
+        let mut bal = EnergyBalance::default();
+        let mut largest = 0.0f64;
         for p in &mesh.boundaries {
             let (mut area, mut sum, mut flux, mut mf, mut msum) = (0.0, 0.0, 0.0, 0.0, 0.0);
+            let mut enthalpy = 0.0;
             for f in p.range() {
                 let fb = f - ni;
                 let o = mesh.owner[f] as usize;
@@ -1664,19 +2275,44 @@ pub fn summaries(
                 // the diffusive flux into the domain, orthogonal part (the
                 // whole flux at a flux face): ρΓ |S|²/(d·S) (φ_f − φ_P)
                 let dgeo = fl.disc.dgeo[f];
-                flux += gamma[f] / rho * dgeo * (pf - phi[o]);
+                flux += gamma[f] / div * dgeo * (pf - phi[o]);
                 mf += m[f].abs();
                 msum += m[f].abs() * pf;
+                if let Some((h, _)) = &heat {
+                    enthalpy -= m[f] * h.at(pf);
+                }
             }
             if area > 0.0 {
+                let (heat_flow, enthalpy_flow) = match heat {
+                    Some(_) => {
+                        bal.conduction += flux;
+                        bal.convection += enthalpy;
+                        largest = largest.max(flux.abs()).max(enthalpy.abs());
+                        (Some(flux), (mf > 0.0).then_some(enthalpy))
+                    }
+                    None => (None, None),
+                };
                 bs.push(ScalarBoundarySummary {
                     boundary: p.name.clone(),
                     mean: sum / area,
                     mixed_mean: (mf > 0.0).then(|| msum / mf),
                     flux: flux / area,
+                    heat_flow,
+                    enthalpy_flow,
                 });
             }
         }
+        let energy = heat.as_ref().map(|(_, src)| {
+            bal.source = *src;
+            largest = largest.max(src.abs());
+            bal.imbalance = bal.conduction + bal.convection + bal.source;
+            bal.relative = if largest > 0.0 {
+                bal.imbalance.abs() / largest
+            } else {
+                0.0
+            };
+            bal.clone()
+        });
         // the two sides of each periodic pair: the face value interpolated
         // with the cell across (with the jump of the heat-flux mode), the
         // diffusive flux into the domain the axial conduction
@@ -1698,7 +2334,7 @@ pub fn summaries(
                         let pf = w * phi[o] + (1.0 - w) * pn;
                         area += ar;
                         sum += ar * pf;
-                        flux += gamma[f] / rho * fl.disc.dgeo[f] * (pn - phi[o]);
+                        flux += gamma[f] / div * fl.disc.dgeo[f] * (pn - phi[o]);
                         mf += m[f].abs();
                         msum += m[f].abs() * pf;
                     }
@@ -1708,6 +2344,8 @@ pub fn summaries(
                             mean: sum / area,
                             mixed_mean: bulk.or((mf > 0.0).then(|| msum / mf)),
                             flux: flux / area,
+                            heat_flow: None,
+                            enthalpy_flow: None,
                         });
                     }
                 }
@@ -1722,6 +2360,7 @@ pub fn summaries(
             l2,
             linf,
             boundaries: bs,
+            energy,
         });
     }
     Ok(out)
@@ -1741,6 +2380,7 @@ pub fn field_errors(
     if fl.state.scalars.is_empty() {
         return Ok(out);
     }
+
     let env = case.env()?;
     let time = if case.time.is_some() {
         Vars::T
@@ -1749,13 +2389,8 @@ pub fn field_errors(
     };
     let t = at.and_then(|(_, t)| t).unwrap_or(0.0);
     for st in &fl.state.scalars {
-        if let Some(e) = case.scalars.get(&st.name).and_then(|s| s.exact.as_ref()) {
-            let ex = expr::value(
-                e,
-                &env,
-                Vars::SPACE.with(time),
-                &format!("scalars.{}.exact", st.name),
-            )?;
+        if let Some((e, key)) = exact_of(case, &st.name) {
+            let ex = expr::value(e, &env, Vars::SPACE.with(time), &key)?;
             let err = (0..mesh.n_cells)
                 .map(|c| st.phi[c] - ex.at(geo.cell_centroid[c], t))
                 .collect();
@@ -1778,7 +2413,29 @@ pub fn summary_line(s: &ScalarSummary) -> String {
     if let (Some(a), Some(b)) = (s.l2, s.linf) {
         l.push_str(&format!(", error L2 {a:.4e}, max {b:.4e}"));
     }
+    if let Some(e) = &s.energy {
+        l.push_str(&format!(
+            "; heat balance: conduction {:.6e} W, convection {:.6e} W, sources {:.6e} W, \
+             imbalance {:.3e} W ({:.2e} of the largest flow)",
+            e.conduction, e.convection, e.source, e.imbalance, e.relative
+        ));
+    }
     l
+}
+
+/// The exact solution of a scalar or of the temperature, with its key.
+fn exact_of<'a>(case: &'a crate::case::FlowCase, name: &str) -> Option<(&'a Scalar, String)> {
+    if let Some(e) = case.scalars.get(name).and_then(|s| s.exact.as_ref()) {
+        return Some((e, format!("scalars.{name}.exact")));
+    }
+    if name == crate::energy::FIELD {
+        return case
+            .energy
+            .as_ref()
+            .and_then(|e| e.exact.as_ref())
+            .map(|e| (e, "energy.exact".to_string()));
+    }
+    None
 }
 
 /// The checks of the scalars over the solves of a report: the largest

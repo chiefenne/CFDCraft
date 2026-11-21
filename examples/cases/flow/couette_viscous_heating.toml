@@ -1,0 +1,92 @@
+# Plane Couette flow heated by its own friction: the energy equation with
+# viscous heating (stage 7a1, check V7.2).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/couette_viscous_heating.toml
+#
+# The Couette flow of couette_hex.toml (channel 0 < y < h, h = 1 m, upper
+# wall at U = 1 m/s, μ = 0.1 Pa s), periodic along x, with both walls held
+# at T₀ = 300 K. The friction heats the fluid with Φ = μ (U/h)² per unit
+# volume, and the conduction carries the heat to both walls. The developed
+# temperature is
+#
+#   T = T₀ + Br ΔT η (1 − η)/2,   η = y/h,   ΔT = μU²/k,   Br = 1,
+#
+# here with k = 0.05 W/(m K): ΔT = 2 K, the centre line Br ΔT/8 = 0.25 K
+# above the walls (the Brinkman number Br = μU²/(k ΔT) is 1 with this
+# ΔT). Each wall takes half of the friction power μU²/h per unit area,
+# 0.05 W/m², and the heat balance of the report closes: the conduction out
+# of the walls equals the viscous heating. Three nested meshes: the L2
+# error of T falls at second order (1.8 to 2.2).
+#
+# (With an inlet instead of the periodic pair the Péclet number
+# ρ c_p U h/k = 2·10⁴ carries the inlet profile down the whole channel, and
+# the error is that of the inlet, not of the scheme.)
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 1.0, 0.1]
+cells = [16, 8, 1]
+perturb = 0.0
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 0.1          # Re = ρ U h / μ = 10
+specific_heat = 1000.0
+conductivity = 0.05
+
+[constants]
+T0 = 300.0
+mu_f = 0.1
+k_f = 0.05
+U = 1.0
+
+[flow]
+convection = true
+
+[energy]
+initial = 300.0
+viscous_heating = true
+exact = "T0 + mu_f * U^2 / (2 * k_f) * y * (1 - y)"
+
+[boundary.xmin]
+type = "periodic"
+partner = "xmax"
+mass_flow = 0.05         # ρ U h/2 times the depth 0.1 m: no pressure gradient
+[boundary.xmax]
+type = "periodic"
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 300.0
+[boundary.ymax]
+type = "wall"
+velocity = [1.0, 0.0, 0.0]
+[boundary.ymax.energy]
+temperature = 300.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-10
+max_iterations = 2000
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 200
+
+[verification]
+levels = [0, 1, 2]
+scalar_order = [1.8, 2.2]
+require_convergence = true
+
+[output]
+wall_csv = false
