@@ -13,9 +13,9 @@
 > **Status: stage 6 done (RANS turbulence, heat transfer in forced
 > convection, rotating machinery), release 0.6.** The stage
 > plan and every decision are in [docs/requirements.md](docs/requirements.md);
-> [What works today](#what-works-today) lists what is on `main` now. Next is
-> stage 7: the energy equation with buoyancy, variable density and conjugate
-> heat transfer.
+> [What works today](#what-works-today) lists what is on `main` now. Stage 7 is
+> under way: the energy equation of the fluid is in; buoyancy, variable
+> density and conjugate heat transfer follow.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
@@ -86,8 +86,11 @@ Everything below is on `main`, verified by the cases of the
   (constant or Kays–Crawford) and thermal wall functions (Kader,
   Jayatilleke): the heated pipe, plate and channel against correlations and
   DNS, the Nusselt number of the impinging jet against the experiment.
-  Temperature-dependent properties, buoyancy and conjugate heat transfer
-  come with the energy equation of stage 7.
+  The energy equation of the fluid (stage 7): c_p(T), k(T) and μ(T) from
+  the material database, viscous heating, temperature, heat-flux, heat-flow
+  and convection walls, and a heat balance in the report; second order on
+  manufactured and exact solutions. Buoyancy and conjugate heat transfer
+  come next in stage 7.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,

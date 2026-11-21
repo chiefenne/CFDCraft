@@ -297,6 +297,9 @@ A code keeps its meaning; a retired code stays in the table.
 | `MAT007` | error | A fluid without specific heat or thermal conductivity in a run with the energy equation. |
 | `MAT008` | error | An orthotropic thermal conductivity without both axes, or with parallel axes. |
 | `MAT009` | error | A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format. |
+| `ENE001` | error | A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one of `temperature`, `heat_flux`, `heat_flow` and `heat_transfer_coefficient` (with `ambient_temperature`), with a condition its boundary does not take (a flux at an inlet, anything at an outlet or a periodic boundary), or without `[energy]`. |
+| `ENE002` | error | An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation. |
+| `ENE003` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, `[energy]` with `[regions]` (7d1), or an orthotropic conductivity of a fluid. |
 | `REG001` | error | A region that is not a fluid: solids and porous zones come with the energy equation (L1). |
 | `REG002` | error | A region that names a cell zone the mesh does not have, or a zone in two regions. |
 | `MRF001` | error | An `[[mrf]]` table and a `[[sliding]]` table that turn the same cells (one of them without a `zone`, or both with the same one): a zone is turned by a moving reference frame (steady or transient, D185) or by a sliding mesh (D182), not by both. |

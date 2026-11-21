@@ -597,7 +597,8 @@ mod tests {
         assert!(!h.is_constant());
         for t in [250.0, 298.15, 300.0, 412.3, 1500.0] {
             let exact = 1000.0 * (t - H_REF_T) + 0.25 * (t * t - H_REF_T * H_REF_T);
-            assert!((h.at(t) - exact).abs() < 1e-6 * exact.abs().max(1.0), "{t}");
+            // linear interpolation of the 0.25 K table: |err| ≤ c_p' Δ²/8 = 0.004 J/kg
+            assert!((h.at(t) - exact).abs() < 5e-3, "{t}: {} {exact}", h.at(t));
         }
         let c = Enthalpy::constant(4184.0);
         assert_eq!(c.at(H_REF_T + 1.0), 4184.0);

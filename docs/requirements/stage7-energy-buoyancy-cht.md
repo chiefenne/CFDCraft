@@ -1287,6 +1287,16 @@ CHT lane (C) run in parallel.
 | D | 7e4 | D172 Pr_t closures, D173 variable-property wall treatment | H-0 to H-2 of step 21 |
 | – | 7f | Jacobians, Colab notebook, restart check, verification manual, release v0.7 | V7.22, V7.23 |
 
+**7a1 done 2026-11-21 (#154):** the energy equation of the fluid with
+c_p(T), k(T), μ(T), viscous heating, the thermal walls (`[boundary.<name>.energy]`
+tables in the style of the passive scalars instead of the `thermal = {...}`
+of §15), ENE001–ENE003 and the heat balance; V7.1 on hexahedra with a
+Dirichlet boundary (the Robin condition by the exact series resistance in
+`tests/energy.rs`), V7.2 with both walls isothermal. Moved to a later PR:
+the THM codes, V7.3, the thermal account of the ledger in `result.json`,
+the channel DNS regression of the energy equation, and the property
+refresh on the device.
+
 Other decisions of 2026-11-20:
 
 - v0.6 is tagged before stage 7 code merges.
