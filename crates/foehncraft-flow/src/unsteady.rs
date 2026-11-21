@@ -1136,6 +1136,11 @@ fn run_one<F: FnMut(&str)>(
         );
         let _ = write!(hhead, ",scalar_{s},first_order_{s}");
     }
+    if case.energy.is_some() {
+        hunits
+            .push_str(", energy - (scaled residual), first_order_energy - (cells at first order)");
+        hhead.push_str(",energy,first_order_energy");
+    }
     let mut history = History::new(
         hist_dir,
         &suffix_name("history", desc, last),

@@ -2657,6 +2657,11 @@ pub fn run_steered(
             );
             let _ = write!(head, ",scalar_{s},bicgstab_{s}");
         }
+        // the energy equation, after the passive scalars (stage 7a1)
+        if case.energy.is_some() {
+            units.push_str(", energy - (scaled residual), bicgstab_energy - (iterations)");
+            head.push_str(",energy,bicgstab_energy");
+        }
         // the Krylov iterations of the coupled algorithm: a last column
         let coupled = case.solver.algorithm(false) == crate::simplec::Algorithm::Coupled;
         if coupled {

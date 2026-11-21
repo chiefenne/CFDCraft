@@ -1598,6 +1598,38 @@ impl Scalars {
             .collect()
     }
 
+    /// What the convection scheme of the energy equation carries out of an
+    /// outflow boundary face: the gradient and the limiter of T per cell
+    /// and the weights of the linear-upwind and of the central parts, so
+    /// that T_out = T_P + w_lu ψ_P ∇T_P·(x_f − x_P) + w_c (T_b − T_P), as in
+    /// [`foehncraft_kernels::fv::face_coefficients`].
+    fn energy_outflow(&self, dev: &mut dyn FlowDevice) -> Result<Option<Outflow>> {
+        let Some(f) = self.fields.iter().find(|f| f.energy.is_some()) else {
+            return Ok(None);
+        };
+        let s = &f.settings;
+        let blend = if s.scheme == Scheme::Upwind { 0.0 } else { 1.0 };
+        let central = if s.scheme == Scheme::Central {
+            s.central_blending
+        } else {
+            0.0
+        };
+        Ok(Some(Outflow {
+            grad: [
+                dev.download(f.grad.x)?,
+                dev.download(f.grad.y)?,
+                dev.download(f.grad.z)?,
+            ],
+            psi: dev.download(f.psi)?,
+            linear: if central > 0.0 {
+                (1.0 - central) * blend
+            } else {
+                blend
+            },
+            central,
+        }))
+    }
+
     /// The energy equation's h_s(T) and the heat sources over the volume
     /// (W) of the last refresh, if the case has it.
     fn energy_host(&self) -> Option<(crate::energy::Enthalpy, f64)> {
@@ -2135,6 +2167,26 @@ pub fn attach(
     Ok(())
 }
 
+/// The outflow face values of the energy equation's convection scheme
+/// ([`Scalars::energy_outflow`]).
+struct Outflow {
+    grad: [Vec<f64>; 3],
+    psi: Vec<f64>,
+    linear: f64,
+    central: f64,
+}
+
+impl Outflow {
+    /// The value carried out through boundary face `f` of cell `o` with
+    /// the boundary value `tb`.
+    fn at(&self, geo: &Geometry, f: usize, o: usize, tp: f64, tb: f64) -> f64 {
+        let r: f64 = (0..3)
+            .map(|d| self.grad[d][o] * (geo.face_centroid[f][d] - geo.cell_centroid[o][d]))
+            .sum();
+        tp + self.linear * self.psi[o] * r + self.central * (tb - tp)
+    }
+}
+
 /// A scalar on one boundary, for the report.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct ScalarBoundarySummary {
@@ -2260,6 +2312,11 @@ pub fn summaries(
             .then(|| sc.energy_host())
             .flatten();
         let div = if heat.is_some() { 1.0 } else { rho };
+        let outflow = if heat.is_some() {
+            sc.energy_outflow(fl.dev.as_mut())?
+        } else {
+            None
+        };
         let mut bal = EnergyBalance::default();
         let mut largest = 0.0f64;
         for p in &mesh.boundaries {
@@ -2279,7 +2336,13 @@ pub fn summaries(
                 mf += m[f].abs();
                 msum += m[f].abs() * pf;
                 if let Some((h, _)) = &heat {
-                    enthalpy -= m[f] * h.at(pf);
+                    // the value the scheme convects: the boundary value at
+                    // inflow, the scheme's reconstruction at outflow
+                    let tc = match &outflow {
+                        Some(w) if m[f] > 0.0 => w.at(geo, f, o, phi[o], pf),
+                        _ => pf,
+                    };
+                    enthalpy -= m[f] * h.at(tc);
                 }
             }
             if area > 0.0 {

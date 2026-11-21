@@ -271,3 +271,66 @@ fn energy_keys_are_checked() {
     let (code, msg) = refused(&twice);
     assert_eq!(code, "ENE006", "{msg}");
 }
+
+/// A channel heated from below, linear upwind: the heat balance of the
+/// report counts the enthalpy the scheme carries out of the outlet (its
+/// reconstructed face value), so it closes as with upwind.
+#[test]
+fn heat_balance_closes_with_inflow_and_outflow() {
+    let t = r#"
+case_format = "0.6"
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [2.0, 0.5, 0.05]
+cells = [40, 10, 1]
+[fluid]
+density = 1.0
+viscosity = 0.01
+specific_heat = 1000.0
+conductivity = 14.0
+[energy]
+initial = 300.0
+[boundary.xmin]
+type = "velocity-inlet"
+velocity = [1.0, 0.0, 0.0]
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmax]
+type = "static-pressure-outlet"
+pressure = 0.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+heat_flux = 1000.0
+[boundary.ymax]
+type = "wall"
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+[solver]
+tolerance = 1e-9
+max_iterations = 1000
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-12
+max_iter = 300
+[output]
+wall_csv = false
+vtkhdf = false
+"#;
+    for scheme in ["linear-upwind", "upwind"] {
+        let case = t.replace(
+            "max_iter = 300\n",
+            &format!("max_iter = 300\nscheme = \"{scheme}\"\n"),
+        );
+        let r = run_case(&parse(&case), &format!("balance_{scheme}"));
+        let s = &r.solves[0];
+        assert!(s.converged, "{scheme}");
+        let e = s.scalars[0].energy.as_ref().unwrap();
+        // 1000 W/m² over 2 m × 0.05 m
+        assert!((e.conduction - 100.0).abs() < 2.0, "{scheme}: {e:?}");
+        assert!(e.relative < 1e-6, "{scheme}: {e:?}");
+    }
+}
