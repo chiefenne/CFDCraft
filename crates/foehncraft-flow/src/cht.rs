@@ -1,0 +1,442 @@
+//! Conjugate heat transfer (stage 7, PR 7d1; D112, D157): solid regions in
+//! the energy equation.
+//!
+//! One mesh holds the fluid and the solid regions. The flow is solved on
+//! the *fluid view*: the cells of the fluid, with every face between a
+//! fluid and a solid cell turned into a no-slip wall boundary named
+//! `interface-<solid region>`. The energy equation is solved on the *full
+//! mesh*, all regions in one matrix: the mass flux of the fluid view is
+//! copied onto the faces of the full mesh (zero in the solids), and the
+//! faces between two materials take the series conductance
+//!
+//!   k_f = (δ_P + δ_N) / (δ_P/k_P + δ_N/k_N),
+//!
+//! with δ the normal distances of the two cell centroids to the face
+//! (Patankar 1980, §4.2), so the heat flux is the same number on both sides
+//! of the interface at every iteration (D117 (1)). The temperature-
+//! dependent viscosity of the fluid goes back to the fluid view after each
+//! energy solve.
+//!
+//! Case file: a `[regions.<name>]` table with `kind = "solid"`, the cell
+//! zones and a material with density, specific heat and conductivity
+//! (MAT006); the outer boundaries of a solid take the thermal conditions
+//! of `[boundary.<name>.energy]` like any wall.
+
+use crate::case::FlowCase;
+use crate::materials::RegionKind;
+use anyhow::{Result, anyhow};
+use foehncraft_mesh::builder::MeshBuilder;
+use foehncraft_mesh::{Geometry, Mesh};
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+/// The prefix of the boundaries of the fluid view between the fluid and a
+/// solid region.
+pub const INTERFACE: &str = "interface-";
+
+/// True for a case with the energy equation and at least one solid region.
+pub fn is_cht(case: &FlowCase) -> bool {
+    case.energy.is_some() && case.regions.values().any(|r| r.kind == RegionKind::Solid)
+}
+
+/// The full mesh behind a fluid view, and the maps between the two.
+#[derive(Debug)]
+pub struct FluidView {
+    /// The case as written (all regions, all boundaries).
+    pub full_case: FlowCase,
+    /// The full mesh and its geometry.
+    pub mesh: Mesh,
+    /// See `mesh`.
+    pub geo: Geometry,
+    /// Per cell of the fluid view: the cell of the full mesh.
+    pub cell: Vec<u32>,
+    /// Per face of the fluid view: the face of the full mesh.
+    pub face: Vec<u32>,
+    /// Per face of the fluid view: true where its normal is the opposite
+    /// of that of the full face (interface faces whose fluid cell is the
+    /// neighbour in the full mesh).
+    pub flip: Vec<bool>,
+    /// The solid region of each cell of the full mesh (`None`: fluid).
+    pub solid: Vec<Option<String>>,
+    /// The interface boundaries of the fluid view, by solid region.
+    pub interfaces: Vec<String>,
+}
+
+/// The name of the interface boundary of a solid region.
+pub fn interface_name(region: &str) -> String {
+    format!("{INTERFACE}{region}")
+}
+
+/// The solid region of every cell (by its cell zone).
+fn solid_cells(case: &FlowCase, mesh: &Mesh) -> Vec<Option<String>> {
+    let mut by_zone: BTreeMap<&str, &str> = BTreeMap::new();
+    for (name, r) in &case.regions {
+        if r.kind == RegionKind::Solid {
+            for z in &r.zones {
+                by_zone.insert(z.as_str(), name.as_str());
+            }
+        }
+    }
+    let zone_region: Vec<Option<String>> = mesh
+        .zones
+        .iter()
+        .map(|z| by_zone.get(z.as_str()).map(|r| r.to_string()))
+        .collect();
+    (0..mesh.n_cells)
+        .map(|c| zone_region[mesh.cell_zone[c] as usize].clone())
+        .collect()
+}
+
+/// The fluid view of a case on its full mesh: the case of the flow (the
+/// boundaries of the fluid cells and the interface walls, with the view
+/// attached), its mesh and geometry. A case without solid regions comes
+/// back as it is.
+pub fn view(case: &FlowCase, mesh: Mesh, geo: Geometry) -> Result<(FlowCase, Mesh, Geometry)> {
+    let full_case = match &case.fluid_view {
+        Some(v) => v.full_case.clone(),
+        None => case.clone(),
+    };
+    if !is_cht(&full_case) {
+        return Ok((full_case, mesh, geo));
+    }
+    for (name, r) in &full_case.regions {
+        for z in &r.zones {
+            crate::need!(
+                mesh.zones.contains(z),
+                REG_ZONE,
+                "[regions.{name}] zone `{z}` is not a cell zone of the mesh; the mesh has {}",
+                mesh.zones
+                    .iter()
+                    .map(|z| format!("`{z}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
+    let solid = solid_cells(&full_case, &mesh);
+    let nc = mesh.n_cells;
+    let mut local = vec![u32::MAX; nc];
+    let mut cell = Vec::new();
+    for c in 0..nc {
+        if solid[c].is_none() {
+            local[c] = cell.len() as u32;
+            cell.push(c as u32);
+        }
+    }
+    crate::need!(
+        !cell.is_empty(),
+        ENE_UNSUPPORTED,
+        "every cell is in a solid region: the flow needs fluid cells (a solid-only case is \
+         not in this version)"
+    );
+    // nodes of the fluid cells, in the order of the full mesh
+    let mut node = vec![u32::MAX; mesh.n_points()];
+    let mut used = Vec::new();
+    for &c in &cell {
+        for (f, _) in mesh.cell_face_iter(c as usize) {
+            for &v in mesh.face(f) {
+                if node[v as usize] == u32::MAX {
+                    node[v as usize] = 0;
+                    used.push(v);
+                }
+            }
+        }
+    }
+    used.sort_unstable();
+    for (i, &v) in used.iter().enumerate() {
+        node[v as usize] = i as u32;
+    }
+    let points: Vec<[f64; 3]> = used.iter().map(|&v| mesh.points[v as usize]).collect();
+    let mut b = MeshBuilder::new(points, cell.len());
+    b.set_zones(
+        mesh.zones.clone(),
+        cell.iter().map(|&c| mesh.cell_zone[c as usize]).collect(),
+    );
+    for p in &mesh.boundaries {
+        if p.range().any(|f| solid[mesh.owner[f] as usize].is_none()) {
+            b.declare_boundary(&p.name);
+        }
+    }
+    let ni = mesh.n_interior_faces();
+    crate::need!(
+        mesh.periodic.is_none(),
+        ENE_UNSUPPORTED,
+        "periodic boundaries with solid regions are not in this version"
+    );
+    // (insertion order) full face and flip
+    let mut inserted: Vec<(u32, bool)> = Vec::new();
+    let mut interfaces = Vec::new();
+    let remap = |nodes: &[u32], rev: bool| -> Vec<u32> {
+        let mut v: Vec<u32> = nodes.iter().map(|&n| node[n as usize]).collect();
+        if rev {
+            v[1..].reverse();
+        }
+        v
+    };
+    for f in 0..mesh.n_faces() {
+        let o = mesh.owner[f] as usize;
+        if f < ni {
+            let n = mesh.neighbour[f] as usize;
+            match (&solid[o], &solid[n]) {
+                (None, None) => {
+                    b.add_interior(&remap(mesh.face(f), false), local[o], local[n]);
+                    inserted.push((f as u32, false));
+                }
+                (None, Some(r)) | (Some(r), None) => {
+                    let name = interface_name(r);
+                    if mesh.boundary(&name).is_some() {
+                        return Err(crate::diag::err(crate::diag::Diagnostic::new(
+                            crate::diag::ENE_UNSUPPORTED,
+                            format!(
+                                "the mesh has a boundary `{name}`: the name of the interface \
+                                 of solid region `{r}` is taken; rename the boundary"
+                            ),
+                        )));
+                    }
+                    if !interfaces.contains(&name) {
+                        interfaces.push(name.clone());
+                    }
+                    let rev = solid[o].is_some();
+                    let fluid_cell = if rev { n } else { o };
+                    b.add_boundary(&remap(mesh.face(f), rev), local[fluid_cell], &name);
+                    inserted.push((f as u32, rev));
+                }
+                (Some(_), Some(_)) => {}
+            }
+        } else if solid[o].is_none() {
+            let p = mesh.boundary_of(f).expect("a boundary face");
+            b.add_boundary(
+                &remap(mesh.face(f), false),
+                local[o],
+                &mesh.boundaries[p].name,
+            );
+            inserted.push((f as u32, false));
+        }
+    }
+    let (fluid, order) = b.finish_with_order().map_err(|e| anyhow!("fluid view: {e}"))?;
+    let face: Vec<u32> = order.iter().map(|&i| inserted[i as usize].0).collect();
+    let flip: Vec<bool> = order.iter().map(|&i| inserted[i as usize].1).collect();
+    let fgeo = Geometry::compute(&fluid);
+    // the case of the flow: the boundaries of the fluid view, the
+    // interfaces as walls at rest
+    let mut fc = full_case.clone();
+    fc.boundary
+        .retain(|name, _| fluid.boundaries.iter().any(|p| &p.name == name));
+    for name in &interfaces {
+        let wall: crate::bc::BoundaryCondition =
+            toml::from_str("type = \"wall\"").map_err(|e| anyhow!("interface wall: {e}"))?;
+        fc.boundary.insert(name.clone(), wall);
+    }
+    fc.regions.retain(|_, r| r.kind != RegionKind::Solid);
+    fc.fluid_view = Some(Arc::new(FluidView {
+        full_case,
+        mesh,
+        geo,
+        cell,
+        face,
+        flip,
+        solid,
+        interfaces,
+    }));
+    Ok((fc, fluid, fgeo))
+}
+
+impl FluidView {
+    /// Face values of the fluid view on the faces of the full mesh (`sign`:
+    /// flip the sign on reversed faces, for fluxes), `fill` elsewhere.
+    pub fn faces_to_full(&self, v: &[f64], sign: bool, fill: f64) -> Vec<f64> {
+        let mut out = vec![fill; self.mesh.n_faces()];
+        for (i, (&f, &r)) in self.face.iter().zip(&self.flip).enumerate() {
+            out[f as usize] = if sign && r { -v[i] } else { v[i] };
+        }
+        out
+    }
+
+    /// Cell values of the fluid view on the cells of the full mesh, `fill`
+    /// in the solids.
+    pub fn cells_to_full(&self, v: &[f64], fill: f64) -> Vec<f64> {
+        let mut out = vec![fill; self.mesh.n_cells];
+        for (i, &c) in self.cell.iter().enumerate() {
+            out[c as usize] = v[i];
+        }
+        out
+    }
+
+    /// Face values of the full mesh on the faces of the fluid view.
+    pub fn faces_from_full(&self, v: &[f64]) -> Vec<f64> {
+        self.face.iter().map(|&f| v[f as usize]).collect()
+    }
+
+    /// Boundary-face values of the fluid view (in its boundary-face order)
+    /// on the boundary faces of the full mesh, `fill` elsewhere.
+    pub fn boundary_faces_to_full(&self, v: &[f64], fluid_ni: usize, fill: f64) -> Vec<f64> {
+        let ni = self.mesh.n_interior_faces();
+        let mut out = vec![fill; self.mesh.n_boundary_faces()];
+        for (i, &f) in self.face[fluid_ni..].iter().enumerate() {
+            let f = f as usize;
+            if f >= ni {
+                out[f - ni] = v[i];
+            }
+        }
+        out
+    }
+}
+
+/// The energy equation of a conjugate heat transfer case: a flow object
+/// on the full mesh that only solves the energy equation, fed with the
+/// mass flux, the velocity gradients and the viscosity of the fluid view.
+pub struct Cht {
+    /// The energy view (the full mesh).
+    pub fe: crate::simplec::Flow,
+    /// The maps between the views.
+    pub view: Arc<FluidView>,
+}
+
+/// Attaches the energy equation on the full mesh to the flow of the fluid
+/// view.
+pub fn attach(fl: &mut crate::simplec::Flow, view: Arc<FluidView>) -> Result<()> {
+    let full = &view.full_case;
+    let (mesh, geo) = (&view.mesh, &view.geo);
+    let phys = crate::case::physics(full)?;
+    let values = full.compiled_boundaries()?;
+    let at = crate::bc::At {
+        analytic: None,
+        values: &values,
+        t: 0.0,
+        turning: &full.turning(),
+    };
+    let arrays = crate::bc::arrays(mesh, geo, &full.boundary, phys.rho, at)?;
+    let disc = crate::simplec::discretisation(mesh, geo, &arrays)?;
+    let phys = crate::case::physics_on(full, &phys, mesh, geo)?;
+    let mut fe = crate::simplec::Flow::new(
+        disc,
+        arrays,
+        phys,
+        full.solver.clone(),
+        [0.0; 3],
+        0.0,
+        None,
+        &crate::simplec::Target {
+            device: full.run.backend.clone(),
+            threads: full.run.threads,
+            ptx: full.run.ptx.clone(),
+        },
+    )?;
+    crate::scalar::attach(&mut fe, full, mesh, geo)?;
+    fl.cht = Some(Box::new(Cht { fe, view }));
+    Ok(())
+}
+
+/// The energy solve of an outer iteration: the fluxes of the fluid view
+/// onto the full mesh, the solve there, μ(T) back to the fluid view.
+pub fn solve(
+    fl: &mut crate::simplec::Flow,
+    step: Option<crate::scalar::StepTime>,
+    res: &mut crate::simplec::Residuals,
+) -> Result<()> {
+    let mut c = fl.cht.take().expect("a conjugate heat transfer case");
+    let r = (|| -> Result<()> {
+        let v = c.view.clone();
+        let fe = &mut c.fe;
+        let conv = fl.convecting_flux()?;
+        let m = fl.dev.download(conv)?;
+        fe.dev.upload(fe.f.mass_flux, &v.faces_to_full(&m, true, 0.0))?;
+        for i in 0..3 {
+            for (src, dst) in fl.f.grad_u[i].all().into_iter().zip(fe.f.grad_u[i].all()) {
+                let g = fl.dev.download(src)?;
+                fe.dev.upload(dst, &v.cells_to_full(&g, 0.0))?;
+            }
+        }
+        let mu = fl.dev.download(fl.dev.face_viscosity())?;
+        let mu_full = v.faces_to_full(&mu, false, 0.0);
+        let target = fe.dev.face_viscosity();
+        fe.dev.upload(target, &mu_full)?;
+        fe.solve_scalars(step, res)?;
+        if let Some(mu) = fe.scalars.as_ref().and_then(|s| s.energy_viscosity()) {
+            let back = v.faces_from_full(mu);
+            let target = fl.dev.face_viscosity();
+            fl.dev.upload(target, &back)?;
+            fl.phys.mu_face = Some(Arc::new(back));
+        }
+        Ok(())
+    })();
+    fl.cht = Some(c);
+    r
+}
+
+/// The scalar summaries of a conjugate heat transfer case: those of the
+/// full mesh, with the interfaces as boundaries (the heat flow into the
+/// fluid).
+pub fn summaries(
+    fl: &mut crate::simplec::Flow,
+    dim: u8,
+    t: f64,
+) -> Result<Vec<crate::scalar::ScalarSummary>> {
+    let c = fl.cht.as_mut().expect("a conjugate heat transfer case");
+    let v = c.view.clone();
+    let mut out = crate::scalar::summaries(&mut c.fe, &v.full_case, &v.mesh, &v.geo, dim, t)?;
+    let Some(sc) = c.fe.scalars.as_ref() else {
+        return Ok(out);
+    };
+    let faces = sc.energy_interfaces(c.fe.dev.as_mut(), &v.geo)?;
+    if let Some(s) = out.iter_mut().find(|s| s.name == crate::energy::FIELD) {
+        for (region, q, area, mean) in faces {
+            s.boundaries.push(crate::scalar::ScalarBoundarySummary {
+                boundary: interface_name(&region),
+                mean,
+                mixed_mean: None,
+                flux: if area > 0.0 { q / area } else { 0.0 },
+                heat_flow: Some(q),
+                enthalpy_flow: None,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// The solution on the full mesh for the output: velocity, pressure and
+/// mass flux of the fluid view (zero in the solids), the temperature of
+/// the energy view.
+pub fn full_state(
+    fl: &mut crate::simplec::Flow,
+    fluid: &crate::simplec::State,
+) -> Result<crate::simplec::State> {
+    let c = fl.cht.as_mut().expect("a conjugate heat transfer case");
+    let v = &c.view;
+    let mut s = c.fe.state()?;
+    let fni = fluid.mass_flux.len() - fluid.pb.len();
+    for (dst, src) in [
+        (&mut s.u.x, &fluid.u.x),
+        (&mut s.u.y, &fluid.u.y),
+        (&mut s.u.z, &fluid.u.z),
+        (&mut s.p, &fluid.p),
+    ] {
+        *dst = v.cells_to_full(src, 0.0);
+    }
+    for i in 0..3 {
+        for (dst, src) in [
+            (&mut s.grad_u[i].x, &fluid.grad_u[i].x),
+            (&mut s.grad_u[i].y, &fluid.grad_u[i].y),
+            (&mut s.grad_u[i].z, &fluid.grad_u[i].z),
+        ] {
+            *dst = v.cells_to_full(src, 0.0);
+        }
+    }
+    for (dst, src) in [
+        (&mut s.grad_p.x, &fluid.grad_p.x),
+        (&mut s.grad_p.y, &fluid.grad_p.y),
+        (&mut s.grad_p.z, &fluid.grad_p.z),
+    ] {
+        *dst = v.cells_to_full(src, 0.0);
+    }
+    s.mass_flux = v.faces_to_full(&fluid.mass_flux, true, 0.0);
+    for (dst, src) in [
+        (&mut s.ub.x, &fluid.ub.x),
+        (&mut s.ub.y, &fluid.ub.y),
+        (&mut s.ub.z, &fluid.ub.z),
+        (&mut s.pb, &fluid.pb),
+    ] {
+        *dst = v.boundary_faces_to_full(src, fni, 0.0);
+    }
+    Ok(s)
+}
