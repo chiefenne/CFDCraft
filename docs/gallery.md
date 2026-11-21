@@ -17,7 +17,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | [Scalar transport and the pressure solver](gallery/scalar-pressure.md) | convection–diffusion order of accuracy, convection schemes and limiters, the pressure multigrid | 8, 9, 10, 11 |
 | [Incompressible flow](gallery/flow.md) | steady and transient laminar verification and benchmarks: cavity, Poiseuille, Taylor–Green, cylinder, time-step control | 12, 13, 14, 15, 20, 78, 80, 81, 83, 85, 86, 87, 94, 95, 96, 98, 99, 100, 101, 102, 103 |
 | [Passive scalars and the wall distance](gallery/scalars.md) | passive scalars carried by the flow, the bounded BDF2, the exact wall distance | 63 |
-| [Energy equation and heat transfer](gallery/energy.md) | the energy equation of the fluid with temperature-dependent properties, viscous heating and thermal walls: a heated cavity, conduction with k(T), Couette flow heated by friction | |
+| [Energy equation and heat transfer](gallery/energy.md) | the energy equation of the fluid with temperature-dependent properties, viscous heating and thermal walls: a heated cavity, conduction with k(T), Couette flow heated by friction | 154 |
 | [Turbulence models](gallery/turbulence.md) | the RANS turbulence models of stage 6 with their wall treatments: k-ω SST on the TMR flat plate and in a channel | 68, 71, 73, 74, 88, 89, 90, 113, 115, 141, 140 |
 | [Boundary conditions](gallery/boundary-conditions.md) | slip walls, axisymmetric wedges, inlet profiles from tables, backflow at pressure outlets, convective outlets, periodic modules | 21, 67 |
 | [Expressions and materials](gallery/properties.md) | boundary values, body forces and viscosities as expressions, the material database, regions, walls with a mass flux | 23 |
@@ -94,6 +94,7 @@ The gallery is split by topic; each page has its own table of contents. The numb
 | <a id="su2-zones"></a>138 | [Taylor–Couette sliding case from a two-zone SU2 file](gallery/meshes.md#su2-zones) | [Meshes](gallery/meshes.md) |
 | <a id="outlet-backflow"></a>140 | [Turbulence of the backflow at a pressure outlet: an outlet inside the recirculation](gallery/turbulence.md#outlet-backflow) | [Turbulence models](gallery/turbulence.md) |
 | <a id="k-sink"></a>141 | [The sink of k near walls of the ζ-f models: grid convergence at the wall](gallery/turbulence.md#k-sink) | [Turbulence models](gallery/turbulence.md) |
+| <a id="energy-fluid"></a>154 | [A heated cavity, conduction with k(T) and a Couette flow heated by its friction](gallery/energy.md#energy-fluid) | [Energy equation and heat transfer](gallery/energy.md) |
 
 ## Adding a feature
 
