@@ -97,6 +97,6 @@ require_convergence = true
 [output]
 wall_csv = false
 lines = [
-  { name = "interface", from = [0.0, 0.2, 0.02], to = [4.0, 0.2, 0.02], points = 161 },
+  { name = "wall_top", from = [0.025, 0.18, 0.02], to = [3.975, 0.18, 0.02], points = 80 },
   { name = "across", from = [3.0, 0.0, 0.02], to = [3.0, 1.2, 0.02], points = 121 },
 ]

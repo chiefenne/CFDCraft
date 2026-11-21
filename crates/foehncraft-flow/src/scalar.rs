@@ -1853,14 +1853,13 @@ impl Scalars {
                 }
             })
             .collect();
-        let su = if source.is_some()
-            || sec.viscous_heating
-            || enthalpy.iter().any(|h| !h.is_constant())
-        {
-            Some(put(&vec![0.0; nc])?)
-        } else {
-            None
-        };
+        let su =
+            if source.is_some() || sec.viscous_heating || enthalpy.iter().any(|h| !h.is_constant())
+            {
+                Some(put(&vec![0.0; nc])?)
+            } else {
+                None
+            };
         let settings = case.solver.energy.clone();
         let eps2 = if settings.limiter == LimiterKind::Venkatakrishnan {
             Some(put(&disc.venkat_eps2(settings.limiter_k))?)
@@ -2040,7 +2039,10 @@ fn refresh_energy(
             let (whose, key) = if m == 0 {
                 ("the fluid's".to_string(), format!("fluid.{what}"))
             } else {
-                (format!("material `{name}`'s"), format!("materials.{name}.{what}"))
+                (
+                    format!("material `{name}`'s"),
+                    format!("materials.{name}.{what}"),
+                )
             };
             return Err(diag::err(
                 Diagnostic::new(

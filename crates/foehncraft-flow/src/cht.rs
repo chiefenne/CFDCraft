@@ -213,7 +213,9 @@ pub fn view(case: &FlowCase, mesh: Mesh, geo: Geometry) -> Result<(FlowCase, Mes
             inserted.push((f as u32, false));
         }
     }
-    let (fluid, order) = b.finish_with_order().map_err(|e| anyhow!("fluid view: {e}"))?;
+    let (fluid, order) = b
+        .finish_with_order()
+        .map_err(|e| anyhow!("fluid view: {e}"))?;
     let face: Vec<u32> = order.iter().map(|&i| inserted[i as usize].0).collect();
     let flip: Vec<bool> = order.iter().map(|&i| inserted[i as usize].1).collect();
     let fgeo = Geometry::compute(&fluid);
@@ -340,7 +342,8 @@ pub fn solve(
         let fe = &mut c.fe;
         let conv = fl.convecting_flux()?;
         let m = fl.dev.download(conv)?;
-        fe.dev.upload(fe.f.mass_flux, &v.faces_to_full(&m, true, 0.0))?;
+        fe.dev
+            .upload(fe.f.mass_flux, &v.faces_to_full(&m, true, 0.0))?;
         for i in 0..3 {
             for (src, dst) in fl.f.grad_u[i].all().into_iter().zip(fe.f.grad_u[i].all()) {
                 let g = fl.dev.download(src)?;

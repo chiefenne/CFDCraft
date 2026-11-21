@@ -665,8 +665,15 @@ pub fn solid(case: &crate::case::FlowCase, env: &Env, region: &str) -> Result<Ma
             .key(key),
         ));
     }
-    let rho = curve(m.density.as_ref().unwrap(), "density", &owner, &m, env, cond)?
-        .at(cond.temperature);
+    let rho = curve(
+        m.density.as_ref().unwrap(),
+        "density",
+        &owner,
+        &m,
+        env,
+        cond,
+    )?
+    .at(cond.temperature);
     crate::need!(
         rho > 0.0 && rho.is_finite(),
         MAT_SOLID,
@@ -675,7 +682,14 @@ pub fn solid(case: &crate::case::FlowCase, env: &Env, region: &str) -> Result<Ma
     Ok(Material {
         name: name.clone(),
         rho,
-        cp: curve(m.specific_heat.as_ref().unwrap(), "specific_heat", &owner, &m, env, cond)?,
+        cp: curve(
+            m.specific_heat.as_ref().unwrap(),
+            "specific_heat",
+            &owner,
+            &m,
+            env,
+            cond,
+        )?,
         k: curve(k.as_ref().unwrap(), "conductivity", &owner, &m, env, cond)?,
     })
 }
