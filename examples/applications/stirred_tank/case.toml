@@ -1,0 +1,75 @@
+# Engineering gallery: an industrial baffled stirred tank with a three-blade
+# hydrofoil impeller, steady in the frame of the rotor (D55).
+#
+#   pip install gmsh h5py
+#   python3 examples/applications/stirred_tank/mesh.py --level 1
+#   target/release/foehn flow examples/applications/stirred_tank/case.toml
+#   python3 examples/applications/stirred_tank/post.py output/case
+#
+# Other mesh levels: `--level 2` (medium), `--level 3` (fine, the iMac) and
+#   target/release/foehn flow examples/applications/stirred_tank/case.toml \
+#       --set mesh.file=tank_L2.msh --out output/stirred_tank_L2
+#
+# Water in a tank of T = 1 m, liquid height H = T, dished bottom; impeller
+# D = 0.4 m at 90 rpm: tip speed 1.88 m/s, Reynolds number N D^2 / nu =
+# 2.4e5 (fully turbulent). k-omega SST with the automatic wall treatment on
+# Gmsh tetrahedra without prism layers, so the walls are in the log layer;
+# the liquid level is flat (a symmetry plane), which baffles justify.
+
+case_format = "0.6"
+
+[mesh]
+file = "tank_L1.msh"
+renumber = "rcm"
+
+[fluid]
+material = "water"
+
+[constants]
+spin = 9.42477796076938   # rad/s = 90 rpm
+
+[turbulence]
+model = "k-omega-sst"
+wall_treatment = "automatic"
+
+[initial]
+turbulence_intensity = 0.05
+viscosity_ratio = 10.0
+
+[flow]
+convection = true
+
+[[mrf]]
+zone = "rotor"
+axis = [0.0, 0.0, 1.0]
+rpm = 90.0
+walls = ["impeller", "shaft"]
+
+# The impeller and the shaft turn with the rotor; the shaft above the rotor
+# zone lies in the fixed frame and is a wall moving with Ω × r there.
+[boundary.impeller]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.shaft]
+type = "wall"
+velocity = ["-spin * y", "spin * x", 0.0]
+[boundary.vessel]
+type = "wall"
+[boundary.baffles]
+type = "wall"
+[boundary.sparger]
+type = "wall"
+[boundary.feed_pipe]
+type = "wall"
+[boundary.surface]
+type = "symmetry"
+
+[solver]
+algorithm = "coupled"
+tolerance = 1e-5
+max_iterations = 1500
+
+[output]
+vtkhdf = true
+wall_csv = false
+derived = ["vorticity", "relative-velocity", "wall-shear-stress", "y-plus"]

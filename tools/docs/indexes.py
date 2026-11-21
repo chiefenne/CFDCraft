@@ -1,10 +1,11 @@
-"""Regenerates the number tables of the gallery and recipe index pages
-from their topic pages.
+"""Regenerates the number tables of the gallery, recipe and engineering
+gallery (applications) index pages from their topic pages.
 
-    python -m tools.docs.indexes           rewrite docs/gallery.md and docs/recipes.md
+    python -m tools.docs.indexes           rewrite docs/gallery.md, docs/recipes.md and docs/applications.md
     python -m tools.docs.indexes --check   exit 1 when they are not current
 
-An entry on a topic page (docs/gallery/*.md, docs/recipes/*.md) is
+An entry on a topic page (docs/gallery/*.md, docs/recipes/*.md,
+docs/applications/*.md) is
 
     <a id="short-name"></a>
     ## 54. Title
@@ -37,6 +38,7 @@ ENTRY = re.compile(r'<a id="([^"]+)"></a>\s*\n##\s+(\d+)([a-z]?)\.\s+(.+?)\s*$',
 INDEXES = [
     ("gallery.md", "gallery", "| # | Example | Page |"),
     ("recipes.md", "recipes", "| # | Recipe | Page |"),
+    ("applications.md", "applications", "| # | Application | Page |"),
 ]
 
 
