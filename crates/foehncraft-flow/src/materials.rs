@@ -1482,7 +1482,7 @@ pub fn thermal_properties(
 /// A property as a function of the temperature, for the energy equation
 /// (stage 7a1): c_p(T), k(T) and μ(T) per cell and face, refreshed every
 /// outer iteration. The forms of D95 are evaluated directly (clamped to
-/// their data range, as [`evaluate`] does with MAT003 at the case
+/// their data range, as `evaluate` does with MAT003 at the case
 /// temperature); an expression in `T` is sampled every
 /// [`Curve::SAMPLE_STEP`] K from [`Curve::SAMPLE_RANGE`] and interpolated
 /// linearly between the samples.
@@ -1595,7 +1595,7 @@ impl Curve {
 }
 
 /// The curve of property `p` (`what` of material `m`, named `owner` in
-/// messages) over T: checked as [`evaluate`] checks it at the case
+/// messages) over T: checked as `evaluate` checks it at the case
 /// temperature `cond` (MAT002, MAT005), so that a curve that is built
 /// evaluates everywhere.
 pub fn curve(
