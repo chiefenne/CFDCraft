@@ -56,9 +56,10 @@ contents.
 
 | Page | What it covers | Applications |
 |---|---|---|
-| [Rotating machinery](applications/rotating-machinery.md) | stirred tanks, pumps, fans |  |
+| [Rotating machinery](applications/rotating-machinery.md) | stirred tanks, pumps, fans | 131 |
 
 ## All applications by number
 
 | # | Application | Page |
 |---|---|---|
+| <a id="stirred-tank"></a>131 | [Stirred tank with a three-blade hydrofoil: power and pumping number](applications/rotating-machinery.md#stirred-tank) | [Rotating machinery](applications/rotating-machinery.md) |
