@@ -31,6 +31,7 @@ Contents
    - 9a. [Thin walls: wall conduction without meshing the wall (D189)](#9a-thin-walls-wall-conduction-without-meshing-the-wall-d189)
    - 9b. [Wall film heat exchange with walls, thin walls and solids (D190)](#9b-wall-film-heat-exchange-with-walls-thin-walls-and-solids-d190)
    - 9c. [Several fluids and materials: heat exchangers (D194)](#9c-several-fluids-and-materials-heat-exchangers-d194)
+   - 9d. [Cycle-averaged coupling of periodic flows (D204)](#9d-cycle-averaged-coupling-of-periodic-flows-d204)
 10. [Coupling strategy, linear solvers and order of solution (D158)](#10-coupling-strategy-linear-solvers-and-order-of-solution-d158)
 11. [Multi-region partitioning and halos (D159)](#11-multi-region-partitioning-and-halos-d159)
 12. [Kernels: GPU, reproducibility, adjoint (D160)](#12-kernels-gpu-reproducibility-adjoint-d160)
@@ -554,7 +555,9 @@ run record.
 With a wall function on the fluid side, R_P = 1/h_w,P with
 h_w = ρ c_p u_τ / T⁺(y⁺, Pr) from D135 (Kader 1981 by default); the solid
 side keeps δ_N/k_N. With the compound wall treatment (D13) the blending is
-inside h_w. y⁺ and T⁺ per interface face are derived fields (D72).
+inside h_w. y⁺ and T⁺ per interface face are derived fields (D72). Built
+in PR 7d5 (V7.36). For periodic flows with a slow structure (engine exhaust
+manifolds) the cycle-averaged coupling of §9d (D204) uses this conductance.
 
 ### 9.5 Ledger
 
@@ -854,6 +857,153 @@ interfaces are found automatically from the cell zones; named interfaces
   and materials, listed in the log).
 
 
+## 9d. Cycle-averaged coupling of periodic flows (D204)
+
+Added 2026-11-21 at the maintainer's request as a **requirement for later**:
+it is built after transient conjugate heat transfer (PR 7d6) and is not part
+of the 7d5 and 7d6 pull requests. Those two are designed so that it fits
+(§9d.6).
+
+### 9d.1 The problem
+
+An engine exhaust manifold sees a gas flow that is periodic over the engine
+cycle (720° of crank angle for a four-stroke engine, 40 ms at 3000 rpm).
+The gas temperature near the wall swings by several hundred kelvin within a
+cycle; the structure needs minutes to warm up. The temperature swing in the
+solid decays with the depth y as e^(−y/δ), with the skin depth of a harmonic
+of angular frequency ω
+
+    δ = √(2a/ω),   a = k/(ρ c_p)
+
+(Carslaw & Jaeger 1959, §2.6). For stainless steel (a ≈ 4·10⁻⁶ m²/s) at
+3000 rpm the fundamental has δ ≈ 0.23 mm, the tenth harmonic of the sharp
+blow-down pulses δ ≈ 70 µm; cast iron is about twice as deep. Below this
+skin the structure carries an almost steady temperature field. A fully
+coupled transient conjugate run would need thousands of cycles to bring the
+structure to its thermal state: far too costly.
+
+### 9d.2 The practice it replaces
+
+The maintainer's earlier practice: (1) run the transient gas flow over one or
+more cycles with fixed wall temperatures; (2) cycle-average the gas-side heat
+transfer, keeping its distribution over the wall and the energy balance;
+(3) map it onto a separate structure mesh and solve the structure steady;
+(4) give the new wall temperatures back to the gas side; two or three
+repetitions. Its weak points: two meshes and an interpolation that does not
+conserve the heat exactly, files moved by hand, a fixed number of loops
+without a measure of convergence, the averaging definition left to the user
+(mean flux, or h and a reference temperature), the start-up cycles counted
+in the average, and no estimate of the surface temperature swing (thermal
+fatigue, deposits).
+
+### 9d.3 Requirement
+
+One case, one mesh, one command; the loop runs by itself:
+
+1. **Fluid phase.** The flow and the fluid energy run transient over
+   `warmup_cycles` plus `average_cycles` cycles. The solid regions are
+   frozen: each interface face is a wall at the current solid surface
+   temperature T_w,f, constant in time (or the swing of item 5).
+2. **Averaging.** Per interface face the run accumulates over the averaging
+   cycles ∫ h_f dt and ∫ h_f T_ref,f dt, with h_f the fluid-side conductance of
+   the face (1/R_P of §9.1: k/δ_P laminar, h_w of the thermal wall function,
+   D135) and T_ref,f the fluid temperature that the face flux acts on.
+   h̄ = ⟨h⟩ and T̄_ref = ⟨h T_ref⟩/⟨h⟩. Because T_w is constant over the
+   cycle, h̄ (T̄_ref − T_w) equals the cycle-mean heat flux of the face
+   exactly: the distribution and the energy balance of the cycle are kept,
+   and the Robin form carries the first-order response of the gas side to a
+   change of T_w.
+3. **Solid phase.** The energy equation on the solid regions (the energy view
+   restricted to the solids, the same interface faces and matrix rows as the
+   conjugate solve, D158) with the Robin conditions (h̄, T̄_ref) on the
+   interface faces; steady by default, or a transient march with large steps
+   for warm-up and cool-down histories (the multi-rate schedule of D118).
+4. **Update and stop.** New T_w per interface face (optional under-relaxation),
+   then back to the fluid phase, which continues from its last state (no new
+   start of the flow). The loop stops when the largest change of T_w is
+   below `tolerance` and the interface heat flow changes by less than
+   `heat_tolerance`, or after `max_updates` (warning). Each fluid phase also
+   checks that the flow is periodic (the mean interface heat flow of the last
+   two cycles within `cycle_tolerance`) and adds cycles up to `max_cycles`
+   when it is not.
+5. **Surface temperature swing** (`skin = "effusivity"`, optional). The
+   Fourier coefficients q_n of the interface heat flux over the averaging
+   cycles give, through the periodic solution of a semi-infinite solid,
+   the surface swing T_w(t) = T̄_w + Σ_n Re[q_n e^(iω_n t) / (e √(iω_n))],
+   e = √(kρc_p) of the solid at the face. The next fluid phase uses it as the
+   wall temperature history, and it is written per face (amplitude, minimum
+   and maximum of T_w) for thermal-fatigue and deposit studies. Valid where δ
+   is small against the wall thickness and the radii of curvature, checked
+   per face.
+6. **Final resolved cycles** (`resolved_cycles`, optional): after
+   convergence, one or two cycles of the fully coupled transient conjugate
+   solve (7d6), started from the converged solid field, give the exact swing
+   also at thin walls and edges for the cost of a few cycles.
+7. **Outputs** (agents first, D77–D87): `cycle_coupling.csv` with one row per
+   update (cycles run, interface heat flow per interface, largest and mean
+   change of T_w, mean T_w); per-face fields h̄, T̄_ref, q̄, T_w and the swing;
+   a `cycle_coupling` section in `result.json`; the ledger per update (the
+   solid's heat balance to the solver tolerance; the cycle-mean balance of the
+   fluid with the change of stored heat over the cycle). Every setting is a
+   case key; nothing needs a window.
+8. **Restart** stores the phase, the update and cycle counters, the
+   accumulators and T_w per face, so a run can stop and continue in any
+   phase.
+9. **Other periodic flows** use the same loop: rotor–stator heat transfer
+   (blade-passing period), pulsating jets, pulsed burners, reciprocating
+   compressors. Engine port conditions come as tables over the crank angle
+   (from a 1D engine simulation), periodic in the cycle; a 1D code coupled at
+   run time goes through D105.
+
+Why this is better than the old loop: the Robin pair (h̄, T̄_ref) instead of a
+mapped flux makes the structure respond correctly to its own temperature,
+so the loop converges in fewer updates (the remaining coupling is only the
+dependence of h on T_w through the gas properties); one mesh and one set of
+interface faces conserve the heat per face exactly; convergence is measured
+and the loop stops by itself; start-up cycles are excluded and the cycle
+periodicity is checked; the surface swing comes as a result instead of
+being guessed.
+
+### 9d.4 Keys (planned)
+
+```toml
+[cht.cycle]
+period = 0.04              # s; or speed = 3000.0 (rpm) with strokes = 4 (720° per cycle)
+warmup_cycles = 1          # cycles before the averaging, after every update
+average_cycles = 1
+max_cycles = 6             # per fluid phase, when the flow is not yet periodic
+cycle_tolerance = 0.005    # relative change of the mean interface heat flow between cycles
+max_updates = 5
+tolerance = 0.5            # K, largest change of T_w per update
+heat_tolerance = 0.005     # relative change of the interface heat flow per update
+relaxation = 1.0           # of T_w
+solid = "steady"           # "steady" | "transient" (with solid_time_step)
+skin = "none"              # "none" | "effusivity"
+resolved_cycles = 0        # fully coupled cycles at the end
+```
+
+Codes: CYC001 error (no period or a steady case), CYC002 warning (the fluid
+phase is not periodic after `max_cycles`), CYC003 warning (skin depth not
+small against the wall thickness at some faces, with their number), CYC004
+warning (stopped at `max_updates` before the tolerances).
+
+### 9d.5 Checks (planned)
+
+V7.38–V7.40 in §14.3c.
+
+### 9d.6 What 7d5 and 7d6 keep open for it
+
+- The fluid-side conductance of every interface face (laminar k/δ_P or the
+  wall-function h_w of 7d5) is one number per face computed in one place,
+  so the averaging of item 2 reads it without a second formula.
+- The transient conjugate solve of 7d6 keeps the solid regions' rows in the
+  same matrix with their own time terms; freezing the solids (item 1) and
+  solving the solids alone (item 3) are restrictions of that matrix, not new
+  solvers.
+- The transient heat balance of 7d6 has a storage term per region, which the
+  cycle-mean fluid balance of item 7 needs.
+
+
 ## 10. Coupling strategy, linear solvers and order of solution (D158)
 
 ### 10.1 One matrix or two solvers
@@ -1118,6 +1268,19 @@ energy to round-off).
 | V7.34 | Three fluid parts and four materials in one case (two closed, one open), one closed part without reference | pressure levels per part, REG003 | each part reaches its own reference; the refused set-up gives REG003; results of each part equal to the part run alone (bitwise) |
 | V7.35 | Tube-and-fin exchanger cell: one row of three tubes (water) with plate fins (aluminium, as shell thin walls joined to the tube walls) in air, periodic in the fin pitch | heat duty, fin efficiency, air-side pressure drop | fin efficiency against the straight-fin formula where it applies (±2 %); duty equal from the water side, the air side and the ledger to the solver tolerance; GCI ≤ 2 % |
 
+### 14.3c Turbulent, transient and cycle-averaged conjugate heat transfer (7d5, 7d6, D204)
+
+Added 2026-11-21 (maintainer: turbulent and transient CHT before 7b1 and
+7d2). V7.6 (§14.1) is the exact check of 7d6.
+
+| # | Case | Checks | Pass band |
+|---|---|---|---|
+| V7.36 | Turbulent pipe flow (air, Re 10⁵, the heated pipe of stage 6f) inside a meshed steel tube wall, uniform heat flux on the outer tube surface, k-ε and SST with the thermal wall function at the interface (7d5) | heat flow through the interface, outer wall temperature, Nu at the interface | interface heat flow equal to the input to the solver tolerance; T_o − T_i = q_o r_o ln(r_o/r_i)/k_s within 0.5 % (exact for the 1D tube wall in the fully developed part); Nu equal to the heat-flux wall of the same pipe within 1 % and to Gnielinski (1976) within ±10 % |
+| V7.37 | Heated solid wall under a laminar channel flow, heater switched on at t = 0 (the 7d1 case `cht_heated_wall` run transient, 7d6) | heat balance per step: input = outflow + storage in fluid and solid; approach to the steady solution | balance to the solver tolerance in every step; the end state within 0.1 % of ΔT of the steady 7d1 result |
+| V7.38 | Slab with a periodic gas temperature and heat-transfer coefficient on one face, a fixed temperature on the other (D204) | mean temperature profile after the loop; surface swing with `skin = "effusivity"` | mean profile within 0.5 % of ΔT of the fully coupled transient run in its periodic state after ≤ 3 updates; swing amplitude within 2 % of the Fourier solution |
+| V7.39 | Pulsating laminar channel flow (inlet velocity and temperature periodic) over a thick conducting wall (D204) | interface heat flow, wall temperature | within 1 % of the fully coupled transient conjugate run in its periodic state; wall-clock time of both reported |
+| V7.40 | Ledger of the cycle-averaged loop (D204) | heat balance of the solid per update; cycle-mean fluid balance with the change of stored heat | solid to the solver tolerance; fluid within 10⁻⁶ relative |
+
 ### 14.4 Implementation checks
 
 | # | Check | Pass |
@@ -1248,7 +1411,7 @@ ENE001 error (temperature recovery failed, D92), ENE002 warning (damped
 temperature update, count), ENE003 warning (temperature outside a property
 range, with D96 clamp), ENE004 warning (Mach number above 0.3), ENE005 info
 (transient buoyancy without outer iterations), ENE006 error (an energy
-setting the version does not have yet, PR 7a1), MAT006–MAT009 (§8), TWL001–TWL005 (§9a.5). The
+setting the version does not have yet, PR 7a1), MAT006–MAT009 (§8), TWL001–TWL005 (§9a.5), CYC001–CYC004 (§9d.4). The
 registry and `foehn explain <code>` (D78) carry the guidance text.
 
 
@@ -1304,6 +1467,9 @@ CHT lane (C) run in parallel.
 | C | 7d3 | General static non-conformal interfaces by imprinting (D58 beyond surfaces of revolution, which `imprint.rs` already handles) | D58 cases, V7.4 on non-matching layers |
 | C | 7d4 | METIS with two constraints, per-view halo plans | V7.24 |
 | C | 7t2 | Shell conduction and baffles (D189), surface mesh W1 and wall-face halo W2, film slots (D190) | V7.28–V7.32 |
+| C | 7d5 | Turbulent CHT: thermal wall function (D135) on the fluid side of every interface in series with the solid half cell (§9.4), turbulent conductivity c_p μ_t/Pr_t in the energy view | V7.36 |
+| C | 7d6 | Transient CHT: time terms of the fluid and the solids in the one energy matrix, heat storage in the balance, output and probes on the full mesh | V7.6, V7.37 |
+| C | later | Cycle-averaged coupling of periodic flows (D204, §9d), after 7d6; not sized yet | V7.38–V7.40 |
 | D | 7e1 | `buoyancy_production` hook in k, ε, ω, ζ/φ (not delivered by stage 6), G_b with SGDH, C_ε3 | V7.25, V7.18 (SGDH, reported) |
 | D | 7e2 | GGDH, G_b with GGDH | V7.18, V7.19, V7.21 |
 | D | 7e3 | Heated backward-facing step | V7.20 |
@@ -1331,6 +1497,11 @@ PR: one-sided gradients (§9.2, exact on orthogonal meshes until then),
 V7.5 and V7.6, the AMG with strength on the scaled matrix over the energy
 view, transient, turbulent and restarted conjugate runs, passive scalars
 with solids, periodic meshes with solids, and maps on the device.
+
+**Decided 2026-11-21 (maintainer):** turbulent and transient conjugate heat
+transfer (7d5, 7d6) come before 7b1 and 7d2, as the more industry-relevant
+steps; buoyancy (lane B) comes much later. The cycle-averaged coupling of
+periodic flows (D204, §9d) is recorded as a requirement for after 7d6.
 
 Other decisions of 2026-11-20:
 
