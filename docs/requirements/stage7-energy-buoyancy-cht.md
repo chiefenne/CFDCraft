@@ -1320,6 +1320,18 @@ THM006–THM008, V7.3, the thermal account of the ledger in `result.json`,
 the channel DNS regression of the energy equation, and the property
 refresh on the device.
 
+**7d1 done 2026-11-21 (#156):** solid regions (`kind = "solid"` with a
+solid material) in the energy equation; the flow on a fluid view (a
+submesh whose fluid–solid faces are the walls `interface-<region>`), the
+energy on all cells with the series conductance at faces between
+materials, the interface heat flow and temperature in the report, and
+`zones` boxes in the box generator. V7.4 to round-off at ratios
+1 : 100 : 10⁴, and a heated wall under a channel flow. Moved to a later
+PR: one-sided gradients (§9.2, exact on orthogonal meshes until then),
+V7.5 and V7.6, the AMG with strength on the scaled matrix over the energy
+view, transient, turbulent and restarted conjugate runs, passive scalars
+with solids, periodic meshes with solids, and maps on the device.
+
 Other decisions of 2026-11-20:
 
 - v0.6 is tagged before stage 7 code merges.
@@ -1382,7 +1394,7 @@ Read on main at b15a488:
   reduced jump (D154 (4)).
 - **F4:** the flow solves on every cell and refuses non-fluid regions
   (REG001); PR 7d needs the flow view on fluid cells and the energy view on
-  all cells (D112).
+  all cells (D112). **Done 2026-11-21 in PR 7d1.**
 - **F5:** METIS gets one constraint and no weights (finding F6 of the
   multi-physics plan, D122 (1)); PR 7d.
 - **F6:** `balance.rs` has fixed mass and kinetic-energy structs; the ledger

@@ -5,6 +5,7 @@ Part of the [Example gallery](../gallery.md): the energy equation of the fluid (
 | # | Example | Stage | Feature |
 |---|---|---|---|
 | 154 | [A heated cavity, conduction with k(T) and a Couette flow heated by its friction](#energy-fluid) | 7 | `[energy]`, `[boundary.<name>.energy]`, `[fluid] specific_heat`, `conductivity`, `viscous_heating`, `temperature_dependent`, `[solver.energy]` |
+| 156 | [A heated wall cooled by a channel flow, and a composite wall](#cht-solids) | 7 | `[regions.<name>] kind = "solid"`, `[materials.<name>] kind = "solid"`, `[mesh.generate] zones`, `interface-<region>` |
 
 ---
 
@@ -77,3 +78,55 @@ done
 python3 -m tools.plot.energy_fields docs/figures/gallery output/cavity_heated \
     output/conduction output/couette
 ```
+
+---
+
+<a id="cht-solids"></a>
+## 156. A heated wall cooled by a channel flow, and a composite wall
+
+<img src="../figures/gallery/cht_heated_wall.png" alt="Left: the temperature in a solid wall 0.2 m thick and the channel flow above it at Re = 100, with streamlines in white; the wall conducts ten times better than the fluid and is heated from below with 1000 W/m², the fluid warms from 300 K at the inlet towards the outlet. Right: the temperature along the top of the wall for conductivity ratios 0.1, 10 and 100; the better the wall conducts, the flatter and cooler its profile" width="800" height="243">
+
+**A heated wall under a channel flow.** `cht_heated_wall.toml` is the
+first conjugate case: one generated mesh of 80 × 30 cells holds a channel
+1 m high and a solid wall 0.2 m thick below it, 4 m long, marked by a
+`zones` box of the generator. The fluid enters at 300 K with 1 m/s
+(Re = 100, Pr = 0.71); the outer face of the wall takes 1000 W/m². The
+flow runs on the fluid cells, where the faces against the wall become the
+no-slip boundary `interface-wall`; the temperature runs on all cells, with
+the series conductance of the two half cells at every face between the
+materials. All of the heater's 160 W (4 m × 0.04 m) cross the interface
+and leave with the flow, and the heat balance of the whole domain closes
+to 5·10⁻¹². With k_s/k_f = 10 (left) the heat spreads along the wall
+towards the inlet, where the fluid is cold. The right-hand plot runs the
+same case with three wall conductivities:
+
+| k_s/k_f | Outer iterations | Heated face, mean (K) | Interface, mean (K) | Hottest cell (K) |
+|---|---|---|---|---|
+| 0.1 | 146 | 459.11 | 317.11 | 451.77 |
+| 10 | 146 | 318.53 | 317.11 | 324.05 |
+| 100 | 146 | 317.57 | 317.43 | 319.87 |
+
+The interface mean is the same 317.1 K for the two lower ratios because
+the fluid sees the same heat flow; a poor conductor (0.1) needs 142 K
+across its thickness to pass it, a good one (100) spreads it so evenly
+that the wall is almost isothermal.
+
+**A composite wall (check V7.4).** `cht_composite_wall.toml` stacks a
+solid with k = 200 W/(m K), a closed fluid layer at rest with k = 2 and a
+solid with k = 20 000, 0.4 m each, between 300 K and 400 K: conductivity
+ratios 1 : 100 : 10⁴. The temperature is piecewise linear and the series
+heat flux is q = ΔT/Σ tᵢ/kᵢ = 495.0005 W/m². The run gives it at both
+outer walls and at both interfaces to 10⁻⁹ relative, and the interface
+temperatures 300.990 K and 399.990 K to 10⁻⁹ K (`tests/cht.rs`).
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_composite_wall.toml --out output/cht_wall
+for r in 0.1 10 100; do
+  k=$(python3 -c "print(14.084507042253522 * $r)")
+  target/release/foehn flow examples/cases/flow/cht_heated_wall.toml --out output/cht_$r \
+      --set "materials.wall-solid.conductivity=$k" --set output.vtkhdf=true
+done
+python3 -m tools.plot.cht_fields docs/figures/gallery output/cht
+```
+

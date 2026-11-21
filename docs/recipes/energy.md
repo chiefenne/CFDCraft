@@ -5,6 +5,7 @@ Part of the [Recipes](../recipes.md): the energy equation of the fluid (stage 7,
 | # | Recipe |
 |---|---|
 | 154 | [Solve the temperature of a flow with temperature-dependent properties](#energy-fluid) |
+| 156 | [Couple the temperature of a fluid and a solid (conjugate heat transfer)](#cht-solids) |
 
 ---
 
@@ -85,9 +86,9 @@ The check before the run (`foehn flow --check`) also refuses:
   That is THM001 when the temperature level is left open, or THM002 when a
   heat input has no way out;
 - a boundary table without `[energy]` (THM009);
-- a passive scalar named `temperature`, `[regions]` together with
-  `[energy]` (until the conjugate step 7d1), or an orthotropic fluid
-  conductivity (ENE006), and a fluid without c_p or k (MAT007).
+- a passive scalar named `temperature`, a fluid region with a material of
+  its own, or an orthotropic fluid conductivity (ENE006), and a fluid
+  without c_p or k (MAT007). Solid regions: recipe 156.
 
 **The heat balance.** The run report (`flow.md`, `flow.json`,
 `result.json`) and the log give, for the final state, the conduction
@@ -110,3 +111,84 @@ down and the properties up. With a turbulence model the wall functions and
 the turbulence sources still use the reference viscosity. The
 streamwise-periodic heat-flux mode of the passive scalars is not yet
 available for the energy equation.
+
+---
+
+<a id="cht-solids"></a>
+## 156. Couple the temperature of a fluid and a solid (conjugate heat transfer)
+
+**One mesh, two regions.** The fluid and the solid share one mesh; a cell
+zone marks the solid cells. With a mesh file the zones come from the file;
+the box generator takes boxes, and a cell whose centroid lies in a box
+goes to its zone (the last box that holds it wins, all other cells stay in
+`fluid`):
+
+```toml
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [4.0, 1.2, 0.04]
+cells = [80, 30, 1]
+zones = [{ name = "wall", lower = [0.0, 0.0, 0.0], upper = [4.0, 0.2, 0.04] }]
+
+[materials.wall-solid]
+kind = "solid"
+density = 2000.0               # kg/m³
+specific_heat = 800.0          # J/(kg K)
+conductivity = 140.8           # W/(m K), a number or an expression of T
+
+[regions.wall]
+kind = "solid"
+zones = ["wall"]
+material = "wall-solid"
+
+[energy]
+initial = 300.0
+```
+
+The flow runs on the fluid cells only. Every face between a fluid and a
+solid cell becomes a no-slip wall of the flow named `interface-<region>`
+(here `interface-wall`); it needs no `[boundary]` table and takes no
+thermal condition, because the temperature is solved on all cells as one
+matrix. At a face between two materials the conductance is the series
+value of the two half cells, 1/((1 − w)/k_P + w/k_N), so a piecewise
+linear temperature is exact and the heat flux is the same on both sides
+to round-off. Outer boundaries of the solid are walls and take the
+thermal conditions of recipe 154 (`temperature`, `heat_flux`,
+`heat_flow`, `heat_transfer_coefficient`).
+
+**The report.** The heat balance covers the whole domain. The boundary
+table lists every interface with its mean temperature (the face value of
+the series), heat flux and heat flow into the fluid, so the heat a wall
+passes to the flow is read off directly; in the heated wall of gallery
+156 it is all of the heater's 160 W. `fields.vtkhdf` and the lines are
+written on the whole mesh (velocity and pressure zero in the
+solids).
+
+**The checks.** Besides those of recipe 154, `foehn flow --check`
+refuses:
+- a solid region without a material, or a solid material without
+  density, specific heat or conductivity (MAT006);
+- a zone the mesh does not have (REG002);
+- solid regions without `[energy]` (REG001);
+- solids together with a time loop, turbulence, a restart or passive
+  scalars, an orthotropic solid conductivity, a periodic mesh, or a mesh
+  with no fluid cell (ENE006).
+
+```
+cargo build --release -p foehncraft-cli
+target/release/foehn flow examples/cases/flow/cht_composite_wall.toml --out output/cht_wall
+target/release/foehn flow examples/cases/flow/cht_heated_wall.toml --out output/cht_heated
+target/release/foehn flow examples/cases/flow/cht_heated_wall.toml --out output/cht_heated_100 \
+    --set 'materials.wall-solid.conductivity=1408.45'
+```
+
+**Limits of this step.** Steady laminar conjugate cases only. The
+gradients next to an interface still use the cell across it, so the
+interface is exact on orthogonal meshes; the one-sided gradients of D157
+follow. No contact resistance and no orthotropic k yet (7d2), no
+non-matching interfaces (7d3), and the flux, gradient and viscosity
+fields are mapped between the fluid and the whole mesh on the host in
+every outer iteration. The material database has no solids yet, so cases
+define their own.
+
