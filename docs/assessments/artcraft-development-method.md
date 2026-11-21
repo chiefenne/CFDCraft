@@ -4,8 +4,8 @@ Read on 2026-11-20. The maintainer asked that Foehncraft follow the way the
 [ArtCraft](https://getartcraft.com/) Crafting Apps are built as closely as
 possible, and that their practice be used to challenge the maintainer's own
 decisions. This note records what they do, where Foehncraft matches, where it
-differs, and the questions that follow. It changes no code and no decision;
-each challenge waits for the maintainer.
+differs, and the questions that follow. It changes no code. The maintainer decided
+the challenges on 2026-11-21 (section 8).
 
 **Framing.** ArtCraft rebuilds the features and the look and feel of
 established desktop products. Foehncraft is measured against the industry
@@ -199,3 +199,34 @@ Craft Anything page and wiki, the craft-contrib standards and the releases of th
 repositories above, and reports only changes that affect a decision here
 (new shared helper tools, changed agent rules, new standards). This note is
 updated when such a change is adopted.
+
+## 8. Decisions (maintainer, 2026-11-21)
+
+All 17 challenges were decided one at a time, in order of importance; the
+rank is in brackets. Challenges 4 and 16 were merged. Each was answered
+"yes, as proposed"; the wording is in the decisions of
+[requirements](../requirements.md).
+
+| Rank | Challenge | Decision | Recorded as |
+|---|---|---|---|
+| 1 | 1 Tool registry | Yes, before MCP and GUI | D196 |
+| 2 | 3 AGENTS.md, pitfalls, plans | Yes, all three | D200 |
+| 3 | 5 Verification grades | Yes, grades and limitations | D199 |
+| 4 | 6 Clean room | Yes, all three parts | D201 |
+| 5 | 4 and 16 Approvals, budgets | Yes, all three | D198 (b to d) |
+| 6 | 2 Mandatory roots | Yes, refuse without roots | D198 (a) |
+| 7 | 12 Paged MCP results | Yes, summary plus paging | D198 (e) |
+| 8 | 14 Command journal | Yes, journal and replay | D197 |
+| 9 | 7 Panics and `unsafe` | Yes, both, step by step | D202 |
+| 10 | 9 Hostile-input sweep | Yes, corpus plus keep rule | D202 |
+| 11 | 17 Control-port token | Yes, local-only plus token | D198 (f) |
+| 12 | 10 "What ran" in PR template | Yes | D203 |
+| 13 | 15 Guide set | Yes, all three pages | D203 |
+| 14 | 11 Binaries and `foehn doctor` | From v0.7 | D203 |
+| 15 | 8 `cargo xtask` | Layering check now, rest when touched | D203 |
+| 16 | 13 GUI rules | Yes, all four | L7 |
+
+Nothing is implemented. Two existing uses fall under D201 and need their own
+decision before they stay: the TMR flat-plate values produced by other
+solvers (pyaeroflow reference) and the CFD planes of the published stirred
+tank. They are listed for the maintainer.
