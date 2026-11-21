@@ -349,6 +349,7 @@ pub fn run(
             case.check_context(),
         );
         findings.extend(crate::turbulence::setup_findings(case));
+        findings.extend(crate::energy::setup_findings(case));
         if ri == 0 {
             rep.findings = findings.clone();
             lg.frame(&crate::logblocks::banner(steer.build.as_ref(), case));

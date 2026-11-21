@@ -297,9 +297,15 @@ A code keeps its meaning; a retired code stays in the table.
 | `MAT007` | error | A fluid without specific heat or thermal conductivity in a run with the energy equation. |
 | `MAT008` | error | An orthotropic thermal conductivity without both axes, or with parallel axes. |
 | `MAT009` | error | A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format. |
-| `ENE001` | error | A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one of `temperature`, `heat_flux`, `heat_flow` and `heat_transfer_coefficient` (with `ambient_temperature`), with a condition its boundary does not take (a flux at an inlet, anything at an outlet or a periodic boundary), or without `[energy]`. |
-| `ENE002` | error | An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation. |
-| `ENE003` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, `[energy]` with `[regions]` (7d1), or an orthotropic conductivity of a fluid. |
+| `ENE006` | error | An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, `[energy]` with `[regions]` (7d1), or an orthotropic conductivity of a fluid. |
+| `THM001` | error | A steady run whose boundaries leave the temperature level undetermined: no inlet and no `temperature` or convection boundary, and no net heat input. |
+| `THM002` | error | A steady run with a net heat input (heat flux, heat flow, source or viscous heating) and no way for the heat to leave: no inlet and no `temperature` or convection boundary. |
+| `THM003` | error | A thermal condition on a boundary that cannot carry it: a flux or convection at an inlet, any condition at an outlet, a periodic boundary, a symmetry plane or a wedge. |
+| `THM004` | error | A thermal value out of range: a temperature or ambient temperature ≤ 0 K, a heat-transfer coefficient ≤ 0, a heat flow that is not finite. |
+| `THM005` | warning | Walls without a `[boundary.<name>.energy]` table in a run with the energy equation: they are adiabatic (listed once). |
+| `THM009` | error | A `[boundary.<name>.energy]` table without `[energy]`: the energy equation is solved only with an `[energy]` table. |
+| `THM010` | error | A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one condition (`temperature`, `heat_flux`, `heat_flow`, or `heat_transfer_coefficient` with `ambient_temperature`), or with `heat_transfer_coefficient` and `ambient_temperature` apart. |
+| `THM011` | error | An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation. |
 | `REG001` | error | A region that is not a fluid: solids and porous zones come with the energy equation (L1). |
 | `REG002` | error | A region that names a cell zone the mesh does not have, or a zone in two regions. |
 | `MRF001` | error | An `[[mrf]]` table and a `[[sliding]]` table that turn the same cells (one of them without a `zone`, or both with the same one): a zone is turned by a moving reference frame (steady or transient, D185) or by a sliding mesh (D182), not by both. |

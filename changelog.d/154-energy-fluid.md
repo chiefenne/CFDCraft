@@ -7,6 +7,11 @@
   `temperature`, `heat_flux`, `heat_flow` (W) or
   `heat_transfer_coefficient` with `ambient_temperature` in
   `[boundary.<name>.energy]`; inlets take `temperature`. The report has a
-  heat balance and the heat flow of every boundary. New diagnostics
-  ENE001 to ENE003. Checks V7.1 and V7.2 at second order (gallery and
+  heat balance and the heat flow of every boundary. The condition follows
+  from the keys (no `type` key). The thermal set-up check gives THM001 to THM005 and THM009 to
+  THM011 (undetermined temperature level, heat with no way out,
+  conditions on the wrong boundary kind, values out of range, adiabatic
+  walls listed, tables without `[energy]`, malformed tables, inlets
+  without a temperature); ENE006 for settings this version does not
+  have. Checks V7.1 and V7.2 at second order (gallery and
   recipe 154).

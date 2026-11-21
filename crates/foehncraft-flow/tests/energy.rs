@@ -204,7 +204,7 @@ fn heat_flow_is_spread_over_the_boundary() {
     assert!(e.relative < 1e-6, "{e:?}");
 }
 
-/// The diagnostics of the energy keys.
+/// The diagnostics of the energy keys and the thermal set-up (D156).
 #[test]
 fn energy_keys_are_checked() {
     let base = text("couette_viscous_heating.toml");
@@ -216,14 +216,14 @@ fn energy_keys_are_checked() {
         );
     assert!(inlet.contains("velocity-inlet"));
     let (code, msg) = refused(&inlet);
-    assert_eq!(code, "ENE002", "{msg}");
+    assert_eq!(code, "THM011", "{msg}");
     // two conditions on one wall
     let two = base.replace(
         "[boundary.ymin.energy]\ntemperature = 300.0",
         "[boundary.ymin.energy]\ntemperature = 300.0\nheat_flux = 1.0",
     );
     let (code, msg) = refused(&two);
-    assert_eq!(code, "ENE001", "{msg}");
+    assert_eq!(code, "THM010", "{msg}");
     // an energy table without [energy]
     let (a, b) = (
         base.find("[energy]").unwrap(),
@@ -231,7 +231,37 @@ fn energy_keys_are_checked() {
     );
     let lone = format!("{}{}", &base[..a], &base[b..]);
     let (code, msg) = refused(&lone);
-    assert_eq!(code, "ENE001", "{msg}");
+    assert_eq!(code, "THM009", "{msg}");
+    // a temperature on a symmetry plane
+    let sym = base.replace(
+        "[boundary.zmin]\ntype = \"symmetry\"\n",
+        "[boundary.zmin]\ntype = \"symmetry\"\n[boundary.zmin.energy]\ntemperature = 300.0\n",
+    );
+    assert_ne!(sym, base);
+    let (code, msg) = refused(&sym);
+    assert_eq!(code, "THM003", "{msg}");
+    // a temperature at or below 0 K, a heat transfer coefficient ≤ 0
+    let cold = base.replace(
+        "[boundary.ymin.energy]\ntemperature = 300.0",
+        "[boundary.ymin.energy]\ntemperature = -5.0",
+    );
+    let (code, msg) = refused(&cold);
+    assert_eq!(code, "THM004", "{msg}");
+    let h0 = base.replace(
+        "[boundary.ymin.energy]\ntemperature = 300.0",
+        "[boundary.ymin.energy]\nheat_transfer_coefficient = 0.0\nambient_temperature = 300.0",
+    );
+    let (code, msg) = refused(&h0);
+    assert_eq!(code, "THM004", "{msg}");
+    // both walls adiabatic, steady: viscous heating with no way out
+    let shut = base
+        .replace("[boundary.ymin.energy]\ntemperature = 300.0\n", "")
+        .replace("[boundary.ymax.energy]\ntemperature = 300.0\n", "");
+    let (code, msg) = refused(&shut);
+    assert_eq!(code, "THM002", "{msg}");
+    // ... and without it, no temperature level
+    let (code, msg) = refused(&shut.replace("viscous_heating = true\n", ""));
+    assert_eq!(code, "THM001", "{msg}");
     // no specific heat
     let no_cp = base.replace("specific_heat = 1000.0\n", "");
     let (code, msg) = refused(&no_cp);
@@ -239,5 +269,5 @@ fn energy_keys_are_checked() {
     // a passive scalar of the same name
     let twice = base + "\n[scalars.temperature]\ndiffusivity = 1e-3\n";
     let (code, msg) = refused(&twice);
-    assert_eq!(code, "ENE003", "{msg}");
+    assert_eq!(code, "ENE006", "{msg}");
 }

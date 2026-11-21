@@ -38,10 +38,12 @@
 //! scheme = "linear-upwind"
 //! ```
 //!
-//! Boundaries without an `energy` table: walls, slip walls, symmetry
-//! planes and wedges are adiabatic, outlets have a zero normal gradient
-//! (the backflow carries the owner value), periodic pairs carry T across;
-//! inlets need a `temperature` (ENE002).
+//! The condition follows from the keys of the table (no `type` key, D156).
+//! Boundaries without an `energy` table: walls and slip walls are
+//! adiabatic (THM005 lists them), symmetry planes and wedges pass no heat
+//! and take no table (THM003), outlets have a zero normal gradient (the
+//! backflow carries the owner value), periodic pairs carry T across;
+//! inlets need a `temperature` (THM011).
 
 use crate::bc::BoundaryCondition;
 use crate::diag::{self, Diagnostic};
@@ -155,7 +157,10 @@ pub fn extract_boundary_tables(v: &mut toml::Table) -> Result<BTreeMap<String, E
 /// What a boundary of the flow is for the energy equation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Side {
-    WallLike,
+    /// Walls and slip walls: every thermal condition.
+    Wall,
+    /// Symmetry planes and wedges: zero normal flux only.
+    Symmetry,
     Inlet,
     Outlet,
     Periodic,
@@ -164,7 +169,8 @@ pub(crate) enum Side {
 pub(crate) fn side(b: &BoundaryCondition) -> Side {
     use BoundaryCondition as B;
     match b {
-        B::Wall { .. } | B::SlipWall | B::Symmetry | B::Wedge => Side::WallLike,
+        B::Wall { .. } | B::SlipWall => Side::Wall,
+        B::Symmetry | B::Wedge => Side::Symmetry,
         B::VelocityInlet { .. }
         | B::MassFlowInlet { .. }
         | B::StaticPressureInlet { .. }
@@ -256,7 +262,7 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
     let Some(e) = &case.energy else {
         crate::need!(
             case.boundary_energy.is_empty(),
-            ENE_BOUNDARY,
+            THM_NO_ENERGY,
             "[boundary.{}.energy] without [energy]: the energy equation is solved only with an \
              [energy] table",
             case.boundary_energy
@@ -316,17 +322,18 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
         );
         let sd = side(bc);
         let ok = match sd {
-            Side::WallLike => true,
+            Side::Wall => true,
             Side::Inlet => t.temperature.is_some(),
-            Side::Outlet | Side::Periodic => false,
+            Side::Symmetry | Side::Outlet | Side::Periodic => false,
         };
         crate::need!(
             ok,
-            ENE_BOUNDARY,
+            THM_SIDE,
             "[{key}]: a {} takes {}",
             bc.type_name(),
             match sd {
-                Side::Inlet => "a `temperature`, not a flux",
+                Side::Inlet => "a `temperature`, not a flux or a convection condition",
+                Side::Symmetry => "no energy condition (no heat crosses it)",
                 Side::Outlet => "no energy condition (outlets keep a zero normal gradient)",
                 _ =>
                     "no energy condition (T crosses the periodic pair; the periodic heat-flux \
@@ -342,21 +349,30 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
         ] {
             if let Some(v) = v {
                 let x = expr::value(v, env, vars, &format!("{key}.{k}"))?;
-                if k == "heat_transfer_coefficient"
-                    && let Some(h) = x.constant()
-                {
-                    crate::need!(
-                        h > 0.0 && h.is_finite(),
-                        CASE_RANGE,
-                        "[{key}] heat_transfer_coefficient must be > 0, is {h}"
-                    );
+                let Some(c) = x.constant() else { continue };
+                match k {
+                    "heat_transfer_coefficient" => crate::need!(
+                        c > 0.0 && c.is_finite(),
+                        THM_RANGE,
+                        "[{key}] heat_transfer_coefficient must be > 0, is {c}"
+                    ),
+                    "temperature" | "ambient_temperature" => crate::need!(
+                        c > 0.0 && c.is_finite(),
+                        THM_RANGE,
+                        "[{key}] {k} must be > 0 K, is {c}"
+                    ),
+                    _ => crate::need!(
+                        c.is_finite(),
+                        THM_RANGE,
+                        "[{key}] {k} must be finite, is {c}"
+                    ),
                 }
             }
         }
         if let Some(q) = t.heat_flow {
             crate::need!(
                 q.is_finite(),
-                CASE_RANGE,
+                THM_RANGE,
                 "[{key}] heat_flow must be a finite number"
             );
         }
@@ -373,8 +389,81 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
              temperature`"
         );
     }
+    if let Some(c) = expr::value(&e.initial, env, Vars::SPACE, "energy.initial")?.constant() {
+        crate::need!(
+            c > 0.0 && c.is_finite(),
+            THM_RANGE,
+            "[energy] initial must be > 0 K, is {c}"
+        );
+    }
+    // a steady temperature needs a level: an inlet, a temperature or a
+    // convection boundary (THM001); without one, a net heat input has no
+    // way out (THM002)
+    if !transient {
+        let anchored = case.boundary.iter().any(|(b, bc)| {
+            side(bc) == Side::Inlet
+                || case.boundary_energy.get(b).is_some_and(|t| {
+                    t.temperature.is_some() || t.heat_transfer_coefficient.is_some()
+                })
+        });
+        if !anchored {
+            let source = expr::value(&e.source, env, Vars::SPACE, "energy.source")?;
+            let input = e.viscous_heating
+                || source.constant() != Some(0.0)
+                || case.boundary_energy.values().any(|t| {
+                    t.heat_flow.is_some_and(|q| q != 0.0)
+                        || t.heat_flux.as_ref().is_some_and(|q| {
+                            expr::value(q, env, Vars::SPACE, "heat_flux")
+                                .map_or(true, |v| v.constant() != Some(0.0))
+                        })
+                });
+            if input {
+                crate::need!(
+                    false,
+                    THM_DRIFT,
+                    "a steady run with a heat input and no way for the heat to leave: give a \
+                     boundary a `temperature` or a `heat_transfer_coefficient`, add an inflow, \
+                     or run transient ([time])"
+                );
+            }
+            crate::need!(
+                false,
+                THM_LEVEL,
+                "the boundaries leave the steady temperature undetermined (only adiabatic and \
+                 heat-flux walls, no inflow): give a boundary a `temperature` or a \
+                 `heat_transfer_coefficient`, add an inflow, or run transient ([time])"
+            );
+        }
+    }
     fluid(case, env)?;
     Ok(())
+}
+
+/// The findings of the thermal set-up for the boundary-condition check
+/// (D30): the walls left adiabatic (THM005), listed once.
+pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
+    use crate::bc::{Finding, Level};
+    if case.energy.is_none() {
+        return Vec::new();
+    }
+    let walls: Vec<&str> = case
+        .boundary
+        .iter()
+        .filter(|(b, bc)| side(bc) == Side::Wall && !case.boundary_energy.contains_key(*b))
+        .map(|(b, _)| b.as_str())
+        .collect();
+    if walls.is_empty() {
+        return Vec::new();
+    }
+    vec![Finding {
+        level: Level::Warning,
+        code: diag::THM_ADIABATIC,
+        boundary: None,
+        message: format!(
+            "walls without [boundary.<name>.energy] are adiabatic: {}",
+            walls.join(", ")
+        ),
+    }]
 }
 
 /// The thermal properties of the fluid as functions of T.

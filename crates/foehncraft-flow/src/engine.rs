@@ -1267,6 +1267,7 @@ pub fn check_case(
                 case.check_context(),
             );
             findings.extend(crate::turbulence::setup_findings(case));
+            findings.extend(crate::energy::setup_findings(case));
             rep.diagnostics
                 .extend(findings.iter().map(crate::bc::Finding::diagnostic));
         }

@@ -67,15 +67,27 @@ heat_transfer_coefficient = 10.0   # W/(m² K)
 ambient_temperature = 293.15       # K: q = h (T∞ − T_w)
 
 [boundary.inlet.energy]
-temperature = 300.0            # inlets need one (ENE002)
+temperature = 300.0            # inlets need one (THM011)
 ```
 
-Outlets take the zero gradient, symmetry planes and slip walls are
-adiabatic. A boundary table without `[energy]`, two conditions on one
-boundary or a condition the boundary kind cannot take is refused with
-ENE001; a passive scalar named `temperature`, `[regions]` together with
-`[energy]` (until the conjugate step 7d1) and an orthotropic fluid
-conductivity with ENE003; a fluid without c_p or k with MAT007.
+The condition follows from the keys, so there is no `type` key. Walls and
+slip walls take any of them; walls without a table are adiabatic and the
+check lists them once (THM005). Outlets keep a zero gradient, symmetry
+planes and wedges pass no heat, and periodic pairs carry T across: an
+energy table there is refused (THM003), as a flux at an inlet is.
+
+The check before the run (`foehn flow --check`) also refuses:
+- two conditions or none in one table, or a table of an unknown boundary
+  (THM010), and an inlet without a temperature (THM011);
+- a temperature, ambient temperature or start temperature ≤ 0 K, and a
+  heat-transfer coefficient ≤ 0 (THM004);
+- a steady case with no inflow and no temperature or convection boundary.
+  That is THM001 when the temperature level is left open, or THM002 when a
+  heat input has no way out;
+- a boundary table without `[energy]` (THM009);
+- a passive scalar named `temperature`, `[regions]` together with
+  `[energy]` (until the conjugate step 7d1), or an orthotropic fluid
+  conductivity (ENE006), and a fluid without c_p or k (MAT007).
 
 **The heat balance.** The run report (`flow.md`, `flow.json`,
 `result.json`) and the log give, for the final state, the conduction
