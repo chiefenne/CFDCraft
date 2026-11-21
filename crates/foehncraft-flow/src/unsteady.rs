@@ -349,6 +349,7 @@ pub fn run(
             case.check_context(),
         );
         findings.extend(crate::turbulence::setup_findings(case));
+        findings.extend(crate::energy::setup_findings(case));
         if ri == 0 {
             rep.findings = findings.clone();
             lg.frame(&crate::logblocks::banner(steer.build.as_ref(), case));
@@ -1134,6 +1135,11 @@ fn run_one<F: FnMut(&str)>(
             ", scalar_{s} - (scaled residual), first_order_{s} - (cells at first order)"
         );
         let _ = write!(hhead, ",scalar_{s},first_order_{s}");
+    }
+    if case.energy.is_some() {
+        hunits
+            .push_str(", energy - (scaled residual), first_order_energy - (cells at first order)");
+        hhead.push_str(",energy,first_order_energy");
     }
     let mut history = History::new(
         hist_dir,

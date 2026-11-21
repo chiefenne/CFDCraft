@@ -81,7 +81,7 @@ Agreed decisions that this stage implements or extends, and does not redo:
   the union of fluid and solid regions, so conjugate heat transfer is one
   matrix. D99: harmonic mean of k across fluid–solid interfaces. D116:
   generic transport equation with tensor diffusion, thermal boundary
-  conditions as a `thermal` sub-table of `[boundary.<name>]`, periodic pairs
+  conditions as an `energy` sub-table of `[boundary.<name>]`, periodic pairs
   and region interfaces in one paired-boundary structure. D117 (1): region to
   region coupling computed once and booked on both sides. D118: modules,
   step schedule, multi-rate clocks, frozen flow. D119: ledger as data.
@@ -402,25 +402,35 @@ Stage 7 fills it:
 
 ## 8. Thermal boundary conditions and their check (D156)
 
-Each boundary takes a `thermal` sub-table (D116); the flow `type` is
-unchanged. Values are numbers or expressions of x, y, z, t and, for
-Robin and radiation conditions, T (D53).
+Each boundary takes a `[boundary.<name>.energy]` table (D116), in the
+style of the `[boundary.<name>.scalar.<scalar>]` tables of the passive
+scalars; the flow `type` is unchanged. The condition follows from the keys
+given, so there is no `type` key: exactly one condition per table (THM010),
+and a key the boundary kind cannot take is refused (THM003). Values are
+numbers or expressions of x, y, z, t and, for Robin and radiation
+conditions, T (D53). *Decided by the maintainer on 2026-11-21 (PR 7a1,
+#154); the planned `thermal = { type = ... }` form is dropped.*
 
-| Boundary | `thermal.type` | Keys | Discrete form |
+| Boundary | Condition | Keys of `[boundary.<name>.energy]` | Discrete form |
 |---|---|---|---|
-| wall | `adiabatic` (default) | – | zero flux |
-| wall | `temperature` | `temperature` (K) | Dirichlet on the face; with a wall function the conductance is h_w of D135 |
-| wall | `heat-flux` | `heat_flux` (W/m², positive into the domain) | Neumann; the face temperature is reconstructed for output |
-| wall | `heat-flow` | `heat_flow` (W over the boundary) | heat flux = heat flow / area |
-| wall | `convection` | `heat_transfer_coefficient`, `ambient_temperature` | Robin: q = U (T_amb − T_w), U the series of h_ext, the optional thin wall and the near-wall conductance; implicit in T |
-| wall | `radiation` | `emissivity`, `ambient_temperature` | q = εσ(T_amb⁴ − T_w⁴), Newton-linearised about the current T_w: h_rad = 4εσT_w*³, implicit; converges to the quartic exactly |
-| wall | `convection-radiation` | all of the above | the sum of both |
-| wall (any) | optional `thin_wall` | `thickness` and `conductivity` or `material`; or `layers`, `conduction`, `edges` (§9a) | simplest form: a 1D resistance t/k in series, no heat capacity; the full thin wall of §9a (D189) adds layers, heat capacity, sources and in-plane shell conduction |
-| inlets | – | `temperature` (K, default the initial temperature) | Dirichlet h(T_in) on inflow |
-| outlets | – | `backflow_temperature` (K) | used on faces with reverse flow (D29 backflow) |
-| symmetry, slip wall, wedge | – | – | zero normal flux |
-| periodic | – | `thermal`, `bulk_temperature` of D109 | affine map in h |
+| wall, slip wall | adiabatic (default, no table; THM005 lists these walls once) | – | zero flux |
+| wall, slip wall | temperature | `temperature` (K) | Dirichlet on the face; with a wall function the conductance is h_w of D135 |
+| wall, slip wall | heat flux | `heat_flux` (W/m², positive into the domain) | Neumann; the face temperature is reconstructed for output |
+| wall, slip wall | heat flow | `heat_flow` (W over the boundary) | heat flux = heat flow / area |
+| wall, slip wall | convection | `heat_transfer_coefficient`, `ambient_temperature` | Robin: q = U (T_amb − T_w), U the series of h_ext, the optional thin wall and the near-wall conductance; implicit in T |
+| wall, slip wall | radiation (7a3) | `emissivity`, `ambient_temperature` | q = εσ(T_amb⁴ − T_w⁴), Newton-linearised about the current T_w: h_rad = 4εσT_w*³, implicit; converges to the quartic exactly |
+| wall, slip wall | convection and radiation (7a3) | `heat_transfer_coefficient`, `emissivity`, `ambient_temperature` | the sum of both |
+| wall (any) | optional thin wall (7t1) | `[boundary.<name>.energy.thin_wall]`: `thickness` and `conductivity` or `material`; or `layers`, `conduction`, `edges` (§9a) | simplest form: a 1D resistance t/k in series, no heat capacity; the full thin wall of §9a (D189) adds layers, heat capacity, sources and in-plane shell conduction |
+| inlets | temperature (required, THM011) | `temperature` (K) | Dirichlet h(T_in) on inflow |
+| outlets | zero gradient; backflow (7a3) | `backflow_temperature` (K) | used on faces with reverse flow (D29 backflow) |
+| symmetry, wedge | zero normal flux | – (any key: THM003) | zero normal flux |
+| periodic | T carried across; heat-flux mode (7a2) | `bulk_temperature` of D109 | affine map in h |
 | region interface | (no boundary) | `[interfaces.<name>]` with `contact_resistance` or `thin_wall` (§9) | conductance of §9 |
+
+An inlet needs its temperature: a silent default (the initial temperature,
+as the first draft had it) hides a forgotten inlet value, and the inlet
+temperature sets the result of every heated flow. The start temperature is
+`[energy] initial`.
 
 Every wall value (temperature, heat flux, h_ext, T_amb) is a per-face array
 (D124 W3) that another module can set each step (radiation L15, film D123,
@@ -440,15 +450,21 @@ solver, with the guidance of D30 (what to change):
   (`heat_flux` on an inlet, `temperature` on a symmetry plane).
 - THM004 error: emissivity outside (0, 1], heat-transfer coefficient ≤ 0,
   temperature ≤ 0 K.
-- THM005 warning: energy on, a wall without a thermal sub-table (adiabatic
-  assumed), listed once.
+- THM005 warning: energy on, a wall without a `[boundary.<name>.energy]`
+  table (adiabatic assumed), listed once.
 - THM006 warning: inlet or initial temperature outside the validity range of
   a material (with MAT codes of D98).
 - THM007 error: the D109 classification (wall-temperature mode with mixed
   thermal walls, heat-flux mode with isothermal walls), as specified there.
 - THM008 warning: viscous heating off although the Brinkman number estimate
   μU²/(kΔT) exceeds 0.1, or on although it is below 10⁻⁴.
-- THM009 error: thermal sub-table given but `energy.enabled = false`.
+- THM009 error: a `[boundary.<name>.energy]` table without `[energy]` (the
+  energy equation is on when the case has an `[energy]` table; there is no
+  `enabled` key).
+- THM010 error (PR 7a1): a `[boundary.<name>.energy]` table of an unknown
+  boundary, without exactly one condition, or with
+  `heat_transfer_coefficient` and `ambient_temperature` apart.
+- THM011 error (PR 7a1): an inlet without a temperature.
 - Regions: REG001 (non-fluid region refused) stays for flow-only runs and is
   lifted for runs with the energy equation; MAT006–MAT009: a solid without
   conductivity, specific heat or density, a fluid without thermal data when
@@ -566,7 +582,7 @@ simplest case of this model and stays valid with the same meaning.
 
 | Placement | Sides | Typical use |
 |---|---|---|
-| **Wall boundary** | fluid cell on one side, the boundary's `thermal` condition (adiabatic, temperature, heat flux, convection, radiation, §8) on the outer side | a duct or a housing whose outside is ambient |
+| **Wall boundary** | fluid cell on one side, the boundary's `energy` condition (adiabatic, temperature, heat flux, convection, radiation, §8) on the outer side | a duct or a housing whose outside is ambient |
 | **Baffle** (a pair of coincident boundaries, D116 paired-boundary structure) | a fluid cell on each side | a plate inside the flow: a fin, a separating plate of a plate heat exchanger, a shield |
 | **Region interface** (§9) | fluid and solid, or two solids | a coating, a contact layer, a gasket with heat capacity |
 | **Inside a solid** (a baffle in a solid region) | the same solid, or two solids, on both sides | a glue or solder layer, a crack, an air gap or a thermal pad inside a part |
@@ -660,19 +676,20 @@ face size or a tenth of the radius of curvature.
 ```toml
 [boundary.duct]
 type = "wall"
-thermal = { type = "convection", heat_transfer_coefficient = 8.0,
-            ambient_temperature = 293.15 }
+[boundary.duct.energy]
+heat_transfer_coefficient = 8.0
+ambient_temperature = 293.15
 
-[boundary.duct.thin_wall]
+[boundary.duct.energy.thin_wall]
 conduction = "shell"                # "normal" (1D, default) | "shell" (1D + in-plane)
 edges = { default = "adiabatic", inlet_flange = { temperature = 330.0 } }
 
-[[boundary.duct.thin_wall.layers]]
+[[boundary.duct.energy.thin_wall.layers]]
 thickness = 1.5e-3                  # m
 material = "steel"
 nodes = 3                           # through-thickness nodes of this layer
 
-[[boundary.duct.thin_wall.layers]]
+[[boundary.duct.energy.thin_wall.layers]]
 thickness = 20e-3
 material = "mineral-wool"
 contact_resistance = 1e-4           # m²K/W to the layer before
@@ -1123,12 +1140,15 @@ constant).
 `docs/keys.md` is generated from the code (`foehn schema --markdown`, D77)
 and is regenerated when the keys exist; the planned keys are listed here.
 Names follow the existing style (`[fluid]`, `[materials]`, `[regions]`,
-`[boundary.<name>]`, `[solver.<equation>]` of D127).
+`[boundary.<name>]` with the per-physics `[boundary.<name>.energy]` table of
+§8, `[solver.<equation>]` of D127).
 
 ```toml
-[energy]
-enabled = true                      # default false: flow only, bitwise as before
-reference_temperature = 298.15      # K; h_s = 0 here; default fluid.temperature
+[energy]                            # the table turns the energy equation on; without it: flow only, bitwise as before
+initial = 300.0                     # K, number or expression of x, y, z (7a1)
+source = 0.0                        # q''' (W/m³), number or expression (7a1)
+temperature_dependent = true        # c_p, k, μ follow T (7a1)
+reference_temperature = 298.15      # K; h_s = 0 here (fixed at 298.15 K in 7a1)
 viscous_heating = false             # Φ (and ρε in RANS)
 pressure_work = "none"              # "none" | "thermodynamic" | "full"
 thermodynamic_pressure = "constant" # "constant" (open) | "closed-volume" (p0(t), D151)
@@ -1165,31 +1185,33 @@ specific_heat = { form = "table", file = "steel_cp.csv" }
 
 [boundary.hot]
 type = "wall"
-thermal = { type = "temperature", temperature = 320.0 }
+[boundary.hot.energy]
+temperature = 320.0
 
 [boundary.outer]
 type = "wall"
-thermal = { type = "convection-radiation", heat_transfer_coefficient = 10.0,
-            ambient_temperature = 293.15, emissivity = 0.8,
-            thin_wall = { thickness = 0.002, material = "glass" } }
+[boundary.outer.energy]                 # convection and radiation: the keys of both
+heat_transfer_coefficient = 10.0
+ambient_temperature = 293.15
+emissivity = 0.8
+thin_wall = { thickness = 0.002, material = "glass" }
 
 [boundary.inlet]
 type = "velocity-inlet"
 velocity = [1.0, 0.0, 0.0]
-thermal = { temperature = 300.0 }
+[boundary.inlet.energy]
+temperature = 300.0
 
 [boundary.outlet]
 type = "static-pressure-outlet"
 pressure = 0.0                      # reduced pressure p′ when gravity is set
 pressure_kind = "reduced"           # "reduced" | "static"
-thermal = { backflow_temperature = 300.0 }
+[boundary.outlet.energy]
+backflow_temperature = 300.0
 
 [interfaces.fin-air]                # optional: a face set between two regions
 regions = ["fin", "air"]
 contact_resistance = 2.0e-4         # m²K/W; or thin_wall = { ... }
-
-[initial]
-temperature = 300.0                 # K, number or expression
 
 [solver.energy]
 scheme = "linear-upwind"
@@ -1225,7 +1247,8 @@ CHT004 error (contact resistance on a face that is not a region interface),
 ENE001 error (temperature recovery failed, D92), ENE002 warning (damped
 temperature update, count), ENE003 warning (temperature outside a property
 range, with D96 clamp), ENE004 warning (Mach number above 0.3), ENE005 info
-(transient buoyancy without outer iterations), MAT006–MAT009 (§8), TWL001–TWL005 (§9a.5). The
+(transient buoyancy without outer iterations), ENE006 error (an energy
+setting the version does not have yet, PR 7a1), MAT006–MAT009 (§8), TWL001–TWL005 (§9a.5). The
 registry and `foehn explain <code>` (D78) carry the guidance text.
 
 
@@ -1286,6 +1309,16 @@ CHT lane (C) run in parallel.
 | D | 7e3 | Heated backward-facing step | V7.20 |
 | D | 7e4 | D172 Pr_t closures, D173 variable-property wall treatment | H-0 to H-2 of step 21 |
 | – | 7f | Jacobians, Colab notebook, restart check, verification manual, release v0.7 | V7.22, V7.23 |
+
+**7a1 done 2026-11-21 (#154):** the energy equation of the fluid with
+c_p(T), k(T), μ(T), viscous heating, the thermal walls (`[boundary.<name>.energy]`
+tables in the style of the passive scalars, now the form of §8 and §15),
+THM001–THM005, THM009–THM011, ENE006, and the heat balance; V7.1 on hexahedra with a
+Dirichlet boundary (the Robin condition by the exact series resistance in
+`tests/energy.rs`), V7.2 with both walls isothermal. Moved to a later PR:
+THM006–THM008, V7.3, the thermal account of the ledger in `result.json`,
+the channel DNS regression of the energy equation, and the property
+refresh on the device.
 
 Other decisions of 2026-11-20:
 

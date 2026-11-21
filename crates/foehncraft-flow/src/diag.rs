@@ -137,6 +137,15 @@ codes! {
     MAT_THERMAL = "MAT007", Error, "A fluid without specific heat or thermal conductivity in a run with the energy equation.";
     MAT_AXES = "MAT008", Error, "An orthotropic thermal conductivity without both axes, or with parallel axes.";
     MAT_FILE = "MAT009", Error, "A user material database file (`[materials] include`, `FOEHN_MATERIALS`) or a property data file (NASA-7 record, table file) that cannot be read or has the wrong format.";
+    ENE_UNSUPPORTED = "ENE006", Error, "An energy setting this version does not have: a passive scalar named `temperature` beside `[energy]`, `[energy]` with `[regions]` (7d1), or an orthotropic conductivity of a fluid.";
+    THM_LEVEL = "THM001", Error, "A steady run whose boundaries leave the temperature level undetermined: no inlet and no `temperature` or convection boundary, and no net heat input.";
+    THM_DRIFT = "THM002", Error, "A steady run with a net heat input (heat flux, heat flow, source or viscous heating) and no way for the heat to leave: no inlet and no `temperature` or convection boundary.";
+    THM_SIDE = "THM003", Error, "A thermal condition on a boundary that cannot carry it: a flux or convection at an inlet, any condition at an outlet, a periodic boundary, a symmetry plane or a wedge.";
+    THM_RANGE = "THM004", Error, "A thermal value out of range: a temperature or ambient temperature ≤ 0 K, a heat-transfer coefficient ≤ 0, a heat flow that is not finite.";
+    THM_ADIABATIC = "THM005", Warning, "Walls without a `[boundary.<name>.energy]` table in a run with the energy equation: they are adiabatic (listed once).";
+    THM_NO_ENERGY = "THM009", Error, "A `[boundary.<name>.energy]` table without `[energy]`: the energy equation is solved only with an `[energy]` table.";
+    ENE_BOUNDARY = "THM010", Error, "A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one condition (`temperature`, `heat_flux`, `heat_flow`, or `heat_transfer_coefficient` with `ambient_temperature`), or with `heat_transfer_coefficient` and `ambient_temperature` apart.";
+    ENE_INLET = "THM011", Error, "An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation.";
     REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid: solids and porous zones come with the energy equation (L1).";
     REG_ZONE = "REG002", Error, "A region that names a cell zone the mesh does not have, or a zone in two regions.";
     // moving reference frame and sliding mesh (D55, D182)
@@ -392,7 +401,7 @@ mod tests {
             assert!(
                 [
                     "CASE", "SCHED", "BC", "SCAL", "RUN", "GEN", "DIV", "BAL", "EXPR", "MAT",
-                    "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT"
+                    "REG", "MESH", "TURB", "MRF", "SLD", "ROT", "STAT", "ENE", "THM"
                 ]
                 .contains(&p),
                 "{}",

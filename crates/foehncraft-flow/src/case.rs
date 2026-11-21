@@ -110,6 +110,14 @@ pub struct FluidSection {
     /// 101 325 Pa.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operating_pressure: Option<f64>,
+    /// Specific heat c_p (J/(kg K)) for the energy equation: a number or
+    /// an expression of T; replaces the material's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub specific_heat: Option<Scalar>,
+    /// Thermal conductivity k (W/(m K)) for the energy equation: a number
+    /// or an expression of T; replaces the material's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conductivity: Option<Scalar>,
 }
 
 impl FluidSection {
@@ -768,6 +776,14 @@ pub struct FlowCase {
     /// from the boundary tables by the reader (part of the case hash).
     #[serde(skip)]
     pub boundary_scalar: BTreeMap<String, BTreeMap<String, crate::scalar::ScalarBoundary>>,
+    /// The energy equation of the fluid (stage 7a1): `[energy]`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy: Option<crate::energy::EnergySection>,
+    /// The energy sub-tables of the boundaries,
+    /// `[boundary.<boundary>.energy]`: moved here from the boundary tables
+    /// by the reader.
+    #[serde(skip)]
+    pub boundary_energy: BTreeMap<String, crate::energy::EnergyBoundary>,
     /// Solver settings.
     pub solver: Settings,
     /// Exact solution.
@@ -1003,7 +1019,12 @@ impl FlowCase {
         })?;
         // the per-physics sub-tables of the boundaries (D116)
         let boundary_scalar = crate::scalar::extract_boundary_tables(&mut v)?;
-        let mut c: Self = if sets.is_empty() && notes.is_empty() && boundary_scalar.is_empty() {
+        let boundary_energy = crate::energy::extract_boundary_tables(&mut v)?;
+        let mut c: Self = if sets.is_empty()
+            && notes.is_empty()
+            && boundary_scalar.is_empty()
+            && boundary_energy.is_empty()
+        {
             toml::from_str(text).map_err(|e| diag::err(toml_diagnostic(text, &e)))?
         } else {
             Self::deserialize(toml::Value::Table(v)).map_err(|e| {
@@ -1016,6 +1037,7 @@ impl FlowCase {
         };
         c.case_format = Some(foehncraft_mesh::case_format::CURRENT.into());
         c.boundary_scalar = boundary_scalar;
+        c.boundary_energy = boundary_energy;
         c.notes = notes;
         c.overrides = sets.to_vec();
         if let Some(f) = &c.mesh.file {
@@ -1171,6 +1193,7 @@ impl FlowCase {
             &env,
             transient,
         )?;
+        crate::energy::validate(self, &env)?;
         crate::turbulence::validate(self)?;
         let p = self.properties()?;
         let rho = p.density();
@@ -1203,16 +1226,22 @@ impl FlowCase {
         {
             c.fluid.viscosity = Some(Scalar::Number(mu));
         }
-        let mut text = if c.boundary_scalar.is_empty() {
+        let mut text = if c.boundary_scalar.is_empty() && c.boundary_energy.is_empty() {
             toml::to_string_pretty(&c)?
         } else {
-            // the scalar sub-tables live outside the flow conditions: put
-            // them back into their `[boundary.<name>]` tables
+            // the scalar and energy sub-tables live outside the flow
+            // conditions: put them back into their `[boundary.<name>]`
+            // tables
             let mut v = toml::Table::try_from(&c)?;
             if let Some(toml::Value::Table(bs)) = v.get_mut("boundary") {
                 for (b, t) in &c.boundary_scalar {
                     if let Some(toml::Value::Table(bt)) = bs.get_mut(b) {
                         bt.insert("scalar".into(), toml::Value::try_from(t)?);
+                    }
+                }
+                for (b, t) in &c.boundary_energy {
+                    if let Some(toml::Value::Table(bt)) = bs.get_mut(b) {
+                        bt.insert("energy".into(), toml::Value::try_from(t)?);
                     }
                 }
             }
@@ -2470,6 +2499,7 @@ pub fn run_steered(
             case.check_context(),
         );
         findings.extend(crate::turbulence::setup_findings(&case));
+        findings.extend(crate::energy::setup_findings(&case));
         if li == 0 {
             rep.findings = findings.clone();
         }
@@ -2626,6 +2656,11 @@ pub fn run_steered(
                 ", scalar_{s} - (scaled residual), bicgstab_{s} - (iterations)"
             );
             let _ = write!(head, ",scalar_{s},bicgstab_{s}");
+        }
+        // the energy equation, after the passive scalars (stage 7a1)
+        if case.energy.is_some() {
+            units.push_str(", energy - (scaled residual), bicgstab_energy - (iterations)");
+            head.push_str(",energy,bicgstab_energy");
         }
         // the Krylov iterations of the coupled algorithm: a last column
         let coupled = case.solver.algorithm(false) == crate::simplec::Algorithm::Coupled;
@@ -4209,6 +4244,7 @@ pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Re
         case.check_context(),
     );
     findings.extend(crate::turbulence::setup_findings(case));
+    findings.extend(crate::energy::setup_findings(case));
     for f in &findings {
         log(&f.to_string());
     }

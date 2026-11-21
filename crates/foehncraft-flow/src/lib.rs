@@ -44,6 +44,7 @@ pub mod derived;
 pub mod device;
 pub mod diag;
 pub mod divergence;
+pub mod energy;
 pub mod engine;
 pub mod expr;
 pub mod frame;

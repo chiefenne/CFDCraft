@@ -296,6 +296,10 @@ pub struct ScalarRowArgs {
     /// Pseudo-time coefficient ρ V/Δτ per cell of a steady iteration
     /// ([`FlowDevice::pseudo_coefficient`]), if any.
     pub pseudo: Option<Buf>,
+    /// The heat capacity ρ c_p per cell of the energy equation (stage
+    /// 7a1), in place of the density in the time and source terms; `None`:
+    /// the density.
+    pub capacity: Option<Buf>,
     /// Output: matrix values.
     pub val: Buf,
     /// Output: right-hand side.

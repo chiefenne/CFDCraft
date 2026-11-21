@@ -1,0 +1,87 @@
+# Heat conduction with a temperature-dependent conductivity: the
+# manufactured solution of the energy equation (stage 7a1, check V7.1).
+#
+#   cargo run --release -p foehncraft-cli -- flow examples/cases/flow/conduction_mms.toml
+#
+# A closed square box 0 < x, y < 1 m with walls at rest: the fluid stays at
+# rest and the energy equation is pure conduction,
+#
+#   −∇·(k(T) ∇T) = q''',   k(T) = 1 + c (T − T₀)  W/(m K),
+#
+# with the exact solution T = T₀ + A sin(πx) sin(πy) (T₀ = 300 K,
+# A = 50 K, c = 0.01 W/(m K²): k runs from 1 to 1.5). The source is the
+# one that makes it exact,
+#
+#   q''' = 2π² A s k(T) − c A² π² (cos²πx sin²πy + sin²πx cos²πy),
+#   s = sin(πx) sin(πy),
+#
+# and the walls hold T₀. The conductivity is refreshed from T every outer
+# iteration (k at the faces from the face temperature). Three nested
+# meshes: the L2 error of T must fall at second order (1.8 to 2.2).
+
+case_format = "0.6"
+
+[mesh.generate]
+type = "hex"
+dimension = 2
+upper = [1.0, 1.0, 0.05]
+cells = [16, 16, 1]
+perturb = 0.15
+
+[mesh]
+renumber = "rcm"
+
+[fluid]
+density = 1.0
+viscosity = 1.0
+specific_heat = 1000.0
+conductivity = "1 + 0.01 * (T - 300)"
+
+[constants]
+T0 = 300.0
+A = 50.0
+c = 0.01
+
+[energy]
+initial = 300.0
+source = "2 * pi^2 * A * sin(pi * x) * sin(pi * y) * (1 + c * A * sin(pi * x) * sin(pi * y)) - c * A^2 * pi^2 * (cos(pi * x)^2 * sin(pi * y)^2 + sin(pi * x)^2 * cos(pi * y)^2)"
+exact = "T0 + A * sin(pi * x) * sin(pi * y)"
+
+[boundary.xmin]
+type = "wall"
+[boundary.xmin.energy]
+temperature = 300.0
+[boundary.xmax]
+type = "wall"
+[boundary.xmax.energy]
+temperature = 300.0
+[boundary.ymin]
+type = "wall"
+[boundary.ymin.energy]
+temperature = 300.0
+[boundary.ymax]
+type = "wall"
+[boundary.ymax.energy]
+temperature = 300.0
+[boundary.zmin]
+type = "symmetry"
+[boundary.zmax]
+type = "symmetry"
+
+[solver]
+tolerance = 1e-9
+max_iterations = 400
+
+[solver.energy]
+relaxation = 1.0
+tolerance = 1e-10
+max_iter = 400
+
+[verification]
+levels = [0, 1, 2]
+scalar_order = [1.8, 2.2]
+require_convergence = true
+
+[output]
+vtkhdf = false
+wall_csv = false

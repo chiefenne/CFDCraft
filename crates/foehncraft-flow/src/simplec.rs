@@ -311,6 +311,9 @@ pub struct Settings {
     pub pseudo_time: crate::coupled::PseudoTimeSettings,
     /// The passive scalars (`[solver.scalar]`, D51).
     pub scalar: crate::scalar::ScalarSettings,
+    /// The energy equation (`[solver.energy]`, stage 7a1): the settings of
+    /// a scalar.
+    pub energy: crate::scalar::ScalarSettings,
     /// The turbulence equations (`[solver.turbulence]`, stage 6).
     pub turbulence: crate::turbulence::TurbulenceSettings,
     /// The elliptic equations of the turbulence models (`[solver.elliptic]`:
@@ -457,6 +460,7 @@ impl Default for Settings {
             coupled: crate::coupled::CoupledSettings::default(),
             pseudo_time: crate::coupled::PseudoTimeSettings::default(),
             scalar: crate::scalar::ScalarSettings::default(),
+            energy: crate::scalar::ScalarSettings::default(),
             turbulence: crate::turbulence::TurbulenceSettings::default(),
             elliptic: crate::turbulence::EllipticSettings::default(),
             pressure_gradient: PressureGradient::LeastSquares,
@@ -2503,7 +2507,24 @@ impl Flow {
             .turbulence
             .as_ref()
             .map(|t| t.scalar_coupling(self.dev.as_ref()));
-        res.scalars = sc.solve(self.dev.as_mut(), conv, &flows, step, &xs, coupling)?;
+        let link = crate::scalar::EnergyLink {
+            grad_u: self.f.grad_u,
+            mu_face: self.dev.face_viscosity(),
+        };
+        res.scalars = sc.solve(
+            self.dev.as_mut(),
+            conv,
+            &flows,
+            step,
+            &xs,
+            coupling,
+            Some(link),
+        )?;
+        // μ(T) of the energy equation: the host copy of the output (forces,
+        // y⁺) follows the device's
+        if let Some(mu) = sc.energy_viscosity() {
+            self.phys.mu_face = Some(std::sync::Arc::new(mu.to_vec()));
+        }
         self.dev.sync()?;
         self.timings.scalars += t.elapsed().as_secs_f64();
         if !res.finite() {

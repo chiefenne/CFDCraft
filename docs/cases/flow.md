@@ -12,6 +12,7 @@ On this page:
 - [Derived fields](#derived-fields)
 - [Expressions and materials](#expressions-and-materials)
 - [Passive scalars](#passive-scalars)
+- [Energy equation](#energy-equation)
 
 Stage 4: steady incompressible laminar flow, SIMPLEC with the Rhie–Chow
 interpolation ([explanation](../verification/stage4.md)). Stage 5: transient
@@ -214,3 +215,15 @@ distance (D48), stage 6 part 6a; the keys are on the
 |---|---|---|---|
 | `flow/channel_heated.toml` | generated hex 2D, perturbed by 15 %, 512 to 8 192 cells (3 levels) | laminar heated channel: a passive temperature with uniform wall flux in Poiseuille flow, Pe = 1000; observed order of the temperature error 1.8–2.2 required, Nu = 8.2398 against 140/17 = 8.2353 on the finest mesh | [gallery 63](../gallery/scalars.md#passive-scalars), [recipe 63](../recipes/scalars.md#passive-scalars) |
 | `flow/scalar_front_bdf2.toml` | generated hex 2D, 40 cells | a front of a scalar bounded by [0, 1] in a uniform flow, upwind, BDF2 at Courant number 0.8: the bounded BDF2 keeps it inside the bounds (plain BDF2 overshoots to 1.00033) | [gallery 63](../gallery/scalars.md#passive-scalars), [recipe 63](../recipes/scalars.md#passive-scalars) |
+
+## Energy equation
+
+The temperature of the fluid with c_p(T), k(T) and μ(T), viscous heating
+and the thermal wall conditions (D150), stage 7 part 7a1; the keys are on
+the [key page](../keys.md) and in [recipe 154](../recipes/energy.md#energy-fluid).
+
+| Case file | Mesh | Shows | Where |
+|---|---|---|---|
+| `flow/cavity_heated.toml` | generated hex 2D, 4 096 cells | the Re = 100 cavity with the lid at 310 K and the bottom at 300 K, Pr = 0.71: forced convection, Nu = 2.05, heat balance closed to 10⁻¹¹ | [gallery 154](../gallery/energy.md#energy-fluid), [recipe 154](../recipes/energy.md#energy-fluid) |
+| `flow/conduction_mms.toml` | generated hex 2D, perturbed by 15 %, 256 to 4 096 cells (3 levels) | check V7.1: conduction with k(T) = 1 + 0.01 (T − 300), manufactured solution; observed order of the temperature error 1.8–2.2 required | [gallery 154](../gallery/energy.md#energy-fluid), [recipe 154](../recipes/energy.md#energy-fluid) |
+| `flow/couette_viscous_heating.toml` | generated hex 2D, 128 to 2 048 cells (3 levels), periodic | check V7.2: Couette flow heated by its own friction, Br = 1, the exact parabola; order 1.8–2.2 required, each wall takes half of the friction power | [gallery 154](../gallery/energy.md#energy-fluid), [recipe 154](../recipes/energy.md#energy-fluid) |
