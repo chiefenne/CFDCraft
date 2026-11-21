@@ -14,8 +14,9 @@
 > convection, rotating machinery), release 0.6.** The stage
 > plan and every decision are in [docs/requirements.md](docs/requirements.md);
 > [What works today](#what-works-today) lists what is on `main` now. Stage 7 is
-> under way: the energy equation of the fluid is in; buoyancy, variable
-> density and conjugate heat transfer follow.
+> under way: the energy equation of the fluid and steady laminar conjugate
+> heat transfer with solid regions are in; buoyancy and variable density
+> follow.
 
 [![CI](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml/badge.svg)](https://github.com/chiefenne/Foehncraft/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/chiefenne/Foehncraft)](https://github.com/chiefenne/Foehncraft/releases)
@@ -89,8 +90,11 @@ Everything below is on `main`, verified by the cases of the
   The energy equation of the fluid (stage 7): c_p(T), k(T) and μ(T) from
   the material database, viscous heating, temperature, heat-flux, heat-flow
   and convection walls, and a heat balance in the report; second order on
-  manufactured and exact solutions. Buoyancy and conjugate heat transfer
-  come next in stage 7.
+  manufactured and exact solutions. Conjugate heat transfer: solid regions
+  of a mesh join the temperature equation, the flow runs on the fluid
+  cells and the report gives the heat flow through every fluid–solid
+  interface (steady laminar so far; a composite wall exact to round-off).
+  Buoyancy comes next in stage 7.
 - **Rotating machinery.** The moving reference frame (steady and transient
   frozen rotor), the sliding mesh by conformal stepping and by imprinting
   the interface in every step, several rotors at their own speeds,

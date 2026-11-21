@@ -784,6 +784,12 @@ pub struct FlowCase {
     /// by the reader.
     #[serde(skip)]
     pub boundary_energy: BTreeMap<String, crate::energy::EnergyBoundary>,
+    /// The fluid view of a conjugate heat transfer case (stage 7d1): set on
+    /// the case of the flow, which runs on the fluid cells only, with the
+    /// full case and mesh behind it ([`crate::cht`]).
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub fluid_view: Option<std::sync::Arc<crate::cht::FluidView>>,
     /// Solver settings.
     pub solver: Settings,
     /// Exact solution.
@@ -1082,11 +1088,16 @@ impl FlowCase {
         let mut regions = Vec::new();
         let mut seen: BTreeMap<&str, &str> = BTreeMap::new();
         for (name, r) in &self.regions {
+            // solids belong to the energy equation (stage 7d1, crate::cht):
+            // the flow runs on the fluid cells
+            if r.kind == RegionKind::Solid && self.energy.is_some() {
+                continue;
+            }
             crate::need!(
                 r.kind == RegionKind::Fluid,
                 REG_NOT_FLUID,
-                "[regions.{name}] kind = \"{}\": only fluid regions are solved until the energy \
-                 equation (L1) brings solids and porous zones (D112)",
+                "[regions.{name}] kind = \"{}\": solid regions need the energy equation \
+                 ([energy], stage 7d1); porous zones are not in this version (D112)",
                 match r.kind {
                     RegionKind::Solid => "solid",
                     RegionKind::Porous => "porous",
@@ -2485,6 +2496,10 @@ pub fn run_steered(
         }
         let (mesh, geo, desc) = mesh_for(&case, *level)?;
         let mesh_hash = crate::engine::mesh_hash(&mesh);
+        // conjugate heat transfer (stage 7d1): the flow runs on the fluid
+        // view, the energy equation on the full mesh
+        let (fluid_case, mesh, geo) = crate::cht::view(&case, mesh, geo)?;
+        case = fluid_case;
         let nc = mesh.n_cells;
         if li == 0 {
             lg.frame(&crate::logblocks::banner(steer.build.as_ref(), &case));
@@ -3013,6 +3028,13 @@ pub fn run_steered(
         // final gradients for the output
         fl.update_boundaries()?;
         fl.gradients()?;
+        // conjugate heat transfer: the fields of the output on the full mesh
+        let full_out = if case.fluid_view.is_some() {
+            let st = fl.state()?;
+            Some(crate::cht::full_state(&mut fl, &st)?)
+        } else {
+            None
+        };
         let fl_host = Solution {
             state: fl.state()?,
             disc: &fl.disc,
@@ -3124,17 +3146,37 @@ pub fn run_steered(
                 out.join("balance.svg"),
                 balance::chart(name, &summary.last, false),
             )?;
-            write_outputs(
-                &case,
-                out,
-                &mesh,
-                &geo,
-                sol,
-                analytic.as_ref(),
-                &boundaries,
-                &loc,
-                Some((iters, None)),
-            )?;
+            match (&case.fluid_view, &full_out, fl.cht.as_deref()) {
+                (Some(v), Some(st), Some(c)) => {
+                    let full = Solution {
+                        state: st.clone(),
+                        disc: &c.fe.disc,
+                        phys: c.fe.physics(),
+                    };
+                    write_outputs(
+                        &v.full_case,
+                        out,
+                        &v.mesh,
+                        &v.geo,
+                        &full,
+                        None,
+                        &boundaries,
+                        &Locator::new(&v.mesh, &v.geo),
+                        Some((iters, None)),
+                    )?;
+                }
+                _ => write_outputs(
+                    &case,
+                    out,
+                    &mesh,
+                    &geo,
+                    sol,
+                    analytic.as_ref(),
+                    &boundaries,
+                    &loc,
+                    Some((iters, None)),
+                )?,
+            }
             if let Some(r) = &reference {
                 write_reference_svg(out, name, r)?;
             }
@@ -4227,6 +4269,8 @@ pub(crate) fn write_reference_svg(out: &Path, name: &str, r: &ReferenceCompariso
 pub fn check_case(case: &FlowCase, path: &Path, mut log: impl FnMut(&str)) -> Result<()> {
     let level = case.verification.levels.first().copied();
     let (mesh, geo, desc) = mesh_for(case, level)?;
+    let (fluid_case, mesh, geo) = crate::cht::view(case, mesh, geo)?;
+    let case = &fluid_case;
     log(&format!("{}: {desc}", path.display()));
     // the property program on this mesh: regions name existing zones (D112)
     physics_on(case, &physics(case)?, &mesh, &geo)?;

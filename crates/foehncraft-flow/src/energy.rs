@@ -291,12 +291,45 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
         "[scalars.{FIELD}] and [energy]: the energy equation solves the field `{FIELD}`; give \
          the passive scalar another name"
     );
-    crate::need!(
-        case.regions.is_empty(),
-        ENE_UNSUPPORTED,
-        "[energy] with [regions]: the energy equation takes the one `[fluid]` material in this \
-         version (several fluid materials and solid regions come with 7d1)"
-    );
+    for (name, r) in &case.regions {
+        match r.kind {
+            crate::materials::RegionKind::Fluid => crate::need!(
+                r.material.is_none() || r.material == case.fluid.material,
+                ENE_UNSUPPORTED,
+                "[regions.{name}]: a fluid region with its own material; the energy equation \
+                 takes the one `[fluid]` material in this version"
+            ),
+            crate::materials::RegionKind::Solid => {
+                solid(case, env, name)?;
+            }
+            crate::materials::RegionKind::Porous => {}
+        }
+    }
+    if crate::cht::is_cht(case) {
+        crate::need!(
+            !transient,
+            ENE_UNSUPPORTED,
+            "solid regions in a transient case: conjugate heat transfer is steady in this \
+             version"
+        );
+        crate::need!(
+            case.turbulence.is_laminar(),
+            ENE_UNSUPPORTED,
+            "solid regions with a turbulence model: conjugate heat transfer is laminar in this \
+             version (the wall-function conductance at interfaces is a later step)"
+        );
+        crate::need!(
+            case.run.restart.is_none(),
+            ENE_UNSUPPORTED,
+            "a restart with solid regions is not in this version"
+        );
+        crate::need!(
+            case.scalars.is_empty(),
+            ENE_UNSUPPORTED,
+            "passive scalars with solid regions are not in this version (they would diffuse \
+             into the solids)"
+        );
+    }
     case.solver.energy.validate(transient)?;
     for (b, t) in &case.boundary_energy {
         let key = format!("boundary.{b}.energy");
@@ -443,6 +476,9 @@ pub fn validate(case: &crate::case::FlowCase, env: &Env) -> Result<()> {
 /// (D30): the walls left adiabatic (THM005), listed once.
 pub fn setup_findings(case: &crate::case::FlowCase) -> Vec<crate::bc::Finding> {
     use crate::bc::{Finding, Level};
+    // the fluid view of a conjugate case: the walls of the case as written
+    // (the interfaces are no walls of the energy equation)
+    let case = case.fluid_view.as_ref().map_or(case, |v| &v.full_case);
     if case.energy.is_none() {
         return Vec::new();
     }
@@ -569,6 +605,106 @@ pub fn fluid(case: &crate::case::FlowCase, env: &Env) -> Result<Fluid> {
         k,
         mu,
     })
+}
+
+/// The thermal properties of a solid region (stage 7d1): ρ at the case
+/// temperature, c_p(T) and k(T) of its material; MAT006 without one of
+/// them, ENE006 for an orthotropic k (7d2).
+pub fn solid(case: &crate::case::FlowCase, env: &Env, region: &str) -> Result<Material> {
+    let cond: Conditions = case.fluid.conditions();
+    let key = format!("regions.{region}.material");
+    let Some(name) = case.regions.get(region).and_then(|r| r.material.clone()) else {
+        return Err(diag::err(
+            Diagnostic::new(
+                diag::MAT_SOLID,
+                format!(
+                    "[regions.{region}] is a solid without a material: give `material`, with \
+                     density, specific_heat and conductivity"
+                ),
+            )
+            .key(key),
+        ));
+    };
+    let m = lookup(&name, &case.materials)?;
+    let owner = format!("materials.{name}");
+    let k = match &m.conductivity {
+        Some(Conductivity::Isotropic(p)) => Some(p.clone()),
+        Some(Conductivity::Orthotropic(_)) => {
+            return Err(diag::err(
+                Diagnostic::new(
+                    diag::ENE_UNSUPPORTED,
+                    format!(
+                        "{owner}: an orthotropic conductivity in a solid region comes with PR \
+                         7d2; give one value"
+                    ),
+                )
+                .key(format!("{owner}.conductivity")),
+            ));
+        }
+        None => None,
+    };
+    let missing: Vec<&str> = [
+        ("density", m.density.is_none()),
+        ("specific_heat", m.specific_heat.is_none()),
+        ("conductivity", k.is_none()),
+    ]
+    .iter()
+    .filter(|x| x.1)
+    .map(|x| x.0)
+    .collect();
+    if !missing.is_empty() {
+        return Err(diag::err(
+            Diagnostic::new(
+                diag::MAT_SOLID,
+                format!(
+                    "material `{name}` of the solid region `{region}` has no {}: a solid needs \
+                     density, specific_heat and conductivity",
+                    missing.join(", ")
+                ),
+            )
+            .key(key),
+        ));
+    }
+    let rho = curve(
+        m.density.as_ref().unwrap(),
+        "density",
+        &owner,
+        &m,
+        env,
+        cond,
+    )?
+    .at(cond.temperature);
+    crate::need!(
+        rho > 0.0 && rho.is_finite(),
+        MAT_SOLID,
+        "material `{name}`: the density must be > 0, is {rho}"
+    );
+    Ok(Material {
+        name: name.clone(),
+        rho,
+        cp: curve(
+            m.specific_heat.as_ref().unwrap(),
+            "specific_heat",
+            &owner,
+            &m,
+            env,
+            cond,
+        )?,
+        k: curve(k.as_ref().unwrap(), "conductivity", &owner, &m, env, cond)?,
+    })
+}
+
+/// The thermal properties of one material of the energy equation.
+#[derive(Debug, Clone)]
+pub struct Material {
+    /// The material (or `fluid`).
+    pub name: String,
+    /// ρ (kg/m³), constant.
+    pub rho: f64,
+    /// c_p(T) (J/(kg K)).
+    pub cp: Curve,
+    /// k(T) (W/(m K)).
+    pub k: Curve,
 }
 
 /// The temperature of zero sensible enthalpy (K).

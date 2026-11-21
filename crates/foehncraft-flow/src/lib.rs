@@ -37,6 +37,7 @@ pub mod banner_art;
 pub mod bc;
 pub mod case;
 pub mod checkpoint;
+pub mod cht;
 pub mod console;
 pub mod control;
 pub mod coupled;

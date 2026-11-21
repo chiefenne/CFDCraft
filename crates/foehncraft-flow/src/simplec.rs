@@ -992,6 +992,9 @@ pub struct Flow {
     /// The passive scalars (D51), solved after the pressure correction of
     /// every outer iteration ([`Flow::add_scalars`]).
     pub(crate) scalars: Option<crate::scalar::Scalars>,
+    /// The energy equation on the full mesh of a conjugate heat transfer
+    /// case (stage 7d1): this flow runs on the fluid view.
+    pub(crate) cht: Option<Box<crate::cht::Cht>>,
     /// The turbulence model (stage 6), solved before the scalars.
     pub(crate) turbulence: Option<crate::turbulence::Turbulence>,
     /// The driving of the periodic pairs (D29), one per pair.
@@ -1459,6 +1462,7 @@ impl Flow {
             source: None,
             remediation,
             scalars: None,
+            cht: None,
             turbulence: None,
             periodic,
             unit_flux,
@@ -2486,6 +2490,12 @@ impl Flow {
         res: &mut Residuals,
     ) -> Result<()> {
         self.solve_turbulence(step, res)?;
+        if self.cht.is_some() {
+            let t = Instant::now();
+            crate::cht::solve(self, step, res)?;
+            self.timings.scalars += t.elapsed().as_secs_f64();
+            return Ok(());
+        }
         if self.scalars.is_none() {
             return Ok(());
         }

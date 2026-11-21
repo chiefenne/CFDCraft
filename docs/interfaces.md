@@ -306,7 +306,7 @@ A code keeps its meaning; a retired code stays in the table.
 | `THM009` | error | A `[boundary.<name>.energy]` table without `[energy]`: the energy equation is solved only with an `[energy]` table. |
 | `THM010` | error | A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one condition (`temperature`, `heat_flux`, `heat_flow`, or `heat_transfer_coefficient` with `ambient_temperature`), or with `heat_transfer_coefficient` and `ambient_temperature` apart. |
 | `THM011` | error | An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation. |
-| `REG001` | error | A region that is not a fluid: solids and porous zones come with the energy equation (L1). |
+| `REG001` | error | A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), a porous zone (not in this version), or a solid material as the `[fluid]`. |
 | `REG002` | error | A region that names a cell zone the mesh does not have, or a zone in two regions. |
 | `MRF001` | error | An `[[mrf]]` table and a `[[sliding]]` table that turn the same cells (one of them without a `zone`, or both with the same one): a zone is turned by a moving reference frame (steady or transient, D185) or by a sliding mesh (D182), not by both. |
 | `MRF002` | error | An `[[mrf]]` table with no or two angular velocities (`omega`, `rpm`), a zero axis, a cell zone the mesh does not have (with the nearest name as a hint), no `zone` where there are several tables, or a zone that two tables rotate. |

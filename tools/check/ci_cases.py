@@ -51,7 +51,8 @@ FLOW = {
         "taylor_couette_sliding", "taylor_couette_imprint", "couette_two_rotors",
         "axial_stage_uniform", "pot_solid_body", "pot_solid_body_viscous",
         "naca0012_su2_re1000", "backstep_outlet_backflow", "taylor_couette_su2_zones",
-        "cavity_heated", "conduction_mms", "couette_viscous_heating",
+        "cavity_heated", "conduction_mms", "couette_viscous_heating", "cht_composite_wall",
+        "cht_heated_wall",
     ],
     "long": [
         "cylinder_re100", "cylinder_re100_short", "cylinder_re100_statistics", "cylinder_re100_convective", "cylinder_re20_gci",

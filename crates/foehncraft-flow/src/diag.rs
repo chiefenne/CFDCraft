@@ -146,7 +146,7 @@ codes! {
     THM_NO_ENERGY = "THM009", Error, "A `[boundary.<name>.energy]` table without `[energy]`: the energy equation is solved only with an `[energy]` table.";
     ENE_BOUNDARY = "THM010", Error, "A `[boundary.<name>.energy]` table for an unknown boundary, without exactly one condition (`temperature`, `heat_flux`, `heat_flow`, or `heat_transfer_coefficient` with `ambient_temperature`), or with `heat_transfer_coefficient` and `ambient_temperature` apart.";
     ENE_INLET = "THM011", Error, "An inlet without `[boundary.<name>.energy] temperature` in a run with the energy equation.";
-    REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid: solids and porous zones come with the energy equation (L1).";
+    REG_NOT_FLUID = "REG001", Error, "A region that is not a fluid where it cannot be: a solid region without `[energy]` (solids are solved by the energy equation, stage 7d1), a porous zone (not in this version), or a solid material as the `[fluid]`.";
     REG_ZONE = "REG002", Error, "A region that names a cell zone the mesh does not have, or a zone in two regions.";
     // moving reference frame and sliding mesh (D55, D182)
     MRF_SLIDING_ZONE = "MRF001", Error, "An `[[mrf]]` table and a `[[sliding]]` table that turn the same cells (one of them without a `zone`, or both with the same one): a zone is turned by a moving reference frame (steady or transient, D185) or by a sliding mesh (D182), not by both.";

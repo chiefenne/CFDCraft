@@ -49,6 +49,11 @@
 //! faces that the removal exposes form the boundary `name`; nodes that no
 //! cell uses are dropped.
 //!
+//! **Zones.** `zones` puts the cells whose centroid lies inside a box in a
+//! cell zone of that name; the other cells form the zone `fluid`. The
+//! solids of a conjugate heat transfer case are such zones, named in
+//! `[regions]`.
+//!
 //! **Perturbation.** Each node moves by up to `perturb` times the smaller
 //! adjacent interval in each direction, from a counter-based random number
 //! keyed by the seed and the node position (D47), so it is reproducible.
@@ -199,6 +204,36 @@ pub struct BoxSpec {
     /// Boxes of cells taken out of the mesh.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub remove: Vec<RemoveBox>,
+    /// Boxes of cells put in a cell zone of their own (the rest stays in
+    /// the zone `fluid`): the solid parts of a conjugate heat transfer
+    /// case, named in `[regions]`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub zones: Vec<ZoneBox>,
+}
+
+/// A box of cells of a generated mesh in a cell zone of its own: the cells
+/// whose centroid lies inside the box (later boxes win where they
+/// overlap).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ZoneBox {
+    /// Lower corner (m; z is ignored in 2D).
+    pub lower: [f64; 3],
+    /// Upper corner (m; z is ignored in 2D).
+    pub upper: [f64; 3],
+    /// Name of the cell zone.
+    pub name: String,
+}
+
+impl ZoneBox {
+    fn contains(&self, dim: u8, p: [f64; 3]) -> bool {
+        RemoveBox {
+            lower: self.lower,
+            upper: self.upper,
+            name: String::new(),
+        }
+        .contains(dim, p)
+    }
 }
 
 /// A box of cells taken out of a generated mesh.
@@ -348,6 +383,7 @@ impl Default for BoxSpec {
             segments: SegmentSpec::default(),
             split: Vec::new(),
             remove: Vec::new(),
+            zones: Vec::new(),
         }
     }
 }
@@ -492,6 +528,27 @@ impl BoxSpec {
                 return Err(format!("remove: the name `{}` is taken", r.name));
             }
         }
+        for (i, z) in self.zones.iter().enumerate() {
+            let dims = if self.dimension == 2 { 2 } else { 3 };
+            if (0..dims)
+                .any(|d| z.upper[d].partial_cmp(&z.lower[d]) != Some(std::cmp::Ordering::Greater))
+            {
+                return Err(format!(
+                    "zone `{}`: upper must be larger than lower",
+                    z.name
+                ));
+            }
+            if z.name.is_empty()
+                || z.name == "fluid"
+                || self.zones[..i].iter().any(|y| y.name == z.name)
+            {
+                return Err(format!(
+                    "zones: the name `{}` is empty, `fluid` (the zone of the other cells) or \
+                     given twice",
+                    z.name
+                ));
+            }
+        }
         if let Some(a) = self.wedge {
             if self.dimension != 2 {
                 return Err("a wedge revolves a 2D mesh: set dimension = 2".into());
@@ -538,10 +595,42 @@ impl BoxSpec {
             (Kind::Poly, _) => self.poly2d(),
             _ => self.structured(),
         }?;
+        let m = self.with_zones(m)?;
         match self.wedge {
             Some(a) => crate::wedge::revolve(&m, a),
             None => Ok(m),
         }
+    }
+
+    /// The cell zones of `zones`: a cell in the last box that holds its
+    /// centroid, the rest in `fluid`.
+    fn with_zones(&self, mut m: Mesh) -> Result<Mesh, String> {
+        if self.zones.is_empty() {
+            return Ok(m);
+        }
+        let geo = crate::Geometry::compute(&m);
+        let mut used = vec![false; self.zones.len()];
+        m.zones = std::iter::once("fluid".to_string())
+            .chain(self.zones.iter().map(|z| z.name.clone()))
+            .collect();
+        for c in 0..m.n_cells {
+            let x = geo.cell_centroid[c];
+            m.cell_zone[c] = match self
+                .zones
+                .iter()
+                .rposition(|z| z.contains(self.dimension, x))
+            {
+                Some(i) => {
+                    used[i] = true;
+                    1 + i as u32
+                }
+                None => 0,
+            };
+        }
+        if let Some(i) = used.iter().position(|u| !u) {
+            return Err(format!("zone `{}` holds no cell", self.zones[i].name));
+        }
+        Ok(m)
     }
 
     /// Node coordinates of the (perturbed) grid, index `i + nx1 (j + ny1 k)`.
