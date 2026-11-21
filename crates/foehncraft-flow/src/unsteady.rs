@@ -282,8 +282,11 @@ struct RunSpec {
 struct RunOut {
     solve: Solve,
     u: Soa3,
-    /// Final scalar fields, in the order of the case's scalar sections.
+    /// Final scalar fields, in the order of the case's scalar sections
+    /// (on the full mesh in a conjugate case).
     scalars: Vec<Vec<f64>>,
+    /// The cell volumes of `scalars`.
+    scalar_volume: Vec<f64>,
     volume: Vec<f64>,
     stopped: bool,
 }
@@ -482,10 +485,10 @@ pub fn run(
                 .map(|w| {
                     let (a, b) = (&w[0], &w[1]);
                     let (mut e2, mut vol) = (0.0, 0.0);
-                    for c in 0..a.volume.len() {
+                    for c in 0..a.scalar_volume.len() {
                         let x = a.scalars[k][c] - b.scalars[k][c];
-                        e2 += x * x * a.volume[c];
-                        vol += a.volume[c];
+                        e2 += x * x * a.scalar_volume[c];
+                        vol += a.scalar_volume[c];
                     }
                     (e2 / vol).sqrt()
                 })
@@ -509,58 +512,62 @@ pub fn run(
             }
             rep.scalar_orders.push((format!("{} (time)", sm.name), o));
         }
-        rep.time_orders = diffs
-            .windows(2)
-            .enumerate()
-            .map(|(i, d)| (d[0] / d[1]).ln() / (dts[i] / dts[i + 1]).ln())
-            .collect();
-        lg.note(&format!(
-            "time sweep: differences of successive solutions [{}], observed time orders {:.3?}",
-            diffs
-                .iter()
-                .map(|d| format!("{d:.3e}"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            rep.time_orders
-        ));
-        if let (Some([lo, hi]), Some(&o)) = (v.expected_time_order, rep.time_orders.last())
-            && !(lo..=hi).contains(&o)
-        {
-            rep.failures.push(format!(
-                "observed time order {o:.3} on the smallest steps, outside [{lo}, {hi}]"
+        // a fluid at rest (the conduction of a conjugate case) gives no
+        // velocity differences and no order of them
+        if diffs.iter().any(|&d| d > 0.0) {
+            rep.time_orders = diffs
+                .windows(2)
+                .enumerate()
+                .map(|(i, d)| (d[0] / d[1]).ln() / (dts[i] / dts[i + 1]).ln())
+                .collect();
+            lg.note(&format!(
+                "time sweep: differences of successive solutions [{}], observed time orders {:.3?}",
+                diffs
+                    .iter()
+                    .map(|d| format!("{d:.3e}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                rep.time_orders
             ));
+            if let (Some([lo, hi]), Some(&o)) = (v.expected_time_order, rep.time_orders.last())
+                && !(lo..=hi).contains(&o)
+            {
+                rep.failures.push(format!(
+                    "observed time order {o:.3} on the smallest steps, outside [{lo}, {hi}]"
+                ));
+            }
+            let pts: Vec<(f64, f64)> = dts[1..]
+                .iter()
+                .copied()
+                .zip(diffs.iter().copied())
+                .collect();
+            let slope: Vec<(f64, f64)> = match (pts.first(), pts.last()) {
+                (Some(&a), Some(&b)) => vec![(a.0, b.1 * (a.0 / b.0).powi(2)), b],
+                _ => Vec::new(),
+            };
+            std::fs::write(
+                out.join("time_convergence.svg"),
+                plot::chart(
+                    &format!("{name}: change of the solution over the time step"),
+                    "Δt (s)",
+                    "‖u(Δt) − u(2Δt)‖ (m/s)",
+                    &[
+                        Series {
+                            label: "Foehncraft",
+                            points: &pts,
+                            markers: true,
+                        },
+                        Series {
+                            label: "slope 2",
+                            points: &slope,
+                            markers: false,
+                        },
+                    ],
+                    true,
+                    true,
+                ),
+            )?;
         }
-        let pts: Vec<(f64, f64)> = dts[1..]
-            .iter()
-            .copied()
-            .zip(diffs.iter().copied())
-            .collect();
-        let slope: Vec<(f64, f64)> = match (pts.first(), pts.last()) {
-            (Some(&a), Some(&b)) => vec![(a.0, b.1 * (a.0 / b.0).powi(2)), b],
-            _ => Vec::new(),
-        };
-        std::fs::write(
-            out.join("time_convergence.svg"),
-            plot::chart(
-                &format!("{name}: change of the solution over the time step"),
-                "Δt (s)",
-                "‖u(Δt) − u(2Δt)‖ (m/s)",
-                &[
-                    Series {
-                        label: "Foehncraft",
-                        points: &pts,
-                        markers: true,
-                    },
-                    Series {
-                        label: "slope 2",
-                        points: &slope,
-                        markers: false,
-                    },
-                ],
-                true,
-                true,
-            ),
-        )?;
     }
     if specs.len() >= 3 && outs.len() == specs.len() {
         let js: Vec<serde_json::Value> = outs
@@ -581,7 +588,12 @@ pub fn run(
         rep.uncertainty = crate::uncertainty::sweep(&js, &sizes);
         rep.uncertainty_of = of;
     }
-    if v.levels.len() >= 2 && v.time_steps.is_empty() && outs.len() == specs.len() {
+    // the velocity against [analytic] (the scalars are checked below)
+    if v.levels.len() >= 2
+        && v.time_steps.is_empty()
+        && outs.len() == specs.len()
+        && outs.iter().all(|o| o.solve.errors.is_some())
+    {
         let e: Vec<&ErrorNorms> = outs
             .iter()
             .filter_map(|s| s.solve.errors.as_ref())
@@ -670,6 +682,14 @@ pub fn run(
         }
     }
     rep.solves = outs.into_iter().map(|o| o.solve).collect();
+    // the scalars with an exact solution: the largest error, the orders
+    // of a sweep over levels (those of a time sweep are above)
+    let levels = if v.time_steps.is_empty() {
+        v.levels.len()
+    } else {
+        0
+    };
+    crate::scalar::check_sweep(&mut rep, v, levels, &mut |l| lg.line(l));
     rep.seconds = t0.elapsed().as_secs_f64();
     crate::case::end_frames(&mut lg, &rep);
     lg.sync(&mut steer.record);
@@ -2434,7 +2454,18 @@ fn run_one<F: FnMut(&str)>(
         )?),
         _ => None,
     };
-    let scalar_fields: Vec<Vec<f64>> = sol.state.scalars.iter().map(|x| x.phi.clone()).collect();
+    // the scalars of the sweeps: those of the full mesh in a conjugate case
+    let (scalar_fields, scalar_volume): (Vec<Vec<f64>>, Vec<f64>) =
+        match (&full_out, fl.cht.as_deref()) {
+            (Some(st), Some(c)) => (
+                st.scalars.iter().map(|x| x.phi.clone()).collect(),
+                c.view.geo.cell_volume[..c.view.mesh.n_cells].to_vec(),
+            ),
+            _ => (
+                sol.state.scalars.iter().map(|x| x.phi.clone()).collect(),
+                geo.cell_volume.clone(),
+            ),
+        };
     let solve = Solve {
         scalars,
         periodic,
@@ -2484,6 +2515,7 @@ fn run_one<F: FnMut(&str)>(
     Ok(RunOut {
         u: sol.state.u.clone(),
         scalars: scalar_fields,
+        scalar_volume,
         solve,
         volume,
         stopped,
