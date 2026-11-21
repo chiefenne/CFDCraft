@@ -202,6 +202,11 @@ struct MaterialsArgs {
     /// Operating pressure (Pa) of the ideal-gas densities.
     #[arg(long, default_value_t = foehncraft_flow::materials::DEFAULT_PRESSURE)]
     pressure: f64,
+    /// A user material database file (repeatable), searched before the
+    /// built-in database like `[materials] include` of a case; the files
+    /// of `FOEHN_MATERIALS` are read as well.
+    #[arg(long = "include", value_name = "FILE")]
+    include: Vec<PathBuf>,
 }
 
 #[derive(clap::Args)]
@@ -624,14 +629,28 @@ fn materials(a: MaterialsArgs, out: Out) -> Result<Done> {
         temperature: a.temperature,
         pressure: a.pressure,
     };
+    let mut lib = m::CaseMaterials {
+        include: a.include.clone(),
+        ..Default::default()
+    };
+    lib.load()?;
     let names: Vec<String> = match &a.name {
         Some(n) => vec![n.clone()],
-        None => m::database().keys().cloned().collect(),
+        None => lib.names(),
     };
     let mut list = Vec::new();
     for n in &names {
-        list.push(m::describe(n, cond)?);
+        list.push(m::describe_in(n, &lib, cond)?);
     }
+    let num = |d: &serde_json::Value, k: &str| -> Option<f64> {
+        d[k]["value"]
+            .as_f64()
+            .or_else(|| d[k]["tensor"][0][0].as_f64())
+    };
+    let cell = |v: Option<f64>, w: usize, p: usize| match v {
+        Some(x) => format!("{x:>w$.p$e}"),
+        None => format!("{:>w$}", "–"),
+    };
     if a.name.is_none() {
         out.line(&format!(
             "material database ({} materials) at T = {} K, p = {} Pa",
@@ -640,8 +659,8 @@ fn materials(a: MaterialsArgs, out: Out) -> Result<Done> {
             a.pressure
         ));
         out.line(&format!(
-            "  {:<18} {:<7} {:>12} {:>12}  {:<16} description",
-            "name", "kind", "ρ (kg/m³)", "μ (Pa s)", "range (K)"
+            "  {:<18} {:<7} {:>11} {:>11} {:>11} {:>11}  {:<16} description",
+            "name", "kind", "ρ (kg/m³)", "μ (Pa s)", "c_p (J/kgK)", "k (W/mK)", "range (K)"
         ));
         for d in &list {
             let range = d["temperature_range"]
@@ -649,11 +668,13 @@ fn materials(a: MaterialsArgs, out: Out) -> Result<Done> {
                 .map(|r| format!("{}–{}", r[0], r[1]))
                 .unwrap_or_default();
             out.line(&format!(
-                "  {:<18} {:<7} {:>12.6} {:>12.5e}  {:<16} {}",
+                "  {:<18} {:<7} {} {} {} {}  {:<16} {}",
                 d["name"].as_str().unwrap_or(""),
                 d["kind"].as_str().unwrap_or(""),
-                d["density"]["value"].as_f64().unwrap_or(f64::NAN),
-                d["viscosity"]["value"].as_f64().unwrap_or(f64::NAN),
+                cell(num(d, "density"), 11, 4),
+                cell(num(d, "viscosity"), 11, 3),
+                cell(num(d, "specific_heat"), 11, 4),
+                cell(num(d, "conductivity"), 11, 3),
                 range,
                 d["description"].as_str().unwrap_or("")
             ));
@@ -664,10 +685,16 @@ fn materials(a: MaterialsArgs, out: Out) -> Result<Done> {
             d["name"].as_str().unwrap_or(""),
             d["description"].as_str().unwrap_or("")
         ));
-        for what in ["density", "viscosity"] {
+        for what in ["density", "viscosity", "specific_heat", "conductivity"] {
+            if d[what].is_null() {
+                continue;
+            }
+            let v = match num(d, what) {
+                Some(x) => format!("{x}"),
+                None => "–".into(),
+            };
             out.line(&format!(
-                "  {what:<10} {} ({})",
-                d[what]["value"].as_f64().unwrap_or(f64::NAN),
+                "  {what:<14} {v} ({})",
                 d[what]["origin"].as_str().unwrap_or("")
             ));
         }

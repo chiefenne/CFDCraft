@@ -1,4 +1,6 @@
-//! Material properties (D94–D102), stage-5 part: density and viscosity.
+//! Material properties (D94–D102): density and viscosity (stage 5), the
+//! thermal data c_p and k with solids and user database files (stage 7,
+//! PR 7.0c).
 //!
 //! Three layers (D94):
 //!
@@ -25,8 +27,17 @@
 //! evaluated once at `[fluid] temperature` (default 293.15 K) and the
 //! operating pressure `[fluid] operating_pressure` (default 101 325 Pa),
 //! the density must be one number for the whole fluid (a varying density
-//! comes with L1), and only the viscosity may vary in space. The thermal
-//! data (c_p, k, NASA-7/9, IAPWS-95) follow with L1.
+//! comes with L1), and only the viscosity may vary in space.
+//!
+//! Thermal data (stage 7, D163): every material may carry a specific heat
+//! c_p (any form above, or NASA-7/9 polynomials with the molar mass) and a
+//! thermal conductivity k (any form, or orthotropic: three principal values
+//! along two given axes). Solids need ρ, c_p and k (MAT006). They are
+//! evaluated by [`thermal_properties`] at any temperature; the energy
+//! equation reads them from PR 7a1 on. User database files
+//! (`[materials] include = [..]`, and the files named by the environment
+//! variable `FOEHN_MATERIALS`) are searched after the case's own materials
+//! and before the built-in database (D97).
 //!
 //! `[fluid] density` and `viscosity` stay valid as the shorthand of one
 //! constant material on the whole mesh (D100), so every older case keeps
@@ -151,18 +162,44 @@ pub enum Form {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         source: Option<String>,
     },
-    /// NASA 7-coefficient polynomials (McBride, Zehe & Gordon 2002); with
-    /// the energy equation (L1).
+    /// NASA 7-coefficient polynomials of the specific heat (the CHEMKIN
+    /// form; McBride, Zehe & Gordon 2002): c_p/R = a₁ + a₂T + a₃T² + a₄T³ +
+    /// a₅T⁴ per temperature range, a₆ and a₇ (enthalpy and entropy
+    /// constants) kept; c_p = (R/M)(c_p/R) with the material's molar mass.
+    /// Only for `specific_heat`.
     Nasa7 {
-        /// The coefficients.
+        /// The range limits (K), increasing: n + 1 values for n ranges
+        /// (the CHEMKIN record: T_low, T_mid, T_high).
+        #[serde(default)]
+        temperature: Vec<f64>,
+        /// a₁…a₇ per range, from the lowest range up.
         #[serde(default)]
         coefficients: Vec<Vec<f64>>,
+        /// A CHEMKIN THERMO file to read the record of `species` from
+        /// (relative to the file that names it), instead of the arrays.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        file: Option<PathBuf>,
+        /// The species name in `file`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        species: Option<String>,
+        /// Where the coefficients come from.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
     },
-    /// NASA 9-coefficient polynomials; with the energy equation (L1).
+    /// NASA 9-coefficient polynomials of the specific heat (McBride, Zehe
+    /// & Gordon 2002): c_p/R = a₁T⁻² + a₂T⁻¹ + a₃ + a₄T + a₅T² + a₆T³ + a₇T⁴
+    /// per range (b₁, b₂ may follow and are kept). Only for
+    /// `specific_heat`.
     Nasa9 {
-        /// The coefficients.
+        /// The range limits (K), increasing: n + 1 values for n ranges.
+        #[serde(default)]
+        temperature: Vec<f64>,
+        /// a₁…a₇ (and b₁, b₂) per range, from the lowest range up.
         #[serde(default)]
         coefficients: Vec<Vec<f64>>,
+        /// Where the coefficients come from.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
     },
 }
 
@@ -190,8 +227,9 @@ impl Form {
             | Form::PowerLaw { source, .. }
             | Form::Table { source, .. }
             | Form::Expression { source, .. }
-            | Form::IdealGas { source, .. } => source.as_deref(),
-            _ => None,
+            | Form::IdealGas { source, .. }
+            | Form::Nasa7 { source, .. }
+            | Form::Nasa9 { source, .. } => source.as_deref(),
         }
     }
 
@@ -200,7 +238,11 @@ impl Form {
             Form::Polynomial { range, .. }
             | Form::Sutherland { range, .. }
             | Form::PowerLaw { range, .. } => *range,
-            Form::Table { temperature, .. } if temperature.len() >= 2 => {
+            Form::Table { temperature, .. }
+            | Form::Nasa7 { temperature, .. }
+            | Form::Nasa9 { temperature, .. }
+                if temperature.len() >= 2 =>
+            {
                 Some([temperature[0], temperature[temperature.len() - 1]])
             }
             _ => None,
@@ -241,6 +283,45 @@ pub enum MaterialKind {
     Solid,
 }
 
+/// A thermal conductivity: one value (any property form) or orthotropic.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum Conductivity {
+    /// The same k in every direction (W/(m K)).
+    Isotropic(Property),
+    /// Three principal values along two given axes (a circuit board, a
+    /// composite, a laminated core).
+    Orthotropic(Box<Orthotropic>),
+}
+
+/// The `form` of an orthotropic conductivity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum OrthotropicForm {
+    /// Three principal values along two given axes.
+    Orthotropic,
+}
+
+/// An orthotropic conductivity K = Σᵢ kᵢ eᵢ eᵢᵀ with e₁ = `axes[0]`, e₂ the
+/// part of `axes[1]` normal to e₁ and e₃ = e₁ × e₂ (all normalised):
+/// `{ form = "orthotropic", values = [k1, k2, k3], axes = [[..], [..]] }`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Orthotropic {
+    /// Always `orthotropic`.
+    pub form: OrthotropicForm,
+    /// k₁, k₂, k₃ along the axes (W/(m K)), each a number, an expression
+    /// or any property form.
+    pub values: [Property; 3],
+    /// The first two principal axes in the mesh frame (the second is made
+    /// normal to the first; not parallel to it). Left out: MAT008.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axes: Option<[[f64; 3]; 2]>,
+    /// Where the values come from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
 /// A material, `[materials.<name>]` of the case or of the database.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -270,6 +351,326 @@ pub struct MaterialSection {
     /// Dynamic viscosity μ (Pa s).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub viscosity: Option<Property>,
+    /// Specific heat at constant pressure c_p (J/(kg K)); with the energy
+    /// equation, and always for solids.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub specific_heat: Option<Property>,
+    /// Thermal conductivity k (W/(m K)), isotropic or orthotropic; with
+    /// the energy equation, and always for solids.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conductivity: Option<Conductivity>,
+}
+
+/// `[materials]` of a case: the case's own materials by name and the user
+/// database files to search after them (D97).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CaseMaterials {
+    /// User database files in the format of the built-in database
+    /// (`format = "foehncraft.materials"`, `[materials.<name>]` tables),
+    /// relative to the case file. They are searched in this order after
+    /// the case's own materials, then the files of `FOEHN_MATERIALS`, then
+    /// the built-in database; a material cannot be named `include`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub include: Vec<PathBuf>,
+    /// The case's materials: new ones, or changes of database materials
+    /// with `base`.
+    #[serde(flatten)]
+    pub named: BTreeMap<String, MaterialSection>,
+    /// The materials read from the user database files, file by file (not
+    /// a key; [`CaseMaterials::load`]).
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub files: Vec<(PathBuf, BTreeMap<String, MaterialSection>)>,
+}
+
+impl From<BTreeMap<String, MaterialSection>> for CaseMaterials {
+    fn from(named: BTreeMap<String, MaterialSection>) -> Self {
+        Self {
+            named,
+            ..Default::default()
+        }
+    }
+}
+
+impl CaseMaterials {
+    /// True without own materials and include files.
+    pub fn is_empty(&self) -> bool {
+        self.include.is_empty() && self.named.is_empty()
+    }
+
+    /// Resolves the include paths against the case directory.
+    pub fn resolve_paths(&mut self, dir: &std::path::Path) {
+        for f in &mut self.include {
+            *f = dir.join(&*f);
+        }
+    }
+
+    /// Reads the include files and the files of `FOEHN_MATERIALS`, and the
+    /// NASA and table data files that the materials name (MAT009 when a
+    /// file does not read).
+    pub fn load(&mut self) -> Result<()> {
+        let mut paths = self.include.clone();
+        if let Some(v) = std::env::var_os("FOEHN_MATERIALS") {
+            paths.extend(std::env::split_paths(&v).filter(|p| !p.as_os_str().is_empty()));
+        }
+        self.files.clear();
+        for p in paths {
+            let text = std::fs::read_to_string(&p).map_err(|e| {
+                mat_err(
+                    diag::MAT_FILE,
+                    "materials.include",
+                    format!("material file {}: {e}", p.display()),
+                )
+            })?;
+            let mut f: DatabaseFile = toml::from_str(&text).map_err(|e| {
+                mat_err(
+                    diag::MAT_FILE,
+                    "materials.include",
+                    format!("material file {}: {e}", p.display()),
+                )
+            })?;
+            if f.format != "foehncraft.materials" {
+                return Err(mat_err(
+                    diag::MAT_FILE,
+                    "materials.include",
+                    format!(
+                        "material file {}: format `{}`, expected `foehncraft.materials`",
+                        p.display(),
+                        f.format
+                    ),
+                ));
+            }
+            let dir = p.parent().unwrap_or(std::path::Path::new("")).to_path_buf();
+            for (n, m) in &mut f.materials {
+                load_data_files(m, &dir, &format!("material {n} ({})", p.display()))?;
+            }
+            self.files.push((p, f.materials));
+        }
+        for (n, m) in &mut self.named {
+            load_data_files(m, std::path::Path::new(""), &format!("materials.{n}"))?;
+        }
+        Ok(())
+    }
+
+    /// The search layers: own materials, the files, the built-in database.
+    fn layers(&self) -> Vec<(&BTreeMap<String, MaterialSection>, String)> {
+        let mut v = vec![(&self.named, "case".to_string())];
+        for (p, m) in &self.files {
+            v.push((m, p.display().to_string()));
+        }
+        v.push((database(), "database".to_string()));
+        v
+    }
+
+    /// Every material name of every layer (the case's first).
+    pub fn names(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for (m, _) in self.layers() {
+            for n in m.keys() {
+                if !out.contains(n) {
+                    out.push(n.clone());
+                }
+            }
+        }
+        out
+    }
+}
+
+/// Reads the data files a material names (NASA-7 CHEMKIN records, table
+/// files) into its forms; `dir` resolves relative paths.
+fn load_data_files(m: &mut MaterialSection, dir: &std::path::Path, owner: &str) -> Result<()> {
+    let mut forms: Vec<(&str, &mut Form)> = Vec::new();
+    for (what, p) in [
+        ("density", m.density.as_mut()),
+        ("viscosity", m.viscosity.as_mut()),
+        ("specific_heat", m.specific_heat.as_mut()),
+    ] {
+        if let Some(Property::Form(f)) = p {
+            forms.push((what, f));
+        }
+    }
+    match m.conductivity.as_mut() {
+        Some(Conductivity::Isotropic(Property::Form(f))) => forms.push(("conductivity", f)),
+        Some(Conductivity::Orthotropic(o)) => {
+            for p in o.values.iter_mut() {
+                if let Property::Form(f) = p {
+                    forms.push(("conductivity", f));
+                }
+            }
+        }
+        _ => {}
+    }
+    for (what, f) in forms {
+        let key = format!("{owner}.{what}");
+        let read = |file: &PathBuf| -> Result<String> {
+            let path = dir.join(file);
+            std::fs::read_to_string(&path).map_err(|e| {
+                mat_err(
+                    diag::MAT_FILE,
+                    &key,
+                    format!("{key}: data file {}: {e}", path.display()),
+                )
+            })
+        };
+        match f {
+            Form::Nasa7 {
+                temperature,
+                coefficients,
+                file,
+                species,
+                source,
+            } => {
+                let Some(path) = file.take() else { continue };
+                let text = read(&path)?;
+                let sp = species.clone().ok_or_else(|| {
+                    mat_err(
+                        diag::MAT_FORM,
+                        &key,
+                        format!("{key}: a NASA-7 `file` needs `species`"),
+                    )
+                })?;
+                let (t, c) = nasa7_from_chemkin(&text, &sp).map_err(|e| {
+                    mat_err(
+                        diag::MAT_FILE,
+                        &key,
+                        format!("{key}: {}: {e:#}", dir.join(&path).display()),
+                    )
+                })?;
+                *temperature = t;
+                *coefficients = c;
+                if source.is_none() {
+                    *source = Some(format!("NASA-7 record {sp} of {}", path.display()));
+                }
+            }
+            Form::Table {
+                temperature,
+                values,
+                file,
+                ..
+            } => {
+                let Some(path) = file.take() else { continue };
+                let text = read(&path)?;
+                let (t, v) = two_columns(&text).map_err(|e| {
+                    mat_err(
+                        diag::MAT_FILE,
+                        &key,
+                        format!("{key}: {}: {e}", dir.join(&path).display()),
+                    )
+                })?;
+                *temperature = t;
+                *values = v;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// The rows `T value` of a two-column text file (`#` comments, blank
+/// lines, commas or white space between the columns).
+fn two_columns(text: &str) -> std::result::Result<(Vec<f64>, Vec<f64>), String> {
+    let (mut t, mut v) = (Vec::new(), Vec::new());
+    for (i, line) in text.lines().enumerate() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        let cols: Vec<&str> = line
+            .split(|c: char| c == ',' || c.is_whitespace())
+            .filter(|c| !c.is_empty())
+            .collect();
+        let num = |c: &str| {
+            c.parse::<f64>()
+                .map_err(|_| format!("line {}: `{c}` is not a number", i + 1))
+        };
+        // a header line of names before the data
+        if t.is_empty() && !cols.is_empty() && cols.iter().all(|c| c.parse::<f64>().is_err()) {
+            continue;
+        }
+        if cols.len() != 2 {
+            return Err(format!("line {}: two columns (T, value) expected", i + 1));
+        }
+        t.push(num(cols[0])?);
+        v.push(num(cols[1])?);
+    }
+    Ok((t, v))
+}
+
+/// The NASA-7 record of `species` in a CHEMKIN THERMO text (fixed columns:
+/// line 1 with the name in columns 1–18, T_low, T_high and T_mid in
+/// columns 46–55, 56–65 and 66–73 and `1` in column 80; lines 2–4 with
+/// five numbers of 15 columns each: a₁…a₇ of the upper range, then a₁…a₇
+/// of the lower range). A `THERMO` header line with default temperatures
+/// supplies T_mid when the record leaves it blank. Returns the range
+/// limits and the coefficients from the lowest range up.
+#[allow(clippy::type_complexity)]
+pub fn nasa7_from_chemkin(text: &str, species: &str) -> Result<(Vec<f64>, Vec<Vec<f64>>)> {
+    let lines: Vec<&str> = text.lines().collect();
+    let field = |l: &str, a: usize, b: usize| -> String {
+        l.chars()
+            .skip(a)
+            .take(b - a)
+            .collect::<String>()
+            .trim()
+            .to_string()
+    };
+    let parse = |s: &str| -> Result<f64> {
+        s.replace(['D', 'd'], "E")
+            .parse::<f64>()
+            .map_err(|_| anyhow::anyhow!("`{s}` is not a number"))
+    };
+    // default T_mid of the THERMO header (line after `THERMO`)
+    let mut t_mid_default = None;
+    for (i, l) in lines.iter().enumerate() {
+        if l.trim_start().to_ascii_uppercase().starts_with("THERMO") {
+            if let Some(h) = lines.get(i + 1) {
+                let v: Vec<f64> = h
+                    .split_whitespace()
+                    .filter_map(|x| x.parse::<f64>().ok())
+                    .collect();
+                if v.len() >= 3 {
+                    t_mid_default = Some(v[1]);
+                }
+            }
+            break;
+        }
+    }
+    let i = lines
+        .iter()
+        .position(|l| {
+            l.len() >= 80
+                && l.chars().nth(79) == Some('1')
+                && l.split_whitespace().next() == Some(species)
+        })
+        .ok_or_else(|| anyhow::anyhow!("no NASA-7 record of `{species}`"))?;
+    anyhow::ensure!(
+        i + 3 < lines.len(),
+        "the record of `{species}` has fewer than four lines"
+    );
+    let l1 = lines[i];
+    let t_low = parse(&field(l1, 45, 55))?;
+    let t_high = parse(&field(l1, 55, 65))?;
+    let mid = field(l1, 65, 73);
+    let t_mid = if mid.is_empty() {
+        t_mid_default.ok_or_else(|| anyhow::anyhow!("no T_mid for `{species}`"))?
+    } else {
+        parse(&mid)?
+    };
+    let mut a = Vec::with_capacity(15);
+    for (k, line) in lines[i + 1..i + 4].iter().enumerate() {
+        let n = if k == 2 { 4 } else { 5 };
+        for j in 0..n {
+            a.push(parse(&field(line, 15 * j, 15 * (j + 1)))?);
+        }
+    }
+    anyhow::ensure!(
+        t_low < t_mid && t_mid < t_high,
+        "the ranges of `{species}` are not increasing: {t_low}, {t_mid}, {t_high}"
+    );
+    Ok((
+        vec![t_low, t_mid, t_high],
+        vec![a[7..14].to_vec(), a[0..7].to_vec()],
+    ))
 }
 
 /// The kind of a region (D112).
@@ -301,11 +702,28 @@ pub struct RegionSection {
     pub material: Option<String>,
 }
 
+/// The JSON Schema of `[materials]`: the include list and, for every other
+/// key, a material (D77: the keys of the case file are documented).
+pub fn case_materials_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let m = generator.subschema_for::<MaterialSection>();
+    schemars::json_schema!({
+        "type": "object",
+        "description": "Materials of the case (D94): new ones, or changes of database materials with `base`. The key `include` lists user database files (D97).",
+        "properties": {
+            "include": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "User database files in the format of the built-in database, relative to the case file; searched after the case's own materials and before the built-in database."
+            }
+        },
+        "additionalProperties": m
+    })
+}
+
 /// The database file.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DatabaseFile {
-    #[allow(dead_code)]
     format: String,
     #[allow(dead_code)]
     format_version: String,
@@ -351,18 +769,27 @@ fn mat_err(code: &'static str, key: &str, m: String) -> anyhow::Error {
     diag::err(Diagnostic::new(code, m).key(key))
 }
 
-/// The material `name` with its `base` chain merged (case materials first,
-/// then the database).
-pub fn lookup(name: &str, case: &BTreeMap<String, MaterialSection>) -> Result<MaterialSection> {
-    let mut seen: Vec<(String, bool)> = Vec::new();
-    let mut layers: Vec<MaterialSection> = Vec::new();
+/// The material `name` with its `base` chain merged (the case's materials
+/// first, then the user database files in order, then the built-in
+/// database).
+pub fn lookup(name: &str, lib: &CaseMaterials) -> Result<MaterialSection> {
+    Ok(lookup_layer(name, lib)?.0)
+}
+
+/// As [`lookup`], with the layer of `name` itself (0: the case, then the
+/// files, the database last) and its label.
+fn lookup_layer(name: &str, lib: &CaseMaterials) -> Result<(MaterialSection, usize, String)> {
+    let layers = lib.layers();
+    let mut seen: Vec<(String, usize)> = Vec::new();
+    let mut chain: Vec<MaterialSection> = Vec::new();
+    let mut found: Option<(usize, String)> = None;
     let mut cur = name.to_string();
-    // a database material's base is a database material; a case material
-    // may take the name of a database one and change it, its `base` of
-    // the same name then means the database entry
-    let mut db_only = false;
+    // a material's `base` is searched from its own layer on; a `base` of
+    // its own name means the next layers (a case material that changes a
+    // database one of the same name)
+    let mut start = 0;
     loop {
-        if seen.contains(&(cur.clone(), db_only)) || seen.len() > 32 {
+        if seen.contains(&(cur.clone(), start)) || seen.len() > 32 {
             let names: Vec<&str> = seen.iter().map(|s| s.0.as_str()).collect();
             return Err(mat_err(
                 diag::MAT_BASE,
@@ -373,31 +800,27 @@ pub fn lookup(name: &str, case: &BTreeMap<String, MaterialSection>) -> Result<Ma
                 ),
             ));
         }
-        seen.push((cur.clone(), db_only));
-        let (m, in_case) = match (db_only, case.get(&cur), database().get(&cur)) {
-            (false, Some(m), _) => (m, true),
-            (_, _, Some(m)) => (m, false),
-            _ => {
-                let names: Vec<&str> = case
-                    .keys()
-                    .chain(database().keys())
-                    .map(String::as_str)
-                    .collect();
-                let hint = match crate::bc::did_you_mean(&cur, names.iter().copied()) {
-                    Some(c) => format!(" (did you mean `{c}`?)"),
-                    None => String::new(),
-                };
-                return Err(mat_err(
-                    diag::MAT_UNKNOWN,
-                    "fluid.material",
-                    format!("unknown material `{cur}`{hint}; `foehn materials` lists the database"),
-                ));
-            }
+        seen.push((cur.clone(), start));
+        let Some(i) = (start..layers.len()).find(|&i| layers[i].0.contains_key(&cur)) else {
+            let names = lib.names();
+            let hint = match crate::bc::did_you_mean(&cur, names.iter().map(String::as_str)) {
+                Some(c) => format!(" (did you mean `{c}`?)"),
+                None => String::new(),
+            };
+            return Err(mat_err(
+                diag::MAT_UNKNOWN,
+                "fluid.material",
+                format!("unknown material `{cur}`{hint}; `foehn materials` lists the database"),
+            ));
         };
-        layers.push(m.clone());
+        let m = &layers[i].0[&cur];
+        if found.is_none() {
+            found = Some((i, layers[i].1.clone()));
+        }
+        chain.push(m.clone());
         match &m.base {
             Some(b) => {
-                db_only = !in_case || *b == cur;
+                start = if *b == cur { i + 1 } else { i };
                 cur = b.clone();
             }
             None => break,
@@ -405,18 +828,20 @@ pub fn lookup(name: &str, case: &BTreeMap<String, MaterialSection>) -> Result<Ma
     }
     // merge from the root up
     let mut out = MaterialSection::default();
-    for m in layers.into_iter().rev() {
-        let m2 = m.clone();
-        out.description = m2.description.or(out.description);
-        out.kind = m2.kind.or(out.kind);
-        out.temperature_range = m2.temperature_range.or(out.temperature_range);
-        out.molar_mass = m2.molar_mass.or(out.molar_mass);
-        out.molar_mass_source = m2.molar_mass_source.or(out.molar_mass_source);
-        out.density = m2.density.or(out.density);
-        out.viscosity = m2.viscosity.or(out.viscosity);
+    for m in chain.into_iter().rev() {
+        out.description = m.description.or(out.description);
+        out.kind = m.kind.or(out.kind);
+        out.temperature_range = m.temperature_range.or(out.temperature_range);
+        out.molar_mass = m.molar_mass.or(out.molar_mass);
+        out.molar_mass_source = m.molar_mass_source.or(out.molar_mass_source);
+        out.density = m.density.or(out.density);
+        out.viscosity = m.viscosity.or(out.viscosity);
+        out.specific_heat = m.specific_heat.or(out.specific_heat);
+        out.conductivity = m.conductivity.or(out.conductivity);
     }
     out.base = None;
-    Ok(out)
+    let (layer, label) = found.unwrap_or((0, String::new()));
+    Ok((out, layer, label))
 }
 
 /// One resolved property.
@@ -643,16 +1068,39 @@ fn evaluate(
                         ),
                     )
                 }
-                Form::Nasa7 { .. } | Form::Nasa9 { .. } => {
-                    return Err(mat_err(
-                        diag::MAT_FORM,
-                        &key,
-                        format!(
-                            "{key}: the {} form gives c_p, h and s and comes with the energy \
-                             equation (L1)",
-                            f.name()
-                        ),
-                    ));
+                Form::Nasa7 {
+                    temperature,
+                    coefficients,
+                    ..
+                }
+                | Form::Nasa9 {
+                    temperature,
+                    coefficients,
+                    ..
+                } => {
+                    if what != "specific_heat" {
+                        return Err(mat_err(
+                            diag::MAT_FORM,
+                            &key,
+                            format!("{key}: the {} form gives the specific heat only", f.name()),
+                        ));
+                    }
+                    let nine = matches!(f, Form::Nasa9 { .. });
+                    check_nasa(temperature, coefficients, nine, &key)?;
+                    let mm = m.molar_mass.ok_or_else(|| {
+                        mat_err(
+                            diag::MAT_FORM,
+                            &key,
+                            format!(
+                                "{key}: the {} form needs the material's `molar_mass`",
+                                f.name()
+                            ),
+                        )
+                    })?;
+                    num(
+                        R_GAS / mm * nasa_cp_over_r(temperature, coefficients, nine, tt),
+                        origin(&format!(", M = {mm} kg/mol")),
+                    )
                 }
             }
         }
@@ -667,6 +1115,44 @@ fn evaluate(
         ));
     }
     Ok(r)
+}
+
+/// c_p/R of NASA-7 (`nine` false) or NASA-9 polynomials at `t` (inside the
+/// ranges; the range of the upper limit at a shared limit).
+pub fn nasa_cp_over_r(temperature: &[f64], coefficients: &[Vec<f64>], nine: bool, t: f64) -> f64 {
+    let n = coefficients.len();
+    let i = (0..n).find(|&i| t <= temperature[i + 1]).unwrap_or(n - 1);
+    let a = &coefficients[i];
+    if nine {
+        a[0] / (t * t) + a[1] / t + a[2] + t * (a[3] + t * (a[4] + t * (a[5] + t * a[6])))
+    } else {
+        a[0] + t * (a[1] + t * (a[2] + t * (a[3] + t * a[4])))
+    }
+}
+
+fn check_nasa(t: &[f64], c: &[Vec<f64>], nine: bool, key: &str) -> Result<()> {
+    let need = if nine { [7, 9] } else { [7, 7] };
+    let ok = !c.is_empty()
+        && t.len() == c.len() + 1
+        && t.iter().all(|x| x.is_finite() && *x > 0.0)
+        && t.windows(2).all(|w| w[1] > w[0])
+        && c.iter()
+            .all(|r| need.contains(&r.len()) && r.iter().all(|x| x.is_finite()));
+    if ok {
+        return Ok(());
+    }
+    Err(mat_err(
+        diag::MAT_FORM,
+        key,
+        format!(
+            "{key}: NASA-{} needs n ranges with {} coefficients each and n + 1 increasing \
+             positive `temperature` limits (has {} ranges, {} limits)",
+            if nine { 9 } else { 7 },
+            if nine { "7 or 9" } else { "7" },
+            c.len(),
+            t.len()
+        ),
+    ))
 }
 
 fn linear(xs: &[f64], ys: &[f64], x: f64) -> f64 {
@@ -704,11 +1190,20 @@ fn check_table(t: &[f64], v: &[f64], key: &str) -> Result<()> {
     Ok(())
 }
 
+/// How messages name a material of layer `layer` (0: the case).
+fn owner_label(name: &str, layer: usize, label: &str) -> String {
+    match (layer, label) {
+        (0, _) => format!("materials.{name}"),
+        (_, "database") => format!("material {name}"),
+        (_, file) => format!("material {name} ({file})"),
+    }
+}
+
 /// The properties of a material (`None`: the shorthand of `[fluid]`), with
 /// the `[fluid]` density and viscosity replacing the material's.
 pub fn resolve_material(
     name: Option<&str>,
-    case_materials: &BTreeMap<String, MaterialSection>,
+    case_materials: &CaseMaterials,
     fluid_density: Option<&Scalar>,
     fluid_viscosity: Option<&Scalar>,
     env: &Env,
@@ -716,14 +1211,10 @@ pub fn resolve_material(
     warnings: &mut Vec<Diagnostic>,
 ) -> Result<MaterialProperties> {
     let (m, owner) = match name {
-        Some(n) => (
-            lookup(n, case_materials)?,
-            if case_materials.contains_key(n) {
-                format!("materials.{n}")
-            } else {
-                format!("material {n}")
-            },
-        ),
+        Some(n) => {
+            let (m, layer, label) = lookup_layer(n, case_materials)?;
+            (m, owner_label(n, layer, &label))
+        }
         None => (MaterialSection::default(), "fluid".to_string()),
     };
     if m.kind == Some(MaterialKind::Solid) {
@@ -777,6 +1268,214 @@ pub fn resolve_material(
         material: name.map(str::to_string),
         density,
         viscosity,
+    })
+}
+
+/// A resolved thermal conductivity.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResolvedConductivity {
+    /// One value.
+    Isotropic(Resolved),
+    /// Principal values, the orthonormal axes (rows e₁, e₂, e₃) and the
+    /// tensor K = Σᵢ kᵢ eᵢ eᵢᵀ in the mesh frame.
+    Orthotropic {
+        /// k₁, k₂, k₃ (W/(m K)).
+        principal: [f64; 3],
+        /// e₁, e₂, e₃.
+        axes: [[f64; 3]; 3],
+        /// K.
+        tensor: [[f64; 3]; 3],
+        /// How it was obtained.
+        origin: String,
+    },
+}
+
+impl ResolvedConductivity {
+    /// The conductivity tensor (k I for an isotropic value).
+    pub fn tensor(&self) -> [[f64; 3]; 3] {
+        match self {
+            ResolvedConductivity::Isotropic(r) => {
+                let k = r.value.constant().unwrap_or(f64::NAN);
+                [[k, 0.0, 0.0], [0.0, k, 0.0], [0.0, 0.0, k]]
+            }
+            ResolvedConductivity::Orthotropic { tensor, .. } => *tensor,
+        }
+    }
+}
+
+/// The thermal data of one material at one temperature.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Thermal {
+    /// The material.
+    pub material: String,
+    /// Gas, liquid or solid.
+    pub kind: Option<MaterialKind>,
+    /// Density ρ.
+    pub density: Option<Resolved>,
+    /// Specific heat c_p.
+    pub specific_heat: Option<Resolved>,
+    /// Thermal conductivity k.
+    pub conductivity: Option<ResolvedConductivity>,
+}
+
+impl Thermal {
+    /// MAT007 unless c_p and k are both given (a fluid in a run with the
+    /// energy equation; solids are checked by [`thermal_properties`]).
+    pub fn require(&self) -> Result<()> {
+        let missing: Vec<&str> = [
+            ("specific_heat", self.specific_heat.is_none()),
+            ("conductivity", self.conductivity.is_none()),
+        ]
+        .iter()
+        .filter(|x| x.1)
+        .map(|x| x.0)
+        .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        Err(mat_err(
+            diag::MAT_THERMAL,
+            &format!("materials.{}", self.material),
+            format!(
+                "material `{}` has no {}; the energy equation needs c_p and k of every fluid \
+                 (give them in [materials.{}], with `base = \"{}\"` to keep the rest)",
+                self.material,
+                missing.join(" and no "),
+                self.material,
+                self.material
+            ),
+        ))
+    }
+}
+
+fn normalised(v: [f64; 3]) -> Option<[f64; 3]> {
+    let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    (n > 0.0 && n.is_finite()).then(|| [v[0] / n, v[1] / n, v[2] / n])
+}
+
+/// The orthonormal axes of an orthotropic conductivity (MAT008 without
+/// both axes, or with parallel ones).
+fn axes_of(o: &Orthotropic, key: &str) -> Result<[[f64; 3]; 3]> {
+    let bad = |m: String| mat_err(diag::MAT_AXES, key, m);
+    let Some([a1, a2]) = o.axes else {
+        return Err(bad(format!(
+            "{key}: an orthotropic conductivity needs `axes` (the directions of k₁ and k₂ in \
+             the mesh frame)"
+        )));
+    };
+    let e1 = normalised(a1).ok_or_else(|| bad(format!("{key}: `axes[0]` has no length")))?;
+    let d = a2[0] * e1[0] + a2[1] * e1[1] + a2[2] * e1[2];
+    let e2 = normalised([a2[0] - d * e1[0], a2[1] - d * e1[1], a2[2] - d * e1[2]])
+        .filter(|_| {
+            let n2 = (a2[0] * a2[0] + a2[1] * a2[1] + a2[2] * a2[2]).sqrt();
+            (a2[0] - d * e1[0])
+                .hypot(a2[1] - d * e1[1])
+                .hypot(a2[2] - d * e1[2])
+                > 1e-6 * n2
+        })
+        .ok_or_else(|| {
+            bad(format!(
+                "{key}: `axes[1]` is parallel to `axes[0]` or has no length"
+            ))
+        })?;
+    let e3 = [
+        e1[1] * e2[2] - e1[2] * e2[1],
+        e1[2] * e2[0] - e1[0] * e2[2],
+        e1[0] * e2[1] - e1[1] * e2[0],
+    ];
+    Ok([e1, e2, e3])
+}
+
+/// The thermal data of material `name` at the temperature of `cond`
+/// (forms evaluated there, clamped with MAT003 outside their ranges).
+/// A solid must have ρ, c_p and k (MAT006); an orthotropic k needs its
+/// axes (MAT008).
+pub fn thermal_properties(
+    name: &str,
+    lib: &CaseMaterials,
+    env: &Env,
+    cond: Conditions,
+    warnings: &mut Vec<Diagnostic>,
+) -> Result<Thermal> {
+    let (m, layer, label) = lookup_layer(name, lib)?;
+    let owner = owner_label(name, layer, &label);
+    if m.kind == Some(MaterialKind::Solid) {
+        let missing: Vec<&str> = [
+            ("density", m.density.is_none()),
+            ("specific_heat", m.specific_heat.is_none()),
+            ("conductivity", m.conductivity.is_none()),
+        ]
+        .iter()
+        .filter(|x| x.1)
+        .map(|x| x.0)
+        .collect();
+        if !missing.is_empty() {
+            return Err(mat_err(
+                diag::MAT_SOLID,
+                &owner,
+                format!(
+                    "{owner} is a solid without {}: a solid needs density, specific_heat and \
+                     conductivity",
+                    missing.join(", ")
+                ),
+            ));
+        }
+    }
+    let one = |p: &Property, what: &str, w: &mut Vec<Diagnostic>| {
+        evaluate(p, what, &owner, &m, env, cond, false, w)
+    };
+    let density = match &m.density {
+        Some(p) => Some(one(p, "density", warnings)?),
+        None => None,
+    };
+    let specific_heat = match &m.specific_heat {
+        Some(p) => Some(one(p, "specific_heat", warnings)?),
+        None => None,
+    };
+    let conductivity = match &m.conductivity {
+        None => None,
+        Some(Conductivity::Isotropic(p)) => Some(ResolvedConductivity::Isotropic(one(
+            p,
+            "conductivity",
+            warnings,
+        )?)),
+        Some(Conductivity::Orthotropic(o)) => {
+            let key = format!("{owner}.conductivity");
+            let axes = axes_of(o, &key)?;
+            let mut k = [0.0; 3];
+            let mut origins = Vec::new();
+            for (i, p) in o.values.iter().enumerate() {
+                let r = one(p, &format!("conductivity.values[{i}]"), warnings)?;
+                k[i] = r.value.constant().unwrap_or(f64::NAN);
+                origins.push(r.origin);
+            }
+            let mut t = [[0.0; 3]; 3];
+            for (ki, e) in k.iter().zip(&axes) {
+                for a in 0..3 {
+                    for b in 0..3 {
+                        t[a][b] += ki * e[a] * e[b];
+                    }
+                }
+            }
+            let src = o
+                .source
+                .as_deref()
+                .map(|s| format!("; {s}"))
+                .unwrap_or_default();
+            Some(ResolvedConductivity::Orthotropic {
+                principal: k,
+                axes,
+                tensor: t,
+                origin: format!("orthotropic [{}]{src}", origins.join(" | ")),
+            })
+        }
+    };
+    Ok(Thermal {
+        material: name.to_string(),
+        kind: m.kind,
+        density,
+        specific_heat,
+        conductivity,
     })
 }
 
@@ -908,36 +1607,73 @@ impl PropertySet {
 /// The JSON description of a database material at the conditions (for
 /// `foehn materials`).
 pub fn describe(name: &str, cond: Conditions) -> Result<serde_json::Value> {
-    let m = lookup(name, &BTreeMap::new())?;
+    describe_in(name, &CaseMaterials::default(), cond)
+}
+
+/// As [`describe`], for a material of the case materials or user database
+/// files `lib` as well.
+pub fn describe_in(name: &str, lib: &CaseMaterials, cond: Conditions) -> Result<serde_json::Value> {
+    let (m, _, label) = lookup_layer(name, lib)?;
     let mut warnings = Vec::new();
-    let p = resolve_material(
-        Some(name),
-        &BTreeMap::new(),
-        None,
-        None,
-        &Env::default(),
-        cond,
-        &mut warnings,
-    )?;
+    let env = Env::default();
+    let th = thermal_properties(name, lib, &env, cond, &mut warnings)?;
     let prop = |r: &Resolved| {
         serde_json::json!({
             "value": r.value.constant(),
             "origin": r.origin,
         })
     };
+    // fluids: density and viscosity as the flow takes them
+    let (density, viscosity) = if m.kind == Some(MaterialKind::Solid) {
+        (th.density.as_ref().map(prop), None)
+    } else {
+        let p = resolve_material(Some(name), lib, None, None, &env, cond, &mut warnings)?;
+        (Some(prop(&p.density)), Some(prop(&p.viscosity)))
+    };
+    let conductivity = th.conductivity.as_ref().map(|k| match k {
+        ResolvedConductivity::Isotropic(r) => prop(r),
+        ResolvedConductivity::Orthotropic {
+            principal,
+            axes,
+            tensor,
+            origin,
+        } => serde_json::json!({
+            "principal": principal,
+            "axes": axes,
+            "tensor": tensor,
+            "origin": origin,
+        }),
+    });
+    let form = |p: &Option<Property>| {
+        p.as_ref().map(|d| match d {
+            Property::Form(f) => f.name(),
+            Property::Number(_) => "number",
+            Property::Expr(_) => "expression",
+        })
+    };
+    let kform = m.conductivity.as_ref().map(|k| match k {
+        Conductivity::Isotropic(p) => form(&Some(p.clone())).unwrap_or("number"),
+        Conductivity::Orthotropic(_) => "orthotropic",
+    });
+    warnings.dedup_by(|a, b| a.message == b.message);
     Ok(serde_json::json!({
         "name": name,
+        "from": label,
         "description": m.description,
         "kind": m.kind,
         "temperature_range": m.temperature_range,
         "molar_mass": m.molar_mass,
         "temperature": cond.temperature,
         "operating_pressure": cond.pressure,
-        "density": prop(&p.density),
-        "viscosity": prop(&p.viscosity),
+        "density": density,
+        "viscosity": viscosity,
+        "specific_heat": th.specific_heat.as_ref().map(prop),
+        "conductivity": conductivity,
         "forms": {
-            "density": m.density.as_ref().map(|d| match d { Property::Form(f) => f.name(), Property::Number(_) => "number", Property::Expr(_) => "expression" }),
-            "viscosity": m.viscosity.as_ref().map(|d| match d { Property::Form(f) => f.name(), Property::Number(_) => "number", Property::Expr(_) => "expression" }),
+            "density": form(&m.density),
+            "viscosity": form(&m.viscosity),
+            "specific_heat": form(&m.specific_heat),
+            "conductivity": kform,
         },
         "warnings": warnings.iter().map(|w| w.message.clone()).collect::<Vec<_>>(),
     }))
@@ -951,7 +1687,7 @@ mod tests {
         let mut w = Vec::new();
         resolve_material(
             Some(name),
-            &BTreeMap::new(),
+            &CaseMaterials::default(),
             None,
             None,
             &Env::default(),
@@ -1016,7 +1752,7 @@ mod tests {
         );
         let p = resolve_material(
             Some("thin-oil"),
-            &case,
+            &CaseMaterials::from(case),
             None,
             None,
             &Env::default(),
@@ -1049,7 +1785,7 @@ mod tests {
         );
         let e = resolve_material(
             Some("a"),
-            &case,
+            &CaseMaterials::from(case),
             None,
             None,
             &Env::default(),
@@ -1061,7 +1797,7 @@ mod tests {
         // an unknown name with a hint
         let e = resolve_material(
             Some("watr"),
-            &BTreeMap::new(),
+            &CaseMaterials::default(),
             None,
             None,
             &Env::default(),
@@ -1077,7 +1813,7 @@ mod tests {
         let mut w = Vec::new();
         let e = resolve_material(
             None,
-            &BTreeMap::new(),
+            &CaseMaterials::default(),
             Some(&Scalar::Expr("1000 + x".into())),
             None,
             &Env::default(),
@@ -1089,7 +1825,7 @@ mod tests {
         // T in an expression is the case temperature
         let p = resolve_material(
             None,
-            &BTreeMap::new(),
+            &CaseMaterials::default(),
             None,
             Some(&Scalar::Expr("1e-3 * T / 293.15".into())),
             &Env::default(),
@@ -1098,5 +1834,364 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p.viscosity.value.constant(), Some(1e-3));
+    }
+
+    fn lib_with(name: &str, m: MaterialSection) -> CaseMaterials {
+        let mut named = BTreeMap::new();
+        named.insert(name.to_string(), m);
+        CaseMaterials::from(named)
+    }
+
+    fn th(lib: &CaseMaterials, name: &str, t: f64) -> Result<Thermal> {
+        let mut w = Vec::new();
+        thermal_properties(
+            name,
+            lib,
+            &Env::default(),
+            Conditions {
+                temperature: t,
+                pressure: DEFAULT_PRESSURE,
+            },
+            &mut w,
+        )
+    }
+
+    #[test]
+    fn nasa_forms_give_cp_and_are_continuous_at_the_mid_limit() {
+        // N2 (NASA-7, McBride, Zehe & Gordon 2002 / GRI-Mech 3.0 THERMO):
+        // c_p/R at 300 K is 3.5 (a1 + a2 T + ...), the table value
+        // c_p = 1040 J/(kg K) at 300 K (Incropera Table A.4: 1.039 kJ/(kg K)).
+        let lo = vec![
+            3.298_677,
+            1.408_240_4e-3,
+            -3.963_222e-6,
+            5.641_515e-9,
+            -2.444_854e-12,
+            -1020.8999,
+            3.950_372,
+        ];
+        let hi = vec![
+            2.926_640,
+            1.487_976_8e-3,
+            -5.684_761_e-7,
+            1.009_704_e-10,
+            -6.753_351e-15,
+            -922.7977,
+            5.980_528,
+        ];
+        let m = MaterialSection {
+            molar_mass: Some(0.028_013_4),
+            specific_heat: Some(Property::Form(Form::Nasa7 {
+                temperature: vec![200.0, 1000.0, 5000.0],
+                coefficients: vec![lo.clone(), hi.clone()],
+                file: None,
+                species: None,
+                source: Some("GRI-Mech 3.0 THERMO".into()),
+            })),
+            ..Default::default()
+        };
+        let lib = lib_with("n2", m);
+        let cp = |t: f64| {
+            th(&lib, "n2", t)
+                .unwrap()
+                .specific_heat
+                .unwrap()
+                .value
+                .constant()
+                .unwrap()
+        };
+        assert!((cp(300.0) - 1039.0).abs() < 3.0, "{}", cp(300.0));
+        // the two ranges agree at T_mid to a part in a hundred
+        let (a, b) = (cp(1000.0 - 1e-9), cp(1000.0 + 1e-9));
+        assert!((a - b).abs() / a < 0.01, "{a} {b}");
+        // NASA-9 with the same c_p/R shape: a3 only, constant c_p/R = 3.5
+        let m9 = MaterialSection {
+            molar_mass: Some(0.028_013_4),
+            specific_heat: Some(Property::Form(Form::Nasa9 {
+                temperature: vec![200.0, 6000.0],
+                coefficients: vec![vec![0.0, 0.0, 3.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
+                source: None,
+            })),
+            ..Default::default()
+        };
+        let lib9 = lib_with("c", m9);
+        let c = th(&lib9, "c", 400.0).unwrap().specific_heat.unwrap();
+        assert!((c.value.constant().unwrap() - R_GAS / 0.028_013_4 * 3.5).abs() < 1e-9);
+        // a NASA form for another property, and one without molar mass
+        let bad = MaterialSection {
+            density: Some(Property::Form(Form::Nasa9 {
+                temperature: vec![200.0, 6000.0],
+                coefficients: vec![vec![0.0; 9]],
+                source: None,
+            })),
+            ..Default::default()
+        };
+        let e = th(&lib_with("b", bad), "b", 300.0).unwrap_err();
+        assert_eq!(diag::of_error(&e).code, diag::MAT_FORM);
+    }
+
+    #[test]
+    fn chemkin_records_are_read() {
+        // an N2 record in the fixed CHEMKIN columns (the NASA/Burcat
+        // coefficients for 200-1000-6000 K, public data)
+        let p = |x: &str| format!("{x:>15}");
+        let l1 = format!(
+            "{:<18}{:<6}{:<20}{}{:>10}{:>10}{:>8}{:<6}1",
+            "N2", "G 8/02", "N   2", "G", "200.000", "6000.000", "1000.000", ""
+        );
+        let l2 = [
+            "2.95257637E+00",
+            "1.39690040E-03",
+            "-4.92631603E-07",
+            "7.86010195E-11",
+            "-4.60755204E-15",
+        ]
+        .map(p)
+        .concat()
+            + &format!("{:>5}", "2");
+        let l3 = [
+            "-9.23948688E+02",
+            "5.87188762E+00",
+            "3.53100528E+00",
+            "-1.23660988E-04",
+            "-5.02999433E-07",
+        ]
+        .map(p)
+        .concat()
+            + &format!("{:>5}", "3");
+        let l4 = [
+            "2.43530612E-09",
+            "-1.40881235E-12",
+            "-1.04697628E+03",
+            "2.96747038E+00",
+        ]
+        .map(p)
+        .concat()
+            + &format!("{:>20}", "4");
+        let rec = format!("THERMO\n   300.000  1000.000  5000.000\n{l1}\n{l2}\n{l3}\n{l4}\nEND\n");
+        let rec = rec.as_str();
+        let (t, c) = nasa7_from_chemkin(rec, "N2").unwrap();
+        assert_eq!(t, vec![200.0, 1000.0, 6000.0]);
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0][0], 3.53100528);
+        assert_eq!(c[1][0], 2.95257637);
+        let cpr = nasa_cp_over_r(&t, &c, false, 300.0);
+        assert!((cpr - 3.5).abs() < 0.01, "{cpr}");
+        assert!(nasa7_from_chemkin(rec, "O2").is_err());
+    }
+
+    #[test]
+    fn orthotropic_k_builds_the_rotated_tensor() {
+        let m = MaterialSection {
+            kind: Some(MaterialKind::Solid),
+            density: Some(Property::Number(7650.0)),
+            specific_heat: Some(Property::Number(460.0)),
+            conductivity: Some(Conductivity::Orthotropic(Box::new(Orthotropic {
+                form: OrthotropicForm::Orthotropic,
+                values: [
+                    Property::Number(25.0),
+                    Property::Number(25.0),
+                    Property::Number(1.0),
+                ],
+                // the sheets lie in a plane tilted 30 degrees about x
+                axes: Some([[1.0, 0.0, 0.0], [0.0, 0.866_025_403_784_438_6, 0.5]]),
+                source: None,
+            }))),
+            ..Default::default()
+        };
+        let lib = lib_with("core", m.clone());
+        let k = th(&lib, "core", 300.0).unwrap().conductivity.unwrap();
+        let t = k.tensor();
+        // e3 = e1 x e2 = (0, -0.5, 0.866): K = 25 I - 24 e3 e3^T
+        assert!((t[0][0] - 25.0).abs() < 1e-12);
+        assert!(
+            (t[1][1] - (25.0 - 24.0 * 0.25)).abs() < 1e-12,
+            "{}",
+            t[1][1]
+        );
+        assert!((t[2][2] - (25.0 - 24.0 * 0.75)).abs() < 1e-12);
+        assert!((t[1][2] - (24.0 * 0.5 * 0.866_025_403_784_438_6)).abs() < 1e-12);
+        assert_eq!(t[1][2], t[2][1]);
+        // the trace is the sum of the principal values
+        assert!((t[0][0] + t[1][1] + t[2][2] - 51.0).abs() < 1e-12);
+        // MAT008: no axes, parallel axes
+        let mut no = m.clone();
+        if let Some(Conductivity::Orthotropic(o)) = no.conductivity.as_mut() {
+            o.axes = None;
+        }
+        let e = th(&lib_with("core", no), "core", 300.0).unwrap_err();
+        assert_eq!(diag::of_error(&e).code, diag::MAT_AXES);
+        let mut par = m;
+        if let Some(Conductivity::Orthotropic(o)) = par.conductivity.as_mut() {
+            o.axes = Some([[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]);
+        }
+        let e = th(&lib_with("core", par), "core", 300.0).unwrap_err();
+        assert_eq!(diag::of_error(&e).code, diag::MAT_AXES);
+    }
+
+    #[test]
+    fn a_solid_needs_its_thermal_data_and_a_fluid_when_energy_is_on() {
+        let solid = MaterialSection {
+            kind: Some(MaterialKind::Solid),
+            density: Some(Property::Number(2700.0)),
+            ..Default::default()
+        };
+        let e = th(&lib_with("s", solid), "s", 300.0).unwrap_err();
+        let d = diag::of_error(&e);
+        assert_eq!(d.code, diag::MAT_SOLID);
+        assert!(d.message.contains("specific_heat"), "{}", d.message);
+        // a fluid without c_p and k is fine for the flow, MAT007 for the energy equation
+        let t = th(&CaseMaterials::default(), "engine-oil", 300.0).unwrap();
+        let e = t.require().unwrap_err();
+        assert_eq!(diag::of_error(&e).code, diag::MAT_THERMAL);
+    }
+
+    #[test]
+    fn user_database_files_are_searched_in_order_before_the_built_in_one() {
+        let dir = std::env::temp_dir().join(format!("foehn-mat-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("a.toml");
+        std::fs::write(
+            &a,
+            r#"format = "foehncraft.materials"
+format_version = "1"
+[materials.my-oil]
+kind = "liquid"
+density = 850.0
+viscosity = 0.04
+specific_heat = 1900.0
+conductivity = 0.14
+[materials.water]
+base = "water"
+description = "water with a different c_p"
+specific_heat = 4000.0
+"#,
+        )
+        .unwrap();
+        let mut lib = CaseMaterials {
+            include: vec![a.clone()],
+            ..Default::default()
+        };
+        lib.load().unwrap();
+        let t = th(&lib, "my-oil", 300.0).unwrap();
+        assert_eq!(t.specific_heat.unwrap().value.constant(), Some(1900.0));
+        t_require_ok(&th(&lib, "my-oil", 300.0).unwrap());
+        // a file entry of a database name changes it (base of the same name)
+        let w = th(&lib, "water", 300.0).unwrap();
+        assert_eq!(w.specific_heat.unwrap().value.constant(), Some(4000.0));
+        let p = resolve_material(
+            Some("water"),
+            &lib,
+            None,
+            None,
+            &Env::default(),
+            Conditions::default(),
+            &mut Vec::new(),
+        )
+        .unwrap();
+        assert_eq!(p.density.value.constant(), Some(998.21));
+        // the case's own material wins over the file's
+        let mut lib2 = lib.clone();
+        lib2.named.insert(
+            "my-oil".into(),
+            MaterialSection {
+                base: Some("my-oil".into()),
+                specific_heat: Some(Property::Number(2000.0)),
+                ..Default::default()
+            },
+        );
+        let t2 = th(&lib2, "my-oil", 300.0).unwrap();
+        assert_eq!(t2.specific_heat.unwrap().value.constant(), Some(2000.0));
+        assert_eq!(t2.density.unwrap().value.constant(), Some(850.0));
+        // MAT009: a missing file, a wrong format
+        let mut bad = CaseMaterials {
+            include: vec![dir.join("nope.toml")],
+            ..Default::default()
+        };
+        assert_eq!(
+            diag::of_error(&bad.load().unwrap_err()).code,
+            diag::MAT_FILE
+        );
+        let wf = dir.join("wf.toml");
+        std::fs::write(
+            &wf,
+            "format = \"other\"\nformat_version = \"1\"\n[materials]\n",
+        )
+        .unwrap();
+        bad.include = vec![wf];
+        assert_eq!(
+            diag::of_error(&bad.load().unwrap_err()).code,
+            diag::MAT_FILE
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    fn t_require_ok(t: &Thermal) {
+        t.require().unwrap();
+    }
+
+    #[test]
+    fn nasa7_and_tables_read_their_data_files() {
+        let dir = std::env::temp_dir().join(format!("foehn-mat2-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("k.csv"), "# T, k\nT,k\n300, 15.0\n400, 17.0\n").unwrap();
+        let f = dir.join("m.toml");
+        std::fs::write(
+            &f,
+            r#"format = "foehncraft.materials"
+format_version = "1"
+[materials.steel-x]
+kind = "solid"
+density = 7900.0
+specific_heat = 500.0
+[materials.steel-x.conductivity]
+form = "table"
+file = "k.csv"
+"#,
+        )
+        .unwrap();
+        let mut lib = CaseMaterials {
+            include: vec![f],
+            ..Default::default()
+        };
+        lib.load().unwrap();
+        let k = th(&lib, "steel-x", 350.0).unwrap().conductivity.unwrap();
+        assert!((k.tensor()[0][0] - 16.0).abs() < 1e-12);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn water_and_air_have_specific_heat_and_conductivity() {
+        // water at 293.15 K (IAPWS-95): c_p = 4184.05 J/(kg K); k = 0.598 W/(m K)
+        let w = th(&CaseMaterials::default(), "water", 293.15).unwrap();
+        let cp = w.specific_heat.unwrap().value.constant().unwrap();
+        assert!((cp - 4184.05).abs() < 0.5, "{cp}");
+        let k = w.conductivity.unwrap().tensor()[0][0];
+        assert!((k - 0.598).abs() < 0.002, "{k}");
+        // air at 300 K: c_p = 1006.4 J/(kg K), k = 0.0264 W/(m K)
+        let a = th(&CaseMaterials::default(), "air", 300.0).unwrap();
+        let cp = a.specific_heat.unwrap().value.constant().unwrap();
+        assert!((cp - 1006.4).abs() < 0.5, "{cp}");
+        let k = a.conductivity.unwrap().tensor()[0][0];
+        assert!((k - 0.02638).abs() < 2e-5, "{k}");
+        // the material is a gas: no solid checks; the tables are not
+        // clamped inside their range
+        let mut warn = Vec::new();
+        th_warn("water", 293.15, &mut warn);
+        assert!(warn.is_empty(), "{warn:?}");
+    }
+
+    fn th_warn(name: &str, t: f64, w: &mut Vec<Diagnostic>) {
+        thermal_properties(
+            name,
+            &CaseMaterials::default(),
+            &Env::default(),
+            Conditions {
+                temperature: t,
+                pressure: DEFAULT_PRESSURE,
+            },
+            w,
+        )
+        .unwrap();
     }
 }

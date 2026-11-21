@@ -735,8 +735,9 @@ pub struct FlowCase {
     pub fluid: FluidSection,
     /// Materials of the case (D94): new ones, or changes of database
     /// materials with `base`.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub materials: BTreeMap<String, crate::materials::MaterialSection>,
+    #[serde(skip_serializing_if = "crate::materials::CaseMaterials::is_empty")]
+    #[schemars(schema_with = "crate::materials::case_materials_schema")]
+    pub materials: crate::materials::CaseMaterials,
     /// Regions of cell zones with a kind and a material (D112); zones in no
     /// region are fluid with the `[fluid]` material.
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -967,6 +968,8 @@ impl FlowCase {
         for (name, t) in &mut self.tables {
             t.load(name)?;
         }
+        // the user material files and the data files of the materials
+        self.materials.load()?;
         // the expressions can be checked once the tables are read
         self.validate_expressions()?;
         Ok(())
@@ -1027,6 +1030,7 @@ impl FlowCase {
             b.resolve_paths(dir);
         }
         crate::expr::resolve_paths(&mut c.tables, dir);
+        c.materials.resolve_paths(dir);
         c.solver.reduction_defaults = crate::turbulence::reduction_defaults(&c);
         c.validate()?;
         Ok(c)

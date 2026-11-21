@@ -6,9 +6,10 @@
 # K, kg/m³, Pa s, kg/mol, Pa.
 #
 # Stage 5 (D102) evaluates density and viscosity at the isothermal case
-# temperature (`[fluid] temperature`, default 293.15 K); the thermal data
-# (c_p, k, NASA-7/9, the IAPWS-95 formulation) follow with the energy
-# equation (L1).
+# temperature (`[fluid] temperature`, default 293.15 K). Stage 7 (PR 7.0c2)
+# adds c_p and k for water and air (tables generated with CoolProp 8.0, MIT
+# licence, from the formulations named in each source); the other data and
+# the energy equation follow in stage 7.
 
 format = "foehncraft.materials"
 format_version = "1"
@@ -30,6 +31,19 @@ s = 110.4
 range = [200.0, 1000.0]
 source = "Sutherland law, coefficients from F. M. White, Viscous Fluid Flow, 3rd ed. (2006), Table 1-2"
 
+[materials.air.specific_heat]
+form = "table"
+interpolation = "monotone-cubic"
+temperature = [200.0, 250.0, 300.0, 350.0, 400.0, 450.0, 500.0, 550.0, 600.0, 650.0, 700.0, 750.0, 800.0, 850.0, 900.0, 950.0, 1000.0]
+values = [1006.805, 1005.542, 1006.374, 1009.211, 1014.144, 1021.113, 1029.869, 1040.038, 1051.203, 1062.963, 1074.972, 1086.950, 1098.690, 1110.042, 1120.911, 1131.239, 1141.000]
+source = "Helmholtz-energy equation of state of air as implemented in CoolProp 8.0 (MIT licence; Bell et al., Ind. Eng. Chem. Res. 53 (2014) 2498) at 0.101325 MPa"
+[materials.air.conductivity]
+form = "table"
+interpolation = "monotone-cubic"
+temperature = [200.0, 250.0, 300.0, 350.0, 400.0, 450.0, 500.0, 550.0, 600.0, 650.0, 700.0, 750.0, 800.0, 850.0, 900.0, 950.0, 1000.0]
+values = [0.018503, 0.022564, 0.026384, 0.030003, 0.033453, 0.036760, 0.039945, 0.043024, 0.046011, 0.048919, 0.051755, 0.054530, 0.057249, 0.059918, 0.062543, 0.065128, 0.067677]
+source = "Lemmon & Jacobsen, Int. J. Thermophys. 25 (2004) 21 (air transport), evaluated with CoolProp 8.0 (MIT licence) at 0.101325 MPa"
+
 [materials.water]
 description = "Liquid water at 0.101325 MPa"
 kind = "liquid"
@@ -46,6 +60,19 @@ interpolation = "monotone-cubic"
 temperature = [273.15, 283.15, 293.15, 303.15, 313.15, 323.15, 333.15, 343.15, 353.15, 363.15, 373.15]
 values = [1.7914e-3, 1.3060e-3, 1.0016e-3, 0.7972e-3, 0.6527e-3, 0.5465e-3, 0.4660e-3, 0.4035e-3, 0.3540e-3, 0.3142e-3, 0.2816e-3]
 source = "IAPWS 2008 viscosity formulation (Huber et al., J. Phys. Chem. Ref. Data 38 (2009) 101), values at 0.101325 MPa"
+
+[materials.water.specific_heat]
+form = "table"
+interpolation = "monotone-cubic"
+temperature = [273.16, 283.15, 293.15, 303.15, 313.15, 323.15, 333.15, 343.15, 353.15, 363.15, 373.15]
+values = [4219.4102, 4195.1589, 4184.0509, 4179.8197, 4179.4148, 4181.3423, 4184.9533, 4190.0671, 4196.7533, 4205.2056, 4215.6736]
+source = "IAPWS-95 (Wagner & Pruss, J. Phys. Chem. Ref. Data 31 (2002) 387) isobaric heat capacity at 0.101325 MPa, evaluated with CoolProp 8.0 (MIT licence); 373.15 K saturated liquid"
+[materials.water.conductivity]
+form = "table"
+interpolation = "monotone-cubic"
+temperature = [273.16, 283.15, 293.15, 303.15, 313.15, 323.15, 333.15, 343.15, 353.15, 363.15, 373.15]
+values = [0.55568, 0.57878, 0.59801, 0.61439, 0.62849, 0.64062, 0.65100, 0.65976, 0.66699, 0.67279, 0.67721]
+source = "IAPWS 2011 thermal conductivity (Huber et al., J. Phys. Chem. Ref. Data 41 (2012) 033102) at 0.101325 MPa, evaluated with CoolProp 8.0 (MIT licence); 373.15 K saturated liquid"
 
 [materials.engine-oil]
 description = "Unused engine oil (a typical mineral oil)"
