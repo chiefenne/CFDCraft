@@ -15,7 +15,8 @@
 # and the aluminium takes the thermal wall function h_w = ρ c_p u*/T⁺ of
 # Kader (1981) in series with the half cell of the metal, and the air
 # conducts with k + c_p μ_t/Pr_t. All of the chip's heat crosses the
-# interface and leaves with the air.
+# interface and leaves with the air. The flow starts from rest with the
+# momentum relaxed by 0.5 for the first 100 iterations.
 
 case_format = "0.6"
 
@@ -61,7 +62,7 @@ turbulent_prandtl = 0.85
 wall_function = "kader"
 
 [initial]
-velocity = [0.0, 0.0, 0.0]          # from rest: a uniform 5 m/s into the fins upsets SIMPLEC
+velocity = [0.0, 0.0, 0.0]           # from rest: a uniform 5 m/s into the fins upsets SIMPLEC
 k = 0.09375
 omega = 62.5
 
@@ -93,10 +94,17 @@ tolerance = 1e-6
 max_iterations = 2500
 log_every = 250
 
+[solver.momentum]
+relaxation = 0.5                     # while the flow sets up around the fins
+
+[[schedule]]
+at_iteration = 100
+set = { solver.momentum.relaxation = 0.7 }
+
 [solver.energy]
 relaxation = 1.0
-tolerance = 1e-10
-max_iter = 300
+tolerance = 1e-10                    # the solid's coefficients dominate the
+max_iter = 300                       # scaled residual: solve tightly (ENE007)
 
 [verification]
 require_convergence = true

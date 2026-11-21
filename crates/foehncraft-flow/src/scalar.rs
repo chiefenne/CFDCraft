@@ -2733,6 +2733,28 @@ pub fn summary_line(s: &ScalarSummary) -> String {
     l
 }
 
+/// ENE007: the heat balance of a converged steady run that does not close
+/// to 1 % of its largest heat flow. The scaled residual of the temperature
+/// can be small while the solve is far from converged, e.g. in a conjugate
+/// case, whose solid coefficients dominate the scaling. (The reported
+/// boundary fluxes take the orthogonal part of the gradient, so a coarse
+/// perturbed mesh shows a gap of up to a few 10⁻³; 1 % stays clear of it.)
+pub fn heat_balance_finding(s: &ScalarSummary) -> Option<crate::diag::Diagnostic> {
+    let e = s.energy.as_ref()?;
+    (e.relative > 1e-2).then(|| {
+        crate::diag::Diagnostic::new(
+            crate::diag::ENE_BALANCE,
+            format!(
+                "the run converged, but its heat balance closes only to {:.2e} of the largest \
+                 heat flow ({:.3e} W): the temperature is not converged although its residual \
+                 is; tighten [solver.energy] tolerance and raise max_iter (conjugate cases: \
+                 1e-10 and 300)",
+                e.relative, e.imbalance
+            ),
+        )
+    })
+}
+
 /// The exact solution of a scalar or of the temperature, with its key.
 fn exact_of<'a>(case: &'a crate::case::FlowCase, name: &str) -> Option<(&'a Scalar, String)> {
     if let Some(e) = case.scalars.get(name).and_then(|s| s.exact.as_ref()) {

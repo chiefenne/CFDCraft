@@ -8,7 +8,7 @@
 # over a solid wall t = 0.1 m thick, 20 m long. An air-like fluid enters at
 # 300 K with a uniform 1 m/s (Re = U 2H/ν = 2·10⁵, Pr = 0.71); the outer
 # face of the wall is held at 350 K, the ends of the wall are adiabatic.
-# Standard k-ε with scalable wall functions (y⁺ ≈ 50 to 70 at the
+# Standard k-ε with scalable wall functions (y⁺ ≈ 70 to 85 at the
 # interface). The flow runs on the fluid cells, where the faces against the
 # wall become the wall boundary `interface-wall`; the temperature runs on
 # all cells. At the interface the fluid side is the thermal wall function of
