@@ -21,9 +21,11 @@ files `AGENTS.md`, `CONTRIBUTING.md`, `docs/STATUS.md`, `docs/ROADMAP.md`,
 `docs/tool-status.md`, `docs/extending.md`, `docs/pitfalls.md`; in
 `storytold/craft-contrib` the `README.md` and the standards `app-agents.md`,
 `clean-room.md`, `testing.md`, `pull-requests.md`, `claims.md`,
-`licences.md`, `naming.md`. craft.wiki could not be reached from the build
-environment this time; the repository documents above cover the same ground.
-Craft Anything was at version 0.6.1, the launcher at 0.19.2.
+`licences.md`, `naming.md`. On 2026-11-21 also craft.wiki: the Craft
+Anything guides (overview, getting started, install and update, workflows,
+troubleshooting), the "Connect an AI assistant" guide, the automation and AI
+agents pages of two sibling apps, and the about page (section 6). Craft
+Anything was at version 0.6.1, the launcher at 0.19.2.
 
 ## 1. What ArtCraft does
 
@@ -159,10 +161,41 @@ rule. None is started.
     translation keys in English, keyboard use, accessibility tree, theme
     tokens, and "panels change state only through registered tools".
 
-## 5. Watching ArtCraft
+## 5. From craft.wiki (2026-11-21)
+
+What the user guides add to sections 1 to 4:
+
+| # | Practice | Bearing on Foehncraft |
+|---|---|---|
+| W1 | **Approvals per kind of action.** Auto mode is on by default, but the builder never deletes outside its project, changes system settings or publishes. Per project, each kind of action is set to Default, Allow, Ask or Refuse: reading the web, other commands, files outside the project, pushing and publishing, deleting outside the project, system changes, other tools. "Allow once" or "always for this project". | Sharpens challenge 4: a short list of kinds for a solver driven by an agent (start a run, exceed the cost estimate, write outside the write root, overwrite or delete earlier results, publish), each with the same four settings. |
+| W2 | **Spend shown and bounded.** Each project shows its run time, tokens and an estimated cost; paid extras have a budget per project, raised on request. | A GPU-hour or cell-hour budget per study, shown in the run record next to the D81 estimate and spent against `[run.limits]` (D83). |
+| W3 | **"Good enough" and refining rounds** are settings, not hidden defaults. | Same idea as our iteration budgets and the rule to diagnose a steady run at 2000 to 3000 iterations: make the budget a visible setting of a study. |
+| W4 | **Action journal and replay.** The app lists every command run in a session, by the person or the assistant; `<app>-cli run --cmd 'id={json}'` or `--script` replays commands without a window. | New challenge 14. |
+| W5 | **Live control.** `<app> --control <port>` listens only on the local computer and needs an access token; `<app>-cli mcp --connect` lets an assistant work in the open app, `send <port>` sends one request. Notes typed during a build are read at the next step. | Matches L19 (control at step boundaries); add the token. |
+| W6 | **Every app has the same guide set:** overview, getting started, install and update, workflows, AI agents (or automation), troubleshooting with known issues linked by issue number; plus one step-by-step "Connect an AI assistant" guide for people who are not programmers. The wiki is a public repository with reviewed edits. | New challenge 15. |
+| W7 | **Safety advice to users:** give the assistant a folder of its own, keep copies, read what it asks before approving, and treat text inside files and web pages as information, not orders. | Belongs in our agent guide; case files, meshes and reference data can carry text too. |
+| W8 | **`check` subcommand** recomputes stored files and compares them with the values saved in them. | Matches our self-checking verification cases. |
+
+## 6. More challenges from the wiki
+
+14. **Command journal (W4).** Every engine call of a session, by a person or
+    an agent, goes into the run record (D69) as typed tool calls, and
+    `foehn run --script` replays them. Then a study made by an agent can be
+    rerun by a person and the other way round. Builds on challenge 1.
+15. **One guide set (W6, W7).** Alongside gallery, cases and recipes (D18):
+    `docs/agents.md` (connect an assistant to `foehn mcp`, step by step, with
+    the safety advice of W7), a troubleshooting page with known issues
+    linked to their issues, and an install and update page.
+16. **Approval kinds and budgets (W1, W2, W3).** Turn challenge 4 into a
+    table of action kinds with Default, Allow, Ask or Refuse, a budget per
+    study, and the iteration budget as a visible setting.
+17. **Token on the control channel (W5).** L19 listens on the local computer
+    only and requires an access token readable only by the user.
+
+## 7. Watching ArtCraft
 
 A weekly check (Monday morning, Vienna time) reads their news page, the
-Craft Anything page, the craft-contrib standards and the releases of the
+Craft Anything page and wiki, the craft-contrib standards and the releases of the
 repositories above, and reports only changes that affect a decision here
 (new shared helper tools, changed agent rules, new standards). This note is
 updated when such a change is adopted.
